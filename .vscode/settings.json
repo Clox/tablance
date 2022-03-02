@@ -1,0 +1,9 @@
+{
+	"editor.rulers": [
+		120
+		],
+		"editor.detectIndentation": false,
+		"editor.insertSpaces": false,
+		"editor.wordSeparators": "`~!@#%^&*()-=+[{]}\\|;:'\",.<>/?",
+		"editor.bracketPairColorization.enabled": true
+}

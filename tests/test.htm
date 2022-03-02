@@ -1,0 +1,25 @@
+<head>
+	<style>
+		.tablanceContainer {
+			border: 2px solid;
+  			padding: 20px; 
+  			height: 400px;
+			width: 600px;
+  			resize: both;
+			overflow: auto;
+		}
+	</style>
+</head>
+<script src="../src/tablance.js"></script>
+<script>
+	document.addEventListener("DOMContentLoaded", ()=>{
+		const myTablanceCols=[{id:"desc",title:"Description"},{id:"amount",title:"Amount",width:"50px"}
+														,{id:"balance",title:"Balance",width:"50px"}];
+		const myTablanceTable=new Tablance(document.getElementById("tablanceContainer1"),myTablanceCols);
+	});
+</script>
+<body>
+	<div class="tablanceContainer" id="tablanceContainer1"></div>
+	<br />
+	<div class="tablanceContainer" id="tablanceContainer2"></div>
+</body>
