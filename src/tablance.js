@@ -13,6 +13,8 @@ class Tablance {
 				//of the table so that the scrollbar reflects all the data that can be scrolled through
 	#mainTbody;
 	#rowHeight;//the height of (non expanded) rows
+	#borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
+					//get real distance between the top of adjacent rows
 	
 	
 
@@ -40,7 +42,7 @@ class Tablance {
 		}
 		this.#createTableHeader();
 		this.#createTableBody();
-		(new ResizeObserver(()=>this.#updateSizesOfViewportAndCols())).observe(container);
+		(new ResizeObserver(e=>this.#updateSizesOfViewportAndCols())).observe(container);
 		this.#updateSizesOfViewportAndCols();
 	}
 
@@ -54,8 +56,10 @@ class Tablance {
 
 	#createTableBody() {
 		this.#scrollBody=this.#container.appendChild(document.createElement("div"));
+		this.#scrollBody.addEventListener("scroll",e=>this.#updateAdjustNumberOfTrs());
 		this.#tableSizer=this.#scrollBody.appendChild(document.createElement("div"));
 		this.#mainTable=this.#tableSizer.appendChild(document.createElement("table"));
+		this.#borderSpacingY=parseInt(window.getComputedStyle(this.#mainTable)['border-spacing'].split(" ")[1]);
 		this.#mainTbody=this.#mainTable.appendChild(document.createElement("tbody"));
 		for (let colStruct of this.#colStructs) {
 			let col=document.createElement("col");
@@ -91,19 +95,19 @@ class Tablance {
 	addData(data) {
 		this.#data.push(...data);//much, much faster than concat
 		this.#updateAdjustNumberOfTrs();
-		this.#tableSizer.style.height=this.#rowHeight*this.#data.length;
+		this.#tableSizer.style.height=this.#data.length*this.#rowHeight+(this.#data.length-1)*this.#borderSpacingY+"px";
 	}
 
 	/**Should be called if tr-elements might need to be created or deleted which is when data is added or removed, 
 	 * or when the table is resized vertically*/
 	#updateAdjustNumberOfTrs() {
 		let lastTr=this.#mainTbody.lastChild;
-		const scrollHeight=this.#scrollBody.offsetHeight;
+		const scrH=this.#scrollBody.offsetHeight;
+		const scrT=this.#scrollBody.scrollTop;
 		const dataLen=this.#data.length;
 		const trs=this.#mainTable.rows;
-
 		//if there are fewer trs than datarows, and if there is space left below bottom tr
-		while (this.#topRenderedRowIndex+trs.length<dataLen&&(!lastTr||lastTr.offsetTop+this.#rowHeight<scrollHeight)) {
+		while (this.#topRenderedRowIndex+trs.length<dataLen&&(!lastTr||lastTr.offsetTop+this.#rowHeight-scrT<scrH)) {
 			lastTr=this.#mainTable.insertRow();
 			for (let i=0; i<this.#colStructs.length; i++)
 				lastTr.insertCell();
