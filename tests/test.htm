@@ -2,10 +2,11 @@
 	<style>
 		.tablanceContainer {
 			border: 2px solid;
-  			padding: 20px; 
   			height: 400px;
 			width: 600px;
-  			resize: both;
+  			
+		}
+		.tablanceContainer>div {
 			overflow: auto;
 		}
 	</style>
@@ -16,12 +17,14 @@
 		const myTablanceCols=[{id:"desc",title:"Description"},{id:"amount",title:"Amount",width:"50px"}
 														,{id:"balance",title:"Balance",width:"50px"}];
 		const myTablanceTable=new Tablance(document.getElementById("tablanceContainer1"),myTablanceCols);
-		myTablanceTable.addData([{desc:"foobar ett",amount:5.69,balance:85.99}
+		for (let i=0; i<20; i++)
+			myTablanceTable.addData([{desc:"foobar ett",amount:5.69,balance:85.99}
 								,{desc:"baz två",amount:69.1,balance:1337}]);
+		
 	});
 </script>
 <body>
-	<div class="tablanceContainer" id="tablanceContainer1"></div>
+	<div class="tablanceContainer" id="tablanceContainer1" style="overflow:hidden;resize: both;"></div>
 	<br />
-	<div class="tablanceContainer" id="tablanceContainer2"></div>
+	<div class="tablanceContainer" id="tablanceContainer2" style="overflow:hidden; resize: both;"></div>
 </body>
