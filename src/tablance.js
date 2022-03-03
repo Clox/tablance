@@ -9,6 +9,11 @@ class Tablance {
 	#scrollY=0;//keep track of the scrolling. To know if viewport has moved up or down and rows need (un)rendering
 	#scrollBody;
 	#mainTable;
+	#tableSizer;//reference to a div wrapping #mainTable. The purpose of it is to set its height to the "true" height
+				//of the table so that the scrollbar reflects all the data that can be scrolled through
+	#mainTbody;
+	#rowHeight;//the height of (non expanded) rows
+	
 	
 
 	/**
@@ -49,7 +54,9 @@ class Tablance {
 
 	#createTableBody() {
 		this.#scrollBody=this.#container.appendChild(document.createElement("div"));
-		this.#mainTable=this.#scrollBody.appendChild(document.createElement("table"));
+		this.#tableSizer=this.#scrollBody.appendChild(document.createElement("div"));
+		this.#mainTable=this.#tableSizer.appendChild(document.createElement("table"));
+		this.#mainTbody=this.#mainTable.appendChild(document.createElement("tbody"));
 		for (let colStruct of this.#colStructs) {
 			let col=document.createElement("col");
 			this.#cols.push(col);
@@ -84,16 +91,25 @@ class Tablance {
 	addData(data) {
 		this.#data.push(...data);//much, much faster than concat
 		this.#updateAdjustNumberOfTrs();
+		this.#tableSizer.style.height=this.#rowHeight*this.#data.length;
 	}
 
 	/**Should be called if tr-elements might need to be created or deleted which is when data is added or removed, 
 	 * or when the table is resized vertically*/
 	#updateAdjustNumberOfTrs() {
-		while (this.#topRenderedRowIndex+this.#mainTable.rows.length<this.#data.length) {
-			let newTr=this.#mainTable.insertRow();
+		let lastTr=this.#mainTbody.lastChild;
+		const scrollHeight=this.#scrollBody.offsetHeight;
+		const dataLen=this.#data.length;
+		const trs=this.#mainTable.rows;
+
+		//if there are fewer trs than datarows, and if there is space left below bottom tr
+		while (this.#topRenderedRowIndex+trs.length<dataLen&&(!lastTr||lastTr.offsetTop+this.#rowHeight<scrollHeight)) {
+			lastTr=this.#mainTable.insertRow();
 			for (let i=0; i<this.#colStructs.length; i++)
-				newTr.insertCell();
-			this.#updateRowValues(newTr);
+				lastTr.insertCell();
+			this.#updateRowValues(lastTr);
+			if (!this.#rowHeight)//if there were no rows prior to this
+				this.#rowHeight=lastTr.offsetHeight;
 		}
 	}
 
