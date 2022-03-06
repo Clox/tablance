@@ -56,7 +56,7 @@ class Tablance {
 
 	#createTableBody() {
 		this.#scrollBody=this.#container.appendChild(document.createElement("div"));
-		this.#scrollBody.addEventListener("scroll",e=>this.#updateAdjustNumberOfTrs());
+		this.#scrollBody.addEventListener("scroll",e=>this.#onScroll());
 		this.#tableSizer=this.#scrollBody.appendChild(document.createElement("div"));
 		this.#mainTable=this.#tableSizer.appendChild(document.createElement("table"));
 		this.#borderSpacingY=parseInt(window.getComputedStyle(this.#mainTable)['border-spacing'].split(" ")[1]);
@@ -93,21 +93,47 @@ class Tablance {
 	}
 
 	addData(data) {
+		const priorlyEmpty=!data.length;
 		this.#data.push(...data);//much, much faster than concat
-		this.#updateAdjustNumberOfTrs();
-		this.#tableSizer.style.height=this.#data.length*this.#rowHeight+(this.#data.length-1)*this.#borderSpacingY+"px";
+		this.#maybeAddMoreTrs();
+		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+
+						data.length*(this.#rowHeight+this.#borderSpacingY)-(priorlyEmpty?this.#borderSpacingY:0)+"px";
 	}
 
-	/**Should be called if tr-elements might need to be created or deleted which is when data is added or removed, 
-	 * or when the table is resized vertically*/
-	#updateAdjustNumberOfTrs() {
+	#onScroll() {
+		const scrY=this.#scrollBody.scrollTop;
+		const scrH=this.#scrollBody.offsetHeight;
+		if (scrY>this.#scrollY) {
+			while (this.#topRenderedRowIndex+this.#mainTbody.rows.length<this.#data.length&&this.#mainTbody.lastChild.offsetTop+this.#rowHeight-scrY+parseInt(this.#tableSizer.style.top||0)<scrH) {
+				this.#topRenderedRowIndex++;
+				let movingRow=this.#mainTbody.firstChild;
+				this.#mainTbody.append(movingRow);
+				this.#updateRowValues(movingRow);
+				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top||0)+22+"px";
+				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)-22+"px";
+			}
+		} else {
+			while (this.#topRenderedRowIndex>0&&this.#mainTbody.lastChild.offsetTop-22+this.#rowHeight-scrY+parseInt(this.#tableSizer.style.top)>=scrH) {
+				this.#topRenderedRowIndex--;
+				let movingRow=this.#mainTbody.lastChild;
+				this.#mainTbody.prepend(movingRow);
+				this.#updateRowValues(movingRow);
+				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top||0)-22+"px";
+				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+22+"px";
+			}
+		}
+		this.#scrollY=scrY;
+	}
+
+	/**Should be called if tr-elements might need to be created which is when data is added or if table grows*/
+	#maybeAddMoreTrs() {
 		let lastTr=this.#mainTbody.lastChild;
 		const scrH=this.#scrollBody.offsetHeight;
-		const scrT=this.#scrollBody.scrollTop;
+		const scrY=this.#scrollBody.scrollTop;
 		const dataLen=this.#data.length;
 		const trs=this.#mainTable.rows;
 		//if there are fewer trs than datarows, and if there is space left below bottom tr
-		while (this.#topRenderedRowIndex+trs.length<dataLen&&(!lastTr||lastTr.offsetTop+this.#rowHeight-scrT<scrH)) {
+		while (this.#topRenderedRowIndex+trs.length<dataLen&&(!lastTr||lastTr.offsetTop+this.#rowHeight-scrY<scrH)) {
 			lastTr=this.#mainTable.insertRow();
 			for (let i=0; i<this.#colStructs.length; i++)
 				lastTr.insertCell();

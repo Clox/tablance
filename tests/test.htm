@@ -9,6 +9,12 @@
 		.tablanceContainer>div {
 			overflow: auto;
 		}
+		.tablanceContainer>div>div {
+			position: relative;
+		}
+		.tablanceContainer>div>div>table {/* main-table */
+			position: relative;/* need to be able to offset it in order to counter when top row gets added/removed */
+		}
 	</style>
 </head>
 <script src="../src/tablance.js"></script>
@@ -17,9 +23,15 @@
 		const myTablanceCols=[{id:"desc",title:"Description"},{id:"amount",title:"Amount",width:"50px"}
 														,{id:"balance",title:"Balance",width:"50px"}];
 		const myTablanceTable=new Tablance(document.getElementById("tablanceContainer1"),myTablanceCols);
-		for (let i=0; i<20; i++)
-			myTablanceTable.addData([{desc:"foobar ett",amount:5.69,balance:85.99}
-								,{desc:"baz två",amount:69.1,balance:1337}]);
+
+		
+		for (let i=0; i<3; i++) {
+			let data=[];
+			for (let ii=0; ii<1000; ii++) {
+				data.push({desc:"foobar "+i+", "+ii,amount:5.69,balance:85.99});
+			}
+			myTablanceTable.addData(data);
+		}
 		
 	});
 </script>
