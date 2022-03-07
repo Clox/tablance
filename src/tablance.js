@@ -12,10 +12,11 @@ class Tablance {
 	#tableSizer;//reference to a div wrapping #mainTable. The purpose of it is to set its height to the "true" height
 				//of the table so that the scrollbar reflects all the data that can be scrolled through
 	#mainTbody;
-	#rowHeight;//the height of (non expanded) rows
 	#borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
-	
+	#rowHeight;//the height of (non expanded) rows with #borderSpacingY included
+	#staticRowHeight;//This is set in the constructor. If it is true then all rows should be of same height which
+					 //improves performance.
 	
 
 	/**
@@ -27,10 +28,13 @@ class Tablance {
 	 * 			width String The width of the column. This can be in either px or % units.
 	 * 				In case of % it will be calculated on the remaining space after all the fixed widths
 	 * 				have been accounted for.
+	 * 			staticRowHeight Boolean Set to true if all rows are of same height. With this option on, scrolling
+	 * 				quickly through large tables will be more performant.
 	 * 		}
 	 */
-	constructor(container,columns) {
+	constructor(container,columns,staticRowHeight=false) {
 		this.#container=container;
+		this.#staticRowHeight=staticRowHeight;
 		const allowedColProps=["id","title","width"];
 		for (let col of columns) {
 			let processedCol={};
@@ -56,7 +60,7 @@ class Tablance {
 
 	#createTableBody() {
 		this.#scrollBody=this.#container.appendChild(document.createElement("div"));
-		this.#scrollBody.addEventListener("scroll",e=>this.#onScroll());
+		this.#scrollBody.addEventListener("scroll",e=>this.#onScrollStaticRowHeight());
 		this.#tableSizer=this.#scrollBody.appendChild(document.createElement("div"));
 		this.#mainTable=this.#tableSizer.appendChild(document.createElement("table"));
 		this.#borderSpacingY=parseInt(window.getComputedStyle(this.#mainTable)['border-spacing'].split(" ")[1]);
@@ -97,29 +101,28 @@ class Tablance {
 		this.#data.push(...data);//much, much faster than concat
 		this.#maybeAddMoreTrs();
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+
-						data.length*(this.#rowHeight+this.#borderSpacingY)-(priorlyEmpty?this.#borderSpacingY:0)+"px";
+						data.length*this.#rowHeight-(priorlyEmpty?this.#borderSpacingY:0)+"px";
 	}
 
-	#onScroll() {
+	#onScrollStaticRowHeight() {
 		const scrY=this.#scrollBody.scrollTop;
-		const scrH=this.#scrollBody.offsetHeight;
-		if (scrY>this.#scrollY) {
-			while (this.#topRenderedRowIndex+this.#mainTbody.rows.length<this.#data.length&&this.#mainTbody.lastChild.offsetTop+this.#rowHeight-scrY+parseInt(this.#tableSizer.style.top||0)<scrH) {
+		if (scrY>this.#scrollY) {//if scrolling down
+			while (scrY-parseInt(this.#tableSizer.style.top||0)>=this.#rowHeight) {
 				this.#topRenderedRowIndex++;
 				let movingRow=this.#mainTbody.firstChild;
 				this.#mainTbody.append(movingRow);
 				this.#updateRowValues(movingRow);
-				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top||0)+22+"px";
-				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)-22+"px";
+				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top||0)+this.#rowHeight+"px";
+				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)-this.#rowHeight+"px";
 			}
-		} else {
-			while (this.#topRenderedRowIndex>0&&this.#mainTbody.lastChild.offsetTop-22+this.#rowHeight-scrY+parseInt(this.#tableSizer.style.top)>=scrH) {
+		} else {//if scrolling up
+			while (scrY-parseInt(this.#tableSizer.style.top)<0) {
 				this.#topRenderedRowIndex--;
 				let movingRow=this.#mainTbody.lastChild;
 				this.#mainTbody.prepend(movingRow);
 				this.#updateRowValues(movingRow);
-				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top||0)-22+"px";
-				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+22+"px";
+				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top||0)-this.#rowHeight+"px";
+				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+this.#rowHeight+"px";
 			}
 		}
 		this.#scrollY=scrY;
@@ -139,7 +142,7 @@ class Tablance {
 				lastTr.insertCell();
 			this.#updateRowValues(lastTr);
 			if (!this.#rowHeight)//if there were no rows prior to this
-				this.#rowHeight=lastTr.offsetHeight;
+				this.#rowHeight=lastTr.offsetHeight+this.#borderSpacingY;
 		}
 	}
 
