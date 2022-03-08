@@ -8,6 +8,7 @@ class Tablance {
 	#topRenderedRowIndex=0;//the index in the #data of the top row in the view
 	#scrollY=0;//keep track of the scrolling. To know if viewport has moved up or down and rows need (un)rendering
 	#scrollBody;
+	#scrollHeight;//the screenheight of the scrollable area
 	#mainTable;
 	#tableSizer;//reference to a div wrapping #mainTable. The purpose of it is to set its height to the "true" height
 				//of the table so that the scrollbar reflects all the data that can be scrolled through
@@ -17,7 +18,6 @@ class Tablance {
 	#rowHeight;//the height of (non expanded) rows with #borderSpacingY included
 	#staticRowHeight;//This is set in the constructor. If it is true then all rows should be of same height which
 					 //improves performance.
-	
 
 	/**
 	 * 
@@ -73,8 +73,8 @@ class Tablance {
 	}
 
 	#updateSizesOfViewportAndCols() {
-		this.#scrollBody.style.height=this.#container.offsetHeight-this.#headerTable.offsetHeight;
-
+		this.#scrollHeight=this.#container.offsetHeight-this.#headerTable.offsetHeight;
+		this.#scrollBody.style.height=this.#scrollHeight+"px";
 		const percentageWidthRegex=/\d+\%/;
 		let containerWidth=this.#container.clientWidth;
 		let totalFixedWidth=0;
@@ -106,23 +106,30 @@ class Tablance {
 
 	#onScrollStaticRowHeight() {
 		const scrY=this.#scrollBody.scrollTop;
-		if (scrY>this.#scrollY) {//if scrolling down
+		let rowScrollingDone=false;//whether the user has scrolled enough for rows to move and table to adjust
+		if (Math.abs(scrY-this.#scrollY)>this.#scrollHeight) {//if scrolling by more than a whole page
+			this.#mainTbody.replaceChildren();
+			this.#topRenderedRowIndex=parseInt(scrY/this.#rowHeight);
+			this.#maybeAddMoreTrs();
+			this.#tableSizer.style.top=this.#topRenderedRowIndex*this.#rowHeight+"px";
+			this.#tableSizer.style.height=(this.#data.length-this.#topRenderedRowIndex)*this.#rowHeight+"px";
+		} else if (scrY>this.#scrollY) {//else if scrolling down
 			while (scrY-parseInt(this.#tableSizer.style.top||0)>=this.#rowHeight) {
 				this.#topRenderedRowIndex++;
 				let movingRow=this.#mainTbody.firstChild;
 				this.#mainTbody.append(movingRow);
 				this.#updateRowValues(movingRow);
-				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top||0)+this.#rowHeight+"px";
-				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)-this.#rowHeight+"px";
+				this.#tableSizer.style.top=this.#topRenderedRowIndex*this.#rowHeight+"px";
+				this.#tableSizer.style.height=(this.#data.length-this.#topRenderedRowIndex)*this.#rowHeight+"px";
 			}
-		} else {//if scrolling up
+		} else {//else if scrolling up
 			while (scrY-parseInt(this.#tableSizer.style.top)<0) {
 				this.#topRenderedRowIndex--;
 				let movingRow=this.#mainTbody.lastChild;
 				this.#mainTbody.prepend(movingRow);
 				this.#updateRowValues(movingRow);
-				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top||0)-this.#rowHeight+"px";
-				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+this.#rowHeight+"px";
+				this.#tableSizer.style.top=this.#topRenderedRowIndex*this.#rowHeight+"px";
+				this.#tableSizer.style.height=(this.#data.length-this.#topRenderedRowIndex)*this.#rowHeight+"px";
 			}
 		}
 		this.#scrollY=scrY;
@@ -132,11 +139,10 @@ class Tablance {
 	#maybeAddMoreTrs() {
 		let lastTr=this.#mainTbody.lastChild;
 		const scrH=this.#scrollBody.offsetHeight;
-		const scrY=this.#scrollBody.scrollTop;
 		const dataLen=this.#data.length;
 		const trs=this.#mainTable.rows;
 		//if there are fewer trs than datarows, and if there is space left below bottom tr
-		while (this.#topRenderedRowIndex+trs.length<dataLen&&(!lastTr||lastTr.offsetTop+this.#rowHeight-scrY<scrH)) {
+		while (this.#topRenderedRowIndex+trs.length<dataLen&&(!lastTr||lastTr.offsetTop+this.#rowHeight/* -scrY */<scrH)) {
 			lastTr=this.#mainTable.insertRow();
 			for (let i=0; i<this.#colStructs.length; i++)
 				lastTr.insertCell();
