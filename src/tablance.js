@@ -126,15 +126,16 @@ class Tablance {
 			this.#maybeAddTrs();
 		} else {
 			const scrollSignum=Math.sign(newScrollRowIndex-this.#scrollRowIndex);//1 if moving down, -1 if up
-			for (;this.#scrollRowIndex!=newScrollRowIndex;this.#scrollRowIndex+=scrollSignum) {
-				if (scrollSignum==1)//moving up
+			do {
+				this.#scrollRowIndex+=scrollSignum;
+				if (scrollSignum==1)//moving down
 					this.#updateRowValues(this.#mainTbody.appendChild(this.#mainTbody.firstChild));
-				else {//moving down
+				else {//moving up
 					let trToMove=this.#mainTbody.lastChild;
 					this.#mainTbody.prepend(trToMove);
 					this.#updateRowValues(trToMove);
 				}
-			}
+			} while (this.#scrollRowIndex!=newScrollRowIndex);
 		}
 		this.#tableSizer.style.top=this.#scrollRowIndex*this.#rowHeight+"px";
 		this.#tableSizer.style.height=(this.#data.length-this.#scrollRowIndex)*this.#rowHeight+"px";
@@ -161,7 +162,7 @@ class Tablance {
 	#maybeRemoveTrs() {
 		const scrH=this.#scrollBody.offsetHeight;
 		const trs=this.#mainTbody.rows;
-		while (trs.length>3&&trs[trs.length-2].offsetTop>scrH)
+		while (trs.length>3&&trs[trs.length-2].offsetTop)
 			this.#mainTbody.lastChild.remove();
 	}
 
