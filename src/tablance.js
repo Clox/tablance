@@ -73,6 +73,7 @@ class Tablance {
 	}
 
 	#updateSizesOfViewportAndCols() {
+		let areaWidth=this.#tableSizer.offsetWidth;
 		if (this.#container.offsetHeight!=this.#containerHeight) {
 			this.#scrollBody.style.height=this.#container.offsetHeight-this.#headerTable.offsetHeight+"px";
 			if (this.#container.offsetHeight>this.#containerHeight)
@@ -83,7 +84,6 @@ class Tablance {
 		}
 		if (this.#container.offsetWidth>this.#containerWidth) {
 			const percentageWidthRegex=/\d+\%/;
-			let containerWidth=this.#container.clientWidth;
 			let totalFixedWidth=0;
 			let numUndefinedWidths=0;
 			for (let col of this.#colStructs)
@@ -94,13 +94,14 @@ class Tablance {
 			let sumFixedAndFlexibleWidth=totalFixedWidth;
 			for (let col of this.#colStructs)
 				if (col.width&&percentageWidthRegex.test(col))//if flexible width
-					sumFixedAndFlexibleWidth+=(col.pxWidth=(containerWidth-totalFixedWidth)*parseFloat(col.width)/100);
+					sumFixedAndFlexibleWidth+=(col.pxWidth=(areaWidth-totalFixedWidth)*parseFloat(col.width)/100);
 			for (let col of this.#colStructs)
 				if (!col.width)//if undefined width
-					col.pxWidth=(containerWidth-sumFixedAndFlexibleWidth)/numUndefinedWidths;
+					col.pxWidth=(areaWidth-sumFixedAndFlexibleWidth)/numUndefinedWidths;
 			for (let colI=0; colI<this.#colStructs.length; colI++) 
 				this.#cols[colI].style.width=this.#headerTr.cells[colI].style.width=this.#colStructs[colI].pxWidth+"px";
-		}	
+		}			
+		this.#headerTable.style.width=areaWidth+"px";
 	}
 
 	addData(data) {
