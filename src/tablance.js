@@ -106,7 +106,9 @@ class Tablance {
 
 	addData(data) {
 		const priorlyEmpty=!data.length;
-		this.#data.push(...data);//much, much faster than concat
+		this.#data=this.#data.concat(data);
+		//this.#data.push(...data);//much faster than above but causes "Maximum call stack size exceeded" for large data
+
 		this.#maybeAddTrs();
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+
 						data.length*this.#rowHeight-(priorlyEmpty?this.#borderSpacingY:0)+"px";
