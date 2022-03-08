@@ -1,5 +1,7 @@
 class Tablance {
 	#container;//container-element for table
+	#containerHeight=0;//height of #container. Used to keep track of if height shrinks or grows
+	#containerWidth=0;//height of #container. Used to keep track of if width shrinks or grows
 	#colStructs=[];//column-objects. See constructor for structure
 	#cols=[];//array of col-elements for each column
 	#headerTr;//the tr for the top header-row
@@ -71,32 +73,40 @@ class Tablance {
 	}
 
 	#updateSizesOfViewportAndCols() {
-		this.#scrollBody.style.height=this.#container.offsetHeight-this.#headerTable.offsetHeight+"px";
-		const percentageWidthRegex=/\d+\%/;
-		let containerWidth=this.#container.clientWidth;
-		let totalFixedWidth=0;
-		let numUndefinedWidths=0;
-		for (let col of this.#colStructs)
-			if (!col.width)
-				numUndefinedWidths++;
-			else if (!percentageWidthRegex.test(col))//if fixed width
-				totalFixedWidth+=(col.pxWidth=parseInt(col.width));
-		let totalFixedAndFlexibleWidth=totalFixedWidth;
-		for (let col of this.#colStructs)
-			if (col.width&&percentageWidthRegex.test(col))//if flexible width
-				totalFixedAndFlexibleWidth+=(col.pxWidth=(containerWidth-totalFixedWidth)*parseFloat(col.width)/100);
-		for (let col of this.#colStructs)
-			if (!col.width)//if undefined width
-				col.pxWidth=(containerWidth-totalFixedAndFlexibleWidth)/numUndefinedWidths;
-		
-		for (let colI=0; colI<this.#colStructs.length; colI++) 
-			this.#cols[colI].style.width=this.#headerTr.children[colI].style.width=this.#colStructs[colI].pxWidth+"px";
+		if (this.#container.offsetHeight!=this.#containerHeight) {
+			this.#scrollBody.style.height=this.#container.offsetHeight-this.#headerTable.offsetHeight+"px";
+			if (this.#container.offsetHeight>this.#containerHeight)
+				this.#maybeAddTrs();
+			else
+				this.#maybeRemoveTrs();
+			this.#containerHeight=this.#container.offsetHeight;
+		}
+		if (this.#container.offsetWidth>this.#containerWidth) {
+			const percentageWidthRegex=/\d+\%/;
+			let containerWidth=this.#container.clientWidth;
+			let totalFixedWidth=0;
+			let numUndefinedWidths=0;
+			for (let col of this.#colStructs)
+				if (!col.width)
+					numUndefinedWidths++;
+				else if (!percentageWidthRegex.test(col))//if fixed width
+					totalFixedWidth+=(col.pxWidth=parseInt(col.width));
+			let sumFixedAndFlexibleWidth=totalFixedWidth;
+			for (let col of this.#colStructs)
+				if (col.width&&percentageWidthRegex.test(col))//if flexible width
+					sumFixedAndFlexibleWidth+=(col.pxWidth=(containerWidth-totalFixedWidth)*parseFloat(col.width)/100);
+			for (let col of this.#colStructs)
+				if (!col.width)//if undefined width
+					col.pxWidth=(containerWidth-sumFixedAndFlexibleWidth)/numUndefinedWidths;
+			for (let colI=0; colI<this.#colStructs.length; colI++) 
+				this.#cols[colI].style.width=this.#headerTr.cells[colI].style.width=this.#colStructs[colI].pxWidth+"px";
+		}	
 	}
 
 	addData(data) {
 		const priorlyEmpty=!data.length;
 		this.#data.push(...data);//much, much faster than concat
-		this.#maybeAddMoreTrs();
+		this.#maybeAddTrs();
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+
 						data.length*this.#rowHeight-(priorlyEmpty?this.#borderSpacingY:0)+"px";
 	}
@@ -110,7 +120,7 @@ class Tablance {
 		if(Math.abs(newScrollRowIndex-this.#scrollRowIndex)>this.#mainTbody.rows.length){//if scrolling by whole page(s)
 			this.#mainTbody.replaceChildren();
 			this.#scrollRowIndex=parseInt(scrY/this.#rowHeight);
-			this.#maybeAddMoreTrs();
+			this.#maybeAddTrs();
 		} else {
 			const scrollSignum=Math.sign(newScrollRowIndex-this.#scrollRowIndex);//1 if moving down, -1 if up
 			for (;this.#scrollRowIndex!=newScrollRowIndex;this.#scrollRowIndex+=scrollSignum) {
@@ -128,13 +138,13 @@ class Tablance {
 	}
 
 	/**Should be called if tr-elements might need to be created which is when data is added or if table grows*/
-	#maybeAddMoreTrs() {
+	#maybeAddTrs() {
 		let lastTr=this.#mainTbody.lastChild;
 		const scrH=this.#scrollBody.offsetHeight;
 		const dataLen=this.#data.length;
 		const trs=this.#mainTable.rows;
 		//if there are fewer trs than datarows, and if there is space left below bottom tr
-		while (this.#scrollRowIndex+trs.length<dataLen&&(!lastTr||lastTr.offsetTop+this.#rowHeight/* -scrY */<scrH)) {
+		while (this.#scrollRowIndex+trs.length<dataLen&&(!lastTr||lastTr.offsetTop+this.#rowHeight/2<=scrH)) {
 			lastTr=this.#mainTable.insertRow();
 			for (let i=0; i<this.#colStructs.length; i++)
 				lastTr.insertCell();
@@ -142,6 +152,14 @@ class Tablance {
 			if (!this.#rowHeight)//if there were no rows prior to this
 				this.#rowHeight=lastTr.offsetHeight+this.#borderSpacingY;
 		}
+	}
+
+	/**Should be called if tr-elements might need to be removed which is when table shrinks*/
+	#maybeRemoveTrs() {
+		const scrH=this.#scrollBody.offsetHeight;
+		const trs=this.#mainTbody.rows;
+		while (trs.length>3&&trs[trs.length-2].offsetTop>scrH)
+			this.#mainTbody.lastChild.remove();
 	}
 
 	/**Update the values of a row in the table. The tr needs to be passed in and the function will figure out the
