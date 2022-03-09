@@ -5,7 +5,7 @@ class Tablance {
 	#colStructs=[];//column-objects. See constructor for structure
 	#cols=[];//array of col-elements for each column
 	#headerTr;//the tr for the top header-row
-	#headerTable;//the tabe for the #headerTr. Tjis table only contains that one row.
+	#headerTable;//the tabe for the #headerTr. This table only contains that one row.
 	#data=[];//all the data that has been added and is viewable. This is different from what has been added to the DOM
 	#scrollRowIndex=0;//the index in the #data of the top row in the view
 	#scrollBody;
@@ -18,6 +18,10 @@ class Tablance {
 	#rowHeight;//the height of (non expanded) rows with #borderSpacingY included
 	#staticRowHeight;//This is set in the constructor. If it is true then all rows should be of same height which
 					 //improves performance.
+	#sortingCols=[{index:0,order:"asc"}];//contains data on how the table currently is sorted. It is an array of 
+										//objects which each contain "index" which is the index of the column and
+										//"order" which value should be either "desc" or "asc". The array may contain
+										//multiple of these objects for having it sorted on multiple ones.
 
 	/**
 	 * 
@@ -54,8 +58,69 @@ class Tablance {
 		this.#headerTable=this.#container.appendChild(document.createElement("table"));
 		const thead=this.#headerTable.appendChild(document.createElement("thead"));
 		this.#headerTr=thead.insertRow();
-		for (let col of this.#colStructs) 
-			this.#headerTr.appendChild(document.createElement("th")).innerText=col.title;
+		for (let col of this.#colStructs) {
+			let th=document.createElement("th");
+			th.addEventListener("mousedown",e=>this.#onThClick(e));
+			this.#headerTr.appendChild(th).innerText=col.title;
+		}
+	}
+
+	#onThClick(e) {
+		const clickedIndex=e.currentTarget.cellIndex;
+		let sortingColIndex=-1,sortingCol;
+		while (sortingCol=this.#sortingCols[++sortingColIndex]) {
+			if (sortingCol.index===clickedIndex) {
+				if (e.shiftKey&&this.#sortingCols.length>1&&sortingCol.order=="desc") {
+					this.#sortingCols.splice(sortingColIndex,1);
+					sortingColIndex=0;//to not make condition below loop fall true
+				} else
+					sortingCol.order=sortingCol.order=="asc"?"desc":"asc";
+				if (!e.shiftKey)
+					this.#sortingCols=[sortingCol];
+				break;
+			}
+		}
+		if (sortingColIndex==this.#sortingCols.length)//if the clicked header wasn't sorted upon at all
+			if (e.shiftKey)
+				this.#sortingCols.push({index:clickedIndex,order:"asc"});
+			else
+				this.#sortingCols=[{index:clickedIndex,order:"asc"}];
+		this.#updateHeaderSortClasses();
+		e.preventDefault();//prevent text-selection when shift-clicking and double-clicking
+		this.#sortData();
+		this.#refreshRows();
+	}
+
+	#updateHeaderSortClasses() {
+		for (let [thIndex,th] of Object.entries(this.#headerTr.cells)) {
+			let order=null;
+			for (let sortingCol of this.#sortingCols) {
+				if (sortingCol.index==thIndex) {
+					order=sortingCol.order;
+					break;
+				}
+			}
+			if (!order||th.classList.contains(order=="asc"?"desc":"asc"))
+				th.classList.remove("asc","desc");
+			if (order)
+				th.classList.add(order);		
+		}
+	}
+
+	#sortData() {
+		const sortCols=this.#sortingCols;
+		for (let sortCol of sortCols)//go through all the columns in the sorting-order and set their id (the 
+			sortCol.id=this.#colStructs[sortCol.index].id;			//key of that  column in the data) for fast access
+		this.#data.sort(compare);
+		
+		function compare(a,b) {
+			for (let sortCol of sortCols) {
+				if (a[sortCol.id]<b[sortCol.id])
+					return sortCol.order=="asc"?-1:1;
+				if (a[sortCol.id]>b[sortCol.id])
+					return sortCol.order=="asc"?1:-1;
+			}
+		}
 	}
 
 	#createTableBody() {
@@ -107,11 +172,17 @@ class Tablance {
 	addData(data) {
 		const priorlyEmpty=!data.length;
 		this.#data=this.#data.concat(data);
+		this.#sortData();
 		//this.#data.push(...data);//much faster than above but causes "Maximum call stack size exceeded" for large data
 
 		this.#maybeAddTrs();
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+
 						data.length*this.#rowHeight-(priorlyEmpty?this.#borderSpacingY:0)+"px";
+	}
+
+	#refreshRows() {
+		this.#mainTbody.replaceChildren();
+		this.#maybeAddTrs();
 	}
 
 	#onScrollStaticRowHeight() {
@@ -121,9 +192,8 @@ class Tablance {
 		if (newScrollRowIndex==this.#scrollRowIndex)
 			return;
 		if(Math.abs(newScrollRowIndex-this.#scrollRowIndex)>this.#mainTbody.rows.length){//if scrolling by whole page(s)
-			this.#mainTbody.replaceChildren();
 			this.#scrollRowIndex=parseInt(scrY/this.#rowHeight);
-			this.#maybeAddTrs();
+			this.#refreshRows();
 		} else {
 			const scrollSignum=Math.sign(newScrollRowIndex-this.#scrollRowIndex);//1 if moving down, -1 if up
 			do {

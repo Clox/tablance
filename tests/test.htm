@@ -15,6 +15,9 @@
 		.tablanceContainer>div>div>table {/* main-table */
 			position: relative;/* need to be able to offset it in order to counter when top row gets added/removed */
 		}
+		.tablanceContainer th {
+			cursor:pointer;
+		}
 	</style>
 </head>
 <script src="../src/tablance.js"></script>
@@ -28,7 +31,8 @@
 		for (let i=0; i<3; i++) {
 			let data=[];
 			for (let ii=0; ii<1000; ii++) {
-				data.push({desc:"foobar "+i+", "+ii,amount:5.69,balance:85.99});
+				data.push({desc:"foobar "+i+", "+ii
+					,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2)});
 			}
 			myTablanceTable.addData(data);
 		}
