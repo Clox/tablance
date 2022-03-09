@@ -162,7 +162,7 @@ class Tablance {
 	#maybeRemoveTrs() {
 		const scrH=this.#scrollBody.offsetHeight;
 		const trs=this.#mainTbody.rows;
-		while (trs.length>3&&trs[trs.length-2].offsetTop)
+		while (trs.length>3&&trs[trs.length-2].offsetTop>scrH)
 			this.#mainTbody.lastChild.remove();
 	}
 
