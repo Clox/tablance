@@ -1,22 +1,26 @@
 <head>
 	<style>
-		.tablanceContainer {
+		.tablance-container {
 			border: 2px solid;
   			height: 400px;
 			width: 600px;
   			
 		}
-		.tablanceContainer>div {
+		.tablance-container>div {
 			overflow: auto;
 		}
-		.tablanceContainer>div>div {
+		.tablance-container>div>div {
 			position: relative;
 		}
-		.tablanceContainer>div>div>table {/* main-table */
+		.tablance-container>div>div>table {/* main-table */
 			position: relative;/* need to be able to offset it in order to counter when top row gets added/removed */
 		}
-		.tablanceContainer th {
+		.tablance-container th {
 			cursor:pointer;
+		}
+		.tablance-container .cell-cursor {
+			position: absolute;
+			border:2px solid blue;
 		}
 	</style>
 </head>
@@ -25,7 +29,7 @@
 	document.addEventListener("DOMContentLoaded", ()=>{
 		const myTablanceCols=[{id:"desc",title:"Description"},{id:"amount",title:"Amount",width:"50px"}
 														,{id:"balance",title:"Balance",width:"50px"}];
-		const myTablanceTable=new Tablance(document.getElementById("tablanceContainer1"),myTablanceCols);
+		const myTablanceTable=new Tablance(document.getElementById("tablanceContainer1"),myTablanceCols,true,true);
 
 		
 		for (let i=0; i<3; i++) {
@@ -40,7 +44,7 @@
 	});
 </script>
 <body>
-	<div class="tablanceContainer" id="tablanceContainer1" style="overflow:hidden;resize: both;"></div>
+	<div id="tablanceContainer1" style="overflow:hidden;resize: both;"></div>
 	<br />
-	<div class="tablanceContainer" id="tablanceContainer2" style="overflow:hidden; resize: both;"></div>
+	<div id="tablanceContainer2" style="overflow:hidden; resize: both;"></div>
 </body>

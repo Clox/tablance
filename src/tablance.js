@@ -8,10 +8,11 @@ class Tablance {
 	#headerTable;//the tabe for the #headerTr. This table only contains that one row.
 	#data=[];//all the data that has been added and is viewable. This is different from what has been added to the DOM
 	#scrollRowIndex=0;//the index in the #data of the top row in the view
-	#scrollBody;
+	#scrollBody;//resides directly inside the #container and is the element with the scrollbar
+	#tableSizer;//a div inside #scrollBody which wraps #mainTable. The purpose of it is to set its height to the 
+				//"true" height of the table so that the scrollbar reflects all the data that can be scrolled through
 	#mainTable;
-	#tableSizer;//reference to a div wrapping #mainTable. The purpose of it is to set its height to the "true" height
-				//of the table so that the scrollbar reflects all the data that can be scrolled through
+	
 	#mainTbody;
 	#borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
@@ -22,9 +23,10 @@ class Tablance {
 										//objects which each contain "index" which is the index of the column and
 										//"order" which value should be either "desc" or "asc". The array may contain
 										//multiple of these objects for having it sorted on multiple ones.
+	
+	#cellCursor;//The element that for spreadsheets shows which cell is selected
 
 	/**
-	 * 
 	 * @param {HTMLElement} container An element which the table is going to be added to
 	 * @param {{}[]} columns An array of objects where each object has the following structure: {
 	 * 			id String A unique identifier for the column
@@ -32,12 +34,14 @@ class Tablance {
 	 * 			width String The width of the column. This can be in either px or % units.
 	 * 				In case of % it will be calculated on the remaining space after all the fixed widths
 	 * 				have been accounted for.
-	 * 			staticRowHeight Boolean Set to true if all rows are of same height. With this option on, scrolling
+	 * 			}
+	 * 	@param	{Boolean} staticRowHeight Set to true if all rows are of same height. With this option on, scrolling
 	 * 				quickly through large tables will be more performant.
-	 * 		}
-	 */
-	constructor(container,columns,staticRowHeight=false) {
+	 * 	@param	{Boolean} spreadsheet If true then the table will work like a spreadsheet. Cells can be selected and the
+	 * 				keyboard can be used for navigating the cell-selection.*/
+	constructor(container,columns,staticRowHeight=false,spreadsheet=false) {
 		this.#container=container;
+		container.classList.add("tablance-container");
 		this.#staticRowHeight=staticRowHeight;
 		const allowedColProps=["id","title","width"];
 		for (let col of columns) {
@@ -52,6 +56,27 @@ class Tablance {
 		this.#createTableBody();
 		(new ResizeObserver(e=>this.#updateSizesOfViewportAndCols())).observe(container);
 		this.#updateSizesOfViewportAndCols();
+		if (spreadsheet)
+			this.#setupSpreadsheet();
+	}
+
+	#setupSpreadsheet() {
+		this.#cellCursor=document.createElement("div");
+		this.#cellCursor.className="cell-cursor";
+		this.#scrollBody.addEventListener("click",e=>this.#spreadsheetClick(e));
+	}
+
+	#spreadsheetClick(e) {
+		const td=e.target;
+		this.#selectTd(td);
+	}
+
+	#selectTd(td) {
+		this.#tableSizer.appendChild(this.#cellCursor);
+		this.#cellCursor.style.top=td.offsetTop+"px";
+		this.#cellCursor.style.left=td.offsetLeft+"px";
+		this.#cellCursor.style.height=td.offsetHeight+"px";
+		this.#cellCursor.style.width=td.offsetWidth+"px";
 	}
 
 	#createTableHeader() {
