@@ -9,7 +9,8 @@ class Tablance {
 	#data=[];//all the data that has been added and is viewable. This is different from what has been added to the DOM
 	#scrollRowIndex=0;//the index in the #data of the top row in the view
 	#scrollBody;//resides directly inside the #container and is the element with the scrollbar
-	#tableSizer;//a div inside #scrollBody which wraps #mainTable. The purpose of it is to set its height to the 
+	#scrollingDiv;//a div that is inside #scrollbody and holds #tablesizer and #cellCursor if spreadsheet
+	#tableSizer;//a div inside #scrollingDiv which wraps #mainTable. The purpose of it is to set its height to the 
 				//"true" height of the table so that the scrollbar reflects all the data that can be scrolled through
 	#mainTable;
 	
@@ -72,8 +73,8 @@ class Tablance {
 	}
 
 	#selectTd(td) {
-		this.#tableSizer.appendChild(this.#cellCursor);
-		this.#cellCursor.style.top=td.offsetTop+"px";
+		this.#scrollingDiv.appendChild(this.#cellCursor);
+		this.#cellCursor.style.top=td.offsetTop+this.#tableSizer.offsetTop+"px";
 		this.#cellCursor.style.left=td.offsetLeft+"px";
 		this.#cellCursor.style.height=td.offsetHeight+"px";
 		this.#cellCursor.style.width=td.offsetWidth+"px";
@@ -151,7 +152,12 @@ class Tablance {
 	#createTableBody() {
 		this.#scrollBody=this.#container.appendChild(document.createElement("div"));
 		this.#scrollBody.addEventListener("scroll",e=>this.#onScrollStaticRowHeight());
-		this.#tableSizer=this.#scrollBody.appendChild(document.createElement("div"));
+		
+		this.#scrollingDiv=this.#scrollBody.appendChild(document.createElement("div"));
+
+		this.#tableSizer=this.#scrollingDiv.appendChild(document.createElement("div"));
+		this.#tableSizer.style.position="relative";
+
 		this.#mainTable=this.#tableSizer.appendChild(document.createElement("table"));
 		this.#borderSpacingY=parseInt(window.getComputedStyle(this.#mainTable)['border-spacing'].split(" ")[1]);
 		this.#mainTbody=this.#mainTable.appendChild(document.createElement("tbody"));
