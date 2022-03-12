@@ -15,9 +15,8 @@ class Tablance {
 					//to jump up and down when pos and height of #tableSizer is adjusted to keep correct scroll-height
 	#tableSizer;//a div inside #scrollingDiv which wraps #mainTable. The purpose of it is to set its height to the 
 				//"true" height of the table so that the scrollbar reflects all the data that can be scrolled through
-	#mainTable;
-	
-	#mainTbody;
+	#mainTable;//the actual main-table that contains the actual data. Resides inside #tableSizer
+	#mainTbody;//tbody of #mainTable
 	#borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
 	#rowHeight;//the height of (non expanded) rows with #borderSpacingY included
@@ -29,6 +28,9 @@ class Tablance {
 										//multiple of these objects for having it sorted on multiple ones.
 	
 	#cellCursor;//The element that for spreadsheets shows which cell is selected
+	#cellCursorCell;//the selected element. This can easily become a stale refernce if scrolled out of view
+	#cellCursorRowIndex;//the index of the row that the cellcursor is at
+	#cellCursorColIndex;//the index of the column that the cellcursor is at
 	#cellCursorBorderWidths={};//This object holds the border-widths of the cell-cursor. keys are left,right,top,bottom
 	//and values are px as ints. This is used to offset the position and adjust position of #cellCursor in order to
 	//center it around the cell. It is also used in conjunction with cellCursorOutlineWidth to adjust margins of the
@@ -38,8 +40,6 @@ class Tablance {
 	#focusByMouse;//when the spreadsheet is focused we want to know if it was by keyboard or mouse because we want
 				//focus-outline to appear only if it was by keyboard. By setting this to true in mouseDownEvent we can 
 				//check which input was used last when the focus-method is triggerd
-
-	
 
 	/**
 	 * @param {HTMLElement} container An element which the table is going to be added to
@@ -78,7 +78,6 @@ class Tablance {
 	#setupSpreadsheet() {
 		this.#cellCursor=this.#scrollingContent.appendChild(document.createElement("div"));
 		this.#cellCursor.className="cell-cursor";
-		this.#scrollBody.addEventListener("click",e=>this.#spreadsheetClick(e));
 		
 		//remove any bord-spacing beause if the spacing is clicked the target-element will be the table itself and
 		//no cell will be selected which is bad user experience
@@ -98,7 +97,7 @@ class Tablance {
 		this.#container.addEventListener("keydown",e=>this.#spreadsheetKeyDown(e));
 		this.#container.addEventListener("mousedown",e=>this.#spreadsheetMouseDown(e));
 		this.#container.addEventListener("focus",e=>this.#spreadsheetOnFocus(e));
-		
+		this.#mainTable.addEventListener("mousedown",e=>this.#mainTableMouseDown(e));
 	}
 
 	#spreadsheetOnFocus(e) {
@@ -112,12 +111,26 @@ class Tablance {
 
 	#spreadsheetKeyDown(e) {
 		this.#container.style.outline="none";//see #spreadsheetOnFocus
+		switch (e.key) {
+			case "ArrowUp":
+				if (this.#cellCursorRowIndex)
+					this.#selectTd(this.#cellCursorCell.parentNode.previousSibling.cells[this.#cellCursorColIndex]);
+			break; case "ArrowDown":
+				if (this.#cellCursorRowIndex<this.#data.length-1)
+					this.#selectTd(this.#cellCursorCell.parentNode.nextSibling.cells[this.#cellCursorColIndex]);
+			break;case "ArrowLeft":
+				if (this.#cellCursorColIndex)
+					this.#selectTd(this.#cellCursorCell.previousSibling);
+			break; case "ArrowRight":
+				if (this.#cellCursorColIndex<this.#cols.length-1)
+					this.#selectTd(this.#cellCursorCell.nextSibling);
+		}
 	}
 
 	#spreadsheetMouseDown(e) {
 		this.#focusByMouse=true;//see decleration
 	}
-	#spreadsheetClick(e) {
+	#mainTableMouseDown(e) {
 		const td=e.target;
 		this.#selectTd(td);
 	}
@@ -128,6 +141,10 @@ class Tablance {
 		this.#cellCursor.style.height
 							=td.offsetHeight-this.#cellCursorBorderWidths.top+this.#cellCursorBorderWidths.bottom+"px";
 		this.#cellCursor.style.width=td.offsetWidth-this.#cellCursorBorderWidths.left+"px";
+
+		this.#cellCursorRowIndex=this.#scrollRowIndex+td.parentElement.rowIndex;
+		this.#cellCursorColIndex=td.cellIndex;
+		this.#cellCursorCell=td;
 	}
 
 	#createTableHeader() {
