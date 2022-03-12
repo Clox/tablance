@@ -35,6 +35,9 @@ class Tablance {
 	//main-table in order to reveal the outermost line when an outermost cell is selected
 	#cellCursorOutlineWidth;//px-width as int, used in conjunction with #cellCursorBorderWidths to adjust margins of the
 	//main-table in order to reveal the outermost line when an outermost cell is selected
+	#focusByMouse;//when the spreadsheet is focused we want to know if it was by keyboard or mouse because we want
+				//focus-outline to appear only if it was by keyboard. By setting this to true in mouseDownEvent we can 
+				//check which input was used last when the focus-method is triggerd
 
 	
 
@@ -81,7 +84,6 @@ class Tablance {
 		//no cell will be selected which is bad user experience
 		this.#mainTable.style.borderSpacing=this.#borderSpacingY=0;
 		
-
 		const cellCursorComputedStyle=window.getComputedStyle(this.#cellCursor);
 		for (let dir of ['top','right','bottom','left'])
 			this.#cellCursorBorderWidths[dir]=parseInt(cellCursorComputedStyle[`border-${dir}-width`]);
@@ -91,8 +93,30 @@ class Tablance {
 		this.#tableSizer.style.paddingBottom
 				=this.#cellCursorBorderWidths.bottom+this.#cellCursorBorderWidths.top+this.#cellCursorOutlineWidth+"px";
 		this.#tableSizer.style.paddingRight=this.#cellCursorOutlineWidth+"px";
+
+		this.#container.tabIndex=0;//so the table can be tabbed to
+		this.#container.addEventListener("keydown",e=>this.#spreadsheetKeyDown(e));
+		this.#container.addEventListener("mousedown",e=>this.#spreadsheetMouseDown(e));
+		this.#container.addEventListener("focus",e=>this.#spreadsheetOnFocus(e));
+		
 	}
 
+	#spreadsheetOnFocus(e) {
+		//when the table is tabbed to, whatever focus-outline that the css has set for it should show, but then when the
+		//user starts to navigate using the keyboard we want to hide it because it is a bit distracting when both it and
+		//a cell is highlighted. Thats why #spreadsheetKeyDown sets outline to none, and this line undos that
+		//also, we dont want it to show when focusing by mouse so we use #focusMethod (see its declaration)
+		this.#focusByMouse?this.#container.style.outline="none":this.#container.style.removeProperty("outline");
+		this.#focusByMouse=null;
+	}
+
+	#spreadsheetKeyDown(e) {
+		this.#container.style.outline="none";//see #spreadsheetOnFocus
+	}
+
+	#spreadsheetMouseDown(e) {
+		this.#focusByMouse=true;//see decleration
+	}
 	#spreadsheetClick(e) {
 		const td=e.target;
 		this.#selectTd(td);
@@ -177,7 +201,7 @@ class Tablance {
 
 	#createTableBody() {
 		this.#scrollBody=this.#container.appendChild(document.createElement("div"));
-		this.#scrollBody.addEventListener("scroll",e=>this.#onScrollStaticRowHeight());
+		this.#scrollBody.addEventListener("scroll",e=>this.#onScrollStaticRowHeight(),{passive:true});
 		this.#scrollBody.className="scroll-body";
 		
 		this.#scrollingContent=this.#scrollBody.appendChild(document.createElement("div"));
