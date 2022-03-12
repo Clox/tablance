@@ -28,7 +28,6 @@ class Tablance {
 										//multiple of these objects for having it sorted on multiple ones.
 	
 	#cellCursor;//The element that for spreadsheets shows which cell is selected
-	#cellCursorCell;//the selected element. This can easily become a stale refernce if scrolled out of view
 	#cellCursorRowIndex;//the index of the row that the cellcursor is at
 	#cellCursorColIndex;//the index of the column that the cellcursor is at
 	#cellCursorBorderWidths={};//This object holds the border-widths of the cell-cursor. keys are left,right,top,bottom
@@ -111,25 +110,53 @@ class Tablance {
 
 	#spreadsheetKeyDown(e) {
 		this.#container.style.outline="none";//see #spreadsheetOnFocus
-		switch (e.key) {
-			case "ArrowUp":
-				if (this.#cellCursorRowIndex)
-					this.#selectTd(this.#cellCursorCell.parentNode.previousSibling.cells[this.#cellCursorColIndex]);
-			break; case "ArrowDown":
-				if (this.#cellCursorRowIndex<this.#data.length-1)
-					this.#selectTd(this.#cellCursorCell.parentNode.nextSibling.cells[this.#cellCursorColIndex]);
-			break;case "ArrowLeft":
-				if (this.#cellCursorColIndex)
-					this.#selectTd(this.#cellCursorCell.previousSibling);
-			break; case "ArrowRight":
-				if (this.#cellCursorColIndex<this.#cols.length-1)
-					this.#selectTd(this.#cellCursorCell.nextSibling);
+		if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)) {
+			switch (e.key) {
+				case "ArrowUp":
+					this.#cellCursorRowIndex=Math.max(0,this.#cellCursorRowIndex-1);
+				break; case "ArrowDown":
+					this.#cellCursorRowIndex=Math.min(this.#data.length-1,this.#cellCursorRowIndex+1);
+				break; case "ArrowLeft":
+					this.#cellCursorColIndex=Math.max(0,this.#cellCursorColIndex-1);
+				break; case "ArrowRight":
+					this.#cellCursorColIndex=Math.min(this.#cols.length-1,this.#cellCursorColIndex+1);
+			}
+			this.#scrollToRow(this.#cellCursorRowIndex);
+			
+			//need to call this manually before #selectTd() or else the td might not even exist yet. 
+			//#onScrollStaticRowHeight() will actually get called once more through the scroll-event since we called
+			//#scrollToRow() above, but it doesn't get fired immediately. Running it twice is not a big deal.
+			this.#onScrollStaticRowHeight();
+
+			this.#selectTd(this.#mainTbody.rows[this.#cellCursorRowIndex-this.#scrollRowIndex]
+																		.cells[this.#cellCursorColIndex]);
+		}
+	}
+
+	#scrollToRow(rowIndex) {
+		const distanceRatioDeadzone=.5;//when moving the cellcursor within this distance from center of view no 
+										//scrolling will be done. 0.5 is half of view, 1 is entire height of view
+		const distanceRatioCenteringTollerance=1;//if moving the cellcursor within this ratio, but outside of 
+					//distanceRatioDeadzone then minimum scrolling will occur only to get within distanceRatioDeadzone
+		const scrollPos=this.#scrollBody.scrollTop;
+		const scrollHeight=this.#scrollBody.offsetHeight;
+		const cellPos=rowIndex*this.#rowHeight;
+		const cursorHeight=this.#cellCursor.offsetHeight;
+		const distanceFromCenter=cellPos+cursorHeight/2-scrollPos-scrollHeight/2;
+		const distanceFromCenterRatio=Math.abs(distanceFromCenter/scrollHeight);
+		if (distanceFromCenterRatio>distanceRatioDeadzone/2) {
+			if (distanceFromCenterRatio>distanceRatioCenteringTollerance/2)
+				this.#scrollBody.scrollTop=cellPos-scrollHeight/2+this.#rowHeight/2;
+			else
+				this.#scrollBody.scrollTop=cellPos-scrollHeight/2+cursorHeight/2
+								+(distanceFromCenter<0?1:-1)*scrollHeight*distanceRatioDeadzone/2;
 		}
 	}
 
 	#spreadsheetMouseDown(e) {
 		this.#focusByMouse=true;//see decleration
 	}
+	
 	#mainTableMouseDown(e) {
 		const td=e.target;
 		this.#selectTd(td);
@@ -144,7 +171,6 @@ class Tablance {
 
 		this.#cellCursorRowIndex=this.#scrollRowIndex+td.parentElement.rowIndex;
 		this.#cellCursorColIndex=td.cellIndex;
-		this.#cellCursorCell=td;
 	}
 
 	#createTableHeader() {
