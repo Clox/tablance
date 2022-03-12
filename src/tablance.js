@@ -8,8 +8,11 @@ class Tablance {
 	#headerTable;//the tabe for the #headerTr. This table only contains that one row.
 	#data=[];//all the data that has been added and is viewable. This is different from what has been added to the DOM
 	#scrollRowIndex=0;//the index in the #data of the top row in the view
-	#scrollBody;//resides directly inside the #container and is the element with the scrollbar
-	#scrollingDiv;//a div that is inside #scrollbody and holds #tablesizer and #cellCursor if spreadsheet
+	#scrollBody;//resides directly inside #container and is the element with the scrollbar. It contains #scrollingDiv
+	#scrollingContent;//a div that is inside #scrollbody and holds #tablesizer and #cellCursor if spreadsheet
+					//this is needed because putting #cellCursor directly inside #scrollBody will not make it scroll
+					//because it has position absolute and needs that. And putting it inside #tableSizer will cause it
+					//to jump up and down when pos and height of #tableSizer is adjusted to keep correct scroll-height
 	#tableSizer;//a div inside #scrollingDiv which wraps #mainTable. The purpose of it is to set its height to the 
 				//"true" height of the table so that the scrollbar reflects all the data that can be scrolled through
 	#mainTable;
@@ -26,6 +29,14 @@ class Tablance {
 										//multiple of these objects for having it sorted on multiple ones.
 	
 	#cellCursor;//The element that for spreadsheets shows which cell is selected
+	#cellCursorBorderWidths={};//This object holds the border-widths of the cell-cursor. keys are left,right,top,bottom
+	//and values are px as ints. This is used to offset the position and adjust position of #cellCursor in order to
+	//center it around the cell. It is also used in conjunction with cellCursorOutlineWidth to adjust margins of the
+	//main-table in order to reveal the outermost line when an outermost cell is selected
+	#cellCursorOutlineWidth;//px-width as int, used in conjunction with #cellCursorBorderWidths to adjust margins of the
+	//main-table in order to reveal the outermost line when an outermost cell is selected
+
+	
 
 	/**
 	 * @param {HTMLElement} container An element which the table is going to be added to
@@ -42,7 +53,7 @@ class Tablance {
 	 * 				keyboard can be used for navigating the cell-selection.*/
 	constructor(container,columns,staticRowHeight=false,spreadsheet=false) {
 		this.#container=container;
-		container.classList.add("tablance-container");
+		container.classList.add("tablance");
 		this.#staticRowHeight=staticRowHeight;
 		const allowedColProps=["id","title","width"];
 		for (let col of columns) {
@@ -62,9 +73,24 @@ class Tablance {
 	}
 
 	#setupSpreadsheet() {
-		this.#cellCursor=document.createElement("div");
+		this.#cellCursor=this.#scrollingContent.appendChild(document.createElement("div"));
 		this.#cellCursor.className="cell-cursor";
 		this.#scrollBody.addEventListener("click",e=>this.#spreadsheetClick(e));
+		
+		//remove any bord-spacing beause if the spacing is clicked the target-element will be the table itself and
+		//no cell will be selected which is bad user experience
+		this.#mainTable.style.borderSpacing=this.#borderSpacingY=0;
+		
+
+		const cellCursorComputedStyle=window.getComputedStyle(this.#cellCursor);
+		for (let dir of ['top','right','bottom','left'])
+			this.#cellCursorBorderWidths[dir]=parseInt(cellCursorComputedStyle[`border-${dir}-width`]);
+		this.#cellCursorOutlineWidth=parseInt(cellCursorComputedStyle.outlineWidth);
+		this.#scrollingContent.style.marginTop=this.#cellCursorBorderWidths.top+this.#cellCursorOutlineWidth+"px";
+		this.#scrollingContent.style.marginLeft=this.#cellCursorBorderWidths.left+this.#cellCursorOutlineWidth+"px";
+		this.#tableSizer.style.paddingBottom
+				=this.#cellCursorBorderWidths.bottom+this.#cellCursorBorderWidths.top+this.#cellCursorOutlineWidth+"px";
+		this.#tableSizer.style.paddingRight=this.#cellCursorOutlineWidth+"px";
 	}
 
 	#spreadsheetClick(e) {
@@ -73,11 +99,11 @@ class Tablance {
 	}
 
 	#selectTd(td) {
-		this.#scrollingDiv.appendChild(this.#cellCursor);
-		this.#cellCursor.style.top=td.offsetTop+this.#tableSizer.offsetTop+"px";
-		this.#cellCursor.style.left=td.offsetLeft+"px";
-		this.#cellCursor.style.height=td.offsetHeight+"px";
-		this.#cellCursor.style.width=td.offsetWidth+"px";
+		this.#cellCursor.style.top=td.offsetTop+this.#tableSizer.offsetTop-this.#cellCursorBorderWidths.top+"px";
+		this.#cellCursor.style.left=td.offsetLeft-this.#cellCursorBorderWidths.left+"px";
+		this.#cellCursor.style.height
+							=td.offsetHeight-this.#cellCursorBorderWidths.top+this.#cellCursorBorderWidths.bottom+"px";
+		this.#cellCursor.style.width=td.offsetWidth-this.#cellCursorBorderWidths.left+"px";
 	}
 
 	#createTableHeader() {
@@ -152,20 +178,24 @@ class Tablance {
 	#createTableBody() {
 		this.#scrollBody=this.#container.appendChild(document.createElement("div"));
 		this.#scrollBody.addEventListener("scroll",e=>this.#onScrollStaticRowHeight());
+		this.#scrollBody.className="scroll-body";
 		
-		this.#scrollingDiv=this.#scrollBody.appendChild(document.createElement("div"));
+		this.#scrollingContent=this.#scrollBody.appendChild(document.createElement("div"));
+		this.#scrollingContent.className="scrolling-content";
 
-		this.#tableSizer=this.#scrollingDiv.appendChild(document.createElement("div"));
+		this.#tableSizer=this.#scrollingContent.appendChild(document.createElement("div"));
 		this.#tableSizer.style.position="relative";
+		this.#tableSizer.className="table-sizer";
 
 		this.#mainTable=this.#tableSizer.appendChild(document.createElement("table"));
-		this.#borderSpacingY=parseInt(window.getComputedStyle(this.#mainTable)['border-spacing'].split(" ")[1]);
+		this.#mainTable.className="main-table";
 		this.#mainTbody=this.#mainTable.appendChild(document.createElement("tbody"));
 		for (let colStruct of this.#colStructs) {
 			let col=document.createElement("col");
 			this.#cols.push(col);
 			this.#mainTable.appendChild(document.createElement("colgroup")).appendChild(col);
 		}
+		this.#borderSpacingY=parseInt(window.getComputedStyle(this.#mainTable)['border-spacing'].split(" ")[1]);
 	}
 
 	#updateSizesOfViewportAndCols() {
@@ -207,8 +237,9 @@ class Tablance {
 		//this.#data.push(...data);//much faster than above but causes "Maximum call stack size exceeded" for large data
 
 		this.#maybeAddTrs();
-		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+
-						data.length*this.#rowHeight-(priorlyEmpty?this.#borderSpacingY:0)+"px";
+		// this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+
+		// 				data.length*this.#rowHeight-(priorlyEmpty?this.#borderSpacingY:0)+"px";
+		this.#refreshTableSizer();
 	}
 
 	#refreshRows() {
@@ -219,7 +250,8 @@ class Tablance {
 	#onScrollStaticRowHeight() {
 		const scrY=this.#scrollBody.scrollTop;
 		//let rowScrollingDone=false;//whether the user has scrolled enough for rows to move and table to adjust
-		const newScrollRowIndex=parseInt(scrY/this.#rowHeight);
+		const newScrollRowIndex=Math.min(parseInt(scrY/this.#rowHeight),this.#data.length-this.#mainTbody.rows.length);
+		
 		if (newScrollRowIndex==this.#scrollRowIndex)
 			return;
 		if(Math.abs(newScrollRowIndex-this.#scrollRowIndex)>this.#mainTbody.rows.length){//if scrolling by whole page(s)
@@ -238,6 +270,10 @@ class Tablance {
 				}
 			} while (this.#scrollRowIndex!=newScrollRowIndex);
 		}
+		this.#refreshTableSizer();
+	}
+
+	#refreshTableSizer() {
 		this.#tableSizer.style.top=this.#scrollRowIndex*this.#rowHeight+"px";
 		this.#tableSizer.style.height=(this.#data.length-this.#scrollRowIndex)*this.#rowHeight+"px";
 	}
