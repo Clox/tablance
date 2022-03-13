@@ -2,11 +2,12 @@ class Tablance {
 	#container;//container-element for table
 	#containerHeight=0;//height of #container. Used to keep track of if height shrinks or grows
 	#containerWidth=0;//height of #container. Used to keep track of if width shrinks or grows
-	#colStructs=[];//column-objects. See constructor for structure
+	#colStructs=[];//column-objects. See columns-param in constructor for structure
 	#cols=[];//array of col-elements for each column
 	#headerTr;//the tr for the top header-row
 	#headerTable;//the tabe for the #headerTr. This table only contains that one row.
-	#data=[];//all the data that has been added and is viewable. This is different from what has been added to the DOM
+	#allData=[];//contains all, unfiltered data that has been added via addData()
+	#data=[];//with no filter applied(empty seachbar) then this is reference to #allData, otherwise is a subset of it
 	#scrollRowIndex=0;//the index in the #data of the top row in the view
 	#scrollBody;//resides directly inside #container and is the element with the scrollbar. It contains #scrollingDiv
 	#scrollingContent;//a div that is inside #scrollbody and holds #tablesizer and #cellCursor if spreadsheet
@@ -26,6 +27,9 @@ class Tablance {
 										//objects which each contain "index" which is the index of the column and
 										//"order" which value should be either "desc" or "asc". The array may contain
 										//multiple of these objects for having it sorted on multiple ones.
+
+	#searchInput;//the input-element used for filtering data
+	#filter;//the currently applied filter. Same as #searchInput.value but also used for comparing old & new values
 	
 	#cellCursor;//The element that for spreadsheets shows which cell is selected
 	#cellCursorRowIndex;//the index of the row that the cellcursor is at
@@ -52,8 +56,9 @@ class Tablance {
 	 * 	@param	{Boolean} staticRowHeight Set to true if all rows are of same height. With this option on, scrolling
 	 * 				quickly through large tables will be more performant.
 	 * 	@param	{Boolean} spreadsheet If true then the table will work like a spreadsheet. Cells can be selected and the
-	 * 				keyboard can be used for navigating the cell-selection.*/
-	constructor(container,columns,staticRowHeight=false,spreadsheet=false) {
+	 * 				keyboard can be used for navigating the cell-selection.
+	 * 	@param	{Boolean} searchbar Whether the table should include a searchbar for filtering data with.*/
+	constructor(container,columns,staticRowHeight=false,spreadsheet=false,searchbar=false) {
 		this.#container=container;
 		container.classList.add("tablance");
 		this.#staticRowHeight=staticRowHeight;
@@ -66,12 +71,28 @@ class Tablance {
 			}
 			this.#colStructs.push(processedCol);
 		}
+		if (searchbar)
+			this.#setupSearchbar();
 		this.#createTableHeader();
 		this.#createTableBody();
 		(new ResizeObserver(e=>this.#updateSizesOfViewportAndCols())).observe(container);
 		this.#updateSizesOfViewportAndCols();
 		if (spreadsheet)
 			this.#setupSpreadsheet();
+		
+	}
+
+	#setupSearchbar() {
+		this.#searchInput=this.#container.appendChild(document.createElement("input"));
+		this.#searchInput.type=this.#searchInput.className="search";
+		this.#searchInput.placeholder="Search";
+		const clearSearchCross=document.createElement("button");
+		this.#searchInput.addEventListener("input",e=>this.#onSearchInput(e));
+	}
+
+	#onSearchInput(e) {
+		this.#filterData(this.#searchInput.value);
+
 	}
 
 	#setupSpreadsheet() {
@@ -268,7 +289,8 @@ class Tablance {
 	#updateSizesOfViewportAndCols() {
 		let areaWidth=this.#tableSizer.offsetWidth;
 		if (this.#container.offsetHeight!=this.#containerHeight) {
-			this.#scrollBody.style.height=this.#container.offsetHeight-this.#headerTable.offsetHeight+"px";
+			this.#scrollBody.style.height=this.#container.offsetHeight-this.#headerTable.offsetHeight
+				-(this.#searchInput?.offsetHeight??0)+"px";
 			if (this.#container.offsetHeight>this.#containerHeight)
 				this.#maybeAddTrs();
 			else
@@ -297,16 +319,38 @@ class Tablance {
 		this.#headerTable.style.width=areaWidth+"px";
 	}
 
+	#filterData(filterString) {
+		this.#filter=filterString;
+		if (!filterString||filterString=="")
+			this.#data=this.#allData;
+		else {
+			this.#data=[];
+			for (let dataRow of this.#allData) {
+				for (let col of this.#colStructs) {
+					if (dataRow[col.id].includes(filterString)) {
+						this.#data.push(dataRow);
+						break;
+					}
+				}
+			}
+		}
+		this.#scrollRowIndex=0;
+		this.#refreshRows();
+		this.#refreshTableSizer();
+	}
+
 	addData(data) {
 		const priorlyEmpty=!data.length;
-		this.#data=this.#data.concat(data);
-		this.#sortData();
+		this.#allData=this.#allData.concat(data);
 		//this.#data.push(...data);//much faster than above but causes "Maximum call stack size exceeded" for large data
-
-		this.#maybeAddTrs();
-		// this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+
-		// 				data.length*this.#rowHeight-(priorlyEmpty?this.#borderSpacingY:0)+"px";
-		this.#refreshTableSizer();
+		this.#sortData();
+		if (this.#filter)
+			this.#filterData(this.#filter);
+		else {
+			this.#data=this.#allData;
+			this.#maybeAddTrs();
+			this.#refreshTableSizer();
+		}		
 	}
 
 	#refreshRows() {

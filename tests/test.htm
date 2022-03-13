@@ -24,6 +24,9 @@
 			position: absolute;
 			outline:2px solid blue;
 		}
+		.tablance .search {
+			float: right;
+		}
 	</style>
 </head>
 <script src="../src/tablance.js"></script>
@@ -31,7 +34,7 @@
 	document.addEventListener("DOMContentLoaded", ()=>{
 		const myTablanceCols=[{id:"desc",title:"Description"},{id:"amount",title:"Amount",width:"50px"}
 														,{id:"balance",title:"Balance",width:"50px"}];
-		const myTablanceTable=new Tablance(document.getElementById("tablanceContainer1"),myTablanceCols,true,true);
+		const myTablanceTable=new Tablance(document.getElementById("tablanceContainer1"),myTablanceCols,true,true,true);
 
 		
 		for (let i=0; i<3; i++) {
