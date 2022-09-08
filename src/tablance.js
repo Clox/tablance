@@ -57,8 +57,10 @@ class Tablance {
 	 * 				quickly through large tables will be more performant.
 	 * 	@param	{Boolean} spreadsheet If true then the table will work like a spreadsheet. Cells can be selected and the
 	 * 				keyboard can be used for navigating the cell-selection.
-	 * 	@param	{Boolean} searchbar Whether the table should include a searchbar for filtering data with.*/
-	constructor(container,columns,staticRowHeight=false,spreadsheet=false,searchbar=false) {
+	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
+	 * 							"searchbar" Bool that defaults to true. If true then there will be a searchbar that
+	 * 								can be used to filter the data.*/
+	constructor(container,columns,staticRowHeight=false,spreadsheet=false,opts=null) {
 		this.#container=container;
 		container.classList.add("tablance");
 		this.#staticRowHeight=staticRowHeight;
@@ -71,7 +73,7 @@ class Tablance {
 			}
 			this.#colStructs.push(processedCol);
 		}
-		if (searchbar)
+		if (opts?.searchbar!=false)
 			this.#setupSearchbar();
 		this.#createTableHeader();
 		this.#createTableBody();
