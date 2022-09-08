@@ -27,13 +27,17 @@
 		.tablance .search {
 			float: right;
 		}
+		.tablance th>.sortSymbol {
+			display: inline-block;
+			width: 10px;
+		}
 	</style>
 </head>
 <script src="../src/tablance.js"></script>
 <script>
 	document.addEventListener("DOMContentLoaded", ()=>{
-		const myTablanceCols=[{id:"desc",title:"Description"},{id:"amount",title:"Amount",width:"50px"}
-														,{id:"balance",title:"Balance",width:"50px"}];
+		const myTablanceCols=[{id:"desc",title:"Description"},{id:"amount",title:"Amount",width:"70px"}
+														,{id:"balance",title:"Balance",width:"70px"}];
 		const myTablanceTable=new Tablance(document.getElementById("tablanceContainer1"),myTablanceCols,true,true,{});
 
 		

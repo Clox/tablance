@@ -2,7 +2,9 @@ class Tablance {
 	#container;//container-element for table
 	#containerHeight=0;//height of #container. Used to keep track of if height shrinks or grows
 	#containerWidth=0;//height of #container. Used to keep track of if width shrinks or grows
-	#colStructs=[];//column-objects. See columns-param in constructor for structure
+	#colStructs=[];//column-objects. See columns-param in constructor for structure.
+		//In addition to that structure these may also contain "sortDiv" reffering to the div with the sorting-html
+																				//(see for example opts->sortAscHtml)
 	#cols=[];//array of col-elements for each column
 	#headerTr;//the tr for the top header-row
 	#headerTable;//the tabe for the #headerTr. This table only contains that one row.
@@ -23,6 +25,7 @@ class Tablance {
 	#rowHeight;//the height of (non expanded) rows with #borderSpacingY included
 	#staticRowHeight;//This is set in the constructor. If it is true then all rows should be of same height which
 					 //improves performance.
+	#opts; //reference to the object passed as opts in the constructor
 	#sortingCols=[{index:0,order:"asc"}];//contains data on how the table currently is sorted. It is an array of 
 										//objects which each contain "index" which is the index of the column and
 										//"order" which value should be either "desc" or "asc". The array may contain
@@ -43,6 +46,7 @@ class Tablance {
 	#focusByMouse;//when the spreadsheet is focused we want to know if it was by keyboard or mouse because we want
 				//focus-outline to appear only if it was by keyboard. By setting this to true in mouseDownEvent we can 
 				//check which input was used last when the focus-method is triggerd
+	#sortHtmlDivs;//reference to a div used for the sortAscHtml/sortDescHtml options in the opts-param of the constructor
 
 	/**
 	 * @param {HTMLElement} container An element which the table is going to be added to
@@ -59,11 +63,19 @@ class Tablance {
 	 * 				keyboard can be used for navigating the cell-selection.
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							"searchbar" Bool that defaults to true. If true then there will be a searchbar that
-	 * 								can be used to filter the data.*/
+	 * 								can be used to filter the data.
+	 * 							"sortAscHtml" String - html to be added to the end of the th-element when the column
+	 * 													is sorted in ascending order
+	 * 							"sortDescHtml" String - html to be added to the end of the th-element when the column
+	 * 													is sorted in descending order
+	 * 							"sortNoneHtml" String - html to be added to the end of the th-element when the column
+	 * 													is not sorted
+	 * */
 	constructor(container,columns,staticRowHeight=false,spreadsheet=false,opts=null) {
 		this.#container=container;
 		container.classList.add("tablance");
 		this.#staticRowHeight=staticRowHeight;
+		this.#opts=opts;
 		const allowedColProps=["id","title","width"];
 		for (let col of columns) {
 			let processedCol={};
@@ -81,7 +93,13 @@ class Tablance {
 		this.#updateSizesOfViewportAndCols();
 		if (spreadsheet)
 			this.#setupSpreadsheet();
-		
+		if (opts.sortAscHtml==null)
+			opts.sortAscHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#000" points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
+		if (opts.sortDescHtml==null)
+			opts.sortDescHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" points="4,0,8,4,0,4"/><polygon style="fill:#000" points="4,10,0,6,8,6"/></svg>';
+		if (opts.sortNoneHtml==null)
+			opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';;
+
 	}
 
 	#setupSearchbar() {
@@ -204,6 +222,10 @@ class Tablance {
 			let th=document.createElement("th");
 			th.addEventListener("mousedown",e=>this.#onThClick(e));
 			this.#headerTr.appendChild(th).innerText=col.title;
+
+			//create the divs used for showing html for sorting-up/down-arrow or whatever has been configured
+			col.sortDiv=th.appendChild(document.createElement("DIV"));
+			col.sortDiv.className="sortSymbol";
 		}
 	}
 
@@ -236,6 +258,7 @@ class Tablance {
 	#updateHeaderSortClasses() {
 		for (let [thIndex,th] of Object.entries(this.#headerTr.cells)) {
 			let order=null;
+			let sortDiv=this.#colStructs[thIndex].sortDiv;
 			for (let sortingCol of this.#sortingCols) {
 				if (sortingCol.index==thIndex) {
 					order=sortingCol.order;
@@ -244,8 +267,11 @@ class Tablance {
 			}
 			if (!order||th.classList.contains(order=="asc"?"desc":"asc"))
 				th.classList.remove("asc","desc");
-			if (order)
-				th.classList.add(order);		
+			if (order) {
+				th.classList.add(order);
+				sortDiv.innerHTML=(order=="asc"?this.#opts?.sortAscHtml:this.#opts?.sortDescHtml)??"";
+			} else
+				sortDiv.innerHTML=this.#opts?.sortNoneHtml??"";
 		}
 	}
 
