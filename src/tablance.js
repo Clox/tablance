@@ -152,6 +152,9 @@ class Tablance {
 	}
 
 	#spreadsheetOnFocus(e) {
+		if (this.#cellCursorRowIndex==null) {
+			this.#selectTd(this.#mainTbody.rows[0-this.#scrollRowIndex].cells[0]);
+		}
 		//when the table is tabbed to, whatever focus-outline that the css has set for it should show, but then when the
 		//user starts to navigate using the keyboard we want to hide it because it is a bit distracting when both it and
 		//a cell is highlighted. Thats why #spreadsheetKeyDown sets outline to none, and this line undos that
@@ -160,39 +163,40 @@ class Tablance {
 		this.#focusByMouse=null;
 	}
 
-	#spreadsheetKeyDown(e) {
-		this.#container.style.outline="none";//see #spreadsheetOnFocus
-		if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)) {
-			switch (e.key) {
-				case "ArrowUp":
-					this.#cellCursorRowIndex=Math.max(0,this.#cellCursorRowIndex-1);
-				break; case "ArrowDown":
-					this.#cellCursorRowIndex=Math.min(this.#data.length-1,this.#cellCursorRowIndex+1);
-				break; case "ArrowLeft":
-					this.#cellCursorColIndex=Math.max(0,this.#cellCursorColIndex-1);
-				break; case "ArrowRight":
-					this.#cellCursorColIndex=Math.min(this.#cols.length-1,this.#cellCursorColIndex+1);
-			}
-			this.#scrollToRow(this.#cellCursorRowIndex);
+	#moveCellCursor(numCols,numRows) {
+		const newColIndex=Math.min(this.#cols.length-1,Math.max(0,this.#cellCursorColIndex+numCols));
+		const newRowIndex=Math.min(this.#data.length-1,Math.max(0,this.#cellCursorRowIndex+numRows));
+		this.#scrollToRow(newRowIndex);
 			
-			//need to call this manually before #selectTd() or else the td might not even exist yet. 
-			//#onScrollStaticRowHeight() will actually get called once more through the scroll-event since we called
-			//#scrollToRow() above, but it doesn't get fired immediately. Running it twice is not a big deal.
-			this.#onScrollStaticRowHeight();
+		//need to call this manually before #selectTd() or else the td might not even exist yet. 
+		//#onScrollStaticRowHeight() will actually get called once more through the scroll-event since we called
+		//#scrollToRow() above, but it doesn't get fired immediately. Running it twice is not a big deal.
+		this.#onScrollStaticRowHeight();
+		this.#selectTd(this.#mainTbody.rows[newRowIndex-this.#scrollRowIndex].cells[newColIndex]);
+	}
 
-			this.#selectTd(this.#mainTbody.rows[this.#cellCursorRowIndex-this.#scrollRowIndex]
-																		.cells[this.#cellCursorColIndex]);
-		} else {
-			switch (e.key) {
-				case "Escape":
-					this.#exitEditMode(false);
-				break; case "Enter":
-					if (!this.#inEditMode) {
-						this.#scrollToRow(this.#cellCursorRowIndex);
-						this.#tryEnterEditMode();
-					}
-			}
+	#spreadsheetKeyDown(e) {
+		switch (e.key) {
+			case "ArrowUp":
+				this.#moveCellCursor(0,-1);
+			break; case "ArrowDown":
+				this.#moveCellCursor(0,1);
+			break; case "ArrowLeft":
+				this.#moveCellCursor(-1,0);
+			break; case "ArrowRight":
+				this.#moveCellCursor(1,0);
+			break; case "Escape":
+				this.#exitEditMode(false);
+			break; case "Enter":
+				if (!this.#inEditMode) {
+					this.#scrollToRow(this.#cellCursorRowIndex);
+					this.#tryEnterEditMode();
+				} else {
+					this.#exitEditMode(true);
+					this.#moveCellCursor(0,e.shiftKey?-1:1);
+				}
 		}
+		this.#container.style.outline="none";//see #spreadsheetOnFocus
 	}
 
 	#scrollToRow(rowIndex) {
@@ -252,6 +256,7 @@ class Tablance {
 			}
 		}
 		this.#cellCursor.innerHTML="";
+		this.#container.focus();//make the table focused again so that it accepts keystrokes
 	}
 
 	#selectTd(td) {
