@@ -182,6 +182,12 @@ class Tablance {
 
 			this.#selectTd(this.#mainTbody.rows[this.#cellCursorRowIndex-this.#scrollRowIndex]
 																		.cells[this.#cellCursorColIndex]);
+		} else {
+			switch (e.key) {
+				case "Escape":
+					this.#exitEditMode(false);
+				break;
+			}
 		}
 	}
 
@@ -226,24 +232,26 @@ class Tablance {
 		}
 	}
 
-	#exitEditMode() {
+	#exitEditMode(save) {
 		let newVal;
 		if (!this.#inEditMode)
 			return;
 		this.#inEditMode=false;
 		this.#cellCursor.classList.remove("edit-mode");
-		if (this.#cellCursorColStruct.edit==="text") {
-			newVal=this.#input.value;
-		}
-		if (newVal!=this.#selectedCellVal) {
-			this.#cellCursorRowData[this.#cellCursorColId]=newVal;
-			this.#updateCellValue(this.#selectedTd,this.#cellCursorRowData);
+		if (save) {
+			if (this.#cellCursorColStruct.edit==="text") {
+				newVal=this.#input.value;
+			}
+			if (newVal!=this.#selectedCellVal) {
+				this.#cellCursorRowData[this.#cellCursorColId]=newVal;
+				this.#updateCellValue(this.#selectedTd,this.#cellCursorRowData);
+			}
 		}
 		this.#cellCursor.innerHTML="";
 	}
 
 	#selectTd(td) {
-		this.#exitEditMode();
+		this.#exitEditMode(true);
 		this.#selectedTd=td;
 		this.#cellCursor.style.top=td.offsetTop+this.#tableSizer.offsetTop-this.#cellCursorBorderWidths.top+"px";
 		this.#cellCursor.style.left=td.offsetLeft-this.#cellCursorBorderWidths.left+"px";
