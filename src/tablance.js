@@ -25,6 +25,7 @@ class Tablance {
 	#rowHeight;//the height of (non expanded) rows with #borderSpacingY included
 	#staticRowHeight;//This is set in the constructor. If it is true then all rows should be of same height which
 					 //improves performance.
+	#spreadsheet;//whether the table is a spreadsheet, which is set in the constructor
 	#opts; //reference to the object passed as opts in the constructor
 	#sortingCols=[{index:0,order:"asc"}];//contains data on how the table currently is sorted. It is an array of 
 										//objects which each contain "index" which is the index of the column and
@@ -37,16 +38,22 @@ class Tablance {
 	#cellCursor;//The element that for spreadsheets shows which cell is selected
 	#cellCursorRowIndex;//the index of the row that the cellcursor is at
 	#cellCursorColIndex;//the index of the column that the cellcursor is at
+	#cellCursorColStruct;//reference to element in #colStructs that the column of the currently selected cell belongs to
+	#cellCursorRowData;//reference to the actual data-row-array from #data that the cell-cursor is at
+	#cellCursorColId;//the id of the column that the cellcursor is at
+	#selectedCellVal;//the value of the cell that the cellCursor is at
+	#selectedTd;//the td-element of the cell-cursor
+	#inEditMode;//whether the user is currently in edit-mode
 	#cellCursorBorderWidths={};//This object holds the border-widths of the cell-cursor. keys are left,right,top,bottom
 	//and values are px as ints. This is used to offset the position and adjust position of #cellCursor in order to
 	//center it around the cell. It is also used in conjunction with cellCursorOutlineWidth to adjust margins of the
 	//main-table in order to reveal the outermost line when an outermost cell is selected
 	#cellCursorOutlineWidth;//px-width as int, used in conjunction with #cellCursorBorderWidths to adjust margins of the
+	#input;//input-element of cell-cursor. Can be different kind of inputs depending on data
 	//main-table in order to reveal the outermost line when an outermost cell is selected
 	#focusByMouse;//when the spreadsheet is focused we want to know if it was by keyboard or mouse because we want
 				//focus-outline to appear only if it was by keyboard. By setting this to true in mouseDownEvent we can 
 				//check which input was used last when the focus-method is triggerd
-	#sortHtmlDivs;//reference to a div used for the sortAscHtml/sortDescHtml options in the opts-param of the constructor
 
 	/**
 	 * @param {HTMLElement} container An element which the table is going to be added to
@@ -57,6 +64,7 @@ class Tablance {
 	 * 				In case of % it will be calculated on the remaining space after all the fixed widths
 	 * 				have been accounted for.
 	 * 			}
+	 * 			editable false|String Defaults to false. Can be set to "text" to make it editable
 	 * 	@param	{Boolean} staticRowHeight Set to true if all rows are of same height. With this option on, scrolling
 	 * 				quickly through large tables will be more performant.
 	 * 	@param	{Boolean} spreadsheet If true then the table will work like a spreadsheet. Cells can be selected and the
@@ -73,10 +81,11 @@ class Tablance {
 	 * */
 	constructor(container,columns,staticRowHeight=false,spreadsheet=false,opts=null) {
 		this.#container=container;
+		this.#spreadsheet=spreadsheet;
 		container.classList.add("tablance");
 		this.#staticRowHeight=staticRowHeight;
 		this.#opts=opts;
-		const allowedColProps=["id","title","width"];
+		const allowedColProps=["id","title","width","edit"];
 		for (let col of columns) {
 			let processedCol={};
 			for (let [colKey,colVal] of Object.entries(col)) {
@@ -116,12 +125,13 @@ class Tablance {
 	}
 
 	#setupSpreadsheet() {
+		this.#container.classList.add("spreadsheet");
 		this.#cellCursor=this.#scrollingContent.appendChild(document.createElement("div"));
 		this.#cellCursor.className="cell-cursor";
 		
-		//remove any bord-spacing beause if the spacing is clicked the target-element will be the table itself and
-		//no cell will be selected which is bad user experience
-		this.#mainTable.style.borderSpacing=this.#borderSpacingY=0;
+		//remove any border-spacing beacuse if the spacing is clicked the target-element will be the table itself and
+		//no cell will be selected which is bad user experience. Set it to 0 for headerTable too in order to match
+		this.#mainTable.style.borderSpacing=this.#headerTable.style.borderSpacing=this.#borderSpacingY=0;
 		
 		const cellCursorComputedStyle=window.getComputedStyle(this.#cellCursor);
 		for (let dir of ['top','right','bottom','left'])
@@ -138,6 +148,7 @@ class Tablance {
 		this.#container.addEventListener("mousedown",e=>this.#spreadsheetMouseDown(e));
 		this.#container.addEventListener("focus",e=>this.#spreadsheetOnFocus(e));
 		this.#mainTable.addEventListener("mousedown",e=>this.#mainTableMouseDown(e));
+		this.#cellCursor.addEventListener("dblclick",e=>this.#tryEnterEditMode(e));
 	}
 
 	#spreadsheetOnFocus(e) {
@@ -203,7 +214,37 @@ class Tablance {
 		this.#selectTd(td);
 	}
 
+	#tryEnterEditMode(e) {
+		this.#selectedCellVal=this.#cellCursorRowData[this.#cellCursorColId];
+		if (this.#cellCursorColStruct.edit) {
+			this.#inEditMode=true;
+			this.#cellCursor.classList.add("edit-mode");
+			this.#input=document.createElement("input");
+			this.#cellCursor.appendChild(this.#input);
+			this.#input.focus();
+			this.#input.value=this.#selectedCellVal;
+		}
+	}
+
+	#exitEditMode() {
+		let newVal;
+		if (!this.#inEditMode)
+			return;
+		this.#inEditMode=false;
+		this.#cellCursor.classList.remove("edit-mode");
+		if (this.#cellCursorColStruct.edit==="text") {
+			newVal=this.#input.value;
+		}
+		if (newVal!=this.#selectedCellVal) {
+			this.#cellCursorRowData[this.#cellCursorColId]=newVal;
+			this.#updateCellValue(this.#selectedTd,this.#cellCursorRowData);
+		}
+		this.#cellCursor.innerHTML="";
+	}
+
 	#selectTd(td) {
+		this.#exitEditMode();
+		this.#selectedTd=td;
 		this.#cellCursor.style.top=td.offsetTop+this.#tableSizer.offsetTop-this.#cellCursorBorderWidths.top+"px";
 		this.#cellCursor.style.left=td.offsetLeft-this.#cellCursorBorderWidths.left+"px";
 		this.#cellCursor.style.height
@@ -212,6 +253,9 @@ class Tablance {
 
 		this.#cellCursorRowIndex=this.#scrollRowIndex+td.parentElement.rowIndex;
 		this.#cellCursorColIndex=td.cellIndex;
+		this.#cellCursorColStruct=this.#colStructs[this.#cellCursorColIndex];
+		this.#cellCursorRowData=this.#data[this.#cellCursorRowIndex];
+		this.#cellCursorColId=this.#colStructs[this.#cellCursorColIndex].id;
 	}
 
 	#createTableHeader() {
@@ -449,6 +493,9 @@ class Tablance {
 		const dataRow=this.#data[tr.rowIndex+this.#scrollRowIndex];
 		for (let colI=0; colI<this.#colStructs.length; colI++) {
 			let td=tr.cells[colI];
+			let colStruct=this.#colStructs[colI];
+			if (this.#spreadsheet&&colStruct.edit!=="text")
+				td.classList.add("disabled");
 			this.#updateCellValue(td,dataRow);
 		}
 	}

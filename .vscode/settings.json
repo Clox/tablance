@@ -1,9 +1,32 @@
 {
 	"editor.rulers": [
 		120
-		],
-		"editor.detectIndentation": false,
-		"editor.insertSpaces": false,
-		"editor.wordSeparators": "`~!@#%^&*()-=+[{]}\\|;:'\",.<>/?",
-		"editor.bracketPairColorization.enabled": true
+	],
+	"editor.detectIndentation": false,
+	"editor.insertSpaces": false,
+	"editor.wordSeparators": "`~!@#%^&*()-=+[{]}\\|;:'\",.<>/?",
+	"editor.bracketPairColorization.enabled": true,
+	"liveSassCompile.settings.formats": [
+		{
+			"format": "expanded",
+			"extensionName": ".css",
+			"savePath": "/styles"
+		},
+		{
+			"extensionName": ".min.css",
+			"format": "compressed",
+			"savePath": "/styles"
+		}
+	],
+	"liveSassCompile.settings.excludeList": [
+		"**/node_modules/**",
+		".vscode/**"
+	],
+	"liveSassCompile.settings.generateMap": false,
+	//autoprefix, will auto add perfix like -webkit- -moz-..
+	"liveSassCompile.settings.autoprefix": [
+		"> 1%",
+		"last 2 versions"
+	]
+	
 }
