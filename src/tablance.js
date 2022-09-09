@@ -186,7 +186,11 @@ class Tablance {
 			switch (e.key) {
 				case "Escape":
 					this.#exitEditMode(false);
-				break;
+				break; case "Enter":
+					if (!this.#inEditMode) {
+						this.#scrollToRow(this.#cellCursorRowIndex);
+						this.#tryEnterEditMode();
+					}
 			}
 		}
 	}
