@@ -504,12 +504,13 @@ class Tablance {
 			const scrollSignum=Math.sign(newScrollRowIndex-this.#scrollRowIndex);//1 if moving down, -1 if up
 			do {
 				this.#scrollRowIndex+=scrollSignum;
-				if (scrollSignum==1)//moving down												move top row to bottom
-					this.#updateRowValuesNoExpansion(this.#mainTbody.appendChild(this.#mainTbody.firstChild));
-				else {//moving up
+				if (scrollSignum==1) {//moving down												move top row to bottom
+					const dataIndex=this.#scrollRowIndex+this.#numRenderedRows-1;
+					this.#updateRowValues(this.#mainTbody.appendChild(this.#mainTbody.firstChild),dataIndex);
+				} else {//moving up
 					let trToMove=this.#mainTbody.lastChild;									//move bottom row to top
 					this.#mainTbody.prepend(trToMove);
-					this.#updateRowValuesNoExpansion(trToMove);
+					this.#updateRowValues(trToMove,this.#scrollRowIndex);
 				}
 			} while (this.#scrollRowIndex!=newScrollRowIndex);
 		}
@@ -524,10 +525,10 @@ class Tablance {
 					break;
 				this.#scrollRowIndex++;
 
-				const dataRow=this.#data[this.#numRenderedRows+this.#scrollRowIndex-1];//the data of the new row
+				const dataIndex=this.#numRenderedRows+this.#scrollRowIndex-1;//the data-index of the new row
 
 				//move the top row to bottom and update its values
-				this.#updateRowValuesExpansion(this.#mainTbody.appendChild(this.#mainTbody.firstChild),dataRow);
+				this.#updateRowValues(this.#mainTbody.appendChild(this.#mainTbody.firstChild),dataIndex);
 
 				
 				
@@ -543,7 +544,7 @@ class Tablance {
 				this.#scrollRowIndex--;
 				let trToMove=this.#mainTbody.lastChild;									//move bottom row to top
 				this.#mainTbody.prepend(trToMove);
-				this.#updateRowValuesExpansion(trToMove,this.#data[this.#scrollRowIndex]);//the data of the new row);
+				this.#updateRowValues(trToMove,this.#scrollRowIndex);//the data of the new row;
 
 				//move the table up by the height of the removed row to compensate,else the whole table would shift down
 				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)-this.#rowHeight+"px";
@@ -577,7 +578,7 @@ class Tablance {
 			this.#numRenderedRows++;
 			for (let i=0; i<this.#colStructs.length; i++)
 				lastTr.insertCell();
-			this.#updateRowValuesNoExpansion(lastTr);
+			this.#updateRowValues(lastTr,this.#scrollRowIndex+this.#numRenderedRows-1);
 			if (!this.#rowHeight)//if there were no rows prior to this
 				this.#rowHeight=lastTr.offsetHeight+this.#borderSpacingY;
 		}
@@ -593,21 +594,11 @@ class Tablance {
 		}
 	}
 
-	/**Update the values of a row in the table. The tr needs to be passed in and the function will figure out the
-	 * corresponding data-item from #data and read from that. The row needs to already have the right amount of td's.
+	/**Update the values of a row in the table. The tr needs to be passed in as well as the index of the data in #data
+	 * The row needs to already have the right amount of td's.
 	 * @param {HTMLTableRowElement} tr The tr-element whose cells that should be updated*/
-	#updateRowValuesNoExpansion(tr) {
-		const dataRow=this.#data[tr.rowIndex+this.#scrollRowIndex];
-		for (let colI=0; colI<this.#colStructs.length; colI++) {
-			let td=tr.cells[colI];
-			let colStruct=this.#colStructs[colI];
-			if (this.#spreadsheet&&colStruct.edit!=="text")
-				td.classList.add("disabled");
-			this.#updateCellValue(td,dataRow);
-		}
-	}
-
-	#updateRowValuesExpansion(tr,dataRow) {
+	#updateRowValues(tr,dataIndex) {
+		const dataRow=this.#data[dataIndex];
 		for (let colI=0; colI<this.#colStructs.length; colI++) {
 			let td=tr.cells[colI];
 			let colStruct=this.#colStructs[colI];
