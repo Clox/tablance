@@ -22,7 +22,7 @@ class Tablance {
 	#mainTbody;//tbody of #mainTable
 	#borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
-	#rowHeight;//the height of (non expanded) rows with #borderSpacingY included
+	#rowHeight=0;//the height of (non expanded) rows with #borderSpacingY included. Assume 0 first until first row added
 	#staticRowHeight;//This is set in the constructor. If it is true then all rows should be of same height which
 					 //improves performance.
 	#spreadsheet;//whether the table is a spreadsheet, which is set in the constructor
@@ -54,6 +54,13 @@ class Tablance {
 	#focusByMouse;//when the spreadsheet is focused we want to know if it was by keyboard or mouse because we want
 				//focus-outline to appear only if it was by keyboard. By setting this to true in mouseDownEvent we can 
 				//check which input was used last when the focus-method is triggerd
+	#expansion;//the expansion-argument passed to the constructor
+	#scrollMethod;//this will be set to a reference of the scroll-method that will be used. This depends on settings for
+				//staticRowHeight and expansion
+	#expandedRowIndices={};//for tables where rows can be expanded, this object will keep track of which rows have been
+							//expanded. key is row-index, same as in the data and values are always true.
+	#scrollY=0;//this keeps track of the "old" scrollTop of the table when a scroll occurs to know 
+	#numRenderedRows=0;//number of tr-elements in the table excluding tr's that are expansions (expansions too are tr's)
 
 	/**
 	 * @param {HTMLElement} container An element which the table is going to be added to
@@ -69,6 +76,19 @@ class Tablance {
 	 * 				quickly through large tables will be more performant.
 	 * 	@param	{Boolean} spreadsheet If true then the table will work like a spreadsheet. Cells can be selected and the
 	 * 				keyboard can be used for navigating the cell-selection.
+	 * 	@param	{Object} expansion This allows for having rows that can be expanded to show more data. An object with
+	 * 							the following structure is expected:{
+	 * 								rows: [
+	 * 									{
+	 * 										title:String the title of the row, displayed to the left of the value
+	 * 										id:String The key of the corresponding property in the row-data
+	 * 										editable:String can be set to "text" to make editable. Can also be set to
+	 * 											"textarea" to allow for linebreaks
+	 * 										
+	 * 									}
+	 * 									,...
+	 * 								]
+	 * 							}
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							"searchbar" Bool that defaults to true. If true then there will be a searchbar that
 	 * 								can be used to filter the data.
@@ -79,9 +99,10 @@ class Tablance {
 	 * 							"sortNoneHtml" String - html to be added to the end of the th-element when the column
 	 * 													is not sorted
 	 * */
-	constructor(container,columns,staticRowHeight=false,spreadsheet=false,opts=null) {
+	constructor(container,columns,staticRowHeight=false,spreadsheet=false,expansion=null,opts=null) {
 		this.#container=container;
 		this.#spreadsheet=spreadsheet;
+		this.#expansion=expansion;
 		container.classList.add("tablance");
 		this.#staticRowHeight=staticRowHeight;
 		this.#opts=opts;
@@ -153,7 +174,7 @@ class Tablance {
 
 	#spreadsheetOnFocus(e) {
 		if (this.#cellCursorRowIndex==null) {
-			this.#selectTd(this.#mainTbody.rows[0-this.#scrollRowIndex].cells[0]);
+			this.#selectTd(this.#mainTbody.rows[0].cells[0]);
 		}
 		//when the table is tabbed to, whatever focus-outline that the css has set for it should show, but then when the
 		//user starts to navigate using the keyboard we want to hide it because it is a bit distracting when both it and
@@ -171,7 +192,7 @@ class Tablance {
 		//need to call this manually before #selectTd() or else the td might not even exist yet. 
 		//#onScrollStaticRowHeight() will actually get called once more through the scroll-event since we called
 		//#scrollToRow() above, but it doesn't get fired immediately. Running it twice is not a big deal.
-		this.#onScrollStaticRowHeight();
+		this.#scrollMethod();
 		this.#selectTd(this.#mainTbody.rows[newRowIndex-this.#scrollRowIndex].cells[newColIndex]);
 	}
 
@@ -195,8 +216,20 @@ class Tablance {
 					this.#exitEditMode(true);
 					this.#moveCellCursor(0,e.shiftKey?-1:1);
 				}
+			break; case "+":
+				this.#tryExpandRow(this.#selectedTd.parentElement,this.#cellCursorRowData);
 		}
 		this.#container.style.outline="none";//see #spreadsheetOnFocus
+	}
+
+	#tryExpandRow(tr,rowData) {
+		if (!this.#expansion)
+			return;
+		const expansionRow=tr.parentElement.insertRow(tr.rowIndex+1);
+		const expansionCell=expansionRow.insertCell();
+		expansionCell.innerHTML="foo";
+		expansionRow.style.height="100px";
+		console.log(this.#scrollRowIndex+tr.rowIndex);
 	}
 
 	#scrollToRow(rowIndex) {
@@ -354,7 +387,12 @@ class Tablance {
 
 	#createTableBody() {
 		this.#scrollBody=this.#container.appendChild(document.createElement("div"));
-		this.#scrollBody.addEventListener("scroll",e=>this.#onScrollStaticRowHeight(),{passive:true});
+
+		if (this.#staticRowHeight&&!this.#expansion)
+			this.#scrollMethod=this.#onScrollStaticRowHeightNoExpansion;
+		else if (this.#staticRowHeight&&this.#expansion)
+			this.#scrollMethod=this.#onScrollStaticRowHeightExpansion;
+		this.#scrollBody.addEventListener("scroll",e=>this.#scrollMethod(e),{passive:true});
 		this.#scrollBody.className="scroll-body";
 		
 		this.#scrollingContent=this.#scrollBody.appendChild(document.createElement("div"));
@@ -425,7 +463,7 @@ class Tablance {
 		}
 		this.#scrollRowIndex=0;
 		this.#refreshRows();
-		this.#refreshTableSizer();
+		this.#refreshTableSizerNoExpansions();
 	}
 
 	addData(data) {
@@ -438,18 +476,23 @@ class Tablance {
 		else {
 			this.#data=this.#allData;
 			this.#maybeAddTrs();
-			this.#refreshTableSizer();
+			this.#refreshTableSizerNoExpansions();
 		}		
 	}
 
 	#refreshRows() {
 		this.#mainTbody.replaceChildren();
+		this.#numRenderedRows=0;
 		this.#maybeAddTrs();
 	}
 
-	#onScrollStaticRowHeight() {
+	/**This onScroll-handler is used when rows are of static height and can't be expanded either.
+	 * It is the fastest scroll-method since row-heights are known and it is easy to calculate which rows should be
+	 * rendered even when scrolling more than a whole page at once as each row won't have to be iterated, and rows
+	 * will only have to be created or deleted if the table is resized so the same tr-elements are reused.* 
+	 * @returns */
+	#onScrollStaticRowHeightNoExpansion() {
 		const scrY=this.#scrollBody.scrollTop;
-		//let rowScrollingDone=false;//whether the user has scrolled enough for rows to move and table to adjust
 		const newScrollRowIndex=Math.min(parseInt(scrY/this.#rowHeight),this.#data.length-this.#mainTbody.rows.length);
 		
 		if (newScrollRowIndex==this.#scrollRowIndex)
@@ -461,19 +504,61 @@ class Tablance {
 			const scrollSignum=Math.sign(newScrollRowIndex-this.#scrollRowIndex);//1 if moving down, -1 if up
 			do {
 				this.#scrollRowIndex+=scrollSignum;
-				if (scrollSignum==1)//moving down
-					this.#updateRowValues(this.#mainTbody.appendChild(this.#mainTbody.firstChild));
+				if (scrollSignum==1)//moving down												move top row to bottom
+					this.#updateRowValuesNoExpansion(this.#mainTbody.appendChild(this.#mainTbody.firstChild));
 				else {//moving up
-					let trToMove=this.#mainTbody.lastChild;
+					let trToMove=this.#mainTbody.lastChild;									//move bottom row to top
 					this.#mainTbody.prepend(trToMove);
-					this.#updateRowValues(trToMove);
+					this.#updateRowValuesNoExpansion(trToMove);
 				}
 			} while (this.#scrollRowIndex!=newScrollRowIndex);
 		}
-		this.#refreshTableSizer();
+		this.#refreshTableSizerNoExpansions();
 	}
 
-	#refreshTableSizer() {
+	#onScrollStaticRowHeightExpansion(e) {
+		const newScrY=this.#scrollBody.scrollTop;
+		if (newScrY>parseInt(this.#scrollY)) {//if scrolling down
+			while (newScrY-parseInt(this.#tableSizer.style.top)>this.#rowHeight) {
+				if (this.#scrollRowIndex+this.#numRenderedRows>this.#data.length-1)
+					break;
+				this.#scrollRowIndex++;
+
+				const dataRow=this.#data[this.#numRenderedRows+this.#scrollRowIndex-1];//the data of the new row
+
+				//move the top row to bottom and update its values
+				this.#updateRowValuesExpansion(this.#mainTbody.appendChild(this.#mainTbody.firstChild),dataRow);
+
+				
+				
+
+				//move the table down by the height of the removed row to compensate,else the whole table would shift up
+				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)+this.#rowHeight+"px";
+
+				//also shrink the container of the table the same amount to maintain the scrolling-range.
+				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)-this.#rowHeight+"px";
+			}
+		} else {//if scrolling up
+			while (newScrY<parseInt(this.#tableSizer.style.top)) {
+				this.#scrollRowIndex--;
+				let trToMove=this.#mainTbody.lastChild;									//move bottom row to top
+				this.#mainTbody.prepend(trToMove);
+				this.#updateRowValuesExpansion(trToMove,this.#data[this.#scrollRowIndex]);//the data of the new row);
+
+				//move the table up by the height of the removed row to compensate,else the whole table would shift down
+				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)-this.#rowHeight+"px";
+
+				//also grow the container of the table the same amount to maintain the scrolling-range.
+				//this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
+
+				this.#tableSizer.style.height=(this.#data.length-this.#scrollRowIndex)*this.#rowHeight+"px";
+			}
+		}
+		this.#scrollY=newScrY;
+	}
+
+	#refreshTableSizerNoExpansions() {
+		
 		this.#tableSizer.style.top=this.#scrollRowIndex*this.#rowHeight+"px";
 		this.#tableSizer.style.height=(this.#data.length-this.#scrollRowIndex)*this.#rowHeight+"px";
 	}
@@ -484,12 +569,15 @@ class Tablance {
 		const scrH=this.#scrollBody.offsetHeight;
 		const dataLen=this.#data.length;
 		const trs=this.#mainTable.rows;
-		//if there are fewer trs than datarows, and if there is space left below bottom tr
-		while (this.#scrollRowIndex+trs.length<dataLen&&(!lastTr||lastTr.offsetTop+this.#rowHeight/2<=scrH)) {
+		//if there are fewer trs than datarows, and if there is empty space below bottom tr
+		
+		while (this.#numRenderedRows*this.#rowHeight<scrH&&this.#scrollRowIndex+this.#numRenderedRows<dataLen) {
+		//while (this.#scrollRowIndex+trs.length<dataLen&&(!lastTr||lastTr.offsetTop+this.#rowHeight/2<=scrH)) {
 			lastTr=this.#mainTable.insertRow();
+			this.#numRenderedRows++;
 			for (let i=0; i<this.#colStructs.length; i++)
 				lastTr.insertCell();
-			this.#updateRowValues(lastTr);
+			this.#updateRowValuesNoExpansion(lastTr);
 			if (!this.#rowHeight)//if there were no rows prior to this
 				this.#rowHeight=lastTr.offsetHeight+this.#borderSpacingY;
 		}
@@ -499,15 +587,27 @@ class Tablance {
 	#maybeRemoveTrs() {
 		const scrH=this.#scrollBody.offsetHeight;
 		const trs=this.#mainTbody.rows;
-		while (trs.length>3&&trs[trs.length-2].offsetTop>scrH)
+		while (trs.length>3&&trs[trs.length-2].offsetTop>scrH) {
 			this.#mainTbody.lastChild.remove();
+			this.#numRenderedRows--;
+		}
 	}
 
 	/**Update the values of a row in the table. The tr needs to be passed in and the function will figure out the
 	 * corresponding data-item from #data and read from that. The row needs to already have the right amount of td's.
 	 * @param {HTMLTableRowElement} tr The tr-element whose cells that should be updated*/
-	#updateRowValues(tr) {
+	#updateRowValuesNoExpansion(tr) {
 		const dataRow=this.#data[tr.rowIndex+this.#scrollRowIndex];
+		for (let colI=0; colI<this.#colStructs.length; colI++) {
+			let td=tr.cells[colI];
+			let colStruct=this.#colStructs[colI];
+			if (this.#spreadsheet&&colStruct.edit!=="text")
+				td.classList.add("disabled");
+			this.#updateCellValue(td,dataRow);
+		}
+	}
+
+	#updateRowValuesExpansion(tr,dataRow) {
 		for (let colI=0; colI<this.#colStructs.length; colI++) {
 			let td=tr.cells[colI];
 			let colStruct=this.#colStructs[colI];
