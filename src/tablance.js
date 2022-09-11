@@ -57,8 +57,8 @@ class Tablance {
 	#expansion;//the expansion-argument passed to the constructor
 	#scrollMethod;//this will be set to a reference of the scroll-method that will be used. This depends on settings for
 				//staticRowHeight and expansion
-	#expandedRowIndices={};//for tables where rows can be expanded, this object will keep track of which rows have been
-							//expanded. key is row-index, same as in the data and values are always true.
+	#expandedRowIndicesHeights={};//for tables where rows can be expanded, this object will keep track of which rows
+	//have been expanded and also their combined height. key is row-index
 	#scrollY=0;//this keeps track of the "old" scrollTop of the table when a scroll occurs to know 
 	#numRenderedRows=0;//number of tr-elements in the table excluding tr's that are expansions (expansions too are tr's)
 
@@ -217,19 +217,19 @@ class Tablance {
 					this.#moveCellCursor(0,e.shiftKey?-1:1);
 				}
 			break; case "+":
-				this.#tryExpandRow(this.#selectedTd.parentElement,this.#cellCursorRowData);
+				this.#tryExpandRow(this.#selectedTd.parentElement,this.#cellCursorRowIndex);
 		}
 		this.#container.style.outline="none";//see #spreadsheetOnFocus
 	}
 
-	#tryExpandRow(tr,rowData) {
+	#tryExpandRow(tr,rowIndex) {
 		if (!this.#expansion)
 			return;
 		const expansionRow=tr.parentElement.insertRow(tr.rowIndex+1);
 		const expansionCell=expansionRow.insertCell();
 		expansionCell.innerHTML="foo";
 		expansionRow.style.height="100px";
-		console.log(this.#scrollRowIndex+tr.rowIndex);
+		this.#expandedRowIndicesHeights[rowIndex]=this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY;
 	}
 
 	#scrollToRow(rowIndex) {
@@ -520,24 +520,33 @@ class Tablance {
 	#onScrollStaticRowHeightExpansion(e) {
 		const newScrY=this.#scrollBody.scrollTop;
 		if (newScrY>parseInt(this.#scrollY)) {//if scrolling down
-			while (newScrY-parseInt(this.#tableSizer.style.top)>this.#rowHeight) {
+			while (newScrY-parseInt(this.#tableSizer.style.top)
+			>(this.#expandedRowIndicesHeights[this.#scrollRowIndex]??this.#rowHeight)) {//if a whole top row is outside
 				if (this.#scrollRowIndex+this.#numRenderedRows>this.#data.length-1)
 					break;
-				this.#scrollRowIndex++;
+				
 
-				const dataIndex=this.#numRenderedRows+this.#scrollRowIndex-1;//the data-index of the new row
+				//check if the top row (the one that is to be moved to the bottom) is expanded
+				if (this.#expandedRowIndicesHeights[this.#scrollRowIndex]) {
+					var scrollJumpDistance=this.#expandedRowIndicesHeights[this.#scrollRowIndex];
+					this.#mainTbody.rows[1].remove();
+				} else {
+					scrollJumpDistance=this.#rowHeight;
+				}
+				
+
+				const dataIndex=this.#numRenderedRows+this.#scrollRowIndex;//the data-index of the new row
+
+				this.#scrollRowIndex++;
 
 				//move the top row to bottom and update its values
 				this.#updateRowValues(this.#mainTbody.appendChild(this.#mainTbody.firstChild),dataIndex);
 
-				
-				
-
 				//move the table down by the height of the removed row to compensate,else the whole table would shift up
-				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)+this.#rowHeight+"px";
+				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)+scrollJumpDistance+"px";
 
 				//also shrink the container of the table the same amount to maintain the scrolling-range.
-				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)-this.#rowHeight+"px";
+				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)-scrollJumpDistance+"px";
 			}
 		} else {//if scrolling up
 			while (newScrY<parseInt(this.#tableSizer.style.top)) {
