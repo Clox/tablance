@@ -217,19 +217,20 @@ class Tablance {
 					this.#moveCellCursor(0,e.shiftKey?-1:1);
 				}
 			break; case "+":
-				this.#tryExpandRow(this.#selectedTd.parentElement,this.#cellCursorRowIndex);
+				this.#expandRow(this.#selectedTd.parentElement,this.#cellCursorRowIndex);
 		}
 		this.#container.style.outline="none";//see #spreadsheetOnFocus
 	}
 
-	#tryExpandRow(tr,rowIndex) {
+	#expandRow(tr,rowIndex,calculateHeight=true) {
 		if (!this.#expansion)
 			return;
 		const expansionRow=tr.parentElement.insertRow(tr.rowIndex+1);
 		const expansionCell=expansionRow.insertCell();
 		expansionCell.innerHTML="foo";
 		expansionRow.style.height="100px";
-		this.#expandedRowIndicesHeights[rowIndex]=this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY;
+		if (calculateHeight)
+			this.#expandedRowIndicesHeights[rowIndex]=this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY;
 	}
 
 	#scrollToRow(rowIndex) {
@@ -540,13 +541,19 @@ class Tablance {
 				this.#scrollRowIndex++;
 
 				//move the top row to bottom and update its values
-				this.#updateRowValues(this.#mainTbody.appendChild(this.#mainTbody.firstChild),dataIndex);
+				const trToMove=this.#updateRowValues(this.#mainTbody.appendChild(this.#mainTbody.firstChild),dataIndex);
+
+				
+
 
 				//move the table down by the height of the removed row to compensate,else the whole table would shift up
 				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)+scrollJumpDistance+"px";
 
 				//also shrink the container of the table the same amount to maintain the scrolling-range.
 				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)-scrollJumpDistance+"px";
+
+				if (this.#expandedRowIndicesHeights[dataIndex])
+					this.#expandRow(trToMove,dataIndex,false);
 			}
 		} else {//if scrolling up
 			while (newScrY<parseInt(this.#tableSizer.style.top)) {//while top row is below top of viewport
@@ -565,9 +572,12 @@ class Tablance {
 				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)-this.#rowHeight+"px";
 
 				//also grow the container of the table the same amount to maintain the scrolling-range.
-				//this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
+				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
 
-				this.#tableSizer.style.height=(this.#data.length-this.#scrollRowIndex)*this.#rowHeight+"px";
+				if (this.#expandedRowIndicesHeights[this.#scrollRowIndex])
+					this.#expandRow(trToMove,this.#scrollRowIndex,false);
+					this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)-this.#expandedRowIndicesHeights[this.#scrollRowIndex]+this.#rowHeight+"px";
+					this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
 			}
 		}
 		this.#scrollY=newScrY;
@@ -621,6 +631,7 @@ class Tablance {
 				td.classList.add("disabled");
 			this.#updateCellValue(td,dataRow);
 		}
+		return tr;
 	}
 
 	#updateCellValue(td,dataRow) {
