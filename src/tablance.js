@@ -549,8 +549,14 @@ class Tablance {
 				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)-scrollJumpDistance+"px";
 			}
 		} else {//if scrolling up
-			while (newScrY<parseInt(this.#tableSizer.style.top)) {
+			while (newScrY<parseInt(this.#tableSizer.style.top)) {//while top row is below top of viewport
 				this.#scrollRowIndex--;
+
+				//check if the bottom row (the one that is to be moved to the top) is expanded
+				if (this.#expandedRowIndicesHeights[this.#scrollRowIndex+this.#numRenderedRows]) {
+					this.#mainTbody.lastChild.remove();//remove the expansion-tr
+				}
+
 				let trToMove=this.#mainTbody.lastChild;									//move bottom row to top
 				this.#mainTbody.prepend(trToMove);
 				this.#updateRowValues(trToMove,this.#scrollRowIndex);//the data of the new row;
