@@ -222,15 +222,21 @@ class Tablance {
 		this.#container.style.outline="none";//see #spreadsheetOnFocus
 	}
 
-	#expandRow(tr,rowIndex,calculateHeight=true) {
+	#expandRow(tr,rowIndex) {
 		if (!this.#expansion)
 			return;
+		const expansionRow=this.#renderExpansion(tr);
+		this.#expandedRowIndicesHeights[rowIndex]=this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY;
+		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
+			+this.#expandedRowIndicesHeights[rowIndex]-this.#rowHeight+"px";
+	}
+
+	#renderExpansion(tr) {
 		const expansionRow=tr.parentElement.insertRow(tr.rowIndex+1);
 		const expansionCell=expansionRow.insertCell();
 		expansionCell.innerHTML="foo";
 		expansionRow.style.height="100px";
-		if (calculateHeight)
-			this.#expandedRowIndicesHeights[rowIndex]=this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY;
+		return expansionRow;
 	}
 
 	#scrollToRow(rowIndex) {
@@ -531,6 +537,7 @@ class Tablance {
 				if (this.#expandedRowIndicesHeights[this.#scrollRowIndex]) {
 					var scrollJumpDistance=this.#expandedRowIndicesHeights[this.#scrollRowIndex];
 					this.#mainTbody.rows[1].remove();
+					
 				} else {
 					scrollJumpDistance=this.#rowHeight;
 				}
@@ -553,7 +560,7 @@ class Tablance {
 				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)-scrollJumpDistance+"px";
 
 				if (this.#expandedRowIndicesHeights[dataIndex])
-					this.#expandRow(trToMove,dataIndex,false);
+					this.#renderExpansion(trToMove);
 			}
 		} else {//if scrolling up
 			while (newScrY<parseInt(this.#tableSizer.style.top)) {//while top row is below top of viewport
@@ -572,7 +579,7 @@ class Tablance {
 				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)-this.#rowHeight+"px";
 
 				//also grow the container of the table the same amount to maintain the scrolling-range.
-				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
+				//this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
 
 				if (this.#expandedRowIndicesHeights[this.#scrollRowIndex])
 					this.#expandRow(trToMove,this.#scrollRowIndex,false);
