@@ -187,13 +187,14 @@ class Tablance {
 	#moveCellCursor(numCols,numRows) {
 		const newColIndex=Math.min(this.#cols.length-1,Math.max(0,this.#cellCursorColIndex+numCols));
 		const newRowIndex=Math.min(this.#data.length-1,Math.max(0,this.#cellCursorRowIndex+numRows));
-		this.#scrollToRow(newRowIndex);
-			
+		
 		//need to call this manually before #selectTd() or else the td might not even exist yet. 
 		//#onScrollStaticRowHeight() will actually get called once more through the scroll-event since we called
 		//#scrollToRow() above, but it doesn't get fired immediately. Running it twice is not a big deal.
 		this.#scrollMethod();
+
 		this.#selectTd(this.#mainTbody.rows[newRowIndex-this.#scrollRowIndex].cells[newColIndex]);
+		this.#scrollToRow(newRowIndex);
 	}
 
 	#spreadsheetKeyDown(e) {
@@ -246,15 +247,15 @@ class Tablance {
 					//distanceRatioDeadzone then minimum scrolling will occur only to get within distanceRatioDeadzone
 		const scrollPos=this.#scrollBody.scrollTop;
 		const scrollHeight=this.#scrollBody.offsetHeight;
-		const cellPos=rowIndex*this.#rowHeight;
+		const cursorY=parseInt(this.#cellCursor.style.top);
 		const cursorHeight=this.#cellCursor.offsetHeight;
-		const distanceFromCenter=cellPos+cursorHeight/2-scrollPos-scrollHeight/2;
+		const distanceFromCenter=cursorY+cursorHeight/2-scrollPos-scrollHeight/2;
 		const distanceFromCenterRatio=Math.abs(distanceFromCenter/scrollHeight);
 		if (distanceFromCenterRatio>distanceRatioDeadzone/2) {
 			if (distanceFromCenterRatio>distanceRatioCenteringTollerance/2)
-				this.#scrollBody.scrollTop=cellPos-scrollHeight/2+this.#rowHeight/2;
+				this.#scrollBody.scrollTop=cursorY-scrollHeight/2+this.#rowHeight/2;
 			else
-				this.#scrollBody.scrollTop=cellPos-scrollHeight/2+cursorHeight/2
+				this.#scrollBody.scrollTop=cursorY-scrollHeight/2+cursorHeight/2
 								+(distanceFromCenter<0?1:-1)*scrollHeight*distanceRatioDeadzone/2;
 		}
 	}
@@ -582,7 +583,7 @@ class Tablance {
 				//this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
 
 				if (this.#expandedRowIndicesHeights[this.#scrollRowIndex])
-					this.#expandRow(trToMove,this.#scrollRowIndex,false);
+					this.#renderExpansion(trToMove);
 					this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)-this.#expandedRowIndicesHeights[this.#scrollRowIndex]+this.#rowHeight+"px";
 					this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
 			}
