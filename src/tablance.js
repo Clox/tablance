@@ -61,6 +61,7 @@ class Tablance {
 	//have been expanded and also their combined height. key is row-index
 	#scrollY=0;//this keeps track of the "old" scrollTop of the table when a scroll occurs to know 
 	#numRenderedRows=0;//number of tr-elements in the table excluding tr's that are expansions (expansions too are tr's)
+	#cellCursorInExpansion=false;//if cellCursor is currently inside an expansion
 
 	/**
 	 * @param {HTMLElement} container An element which the table is going to be added to
@@ -186,15 +187,25 @@ class Tablance {
 
 	#moveCellCursor(numCols,numRows) {
 		const newColIndex=Math.min(this.#cols.length-1,Math.max(0,this.#cellCursorColIndex+numCols));
-		const newRowIndex=Math.min(this.#data.length-1,Math.max(0,this.#cellCursorRowIndex+numRows));
-		
-		//need to call this manually before #selectTd() or else the td might not even exist yet. 
-		//#onScrollStaticRowHeight() will actually get called once more through the scroll-event since we called
-		//#scrollToRow() above, but it doesn't get fired immediately. Running it twice is not a big deal.
-		this.#scrollMethod();
+		let newTd;
 
-		this.#selectTd(this.#mainTbody.rows[newRowIndex-this.#scrollRowIndex].cells[newColIndex]);
-		this.#scrollToRow(newRowIndex);
+		if (numRows) {
+
+			//need to call this manually before getting the td-element or else it might not even exist yet. 
+			//#onScrollStaticRowHeight() will actually get called once more through the scroll-event since we called
+			//#scrollToRow() above, but it doesn't get fired immediately. Running it twice is not a big deal.
+			this.#scrollMethod();
+
+			newTd=this.#selectedTd.parentElement[(numRows>0?"next":"previous")+"Sibling"]?.cells[newColIndex];
+		} else {
+			newTd=this.#selectedTd[(numCols>0?"next":"previous")+"Sibling"];
+		}
+			
+		if (!newTd)
+			return;
+		this.#selectTd(newTd);
+		this.#scrollToCursor();
+		console.log(this.#cellCursorRowIndex);
 	}
 
 	#spreadsheetKeyDown(e) {
@@ -211,7 +222,7 @@ class Tablance {
 				this.#exitEditMode(false);
 			break; case "Enter":
 				if (!this.#inEditMode) {
-					this.#scrollToRow(this.#cellCursorRowIndex);
+					this.#scrollToCursor();
 					this.#tryEnterEditMode();
 				} else {
 					this.#exitEditMode(true);
@@ -219,28 +230,41 @@ class Tablance {
 				}
 			break; case "+":
 				this.#expandRow(this.#selectedTd.parentElement,this.#cellCursorRowIndex);
+			break; case "-":
+				this.#contractRow(this.#selectedTd.parentElement,this.#cellCursorRowIndex);
 		}
 		this.#container.style.outline="none";//see #spreadsheetOnFocus
 	}
 
-	#expandRow(tr,rowIndex) {
-		if (!this.#expansion)
+	#expandRow(tr,dataRowIndex) {
+		if (!this.#expansion||this.#expandedRowIndicesHeights[dataRowIndex])
 			return;
-		const expansionRow=this.#renderExpansion(tr);
-		this.#expandedRowIndicesHeights[rowIndex]=this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY;
+		const expansionRow=this.#renderExpansion(tr,dataRowIndex);
+		this.#expandedRowIndicesHeights[dataRowIndex]=this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY;
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
-			+this.#expandedRowIndicesHeights[rowIndex]-this.#rowHeight+"px";
+			+this.#expandedRowIndicesHeights[dataRowIndex]-this.#rowHeight+"px";
 	}
 
-	#renderExpansion(tr) {
+	#contractRow(tr,rowIndex) {
+		if (!this.#expansion||!this.#expandedRowIndicesHeights[rowIndex])
+			return;
+		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
+			-this.#expandedRowIndicesHeights[rowIndex]+this.#rowHeight+"px";
+		tr.nextElementSibling.remove();
+		delete this.#expandedRowIndicesHeights[rowIndex];
+	}
+
+	#renderExpansion(tr,dataRowIndex) {
 		const expansionRow=tr.parentElement.insertRow(tr.rowIndex+1);
+		expansionRow.className="expansion";
+		expansionRow.dataset.dataRowIndex=dataRowIndex;
 		const expansionCell=expansionRow.insertCell();
 		expansionCell.innerHTML="foo";
 		expansionRow.style.height="100px";
 		return expansionRow;
 	}
 
-	#scrollToRow(rowIndex) {
+	#scrollToCursor() {
 		const distanceRatioDeadzone=.5;//when moving the cellcursor within this distance from center of view no 
 										//scrolling will be done. 0.5 is half of view, 1 is entire height of view
 		const distanceRatioCenteringTollerance=1;//if moving the cellcursor within this ratio, but outside of 
@@ -309,7 +333,7 @@ class Tablance {
 							=td.offsetHeight-this.#cellCursorBorderWidths.top+this.#cellCursorBorderWidths.bottom+"px";
 		this.#cellCursor.style.width=td.offsetWidth-this.#cellCursorBorderWidths.left+"px";
 
-		this.#cellCursorRowIndex=this.#scrollRowIndex+td.parentElement.rowIndex;
+		this.#cellCursorRowIndex=parseInt(td.parentElement.dataset.dataRowIndex);
 		this.#cellCursorColIndex=td.cellIndex;
 		this.#cellCursorColStruct=this.#colStructs[this.#cellCursorColIndex];
 		this.#cellCursorRowData=this.#data[this.#cellCursorRowIndex];
@@ -561,7 +585,7 @@ class Tablance {
 				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)-scrollJumpDistance+"px";
 
 				if (this.#expandedRowIndicesHeights[dataIndex])
-					this.#renderExpansion(trToMove);
+					this.#renderExpansion(trToMove,dataIndex);
 			}
 		} else {//if scrolling up
 			while (newScrY<parseInt(this.#tableSizer.style.top)) {//while top row is below top of viewport
@@ -583,7 +607,7 @@ class Tablance {
 				//this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
 
 				if (this.#expandedRowIndicesHeights[this.#scrollRowIndex])
-					this.#renderExpansion(trToMove);
+					this.#renderExpansion(trToMove,this.#scrollRowIndex);
 					this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)-this.#expandedRowIndicesHeights[this.#scrollRowIndex]+this.#rowHeight+"px";
 					this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
 			}
@@ -631,6 +655,7 @@ class Tablance {
 	 * The row needs to already have the right amount of td's.
 	 * @param {HTMLTableRowElement} tr The tr-element whose cells that should be updated*/
 	#updateRowValues(tr,dataIndex) {
+		tr.dataset.dataRowIndex=dataIndex;
 		const dataRow=this.#data[dataIndex];
 		for (let colI=0; colI<this.#colStructs.length; colI++) {
 			let td=tr.cells[colI];
