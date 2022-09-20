@@ -188,7 +188,7 @@ class Tablance {
 	#moveCellCursor(numCols,numRows) {
 		const newColIndex=Math.min(this.#cols.length-1,Math.max(0,this.#cellCursorColIndex+numCols));
 		let newTd;
-
+		this.#scrollToCursor();
 		if (numRows) {
 
 			//need to call this manually before getting the td-element or else it might not even exist yet. 
@@ -204,7 +204,6 @@ class Tablance {
 		if (!newTd)
 			return;
 		this.#selectTd(newTd);
-		this.#scrollToCursor();
 	}
 
 	#spreadsheetKeyDown(e) {
