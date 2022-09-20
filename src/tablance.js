@@ -262,6 +262,7 @@ class Tablance {
 		expansionRow.className="expansion";
 		expansionRow.dataset.dataRowIndex=dataRowIndex;
 		const expansionCell=expansionRow.insertCell();
+		expansionCell.colSpan=this.#cols.length;
 		expansionCell.innerHTML="foo";
 		expansionRow.style.height="100px";
 		return expansionRow;
