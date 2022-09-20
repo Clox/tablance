@@ -205,7 +205,6 @@ class Tablance {
 			return;
 		this.#selectTd(newTd);
 		this.#scrollToCursor();
-		console.log(this.#cellCursorRowIndex);
 	}
 
 	#spreadsheetKeyDown(e) {
@@ -248,6 +247,10 @@ class Tablance {
 	#contractRow(tr,rowIndex) {
 		if (!this.#expansion||!this.#expandedRowIndicesHeights[rowIndex])
 			return;
+		if (tr.classList.contains("expansion")) {
+			tr=tr.previousSibling;
+			this.#selectTd(tr.firstChild);
+		}
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
 			-this.#expandedRowIndicesHeights[rowIndex]+this.#rowHeight+"px";
 		tr.nextElementSibling.remove();
