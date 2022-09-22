@@ -252,7 +252,6 @@ class Tablance {
 	#expandRow(tr,dataRowIndex) {
 		if (!this.#expansion||this.#expandedRowIndicesHeights[dataRowIndex])
 			return;
-		tr.classList.add("expanded");
 		const expansionRow=this.#renderExpansion(tr,dataRowIndex);
 		this.#expandedRowIndicesHeights[dataRowIndex]=this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY;
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
@@ -274,6 +273,7 @@ class Tablance {
 	}
 
 	#renderExpansion(tr,dataRowIndex) {
+		tr.classList.add("expanded");
 		const expansionRow=tr.parentElement.insertRow(tr.rowIndex+1);
 		expansionRow.className="expansion";
 		expansionRow.dataset.dataRowIndex=dataRowIndex;
@@ -623,6 +623,8 @@ class Tablance {
 
 				if (this.#expandedRowIndicesHeights[dataIndex])
 					this.#renderExpansion(trToMove,dataIndex);
+				else
+					trToMove.classList.remove("expanded");
 			}
 		} else {//if scrolling up
 			while (newScrY<parseInt(this.#tableSizer.style.top)) {//while top row is below top of viewport
@@ -645,8 +647,11 @@ class Tablance {
 
 				if (this.#expandedRowIndicesHeights[this.#scrollRowIndex])
 					this.#renderExpansion(trToMove,this.#scrollRowIndex);
-					this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)-this.#expandedRowIndicesHeights[this.#scrollRowIndex]+this.#rowHeight+"px";
-					this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
+				else
+					trToMove.classList.remove("expanded");
+				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)
+										-this.#expandedRowIndicesHeights[this.#scrollRowIndex]+this.#rowHeight+"px";
+				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
 			}
 		}
 		this.#scrollY=newScrY;
