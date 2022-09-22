@@ -517,12 +517,19 @@ class Tablance {
 
 	#filterData(filterString) {
 		this.#filter=filterString;
+
+		const colsToFilterBy=[];
+		for (let col of this.#colStructs) {
+			if (col.type!=="expand")
+				colsToFilterBy.push(col);
+		}
+
 		if (!filterString||filterString=="")
 			this.#data=this.#allData;
 		else {
 			this.#data=[];
 			for (let dataRow of this.#allData) {
-				for (let col of this.#colStructs) {
+				for (let col of colsToFilterBy) {
 					if (dataRow[col.id].includes(filterString)) {
 						this.#data.push(dataRow);
 						break;
