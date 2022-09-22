@@ -69,8 +69,53 @@
 .tablance td {
   border-top: 1px solid #ddd;
   border-right: 1px solid #ddd;
+  padding: 8px 10px;
+  cursor: cell;
+}
+
+.tablance td.expandCol {
+  cursor: pointer;
 }
 
 .tablance td.disabled {
   background-color: #f2f2f2;
+}
+
+.tablance td.expandcol > a {
+  display: block;
+  margin: auto;
+  background: -webkit-gradient(linear, left top, left bottom, from(#3DF651), to(#21A516));
+  background: linear-gradient(to bottom, #3DF651, #21A516);
+  border-radius: 100px;
+  height: 3px;
+  width: 3px;
+  color: #FFFFFF;
+  font-family: Arial;
+  padding: 5px;
+  -webkit-box-shadow: 1px 1px 5px #000000;
+          box-shadow: 1px 1px 5px #000000;
+  border: solid #FFFFFF 2px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.tablance td.expandcol > a > span {
+  left: -2px;
+  position: relative;
+  top: -5px;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.tablance td.expandcol > a > span:before {
+  content: "+";
+}
+
+.tablance tr.expanded > td.expandcol > a {
+  background: -webkit-gradient(linear, left top, left bottom, from(#FD2B2B), to(#A51616));
+  background: linear-gradient(to bottom, #FD2B2B, #A51616);
+}
+
+.tablance tr.expanded > td.expandcol > a > span:before {
+  content: "\2013";
 }

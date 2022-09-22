@@ -71,8 +71,11 @@ class Tablance {
 	 * 			width String The width of the column. This can be in either px or % units.
 	 * 				In case of % it will be calculated on the remaining space after all the fixed widths
 	 * 				have been accounted for.
-	 * 			}
 	 * 			editable false|String Defaults to false. Can be set to "text" to make it editable
+	 * 			type String Can be set to "expand" to make it a column with buttons for expanding/contracting
+	 * 						The editable-prop will be ignored if this is set.
+	 * 		}
+	 * 			
 	 * 	@param	{Boolean} staticRowHeight Set to true if all rows are of same height. With this option on, scrolling
 	 * 				quickly through large tables will be more performant.
 	 * 	@param	{Boolean} spreadsheet If true then the table will work like a spreadsheet. Cells can be selected and the
@@ -107,9 +110,11 @@ class Tablance {
 		container.classList.add("tablance");
 		this.#staticRowHeight=staticRowHeight;
 		this.#opts=opts;
-		const allowedColProps=["id","title","width","edit"];
+		const allowedColProps=["id","title","width","edit","type"];
 		for (let col of columns) {
 			let processedCol={};
+			if (col.type=="expand"&&!col.width)
+				processedCol.width=50;
 			for (let [colKey,colVal] of Object.entries(col)) {
 				if (allowedColProps.includes(colKey))
 					processedCol[colKey]=colVal;
@@ -207,6 +212,7 @@ class Tablance {
 	}
 
 	#spreadsheetKeyDown(e) {
+		this.#container.style.outline="none";//see #spreadsheetOnFocus
 		switch (e.key) {
 			case "ArrowUp":
 				this.#moveCellCursor(0,-1);
@@ -218,8 +224,13 @@ class Tablance {
 				this.#moveCellCursor(1,0);
 			break; case "Escape":
 				this.#exitEditMode(false);
+			break;  case " ":
+				if (!this.#inEditMode&&this.#selectedTd.classList.contains("expandcol"))
+					return this.#toggleRowExpanded(this.#selectedTd.parentElement);
 			break; case "Enter":
 				if (!this.#inEditMode) {
+					if (this.#selectedTd.classList.contains("expandcol"))
+						return this.#toggleRowExpanded(this.#selectedTd.parentElement);
 					this.#scrollToCursor();
 					this.#tryEnterEditMode();
 				} else {
@@ -231,29 +242,30 @@ class Tablance {
 			break; case "-":
 				this.#contractRow(this.#selectedTd.parentElement,this.#cellCursorRowIndex);
 		}
-		this.#container.style.outline="none";//see #spreadsheetOnFocus
 	}
 
 	#expandRow(tr,dataRowIndex) {
 		if (!this.#expansion||this.#expandedRowIndicesHeights[dataRowIndex])
 			return;
+		tr.classList.add("expanded");
 		const expansionRow=this.#renderExpansion(tr,dataRowIndex);
 		this.#expandedRowIndicesHeights[dataRowIndex]=this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY;
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
 			+this.#expandedRowIndicesHeights[dataRowIndex]-this.#rowHeight+"px";
 	}
 
-	#contractRow(tr,rowIndex) {
-		if (!this.#expansion||!this.#expandedRowIndicesHeights[rowIndex])
+	#contractRow(tr,dataRowIndex) {
+		if (!this.#expansion||!this.#expandedRowIndicesHeights[dataRowIndex])
 			return;
+		tr.classList.remove("expanded");
 		if (tr.classList.contains("expansion")) {
 			tr=tr.previousSibling;
 			this.#selectTd(tr.firstChild);
 		}
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
-			-this.#expandedRowIndicesHeights[rowIndex]+this.#rowHeight+"px";
+			-this.#expandedRowIndicesHeights[dataRowIndex]+this.#rowHeight+"px";
 		tr.nextElementSibling.remove();
-		delete this.#expandedRowIndicesHeights[rowIndex];
+		delete this.#expandedRowIndicesHeights[dataRowIndex];
 	}
 
 	#renderExpansion(tr,dataRowIndex) {
@@ -292,8 +304,19 @@ class Tablance {
 	}
 	
 	#mainTableMouseDown(e) {
-		const td=e.target;
+		if (e.which===3)//if right click
+			return;
+		const td=e.target.closest("td");
+		if (td.classList.contains("expandcol"))
+			return this.#toggleRowExpanded(td.parentElement);
 		this.#selectTd(td);
+	}
+
+	#toggleRowExpanded(tr) {
+		if (tr.classList.contains("expanded"))
+			this.#contractRow(tr,tr.dataset.dataRowIndex);
+		else
+			this.#expandRow(tr,tr.dataset.dataRowIndex);
 	}
 
 	#tryEnterEditMode(e) {
@@ -350,7 +373,7 @@ class Tablance {
 		for (let col of this.#colStructs) {
 			let th=document.createElement("th");
 			th.addEventListener("mousedown",e=>this.#onThClick(e));
-			this.#headerTr.appendChild(th).innerText=col.title;
+			this.#headerTr.appendChild(th).innerText=col.title??"";
 
 			//create the divs used for showing html for sorting-up/down-arrow or whatever has been configured
 			col.sortDiv=th.appendChild(document.createElement("DIV"));
@@ -636,8 +659,11 @@ class Tablance {
 		//while (this.#scrollRowIndex+trs.length<dataLen&&(!lastTr||lastTr.offsetTop+this.#rowHeight/2<=scrH)) {
 			lastTr=this.#mainTable.insertRow();
 			this.#numRenderedRows++;
-			for (let i=0; i<this.#colStructs.length; i++)
-				lastTr.insertCell();
+			for (let i=0; i<this.#colStructs.length; i++) {
+				let cell=lastTr.insertCell();
+				if (this.#colStructs[i].type==="expand")
+					cell.classList.add("expandcol");
+			}
 			this.#updateRowValues(lastTr,this.#scrollRowIndex+this.#numRenderedRows-1);
 			if (!this.#rowHeight)//if there were no rows prior to this
 				this.#rowHeight=lastTr.offsetHeight+this.#borderSpacingY;
@@ -663,7 +689,7 @@ class Tablance {
 		for (let colI=0; colI<this.#colStructs.length; colI++) {
 			let td=tr.cells[colI];
 			let colStruct=this.#colStructs[colI];
-			if (this.#spreadsheet&&colStruct.edit!=="text")
+			if (this.#spreadsheet&&(colStruct.edit!=="text"&&colStruct.type!=="expand"))
 				td.classList.add("disabled");
 			this.#updateCellValue(td,dataRow);
 		}
@@ -673,6 +699,9 @@ class Tablance {
 	#updateCellValue(td,dataRow) {
 		let col=this.#colStructs[td.cellIndex];
 		td.innerHtml="";
-		td.innerText=dataRow[col.id];
+		if (col.type==="expand")
+			td.innerHTML="<a><span></span></a>";
+		else
+			td.innerText=dataRow[col.id];
 	}
 }

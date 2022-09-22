@@ -51,8 +51,45 @@
 	td {
 		border-top: 1px solid #ddd;
 		border-right: 1px solid #ddd;
+		padding: 8px 10px;
+		cursor: cell;
+		&.expandCol {
+			cursor:pointer;
+		}
 		&.disabled {
 			background-color: #f2f2f2;
+		}
+	}
+	td.expandcol>a {
+		display: block;
+		margin: auto;
+		background: linear-gradient(to bottom, #3DF651, #21A516);
+		border-radius: 100px;
+		height: 3px;
+		width: 3px;
+		color: #FFFFFF;
+		font-family: Arial;
+		padding: 5px;
+		box-shadow: 1px 1px 5px #000000;
+		border: solid #FFFFFF 2px;
+		
+		cursor: pointer;
+		text-align: center;
+		>span {
+			left: -2px;
+			position: relative;
+			top: -5px;
+			font-size: 12px;
+			font-weight: 950;
+			&:before {
+				content: "+";
+			}
+		}
+	}
+	tr.expanded>td.expandcol>a{
+		background: linear-gradient(to bottom, #FD2B2B, #A51616);
+		>span:before {
+			content: "\2013";
 		}
 	}
 }

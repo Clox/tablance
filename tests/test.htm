@@ -3,8 +3,8 @@
 	<link rel="stylesheet" href="../styles/style.min.css">
 	<script>
 		document.addEventListener("DOMContentLoaded", ()=>{
-			const myTablanceCols=[{id:"desc",title:"Description",edit:"text"},{id:"amount",title:"Amount",width:"70px"}
-															,{id:"balance",title:"Balance",width:"70px"}];
+			const myTablanceCols=[{type:"expand"},{id:"desc",title:"Description",edit:"text"}
+					,{id:"amount",title:"Amount",width:"70px"},{id:"balance",title:"Balance",width:"70px"}];
 			const myExpansion={type:"row",title:"Foobar",id:"foobar"};
 			const myTablance=new Tablance(document.getElementById("tablanceContainer1"),myTablanceCols,true,true
 				,myExpansion,{});
