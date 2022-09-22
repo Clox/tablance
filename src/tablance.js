@@ -675,11 +675,9 @@ class Tablance {
 		let lastTr=this.#mainTbody.lastChild;
 		const scrH=this.#scrollBody.offsetHeight;
 		const dataLen=this.#data.length;
-		const trs=this.#mainTable.rows;
 		//if there are fewer trs than datarows, and if there is empty space below bottom tr
 		
-		while (this.#numRenderedRows*this.#rowHeight<scrH&&this.#scrollRowIndex+this.#numRenderedRows<dataLen) {
-		//while (this.#scrollRowIndex+trs.length<dataLen&&(!lastTr||lastTr.offsetTop+this.#rowHeight/2<=scrH)) {
+		while ((this.#numRenderedRows-1)*this.#rowHeight<scrH&&this.#scrollRowIndex+this.#numRenderedRows<dataLen) {
 			lastTr=this.#mainTable.insertRow();
 			this.#numRenderedRows++;
 			for (let i=0; i<this.#colStructs.length; i++) {
