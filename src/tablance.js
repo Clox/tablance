@@ -314,8 +314,11 @@ class Tablance {
 		if (e.which===3)//if right click
 			return;
 		const td=e.target.closest("td");
-		if (td.classList.contains("expandcol"))
+		if (td.classList.contains("expandcol")) {
+			if (this.#cellCursorRowIndex==null)
+				this.#selectTd(td);
 			return this.#toggleRowExpanded(td.parentElement);
+		}
 		this.#selectTd(td);
 	}
 
