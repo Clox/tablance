@@ -179,14 +179,16 @@ class Tablance {
 	}
 
 	#spreadsheetOnFocus(e) {
-		if (this.#cellCursorRowIndex==null) {
+		if (this.#cellCursorRowIndex==null)
 			this.#selectTd(this.#mainTbody.rows[0].cells[0]);
-		}
 		//when the table is tabbed to, whatever focus-outline that the css has set for it should show, but then when the
 		//user starts to navigate using the keyboard we want to hide it because it is a bit distracting when both it and
 		//a cell is highlighted. Thats why #spreadsheetKeyDown sets outline to none, and this line undos that
 		//also, we dont want it to show when focusing by mouse so we use #focusMethod (see its declaration)
-		this.#focusByMouse?this.#container.style.outline="none":this.#container.style.removeProperty("outline");
+		if (this.#focusByMouse)
+			this.#container.style.outline="none"
+		else
+			this.#container.style.removeProperty("outline")
 		this.#focusByMouse=null;
 	}
 
@@ -300,7 +302,9 @@ class Tablance {
 	}
 
 	#spreadsheetMouseDown(e) {
-		this.#focusByMouse=true;//see decleration
+		if (document.activeElement!==this.#container)
+			this.#focusByMouse=true;//see decleration
+		this.#container.style.outline="none";//see #spreadsheetOnFocus
 	}
 	
 	#mainTableMouseDown(e) {
