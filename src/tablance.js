@@ -197,7 +197,6 @@ class Tablance {
 		let newTd;
 		this.#scrollToCursor();
 		if (numRows) {
-
 			//need to call this manually before getting the td-element or else it might not even exist yet. 
 			//#onScrollStaticRowHeight() will actually get called once more through the scroll-event since we called
 			//#scrollToRow() above, but it doesn't get fired immediately. Running it twice is not a big deal.
@@ -368,7 +367,8 @@ class Tablance {
 		this.#cellCursor.style.width=td.offsetWidth-this.#cellCursorBorderWidths.left+"px";
 
 		this.#cellCursorRowIndex=parseInt(td.parentElement.dataset.dataRowIndex);
-		this.#cellCursorColIndex=td.cellIndex;
+		if (!td.parentElement.classList.contains("expansion"))
+			this.#cellCursorColIndex=td.cellIndex;
 		this.#cellCursorColStruct=this.#colStructs[this.#cellCursorColIndex];
 		this.#cellCursorRowData=this.#data[this.#cellCursorRowIndex];
 		this.#cellCursorColId=this.#colStructs[this.#cellCursorColIndex].id;
