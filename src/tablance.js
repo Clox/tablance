@@ -193,7 +193,7 @@ class Tablance {
 	}
 
 	#moveCellCursor(numCols,numRows) {
-		const newColIndex=Math.min(this.#cols.length-1,Math.max(0,this.#cellCursorColIndex+numCols));
+		//const newColIndex=Math.min(this.#cols.length-1,Math.max(0,this.#cellCursorColIndex+numCols));
 		let newTd;
 		this.#scrollToCursor();
 		if (numRows) {
@@ -202,7 +202,11 @@ class Tablance {
 			//#onScrollStaticRowHeight() will actually get called once more through the scroll-event since we called
 			//#scrollToRow() above, but it doesn't get fired immediately. Running it twice is not a big deal.
 			this.#scrollMethod();
-
+			let newColIndex=this.#cellCursorColIndex;
+			if (numRows===1&&this.#selectedTd.parentElement.classList.contains("expanded"))
+				newColIndex=0;
+			else if (numRows===-1&&this.#selectedTd.parentElement.previousSibling?.classList.contains("expansion"))
+				newColIndex=0;
 			newTd=this.#selectedTd.parentElement[(numRows>0?"next":"previous")+"Sibling"]?.cells[newColIndex];
 		} else {
 			newTd=this.#selectedTd[(numCols>0?"next":"previous")+"Sibling"];
