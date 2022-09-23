@@ -55,10 +55,16 @@ class Tablance {
 				//focus-outline to appear only if it was by keyboard. By setting this to true in mouseDownEvent we can 
 				//check which input was used last when the focus-method is triggerd
 	#expansion;//the expansion-argument passed to the constructor
+	#expansionBordesHeight;//when animating expansions for expanding/contracting the height of them fully
+			//expanded needs to be known to know where to animate to and from. This is different from 
+			//#expandedRowIndicesHeights because that is the height of the whole row and not the div inside.
+			//we could retrieve offsetheight of the div each time a row needs to be animated or instead we can get
+			//the border-top-width + border-bottom-width once and then substract that from the value of  what's in
+			//#expandedRowIndicesHeights instead
 	#scrollMethod;//this will be set to a reference of the scroll-method that will be used. This depends on settings for
 				//staticRowHeight and expansion
-	#expandedRowIndicesHeights={};//for tables where rows can be expanded, this object will keep track of which rows
-	//have been expanded and also their combined height. key is row-index
+	#expandedRowHeights={};//for tables where rows can be expanded, this object will keep track of which rows
+	//have been expanded and also their combined height. key is data-row-index
 	#scrollY=0;//this keeps track of the "old" scrollTop of the table when a scroll occurs to know 
 	#numRenderedRows=0;//number of tr-elements in the table excluding tr's that are expansions (expansions too are tr's)
 	#cellCursorInExpansion=false;//if cellCursor is currently inside an expansion
@@ -266,36 +272,59 @@ class Tablance {
 	}
 
 	#expandRow(tr,dataRowIndex) {
-		if (!this.#expansion||this.#expandedRowIndicesHeights[dataRowIndex])
+		if (!this.#expansion||this.#expandedRowHeights[dataRowIndex])
 			return;
-		const expansionRow=this.#renderExpansion(tr,dataRowIndex);
-		this.#expandedRowIndicesHeights[dataRowIndex]=this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY;
-		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
-			+this.#expandedRowIndicesHeights[dataRowIndex]-this.#rowHeight+"px";
+		const expansionRow=this.#renderExpansion(tr,dataRowIndex,false);
+		this.#expandedRowHeights[dataRowIndex]=this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY;
+		const contentDiv=expansionRow.querySelector(".content");
+		if (!this.#expansionBordesHeight)//see declarataion of #expansionTopBottomBorderWidth
+			this.#expansionBordesHeight=this.#expandedRowHeights[dataRowIndex]-contentDiv.offsetHeight;
+		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)//adjust scroll-height reflect change...
+			+this.#expandedRowHeights[dataRowIndex]-this.#rowHeight+"px";//...in height of the table
+
+		//animate
+		contentDiv.style.height="0px";
+		setTimeout(()=>contentDiv.style.height=this.#expandedRowHeights[dataRowIndex]-this.#expansionBordesHeight+"px");
 	}
 
 	#contractRow(tr,dataRowIndex) {
-		if (!this.#expansion||!this.#expandedRowIndicesHeights[dataRowIndex])
+		if (!this.#expansion||!this.#expandedRowHeights[dataRowIndex])
 			return;
-		tr.classList.remove("expanded");
-		if (tr.classList.contains("expansion")) {
-			tr=tr.previousSibling;
-			this.#selectTd(tr.firstChild);
-		}
-		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
-			-this.#expandedRowIndicesHeights[dataRowIndex]+this.#rowHeight+"px";
-		tr.nextElementSibling.remove();
-		delete this.#expandedRowIndicesHeights[dataRowIndex];
+		const contentDiv=tr.nextSibling.querySelector(".content");
+		contentDiv.style.height="0px";
+		contentDiv.addEventListener('transitionend', e => {
+			console.log("finished");
+			tr.classList.remove("expanded");
+			if (tr.classList.contains("expansion")) {
+				tr=tr.previousSibling;
+				this.#selectTd(tr.firstChild);
+			}
+			this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
+				-this.#expandedRowHeights[dataRowIndex]+this.#rowHeight+"px";
+			tr.nextElementSibling.remove();
+			delete this.#expandedRowHeights[dataRowIndex];
+		});
 	}
 
-	#renderExpansion(tr,dataRowIndex) {
+	/**Creates the actual content of a expanded row. When the user expands a row #expandRow is first called which in
+	 * turn calls this one. When scrolling and already expanded rows are found only this one needs to be called.
+	 * @param {*} tr 
+	 * @param {*} dataRowIndex 
+	 * @param Bool setHeight Expanded rows, or rather the div inside them needs to have their height set in order to
+	 * 				animate correctly when expanding/contracting. When this method is called on scroll the height of
+	 * 				the div should be set by this method, but if #expandRow is called because the user expanded a row
+	 * 				
+	 * @returns */
+	#renderExpansion(tr,dataRowIndex,setHeight=true) {
 		tr.classList.add("expanded");
 		const expansionRow=tr.parentElement.insertRow(tr.rowIndex+1);
 		expansionRow.className="expansion";
 		expansionRow.dataset.dataRowIndex=dataRowIndex;
 		const expansionCell=expansionRow.insertCell();
 		expansionCell.colSpan=this.#cols.length;
-		const expansionDiv=expansionCell.appendChild(document.createElement("div"));//single div inside td for styling
+		const expansionDiv=expansionCell.appendChild(document.createElement("div"));//single div inside td for animate
+		expansionDiv.style.height=this.#expandedRowHeights[dataRowIndex]-this.#expansionBordesHeight+"px"
+		expansionDiv.className="content";
 		const shadowLine=expansionDiv.appendChild(document.createElement("div"));
 		shadowLine.className="expansion-shadow";
 		expansionDiv.appendChild(this.#generateExpansionContent(this.#expansion,this.#data[dataRowIndex]));
@@ -648,14 +677,14 @@ class Tablance {
 		const newScrY=this.#scrollBody.scrollTop;
 		if (newScrY>parseInt(this.#scrollY)) {//if scrolling down
 			while (newScrY-parseInt(this.#tableSizer.style.top)
-			>(this.#expandedRowIndicesHeights[this.#scrollRowIndex]??this.#rowHeight)) {//if a whole top row is outside
+			>(this.#expandedRowHeights[this.#scrollRowIndex]??this.#rowHeight)) {//if a whole top row is outside
 				if (this.#scrollRowIndex+this.#numRenderedRows>this.#data.length-1)
 					break;
 				
 
 				//check if the top row (the one that is to be moved to the bottom) is expanded
-				if (this.#expandedRowIndicesHeights[this.#scrollRowIndex]) {
-					var scrollJumpDistance=this.#expandedRowIndicesHeights[this.#scrollRowIndex];
+				if (this.#expandedRowHeights[this.#scrollRowIndex]) {
+					var scrollJumpDistance=this.#expandedRowHeights[this.#scrollRowIndex];
 					this.#mainTbody.rows[1].remove();
 					
 				} else {
@@ -679,7 +708,7 @@ class Tablance {
 				//also shrink the container of the table the same amount to maintain the scrolling-range.
 				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)-scrollJumpDistance+"px";
 
-				if (this.#expandedRowIndicesHeights[dataIndex])
+				if (this.#expandedRowHeights[dataIndex])
 					this.#renderExpansion(trToMove,dataIndex);
 				else
 					trToMove.classList.remove("expanded");
@@ -689,7 +718,7 @@ class Tablance {
 				this.#scrollRowIndex--;
 
 				//check if the bottom row (the one that is to be moved to the top) is expanded
-				if (this.#expandedRowIndicesHeights[this.#scrollRowIndex+this.#numRenderedRows]) {
+				if (this.#expandedRowHeights[this.#scrollRowIndex+this.#numRenderedRows]) {
 					this.#mainTbody.lastChild.remove();//remove the expansion-tr
 				}
 
@@ -703,12 +732,12 @@ class Tablance {
 				//also grow the container of the table the same amount to maintain the scrolling-range.
 				//this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
 
-				if (this.#expandedRowIndicesHeights[this.#scrollRowIndex])
+				if (this.#expandedRowHeights[this.#scrollRowIndex])
 					this.#renderExpansion(trToMove,this.#scrollRowIndex);
 				else
 					trToMove.classList.remove("expanded");
 				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)
-										-this.#expandedRowIndicesHeights[this.#scrollRowIndex]+this.#rowHeight+"px";
+										-this.#expandedRowHeights[this.#scrollRowIndex]+this.#rowHeight+"px";
 				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
 			}
 		}
