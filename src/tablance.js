@@ -292,18 +292,13 @@ class Tablance {
 			return;
 		const contentDiv=tr.nextSibling.querySelector(".content");
 		contentDiv.style.height="0px";
-		contentDiv.addEventListener('transitionend', e => {
-			console.log("finished");
+		contentDiv.ontransitionend=e => {
 			tr.classList.remove("expanded");
-			if (tr.classList.contains("expansion")) {
-				tr=tr.previousSibling;
-				this.#selectTd(tr.firstChild);
-			}
 			this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
 				-this.#expandedRowHeights[dataRowIndex]+this.#rowHeight+"px";
 			tr.nextElementSibling.remove();
 			delete this.#expandedRowHeights[dataRowIndex];
-		});
+		};
 	}
 
 	/**Creates the actual content of a expanded row. When the user expands a row #expandRow is first called which in
