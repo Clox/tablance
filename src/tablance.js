@@ -80,19 +80,35 @@ class Tablance {
 	 * 				quickly through large tables will be more performant.
 	 * 	@param	{Boolean} spreadsheet If true then the table will work like a spreadsheet. Cells can be selected and the
 	 * 				keyboard can be used for navigating the cell-selection.
-	 * 	@param	{Object} expansion This allows for having rows that can be expanded to show more data. An object with
-	 * 							the following structure is expected:{
-	 * 								rows: [
-	 * 									{
-	 * 										title:String the title of the row, displayed to the left of the value
-	 * 										id:String The key of the corresponding property in the row-data
-	 * 										editable:String can be set to "text" to make editable. Can also be set to
-	 * 											"textarea" to allow for linebreaks
-	 * 										
-	 * 									}
-	 * 									,...
-	 * 								]
-	 * 							}
+	 * 	@param	{Object} expansion This allows for having rows that can be expanded to show more data. An "entry"-object
+	 * 			is expected and some of them can hold other entry-objects so that they can be nested.
+	 * 			Types of entries:
+	 * 			{//this is an entry that holds multiple rows laid out vertically, each item in the list can have a 
+	 * 			 //title on the left side by specifying "title" in each item within the list
+  	 *				type:"list",
+	 * 				entries:[]//each element should be another entry
+	 *			}
+	 *			{
+  	 * 				type:"field",//this is what will display data and which also can be editable
+  	 * 				title:"Foobar",//displayed title in placed in a list
+  	 * 				id:"foobar",//the key of the property in the data that the row should display
+  	 * 			}
+  	 * 			{
+  	 * 				type:"repeated",//used when the number of rows is undefined and where more may be able to be added, 
+	 * 								//perhaps by the user
+  	 * 				title:"Foobar",//displayed title in placed in a list
+  	 * 				id:"foobar",//this should be the key of an array in the data where each object corresponds to each
+	 * 							//element in this repeated rows.
+  	 * 				entry: any entry //may be item or list for instance. the data retrieved for these will be 1
+	 * 								//level deeper so the path from the base would be idOfRepeatedRows->arrayIndex->*
+  	 * 				}
+  	 * 				{
+  	 * 				type:"group",//used when a set of data should be grouped, like for instance having an address and
+	 * 							//all the rows in it belongs together. the group also has to be entered
+	 * 							//with enter/doubleclick
+  	 * 				title:"Foobar",//displayed title in placed in a list
+  	 * 				entry: any entry //may be item or list for instance. 
+  	 * 				}
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							"searchbar" Bool that defaults to true. If true then there will be a searchbar that
 	 * 								can be used to filter the data.
@@ -279,9 +295,42 @@ class Tablance {
 		expansionRow.dataset.dataRowIndex=dataRowIndex;
 		const expansionCell=expansionRow.insertCell();
 		expansionCell.colSpan=this.#cols.length;
-		expansionCell.innerHTML="foo";
-		expansionRow.style.height="100px";
+		const expansionDiv=expansionCell.appendChild(document.createElement("div"));//single div inside td for styling
+		expansionDiv.appendChild(this.#generateExpansionContent(this.#expansion,this.#data[dataRowIndex]));
 		return expansionRow;
+	}
+
+	#generateExpansionContent(expansionStructure,data) {
+	/* 	return {
+			list:this.#generateExpansionList,
+			field:this.#generateExpansionField
+		}[expansionStructure.type](expansionStructure,data); */
+		switch (expansionStructure.type) {
+			case "list": return this.#generateExpansionList(expansionStructure,data);
+			break;
+			case "field":return this.#generateExpansionField(expansionStructure,data);
+		}
+	}
+
+	#generateExpansionList(listStructure,data) {
+		const listTable=document.createElement("table");
+		listTable.className="expansion-list";
+		for (let entry of listStructure.entries) {
+			let listTr=listTable.insertRow();
+			let titleTd=listTr.insertCell();
+			titleTd.className="title";
+			titleTd.innerText=entry.title;
+			let contentTd=listTr.insertCell();
+			contentTd.className="value";
+			contentTd.appendChild(this.#generateExpansionContent(entry,data));
+		}
+		return listTable;
+	}
+
+	#generateExpansionField(fieldStructure,data) {
+		const span=document.createElement("span");
+		span.innerText=data[fieldStructure.id];
+		return span;
 	}
 
 	#scrollToCursor() {
