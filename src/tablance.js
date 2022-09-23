@@ -291,14 +291,19 @@ class Tablance {
 		if (!this.#expansion||!this.#expandedRowHeights[dataRowIndex])
 			return;
 		const contentDiv=tr.nextSibling.querySelector(".content");
-		contentDiv.style.height="0px";
-		contentDiv.ontransitionend=e => {
+		const contractFinished=()=> {
 			tr.classList.remove("expanded");
 			this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
 				-this.#expandedRowHeights[dataRowIndex]+this.#rowHeight+"px";
 			tr.nextElementSibling.remove();
 			delete this.#expandedRowHeights[dataRowIndex];
 		};
+		if (contentDiv.style.height!=="0px") {//this is the normal scenario. its open and height is more than 0.
+			contentDiv.style.height="0px";	//so transition it to 0
+			contentDiv.ontransitionend=contractFinished;//and add listener
+		} else //however, if user manages to attempt to contract when height is exactly at 0 which actually isn't too
+			contractFinished();//hard then the event would never fire so just call it directly instead
+		
 	}
 
 	/**Creates the actual content of a expanded row. When the user expands a row #expandRow is first called which in
