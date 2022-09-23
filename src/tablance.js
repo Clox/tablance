@@ -236,6 +236,9 @@ class Tablance {
 		if (!newTd)
 			return;
 		this.#selectTd(newTd);
+
+		//need to call this a second time. first time is to scroll to old td to make sure the new td is rendered
+		this.#scrollToCursor();//this time it is to actually scroll to the new td
 	}
 
 	#spreadsheetKeyDown(e) {
