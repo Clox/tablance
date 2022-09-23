@@ -448,6 +448,10 @@ class Tablance {
 		if (!td.parentElement.classList.contains("expansion"))
 			this.#cellCursorColIndex=td.cellIndex;
 		this.#cellCursorColStruct=this.#colStructs[this.#cellCursorColIndex];
+
+		//make cellcursor click-through if it's on an expand-row-button-td
+		this.#cellCursor.style.pointerEvents=this.#cellCursorColStruct.type==="expand"?"none":"auto";
+
 		this.#cellCursorRowData=this.#data[this.#cellCursorRowIndex];
 		this.#cellCursorColId=this.#colStructs[this.#cellCursorColIndex].id;
 	}
