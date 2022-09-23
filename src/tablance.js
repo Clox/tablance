@@ -296,6 +296,8 @@ class Tablance {
 		const expansionCell=expansionRow.insertCell();
 		expansionCell.colSpan=this.#cols.length;
 		const expansionDiv=expansionCell.appendChild(document.createElement("div"));//single div inside td for styling
+		const shadowLine=expansionDiv.appendChild(document.createElement("div"));
+		shadowLine.className="expansion-shadow";
 		expansionDiv.appendChild(this.#generateExpansionContent(this.#expansion,this.#data[dataRowIndex]));
 		return expansionRow;
 	}

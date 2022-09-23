@@ -22,7 +22,7 @@
 			for (let i=0; i<3; i++) {
 				let data=[];
 				for (let ii=0; ii<1000; ii++) {
-					data.push({desc:"foobar "+i+", "+ii,foobar1:i+i,foobar2:i+i+i+i
+					data.push({desc:"foobar "+i+", "+ii,foobar1:i+ii,foobar2:i*2+ii*2
 						,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2)});
 				}
 				myTablance.addData(data);
