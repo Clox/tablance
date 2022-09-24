@@ -890,7 +890,9 @@ class Tablance {
 					cell.classList.add("expandcol");
 			}
 			this.#updateRowValues(lastTr,this.#scrollRowIndex+this.#numRenderedRows-1);
-			this.#lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row
+			if (this.#expandedRowHeights[this.#scrollRowIndex+this.#numRenderedRows-1])
+				this.#renderExpansion(lastTr,this.#scrollRowIndex+this.#numRenderedRows-1);
+			this.#lookForActiveCellInRow(lastTr);//look for active cell (cellcursor) in the row
 			if (!this.#rowHeight)//if there were no rows prior to this
 				this.#rowHeight=lastTr.offsetHeight+this.#borderSpacingY;
 		}
@@ -900,7 +902,11 @@ class Tablance {
 	#maybeRemoveTrs() {
 		const scrH=this.#scrollBody.offsetHeight;
 		const trs=this.#mainTbody.rows;
-		while (trs.length>3&&trs[trs.length-2].offsetTop>scrH) {
+		while (this.#numRenderedRows>3&&(this.#numRenderedRows-1)*this.#rowHeight>scrH) {
+			if (this.#expandedRowHeights[this.#scrollRowIndex+this.#numRenderedRows-1]) {
+				this.#mainTbody.lastChild.remove();
+				delete this.#openExpansionNavMap[this.#scrollRowIndex+this.#numRenderedRows];
+			}
 			this.#mainTbody.lastChild.remove();
 			this.#numRenderedRows--;
 		}
