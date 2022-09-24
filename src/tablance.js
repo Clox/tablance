@@ -781,6 +781,9 @@ class Tablance {
 				} else {
 					scrollJumpDistance=this.#rowHeight;
 				}
+
+				if (this.#scrollRowIndex===this.#cellCursorRowIndex)//cell-cursor is on moved row
+					this.#selectedCell=null;
 				
 
 				const dataIndex=this.#numRenderedRows+this.#scrollRowIndex;//the data-index of the new row
@@ -789,9 +792,6 @@ class Tablance {
 
 				//move the top row to bottom and update its values
 				const trToMove=this.#updateRowValues(this.#mainTbody.appendChild(this.#mainTbody.firstChild),dataIndex);
-
-				
-
 
 				//move the table down by the height of the removed row to compensate,else the whole table would shift up
 				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)+scrollJumpDistance+"px";
@@ -803,6 +803,8 @@ class Tablance {
 					this.#renderExpansion(trToMove,dataIndex);
 				else
 					trToMove.classList.remove("expanded");
+
+				this.#lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row
 			}
 		} else {//if scrolling up
 			while (newScrY<parseInt(this.#tableSizer.style.top)) {//while top row is below top of viewport
@@ -813,6 +815,9 @@ class Tablance {
 					delete this.#openExpansionNavMap[this.#scrollRowIndex+this.#numRenderedRows];
 					this.#mainTbody.lastChild.remove();//remove the expansion-tr
 				}
+
+				if (this.#scrollRowIndex+this.#numRenderedRows===this.#cellCursorRowIndex)//cell-cursor is on moved row
+					this.#selectedCell=null;
 
 				let trToMove=this.#mainTbody.lastChild;									//move bottom row to top
 				this.#mainTbody.prepend(trToMove);
@@ -828,12 +833,39 @@ class Tablance {
 					this.#renderExpansion(trToMove,this.#scrollRowIndex);
 				else
 					trToMove.classList.remove("expanded");
+
+				this.#lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row
+
 				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)
 										-this.#expandedRowHeights[this.#scrollRowIndex]+this.#rowHeight+"px";
 				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
 			}
 		}
 		this.#scrollY=newScrY;
+	}
+
+	
+
+	/**This should be called on each row that is being scrolled into view that might hold the active cell in order
+	 * to set #selectedCell to the correct element
+	 * @param {HTMLTableRowElement} tr */
+	#lookForActiveCellInRow(tr) {
+		if (tr.dataset.dataRowIndex==this.#cellCursorRowIndex) {
+			if (!this.#activeExpansionCell)
+				this.#selectedCell=tr.cells[this.#cellCursorColIndex];
+			else {//if inside expansion
+				//generate the path to the cellObject in #activeExpansionCell by stepping through its parents to root
+				let path=[];
+				for (let cellObject=this.#activeExpansionCell; cellObject.parent; cellObject=cellObject.parent)
+					path.unshift(cellObject.index);
+				//now follow the same path in the new #openExpansionNavMap[rowIndex], eg the cellObjects..
+				let cellObject=this.#openExpansionNavMap[this.#cellCursorRowIndex];
+				for (let step of path)
+					cellObject=cellObject.children[step];
+				this.#selectedCell=cellObject.el;
+				this.#activeExpansionCell=cellObject;//should be identical but this allows for the old one to be gc'd
+			}
+		}
 	}
 
 	#refreshTableSizerNoExpansions() {
@@ -858,6 +890,7 @@ class Tablance {
 					cell.classList.add("expandcol");
 			}
 			this.#updateRowValues(lastTr,this.#scrollRowIndex+this.#numRenderedRows-1);
+			this.#lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row
 			if (!this.#rowHeight)//if there were no rows prior to this
 				this.#rowHeight=lastTr.offsetHeight+this.#borderSpacingY;
 		}
