@@ -423,13 +423,33 @@ class Tablance {
 	#mainTableMouseDown(e) {
 		if (e.which===3)//if right click
 			return;
-		const td=e.target.closest("td");
-		if (td.classList.contains("expandcol")) {
-			if (this.#cellCursorRowIndex==null)
-				this.#selectMainTableCell(td);
-			return this.#toggleRowExpanded(td.parentElement);
+		const mainTr=e.target.closest(".main-table>tbody>tr");
+		if (mainTr.classList.contains("expansion")) {//in expansion
+			let cellObject=this.#openExpansionNavMap[mainTr.dataset.dataRowIndex];
+
+			while (cellObject.children) {
+				let childI;
+				for (childI=0; childI<cellObject.children.length; childI++) {
+					if (cellObject.children[childI].el.contains(e.target)) {
+						cellObject=cellObject.children[childI];
+						break;
+					}
+				}
+				if (childI==cellObject.children?.length){ //none of the children matched but the parent matched. 
+					cellObject=null;
+					break
+				}
+			}
+			this.#selectExpansionCell(mainTr.dataset.dataRowIndex,cellObject);
+		} else {//not in expansion
+			const td=e.target.closest(".main-table>tbody>tr>td");
+				if (td.classList.contains("expandcol")) {
+					if (this.#cellCursorRowIndex==null)
+						this.#selectMainTableCell(td);
+					return this.#toggleRowExpanded(td.parentElement);
+				}
+			this.#selectMainTableCell(td);
 		}
-		this.#selectMainTableCell(td);
 	}
 
 	#toggleRowExpanded(tr) {
@@ -491,7 +511,9 @@ class Tablance {
 	}
 
 	#selectExpansionCell(dataRowIndex,cellObject) {
-		this.#cellCursorRowIndex=dataRowIndex;
+		if (!cellObject)
+			return;
+		this.#cellCursorRowIndex=parseInt(dataRowIndex);
 		this.#activeExpansionCell=cellObject;
 		this.#exitEditMode(true);
 		this.#adjustCursorPos(cellObject.el);
