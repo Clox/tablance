@@ -20,6 +20,10 @@
 		cursor:pointer;	
 	}
 	.cell-cursor {
+
+		//looks good but is distracting when using arrow-keys. Limit it to mouse-clicks?
+		//transition: left .15s ease-out,top .15s ease-out,height .15s ease-out,width .15s ease-out;
+
 		position: absolute;
 		outline:2px solid blue;
 		&.edit-mode {

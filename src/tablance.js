@@ -41,7 +41,7 @@ class Tablance {
 	#cellCursorRowData;//reference to the actual data-row-array from #data that the cell-cursor is at
 	#cellCursorColId;//the id of the column that the cellcursor is at
 	#selectedCellVal;//the value of the cell that the cellCursor is at
-	#selectedCell;//the td-element of the cell-cursor
+	#selectedCell;//the HTML-element of the cell-cursor. probably TD's most of the time.
 	#inEditMode;//whether the user is currently in edit-mode
 	#cellCursorBorderWidths={};//This object holds the border-widths of the cell-cursor. keys are left,right,top,bottom
 	//and values are px as ints. This is used to offset the position and adjust position of #cellCursor in order to
@@ -83,6 +83,8 @@ class Tablance {
 							//}
 	#activeExpansionCell;	//points to an object in #openExpansionNavMap and in extension the cell of an expension.
 							//If this is set then it means the cursor is inside an expansion.
+	#animateCellCursorUntil;//used by #animateCellcursorPos to set the end-time for animation for adjusting its position
+							//while rows are being expanded/contracted
 							
 
 	/**
@@ -314,6 +316,7 @@ class Tablance {
 		//animate
 		contentDiv.style.height="0px";
 		setTimeout(()=>contentDiv.style.height=this.#expandedRowHeights[dataRowIndex]-this.#expansionBordesHeight+"px");
+		this.#animateCellcursorPos();
 	}
 
 	#contractRow(tr,dataRowIndex) {
@@ -333,7 +336,21 @@ class Tablance {
 			contentDiv.ontransitionend=contractFinished;//and add listener
 		} else //however, if user manages to attempt to contract when height is exactly at 0 which actually isn't too
 			contractFinished();//hard then the event would never fire so just call it directly instead
-		
+		this.#animateCellcursorPos();
+	}
+
+	#animateCellcursorPos() {
+		const recursiveCellPosAdjust=()=>{
+			if (Date.now()<this.#animateCellCursorUntil)
+				requestAnimationFrame(recursiveCellPosAdjust);
+			else
+				this.#animateCellCursorUntil=null;
+			this.#adjustCursorPosSize(this.#selectedCell,true);
+		}
+
+		if (!this.#animateCellCursorUntil)//not being animated currently
+			requestAnimationFrame(recursiveCellPosAdjust);
+		this.#animateCellCursorUntil=Date.now()+500;
 	}
 
 	/**Creates the actual content of a expanded row. When the user expands a row #expandRow is first called which in
@@ -496,7 +513,7 @@ class Tablance {
 		this.#activeExpansionCell=null;//should be null when not inside expansion
 		this.#exitEditMode(true);
 		this.#selectedCell=cell;
-		this.#adjustCursorPos(cell);
+		this.#adjustCursorPosSize(cell);
 		
 		this.#cellCursorRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);
 		if (!cell.parentElement.classList.contains("expansion"))
@@ -516,16 +533,18 @@ class Tablance {
 		this.#cellCursorRowIndex=parseInt(dataRowIndex);
 		this.#activeExpansionCell=cellObject;
 		this.#exitEditMode(true);
-		this.#adjustCursorPos(cellObject.el);
+		this.#adjustCursorPosSize(cellObject.el);
 	}
 
-	#adjustCursorPos(el) {
+	#adjustCursorPosSize(el,onlyPos=false) {
 		const tableSizerPos=this.#tableSizer.getBoundingClientRect();
 		const cellPos=el.getBoundingClientRect();
 		this.#cellCursor.style.top=cellPos.y-tableSizerPos.y+this.#tableSizer.offsetTop+"px";
 		this.#cellCursor.style.left=cellPos.x-tableSizerPos.x+"px";
-		this.#cellCursor.style.height=cellPos.height+"px";
-		this.#cellCursor.style.width=cellPos.width+"px";
+		if (!onlyPos) {
+			this.#cellCursor.style.height=cellPos.height+"px";
+			this.#cellCursor.style.width=cellPos.width+"px";
+		}
 	}
 
 	#createTableHeader() {
