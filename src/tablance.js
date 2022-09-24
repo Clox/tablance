@@ -70,10 +70,19 @@ class Tablance {
 							//is read from when clicking or navigating using keyboard to know which cell is next, and
 							//which elemnts even are selectable and so on. Keys are data-row-index. As soon as a row
 							//is either contracted or scrolled out of view it is removed from here and then re-added
-							//if expanded again or scrolled into view
-	#cellCursorExpansionDirections;//holds position inside #openExpansionNavMap. If this is set then it means the cursor is
-							//inside an expansion. The strucutre is an array of ints where length is normally 1 but
-							//1 more is added for each nesting to keep track
+							//if expanded again or scrolled into view.
+							//keys are rowDataindex and the values are "cell-objects" structured as: {
+							//	el: HTMLElement the cell-element itself
+							//	children: Array May be null but groups can have children which would be put in here
+							//  				each element would be another one of these cell-objects
+							//	parent: points to the parent cell-object. for non nested cells this would point to a
+							//						root cell-object. and for the root cell-object this would be null.
+							//						despite the root being a cell-object it cant be naviagted to. 
+							//						it simply holds the top cell-objects
+							//  index: the index of the cell/object in the children-array of its parent
+							//}
+	#activeExpansionCell;	//points to an object in #openExpansionNavMap and in extension the cell of an expension.
+							//If this is set then it means the cursor is inside an expansion.
 							
 
 	/**
@@ -232,18 +241,29 @@ class Tablance {
 			//#scrollToRow() above, but it doesn't get fired immediately. Running it twice is not a big deal.
 			this.#scrollMethod();
 			let newColIndex=this.#cellCursorColIndex;
-			if (numRows===1&&this.#selectedCell.parentElement.classList.contains("expanded")){//moving down into expansion
-				this.#cellCursorExpansionDirections=[0];
-				this.#selectExpansionCell(this.#cellCursorRowIndex,[0]);
+			if (this.#activeExpansionCell) {//moving inside expansion
+				let nextCell;
+				for (let cell=this.#activeExpansionCell; cell.parent&&!nextCell;cell=cell.parent)
+					nextCell=cell.parent.children[cell.index+numRows];
+				if (nextCell)
+					this.#selectExpansionCell(this.#cellCursorRowIndex,nextCell);
+				else
+					this.#selectMainTableCell(this.#mainTbody.querySelector
+						(`[data-data-row-index="${this.#cellCursorRowIndex+(numRows===1?1:0)}"]`)?.cells[newColIndex]);
+			} else if (numRows===1&&this.#expandedRowHeights[this.#cellCursorRowIndex]){//moving down into expansion
+				let cellObject=this.#openExpansionNavMap[this.#cellCursorRowIndex].children[0];
+				this.#selectExpansionCell(this.#cellCursorRowIndex,cellObject);
 			} else if (numRows===-1&&this.#expandedRowHeights[this.#cellCursorRowIndex-1]){//moving up into expansion
-				this.#selectExpansionCell(this.#cellCursorRowIndex-1,[this.#openExpansionNavMap[this.#cellCursorRowIndex-1].length-1]);
+				let cellObject=this.#openExpansionNavMap[this.#cellCursorRowIndex-1].children.slice(-1)[0];
+				this.#selectExpansionCell(this.#cellCursorRowIndex-1,cellObject);
 			} else {//moving from and to maintable-cells
-				this.#selectMainTableCell(this.#selectedCell.parentElement[(numRows>0?"next":"previous")+"Sibling"]?.cells[newColIndex],false);
+				this.#selectMainTableCell(
+					this.#selectedCell.parentElement[(numRows>0?"next":"previous")+"Sibling"]?.cells[newColIndex]);
 			}
 			//need to call this a second time. first time is to scroll to old td to make sure the new td is rendered
 			this.#scrollToCursor();//this time it is to actually scroll to the new td
-		} else {
-			this.#selectMainTableCell(this.#selectedCell[(numCols>0?"next":"previous")+"Sibling"],false);
+		} else if (!this.#activeExpansionCell){
+			this.#selectMainTableCell(this.#selectedCell[(numCols>0?"next":"previous")+"Sibling"]);
 		}
 	}
 
@@ -337,7 +357,7 @@ class Tablance {
 		expansionDiv.className="content";
 		const shadowLine=expansionDiv.appendChild(document.createElement("div"));
 		shadowLine.className="expansion-shadow";
-		const navMap=this.#openExpansionNavMap[dataRowIndex]=[];
+		const navMap=this.#openExpansionNavMap[dataRowIndex]={children:[]};
 		this.#generateExpansionContent(this.#expansion,this.#data[dataRowIndex],navMap,expansionDiv);
 		return expansionRow;
 	}
@@ -370,7 +390,7 @@ class Tablance {
 	}
 
 	#generateExpansionField(fieldStructure,data,navMap,parentEl) {
-		navMap.push({el:parentEl})
+		navMap.children.push({parent:navMap,index:navMap.children.length,el:parentEl});
 		parentEl.innerText=data[fieldStructure.id];
 	}
 
@@ -451,6 +471,9 @@ class Tablance {
 	}
 
 	#selectMainTableCell(cell) {
+		if (!cell)//in case trying to move up from top row etc
+			return;
+		this.#activeExpansionCell=null;//should be null when not inside expansion
 		this.#exitEditMode(true);
 		this.#selectedCell=cell;
 		this.#adjustCursorPos(cell);
@@ -467,19 +490,11 @@ class Tablance {
 		this.#cellCursorColId=this.#colStructs[this.#cellCursorColIndex].id;
 	}
 
-	#selectExpansionCell(dataRowIndex,directions) {
+	#selectExpansionCell(dataRowIndex,cellObject) {
 		this.#cellCursorRowIndex=dataRowIndex;
+		this.#activeExpansionCell=cellObject;
 		this.#exitEditMode(true);
-
-		this.#cellCursorExpansionDirections=directions;
-
-		let destination;
-		let children=this.#openExpansionNavMap[dataRowIndex];
-		for (let step of directions) {
-			destination=children[step];
-			children=destination.children;//might get set to null for last iteration
-		}
-		this.#adjustCursorPos(destination.el);
+		this.#adjustCursorPos(cellObject.el);
 	}
 
 	#adjustCursorPos(el) {
