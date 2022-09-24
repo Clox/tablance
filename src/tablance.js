@@ -534,9 +534,12 @@ class Tablance {
 		this.#activeExpansionCell=cellObject;
 		this.#exitEditMode(true);
 		this.#adjustCursorPosSize(cellObject.el);
+		this.#selectedCell=cellObject.el;
 	}
 
 	#adjustCursorPosSize(el,onlyPos=false) {
+		if (!el)
+			return;
 		const tableSizerPos=this.#tableSizer.getBoundingClientRect();
 		const cellPos=el.getBoundingClientRect();
 		this.#cellCursor.style.top=cellPos.y-tableSizerPos.y+this.#tableSizer.offsetTop+"px";
@@ -683,6 +686,7 @@ class Tablance {
 				this.#cols[colI].style.width=this.#headerTr.cells[colI].style.width=this.#colStructs[colI].pxWidth+"px";
 		}			
 		this.#headerTable.style.width=areaWidth+"px";
+		this.#adjustCursorPosSize(this.#selectedCell);
 	}
 
 	#filterData(filterString) {
