@@ -95,9 +95,10 @@ class Tablance {
 	 * 			width String The width of the column. This can be in either px or % units.
 	 * 				In case of % it will be calculated on the remaining space after all the fixed widths
 	 * 				have been accounted for.
-	 * 			editable false|String Defaults to false. Can be set to "text" to make it editable
+	 * 			edit false|String Defaults to false. Can be set to "text" to make it editable
 	 * 			type String Can be set to "expand" to make it a column with buttons for expanding/contracting
-	 * 						The editable-prop will be ignored if this is set.
+	 * 						The edit-prop will be ignored if this is set.
+	 * 			maxLength int If edit is set to text then this may be set to limit the number of characters allowed
 	 * 		}
 	 * 			
 	 * 	@param	{Boolean} staticRowHeight Set to true if all rows are of same height. With this option on, scrolling
@@ -150,7 +151,7 @@ class Tablance {
 		container.classList.add("tablance");
 		this.#staticRowHeight=staticRowHeight;
 		this.#opts=opts;
-		const allowedColProps=["id","title","width","edit","type"];
+		const allowedColProps=["id","title","width","edit","type","maxLength"];
 		for (let col of columns) {
 			let processedCol={};
 			if (col.type=="expand"&&!col.width)
@@ -485,6 +486,8 @@ class Tablance {
 			this.#cellCursor.appendChild(this.#input);
 			this.#input.focus();
 			this.#input.value=this.#selectedCellVal;
+			if (this.#cellCursorColStruct.maxLength)
+				this.#input.maxLength=this.#cellCursorColStruct.maxLength;
 		}
 	}
 
