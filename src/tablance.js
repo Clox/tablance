@@ -90,7 +90,8 @@ class Tablance {
 	/**
 	 * @param {HTMLElement} container An element which the table is going to be added to
 	 * @param {{}[]} columns An array of objects where each object has the following structure: {
-	 * 			id String A unique identifier for the column
+	 * 			id String A unique identifier for the column. unless "render" is set a prop of this name from the
+	 * 						data-rows will be used as value for the cells
 	 * 			title String The header-string of the column
 	 * 			width String The width of the column. This can be in either px or % units.
 	 * 				In case of % it will be calculated on the remaining space after all the fixed widths
@@ -99,6 +100,9 @@ class Tablance {
 	 * 			type String Can be set to "expand" to make it a column with buttons for expanding/contracting
 	 * 						The edit-prop will be ignored if this is set.
 	 * 			maxLength int If edit is set to text then this may be set to limit the number of characters allowed
+	 * 			render Function pass in a callback-function here and what it returns will be used as value for the
+	 * 					cells. It will get called with a reference to the data-row as its first argument, column-object
+	 * 					as second, data-row-index as third and column-index and fourth.
 	 * 		}
 	 * 			
 	 * 	@param	{Boolean} staticRowHeight Set to true if all rows are of same height. With this option on, scrolling
@@ -151,7 +155,7 @@ class Tablance {
 		container.classList.add("tablance");
 		this.#staticRowHeight=staticRowHeight;
 		this.#opts=opts;
-		const allowedColProps=["id","title","width","edit","type","maxLength"];
+		const allowedColProps=["id","title","width","edit","type","maxLength","render"];
 		for (let col of columns) {
 			let processedCol={};
 			if (col.type=="expand"&&!col.width)
@@ -501,10 +505,8 @@ class Tablance {
 			if (this.#cellCursorColStruct.edit==="text") {
 				newVal=this.#input.value;
 			}
-			if (newVal!=this.#selectedCellVal) {
-				this.#cellCursorRowData[this.#cellCursorColId]=newVal;
-				this.#updateCellValue(this.#selectedCell,this.#cellCursorRowData);
-			}
+			if (newVal!=this.#selectedCellVal)
+				this.#updateCellValue(this.#selectedCell,this.#cellCursorRowData[this.#cellCursorColId]=newVal);
 		}
 		this.#cellCursor.innerHTML="";
 		this.#container.focus();//make the table focused again so that it accepts keystrokes
@@ -928,19 +930,22 @@ class Tablance {
 		for (let colI=0; colI<this.#colStructs.length; colI++) {
 			let td=tr.cells[colI];
 			let colStruct=this.#colStructs[colI];
+			if (colStruct.type==="expand")
+				td.innerHTML="<a><span></span></a>";
+			else if (colStruct.render!=null) {
+				if (colStruct.render instanceof Function)
+					this.#updateCellValue(td,colStruct.render(dataRow,colStruct,dataIndex,colI));
+				else
+					this.#updateCellValue(td,colStruct.render);
+			} else
+				this.#updateCellValue(td,dataRow[colStruct.id]);
 			if (this.#spreadsheet&&(colStruct.edit!=="text"&&colStruct.type!=="expand"))
 				td.classList.add("disabled");
-			this.#updateCellValue(td,dataRow);
 		}
 		return tr;
 	}
 
-	#updateCellValue(td,dataRow) {
-		let col=this.#colStructs[td.cellIndex];
-		td.innerHtml="";
-		if (col.type==="expand")
-			td.innerHTML="<a><span></span></a>";
-		else
-			td.innerText=dataRow[col.id];
+	#updateCellValue(td,value) {
+		td.innerText=value;
 	}
 }

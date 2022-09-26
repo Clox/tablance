@@ -3,8 +3,12 @@
 	<link rel="stylesheet" href="../styles/style.min.css">
 	<script>
 		document.addEventListener("DOMContentLoaded", ()=>{
-			const myTablanceCols=[{type:"expand"},{id:"desc",title:"Description",edit:"text",maxLength:5}
-					,{id:"amount",title:"Amount",width:"70px"},{id:"balance",title:"Balance",width:"70px"}];
+			function descFunc(dataRow,col,rowIndex,colIndex) {
+				return `foobar ${rowIndex} - ${dataRow.descLetter}`
+			}
+			const myTablanceCols=[{type:"expand"}
+				,{id:"desc",title:"Description",edit:"text",maxLength:5,render:descFunc}
+				,{id:"amount",title:"Amount",width:"70px"},{id:"balance",title:"Balance",width:"70px"}];
 			
 			
 			const myExpansion={type:"list",entries:[
@@ -22,7 +26,7 @@
 			for (let i=0; i<3; i++) {
 				let data=[];
 				for (let ii=0; ii<1000; ii++) {
-					data.push({desc:"foobar "+i+", "+ii,foobar1:i+ii,foobar2:i*2+ii*2
+					data.push({desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,descLetter:String.fromCharCode(ii)
 						,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2)});
 				}
 				myTablance.addData(data);
