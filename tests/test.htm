@@ -11,9 +11,13 @@
 				,{id:"amount",title:"Amount",width:"70px"},{id:"balance",title:"Balance",width:"70px"}];
 			
 			
-			const myExpansion={type:"list",entries:[
+			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
 				{type:"field",title:"Foobar One",id:"foobar1"},
-				{type:"field",title:"Foobar Two",id:"foobar2"}
+				{type:"field",title:"Foobar Two",id:"foobar2"},
+				{type:"list",title:"Baz entries",titlesColWidth:"6em",entries:[
+					{type:"field",title:"Baz One",id:"baz1"},
+					{type:"field",title:"Baz Two",id:"baz2"}
+				]}
 			]};
 			
 
@@ -27,7 +31,7 @@
 				let data=[];
 				for (let ii=0; ii<1000; ii++) {
 					data.push({desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,descLetter:String.fromCharCode(ii)
-						,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2)});
+						,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70});
 				}
 				myTablance.addData(data);
 			}

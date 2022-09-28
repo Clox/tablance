@@ -115,11 +115,14 @@ class Tablance {
 	 * 			{//this is an entry that holds multiple rows laid out vertically, each item in the list can have a 
 	 * 			 //title on the left side by specifying "title" in each item within the list
   	 *				type:"list",
+	 *				title:"Foobar",//displayed title if placed in list placed in a list as they can be nested
 	 * 				entries:[]//each element should be another entry
+	 * 				titlesColWidth:String Width of the column with the titles. Don't forget adding the unit.
+	 * 					Default is null which enables setting the width via css.
 	 *			}
 	 *			{
   	 * 				type:"field",//this is what will display data and which also can be editable
-  	 * 				title:"Foobar",//displayed title in placed in a list
+  	 * 				title:"Foobar",//displayed title if placed in list
   	 * 				id:"foobar",//the key of the property in the data that the row should display
   	 * 			}
   	 * 			{
@@ -135,7 +138,7 @@ class Tablance {
   	 * 				type:"group",//used when a set of data should be grouped, like for instance having an address and
 	 * 							//all the rows in it belongs together. the group also has to be entered
 	 * 							//with enter/doubleclick
-  	 * 				title:"Foobar",//displayed title in placed in a list
+  	 * 				title:"Foobar",//displayed title if placed in list
   	 * 				entry: any entry //may be item or list for instance. 
   	 * 				}
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
@@ -180,7 +183,6 @@ class Tablance {
 			opts.sortDescHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" points="4,0,8,4,0,4"/><polygon style="fill:#000" points="4,10,0,6,8,6"/></svg>';
 		if (opts.sortNoneHtml==null)
 			opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';;
-
 	}
 
 	#setupSearchbar() {
@@ -248,21 +250,30 @@ class Tablance {
 			//#scrollToRow() above, but it doesn't get fired immediately. Running it twice is not a big deal.
 			this.#scrollMethod();
 			let newColIndex=this.#cellCursorColIndex;
-			if (this.#activeExpansionCell) {//moving inside expansion
-				let nextCell;
-				for (let cell=this.#activeExpansionCell; cell.parent&&!nextCell;cell=cell.parent)
-					nextCell=cell.parent.children[cell.index+numRows];
-				if (nextCell)
-					this.#selectExpansionCell(this.#cellCursorRowIndex,nextCell);
-				else
+			if (this.#activeExpansionCell) {//moving from inside expansion.might move to another cell inside,or outside
+				//first go up the tree as many times as needed to find a adjacent cell in the right direction
+				let adjacentCell;
+				for (let cell=this.#activeExpansionCell; cell.parent&&!adjacentCell; cell=cell.parent)
+					adjacentCell=cell.parent.children[cell.index+numRows];
+				//now we're either at the top of the tree while nextCell is null which means there's no adjacent cell
+				//in that direction, or we did find an adjacent cell which can be an item which means we've reached
+				//our goal, or its a list and we need to start digging down until we find an item
+
+				if (adjacentCell) {//found an adjacent cell
+					while (adjacentCell.children)//but if it is a list (has children) then dig down until item is found
+						adjacentCell=adjacentCell.children[numRows===1?0:adjacentCell.children.length-1];
+					this.#selectExpansionCell(this.#cellCursorRowIndex,adjacentCell);//finally select it
+				} else //no adjacent cell is found in the expansion
 					this.#selectMainTableCell(this.#mainTbody.querySelector
 						(`[data-data-row-index="${this.#cellCursorRowIndex+(numRows===1?1:0)}"]`)?.cells[newColIndex]);
 			} else if (numRows===1&&this.#expandedRowHeights[this.#cellCursorRowIndex]){//moving down into expansion
-				let cellObject=this.#openExpansionNavMap[this.#cellCursorRowIndex].children[0];
-				this.#selectExpansionCell(this.#cellCursorRowIndex,cellObject);
+				let cell=this.#openExpansionNavMap[this.#cellCursorRowIndex].children[0];
+				for (;cell.children;cell=cell.children[0]);//if list then dig down to first item
+				this.#selectExpansionCell(this.#cellCursorRowIndex,cell);
 			} else if (numRows===-1&&this.#expandedRowHeights[this.#cellCursorRowIndex-1]){//moving up into expansion
-				let cellObject=this.#openExpansionNavMap[this.#cellCursorRowIndex-1].children.slice(-1)[0];
-				this.#selectExpansionCell(this.#cellCursorRowIndex-1,cellObject);
+				let cell=this.#openExpansionNavMap[this.#cellCursorRowIndex-1].children.slice(-1)[0];
+				for (;cell.children;cell=cell.children[cell.children.length-1]);//if list then dig down to first item
+				this.#selectExpansionCell(this.#cellCursorRowIndex-1,cell);
 			} else {//moving from and to maintable-cells
 				this.#selectMainTableCell(
 					this.#selectedCell.parentElement[(numRows>0?"next":"previous")+"Sibling"]?.cells[newColIndex]);
@@ -379,41 +390,62 @@ class Tablance {
 		expansionDiv.className="content";
 		const shadowLine=expansionDiv.appendChild(document.createElement("div"));
 		shadowLine.className="expansion-shadow";
-		const navMap=this.#openExpansionNavMap[dataRowIndex]={children:[]};
-		this.#generateExpansionContent(this.#expansion,this.#data[dataRowIndex],navMap,expansionDiv);
+		const navMap=this.#openExpansionNavMap[dataRowIndex]={};
+		this.#generateExpansionContent(this.#expansion,this.#data[dataRowIndex],navMap,expansionDiv,[]);
 		return expansionRow;
 	}
 
-	#generateExpansionContent(expansionStructure,data,navMap,parentEl) {
+	/**
+	 * 
+	 * @param {*} struct 
+	 * @param {*} data 
+	 * @param {*} cellObject 
+	 * @param {*} parentEl 
+	 * @param []int path Keeps track of the "path" by adding and removing index-numbers from the array when going
+	 * 				in and out of nesting. This path is then added as a data-attribute to the cells that can be
+	 * 				interacted with and this data is then read from and the cell-object can then be retrieved from it.*/
+	#generateExpansionContent(struct,data,cellObject,parentEl,path) {
 	/* 	return {
 			list:this.#generateExpansionList,
 			field:this.#generateExpansionField
 		}[expansionStructure.type](expansionStructure,data); */
-		switch (expansionStructure.type) {
-			case "list": this.#generateExpansionList(expansionStructure,data,navMap,parentEl);
-			break;
-			case "field": this.#generateExpansionField(expansionStructure,data,navMap,parentEl);
+		switch (struct.type) {
+			case "list": return this.#generateExpansionList(struct,data,cellObject,parentEl,path);
+			case "field": return this.#generateExpansionField(struct,data,cellObject,parentEl,path);
 		}
 	}
 
-	#generateExpansionList(listStructure,data,navMap,parentEl) {
+	#generateExpansionList(listStructure,data,cellObject,parentEl,path) {
+		cellObject.children=[];
 		const listTable=document.createElement("table");
 		listTable.className="expansion-list";
-		for (let entry of listStructure.entries) {
+		let titlesCol=document.createElement("col");
+		listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
+		if (listStructure.titlesColWidth)
+			titlesCol.style.width=listStructure.titlesColWidth;
+		for (let entryI=-1,struct; struct=listStructure.entries[++entryI];) {
 			let listTr=listTable.insertRow();
 			let titleTd=listTr.insertCell();
 			titleTd.className="title";
-			titleTd.innerText=entry.title;
+			titleTd.innerText=struct.title;
 			let contentTd=listTr.insertCell();
 			contentTd.className="value";
-			this.#generateExpansionContent(entry,data,navMap,contentTd);
+			path.push(entryI);
+			let cellChild=this.#generateExpansionContent(struct,data,cellObject.children[entryI]={},contentTd,path);
+			path.pop();
+			cellChild.parent=cellObject;
+			cellChild.index=entryI;
 		}
 		parentEl.appendChild(listTable);
+		return cellObject;
 	}
 
-	#generateExpansionField(fieldStructure,data,navMap,parentEl) {
-		navMap.children.push({parent:navMap,index:navMap.children.length,el:parentEl});
+	#generateExpansionField(fieldStructure,data,cellObject,parentEl,path) {
+		cellObject.el=parentEl;
+		//navMap.children.push({parent:navMap,index:navMap.children.length,el:parentEl});
 		parentEl.innerText=data[fieldStructure.id];
+		parentEl.dataset.path=path.join("-");
+		return cellObject;
 	}
 
 	#scrollToCursor() {
@@ -447,9 +479,16 @@ class Tablance {
 			return;
 		const mainTr=e.target.closest(".main-table>tbody>tr");
 		if (mainTr.classList.contains("expansion")) {//in expansion
+			const interactiveEl=e.target.closest('[data-path]');
+			if (!interactiveEl)
+				return;
 			let cellObject=this.#openExpansionNavMap[mainTr.dataset.dataRowIndex];
+			console.log(cellObject);
+			for (let step of interactiveEl.dataset.path.split("-"))
+				cellObject=cellObject.children[step];
+			console.log(cellObject);
 
-			while (cellObject.children) {
+			/*while (cellObject.children) {
 				let childI;
 				for (childI=0; childI<cellObject.children.length; childI++) {
 					if (cellObject.children[childI].el.contains(e.target)) {
@@ -461,7 +500,7 @@ class Tablance {
 					cellObject=null;
 					break
 				}
-			}
+			} */
 			this.#selectExpansionCell(mainTr.dataset.dataRowIndex,cellObject);
 		} else {//not in expansion
 			const td=e.target.closest(".main-table>tbody>tr>td");
@@ -483,7 +522,9 @@ class Tablance {
 
 	#tryEnterEditMode(e) {
 		this.#selectedCellVal=this.#cellCursorRowData[this.#cellCursorColId];
-		if (this.#cellCursorColStruct.edit) {
+		if (this.#activeExpansionCell) {
+			console.log(this.#activeExpansionCell);
+		} if (this.#cellCursorColStruct.edit) {
 			this.#inEditMode=true;
 			this.#cellCursor.classList.add("edit-mode");
 			this.#input=document.createElement("input");
