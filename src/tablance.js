@@ -42,9 +42,6 @@ class Tablance {
 	#cellCursorDataObj;//reference to the actual object holding the data that the cell-cursor currently is at.
 						//Usually this will simply point to an object in #data but for data that is nested with
 						//repeat-entries this will point to the correct inner object
-	#cellCursorDataKey;//the id for the data in #cellCursorDataObject of the selected cell. For cells in the maintable
-						//this would be the id of the column, in expansion it would be the id or index depending on the 
-						//kind of data, of the cell-object
 	#selectedCellVal;//the value of the cell that the cellCursor is at
 	#selectedCell;//the HTML-element of the cell-cursor. probably TD's most of the time.
 	#inEditMode;//whether the user is currently in edit-mode
@@ -101,10 +98,15 @@ class Tablance {
 	 * 			width String The width of the column. This can be in either px or % units.
 	 * 				In case of % it will be calculated on the remaining space after all the fixed widths
 	 * 				have been accounted for.
-	 * 			edit false|String Defaults to false. Can be set to "text" to make it editable
-	 * 			type String Can be set to "expand" to make it a column with buttons for expanding/contracting
-	 * 						The edit-prop will be ignored if this is set.
-	 * 			maxLength int If edit is set to text then this may be set to limit the number of characters allowed
+	 * 			edit: Object {//field is editable if this object is supplied and its disabled-prop is falsey
+	 * 				dataType String This is mandatory and specifies the type of input. Possible values are:
+	 * 					"text"(single line text), "textarea"(multi-line text),"number"(number with stepper),
+	 * 					"date"(a date and possibly time with a calendar), "select"(selection of multiple items).
+	 * 				Depending on which one is selected certain properties
+	 * 					below are (dis)allowed.
+	 * 				maxLength int Sets max-length for strings if dataType is text
+	 * 				placeholder String adds a placeholder-string to the input-element
+	 * 			}
 	 * 			render Function pass in a callback-function here and what it returns will be used as value for the
 	 * 					cells. It will get called with a reference to the data-row as its first argument, column-object
 	 * 					as second, data-row-index as third and column-index and fourth.
@@ -129,6 +131,7 @@ class Tablance {
   	 * 				type:"field",//this is what will display data and which also can be editable
   	 * 				title:"Foobar",//displayed title if placed in list
   	 * 				id:"foobar",//the key of the property in the data that the row should display
+	 * 				edit: See param columns -> edit, the structure is the same
   	 * 			}
   	 * 			{
   	 * 				type:"repeated",//used when the number of rows is undefined and where more may be able to be added, 
@@ -163,7 +166,7 @@ class Tablance {
 		container.classList.add("tablance");
 		this.#staticRowHeight=staticRowHeight;
 		this.#opts=opts;
-		const allowedColProps=["id","title","width","edit","type","maxLength","render"];
+		const allowedColProps=["id","title","width","edit","type","render"];
 		for (let col of columns) {
 			let processedCol={};
 			if (col.type=="expand"&&!col.width)
@@ -539,8 +542,9 @@ class Tablance {
 			this.#cellCursor.appendChild(this.#input);
 			this.#input.focus();
 			this.#input.value=this.#selectedCellVal;
-			if (this.#cellCursorCellStruct.maxLength)
-				this.#input.maxLength=this.#cellCursorCellStruct.maxLength;
+			if (this.#cellCursorCellStruct.edit.maxLength)
+				this.#input.maxLength=this.#cellCursorCellStruct.edit.maxLength;
+			this.#input.placeholder=this.#cellCursorCellStruct.edit.placeholder??"";
 		}
 	}
 
@@ -551,9 +555,7 @@ class Tablance {
 		this.#inEditMode=false;
 		this.#cellCursor.classList.remove("edit-mode");
 		if (save) {
-			if (this.#cellCursorCellStruct.edit==="text") {
-				newVal=this.#input.value;
-			}
+			newVal=this.#input.value;
 			if (newVal!=this.#selectedCellVal)
 				this.#updateCellValue(this.#selectedCell,this.#cellCursorDataObj[this.#cellCursorCellStruct.id]=newVal);
 		}
@@ -990,7 +992,7 @@ class Tablance {
 					this.#updateCellValue(td,colStruct.render);
 			} else
 				this.#updateCellValue(td,dataRow[colStruct.id]);
-			if (this.#spreadsheet&&(colStruct.edit!=="text"&&colStruct.type!=="expand"))
+			if (this.#spreadsheet&&(!colStruct.edit&&colStruct.type!=="expand"))
 				td.classList.add("disabled");
 		}
 		return tr;

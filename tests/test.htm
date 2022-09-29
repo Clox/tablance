@@ -7,12 +7,13 @@
 				return `foobar ${rowIndex} - ${dataRow.descLetter}`
 			}
 			const myTablanceCols=[{type:"expand"}
-				,{id:"desc",title:"Description",edit:"text",maxLength:5,render:descFunc}
+				,{id:"desc",title:"Description",edit:{dataType:"text",maxLength:5,placeholder:"placeholder"}
+					,render:descFunc}
 				,{id:"amount",title:"Amount",width:"70px"},{id:"balance",title:"Balance",width:"70px"}];
 			
 			
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
-				{type:"field",title:"Foobar One",id:"foobar1",edit:"text"},
+				{type:"field",title:"Foobar One",id:"foobar1",edit:{dataType:"text",maxLength:5,placeholder:"boo"}},
 				{type:"field",title:"Foobar Two",id:"foobar2"},
 				{type:"list",title:"Baz entries",titlesColWidth:"6em",entries:[
 					{type:"field",title:"Baz One",id:"baz1"},
