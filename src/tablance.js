@@ -37,9 +37,14 @@ class Tablance {
 	#cellCursor;//The element that for spreadsheets shows which cell is selected
 	#cellCursorRowIndex;//the index of the row that the cellcursor is at
 	#cellCursorColIndex;//the index of the column that the cellcursor is at
-	#cellCursorColStruct;//reference to element in #colStructs that the column of the currently selected cell belongs to
-	#cellCursorRowData;//reference to the actual data-row-array from #data that the cell-cursor is at
-	#cellCursorColId;//the id of the column that the cellcursor is at
+	#cellCursorCellStruct;//reference to the struct-object of the selcted cell. For cells in the maintable this would
+							//point to an object in #colStructs, otherwise to the struct-object of expansion-cells
+	#cellCursorDataObj;//reference to the actual object holding the data that the cell-cursor currently is at.
+						//Usually this will simply point to an object in #data but for data that is nested with
+						//repeat-entries this will point to the correct inner object
+	#cellCursorDataKey;//the id for the data in #cellCursorDataObject of the selected cell. For cells in the maintable
+						//this would be the id of the column, in expansion it would be the id or index depending on the 
+						//kind of data, of the cell-object
 	#selectedCellVal;//the value of the cell that the cellCursor is at
 	#selectedCell;//the HTML-element of the cell-cursor. probably TD's most of the time.
 	#inEditMode;//whether the user is currently in edit-mode
@@ -178,11 +183,14 @@ class Tablance {
 		if (spreadsheet)
 			this.#setupSpreadsheet();
 		if (opts.sortAscHtml==null)
-			opts.sortAscHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#000" points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
+			opts.sortAscHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#000" '
+									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
 		if (opts.sortDescHtml==null)
-			opts.sortDescHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" points="4,0,8,4,0,4"/><polygon style="fill:#000" points="4,10,0,6,8,6"/></svg>';
+			opts.sortDescHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
+									+'points="4,0,8,4,0,4"/><polygon style="fill:#000" points="4,10,0,6,8,6"/></svg>';
 		if (opts.sortNoneHtml==null)
-			opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';;
+			opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
+									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
 	}
 
 	#setupSearchbar() {
@@ -445,6 +453,10 @@ class Tablance {
 		//navMap.children.push({parent:navMap,index:navMap.children.length,el:parentEl});
 		parentEl.innerText=data[fieldStructure.id];
 		parentEl.dataset.path=path.join("-");
+		cellObject.dataObject=data;
+		cellObject.struct=fieldStructure;
+		if (!fieldStructure.edit)
+			parentEl.classList.add("disabled");
 		return cellObject;
 	}
 
@@ -483,10 +495,8 @@ class Tablance {
 			if (!interactiveEl)
 				return;
 			let cellObject=this.#openExpansionNavMap[mainTr.dataset.dataRowIndex];
-			console.log(cellObject);
 			for (let step of interactiveEl.dataset.path.split("-"))
 				cellObject=cellObject.children[step];
-			console.log(cellObject);
 
 			/*while (cellObject.children) {
 				let childI;
@@ -521,18 +531,16 @@ class Tablance {
 	}
 
 	#tryEnterEditMode(e) {
-		this.#selectedCellVal=this.#cellCursorRowData[this.#cellCursorColId];
-		if (this.#activeExpansionCell) {
-			console.log(this.#activeExpansionCell);
-		} if (this.#cellCursorColStruct.edit) {
+		if (this.#cellCursorCellStruct.edit) {
+			this.#selectedCellVal=this.#cellCursorDataObj[this.#cellCursorCellStruct.id];
 			this.#inEditMode=true;
 			this.#cellCursor.classList.add("edit-mode");
 			this.#input=document.createElement("input");
 			this.#cellCursor.appendChild(this.#input);
 			this.#input.focus();
 			this.#input.value=this.#selectedCellVal;
-			if (this.#cellCursorColStruct.maxLength)
-				this.#input.maxLength=this.#cellCursorColStruct.maxLength;
+			if (this.#cellCursorCellStruct.maxLength)
+				this.#input.maxLength=this.#cellCursorCellStruct.maxLength;
 		}
 	}
 
@@ -543,11 +551,11 @@ class Tablance {
 		this.#inEditMode=false;
 		this.#cellCursor.classList.remove("edit-mode");
 		if (save) {
-			if (this.#cellCursorColStruct.edit==="text") {
+			if (this.#cellCursorCellStruct.edit==="text") {
 				newVal=this.#input.value;
 			}
 			if (newVal!=this.#selectedCellVal)
-				this.#updateCellValue(this.#selectedCell,this.#cellCursorRowData[this.#cellCursorColId]=newVal);
+				this.#updateCellValue(this.#selectedCell,this.#cellCursorDataObj[this.#cellCursorCellStruct.id]=newVal);
 		}
 		this.#cellCursor.innerHTML="";
 		this.#container.focus();//make the table focused again so that it accepts keystrokes
@@ -564,13 +572,13 @@ class Tablance {
 		this.#cellCursorRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);
 		if (!cell.parentElement.classList.contains("expansion"))
 			this.#cellCursorColIndex=cell.cellIndex;
-		this.#cellCursorColStruct=this.#colStructs[this.#cellCursorColIndex];
+		this.#cellCursorCellStruct=this.#colStructs[this.#cellCursorColIndex];
 
 		//make cellcursor click-through if it's on an expand-row-button-td
-		this.#cellCursor.style.pointerEvents=this.#cellCursorColStruct.type==="expand"?"none":"auto";
+		this.#cellCursor.style.pointerEvents=this.#cellCursorCellStruct.type==="expand"?"none":"auto";
 
-		this.#cellCursorRowData=this.#data[this.#cellCursorRowIndex];
-		this.#cellCursorColId=this.#colStructs[this.#cellCursorColIndex].id;
+		this.#cellCursorDataObj=this.#data[this.#cellCursorRowIndex];
+		this.#cellCursorCellStruct=this.#colStructs[this.#cellCursorColIndex];
 	}
 
 	#selectExpansionCell(dataRowIndex,cellObject) {
@@ -581,6 +589,8 @@ class Tablance {
 		this.#exitEditMode(true);
 		this.#adjustCursorPosSize(cellObject.el);
 		this.#selectedCell=cellObject.el;
+		this.#cellCursorDataObj=cellObject.dataObject;
+		this.#cellCursorCellStruct=cellObject.struct;
 	}
 
 	#adjustCursorPosSize(el,onlyPos=false) {
