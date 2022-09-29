@@ -586,6 +586,10 @@ class Tablance {
 	#selectExpansionCell(dataRowIndex,cellObject) {
 		if (!cellObject)
 			return;
+
+		//remove cellcursor click-through in case an expand-button-cell was previously selected
+		this.#cellCursor.style.pointerEvents="auto";
+		
 		this.#cellCursorRowIndex=parseInt(dataRowIndex);
 		this.#activeExpansionCell=cellObject;
 		this.#exitEditMode(true);
