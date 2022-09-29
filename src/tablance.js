@@ -402,7 +402,7 @@ class Tablance {
 		const shadowLine=expansionDiv.appendChild(document.createElement("div"));
 		shadowLine.className="expansion-shadow";
 		const navMap=this.#openExpansionNavMap[dataRowIndex]={};
-		this.#generateExpansionContent(this.#expansion,this.#data[dataRowIndex],navMap,expansionDiv,[]);
+		this.#generateExpansionContent(this.#expansion,dataRowIndex,navMap,expansionDiv,[]);
 		return expansionRow;
 	}
 
@@ -415,18 +415,18 @@ class Tablance {
 	 * @param []int path Keeps track of the "path" by adding and removing index-numbers from the array when going
 	 * 				in and out of nesting. This path is then added as a data-attribute to the cells that can be
 	 * 				interacted with and this data is then read from and the cell-object can then be retrieved from it.*/
-	#generateExpansionContent(struct,data,cellObject,parentEl,path) {
+	#generateExpansionContent(struct,dataIndex,cellObject,parentEl,path) {
 	/* 	return {
 			list:this.#generateExpansionList,
 			field:this.#generateExpansionField
 		}[expansionStructure.type](expansionStructure,data); */
 		switch (struct.type) {
-			case "list": return this.#generateExpansionList(struct,data,cellObject,parentEl,path);
-			case "field": return this.#generateExpansionField(struct,data,cellObject,parentEl,path);
+			case "list": return this.#generateExpansionList(struct,dataIndex,cellObject,parentEl,path);
+			case "field": return this.#generateExpansionField(struct,dataIndex,cellObject,parentEl,path);
 		}
 	}
 
-	#generateExpansionList(listStructure,data,cellObject,parentEl,path) {
+	#generateExpansionList(listStructure,dataIndex,cellObject,parentEl,path) {
 		cellObject.children=[];
 		const listTable=document.createElement("table");
 		listTable.className="expansion-list";
@@ -442,7 +442,7 @@ class Tablance {
 			let contentTd=listTr.insertCell();
 			contentTd.className="value";
 			path.push(entryI);
-			let cellChild=this.#generateExpansionContent(struct,data,cellObject.children[entryI]={},contentTd,path);
+			let cellChild=this.#generateExpansionContent(struct,dataIndex,cellObject.children[entryI]={},contentTd,path);
 			path.pop();
 			cellChild.parent=cellObject;
 			cellChild.index=entryI;
@@ -451,15 +451,12 @@ class Tablance {
 		return cellObject;
 	}
 
-	#generateExpansionField(fieldStructure,data,cellObject,parentEl,path) {
+	#generateExpansionField(fieldStructure,dataIndex,cellObject,parentEl,path) {
 		cellObject.el=parentEl;
-		//navMap.children.push({parent:navMap,index:navMap.children.length,el:parentEl});
-		parentEl.innerText=data[fieldStructure.id];
+		this.#updateCell(parentEl,dataIndex,fieldStructure);
 		parentEl.dataset.path=path.join("-");
-		cellObject.dataObject=data;
+		cellObject.dataObject=this.#data[dataIndex];
 		cellObject.struct=fieldStructure;
-		if (!fieldStructure.edit)
-			parentEl.classList.add("disabled");
 		return cellObject;
 	}
 
@@ -545,6 +542,8 @@ class Tablance {
 			if (this.#cellCursorCellStruct.edit.maxLength)
 				this.#input.maxLength=this.#cellCursorCellStruct.edit.maxLength;
 			this.#input.placeholder=this.#cellCursorCellStruct.edit.placeholder??"";
+			if (this.#cellCursorCellStruct.edit.cleave)
+				new Cleave(this.#input,this.#cellCursorCellStruct.edit.cleave);
 		}
 	}
 
@@ -556,8 +555,10 @@ class Tablance {
 		this.#cellCursor.classList.remove("edit-mode");
 		if (save) {
 			newVal=this.#input.value;
-			if (newVal!=this.#selectedCellVal)
-				this.#updateCellValue(this.#selectedCell,this.#cellCursorDataObj[this.#cellCursorCellStruct.id]=newVal);
+			if (newVal!=this.#selectedCellVal) {
+				this.#cellCursorDataObj[this.#cellCursorCellStruct.id]=newVal;
+				this.#updateCell(this.#selectedCell,this.#cellCursorRowIndex,this.#cellCursorCellStruct);
+			}
 		}
 		this.#cellCursor.innerHTML="";
 		this.#container.focus();//make the table focused again so that it accepts keystrokes
@@ -989,20 +990,18 @@ class Tablance {
 			let colStruct=this.#colStructs[colI];
 			if (colStruct.type==="expand")
 				td.innerHTML="<a><span></span></a>";
-			else if (colStruct.render!=null) {
-				if (colStruct.render instanceof Function)
-					this.#updateCellValue(td,colStruct.render(dataRow,colStruct,dataIndex,colI));
-				else
-					this.#updateCellValue(td,colStruct.render);
-			} else
-				this.#updateCellValue(td,dataRow[colStruct.id]);
-			if (this.#spreadsheet&&(!colStruct.edit&&colStruct.type!=="expand"))
-				td.classList.add("disabled");
+			else 
+				this.#updateCell(td,dataIndex,colStruct);
 		}
 		return tr;
 	}
 
-	#updateCellValue(td,value) {
-		td.innerText=value;
+	#updateCell(td,dataIndex,cellStruct) {
+		if (cellStruct.render)
+			td.innerText=cellStruct.render(this.#data[dataIndex],cellStruct,dataIndex);
+		else
+			td.innerText=this.#data[dataIndex][cellStruct.id]??"";
+		if (this.#spreadsheet&&(!cellStruct.edit&&cellStruct.type!=="expand"))
+			td.classList.add("disabled");
 	}
 }
