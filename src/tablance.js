@@ -313,11 +313,15 @@ class Tablance {
 				if (!this.#inEditMode&&this.#selectedCell.classList.contains("expandcol"))
 					return this.#toggleRowExpanded(this.#selectedCell.parentElement);
 			break; case "Enter":
+				e.preventDefault();//prevent newline from being entered into textarea
 				if (!this.#inEditMode) {
 					if (this.#selectedCell.classList.contains("expandcol"))
 						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
 					this.#scrollToCursor();
 					this.#tryEnterEditMode();
+				} else if (e.ctrlKey&&this.#cellCursorCellStruct.edit.dataType==="textarea") {
+						this.#insertAtCursor(this.#input,"\r\n");
+						this.#autoTextAreaResize();
 				} else {
 					this.#exitEditMode(true);
 					this.#moveCellCursor(0,e.shiftKey?-1:1);
@@ -326,6 +330,25 @@ class Tablance {
 				this.#expandRow(this.#selectedCell.parentElement,this.#cellCursorRowIndex);
 			break; case "-":
 				this.#contractRow(this.#selectedCell.parentElement,this.#cellCursorRowIndex);
+		}
+	}
+
+	#insertAtCursor(myField, myValue) {
+		//IE support
+		if (document.selection) {
+			myField.focus();
+			sel = document.selection.createRange();
+			sel.text = myValue;
+		}
+		//MOZILLA and others
+		else if (myField.selectionStart || myField.selectionStart == '0') {
+			var startPos = myField.selectionStart;
+			var endPos = myField.selectionEnd;
+			myField.value = myField.value.substring(0, startPos)
+				+ myValue
+				+ myField.value.substring(endPos, myField.value.length);
+		} else {
+			myField.value += myValue;
 		}
 	}
 
@@ -530,15 +553,36 @@ class Tablance {
 			this.#expandRow(tr,tr.dataset.dataRowIndex);
 	}
 
+	#autoTextAreaResize(e) {
+		this.#cellCursor.style.height = this.#selectedCell.style.height=this.#input.scrollHeight + 'px';
+		const expansionRow=this.#selectedCell.closest("tr.expansion");
+		const contentDiv=expansionRow.querySelector(".content");
+		contentDiv.style.height="auto";//auto-adjust height to fit height of textarea correctly. Later set it back to
+									//its new offsetHeight to allow for animating it correctly.
+
+		const prevRowHeight=this.#expandedRowHeights[this.#cellCursorRowIndex];
+		const newRowHeight=this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY;
+		this.#expandedRowHeights[this.#cellCursorRowIndex]=newRowHeight;
+
+		contentDiv.style.height=newRowHeight-this.#expansionBordesHeight+"px";
+
+		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)//adjust scroll-height reflect change...
+			+newRowHeight-prevRowHeight+"px";//...in height of the table
+	}
+
 	#tryEnterEditMode(e) {
 		if (this.#cellCursorCellStruct.edit) {
 			this.#selectedCellVal=this.#cellCursorDataObj[this.#cellCursorCellStruct.id];
 			this.#inEditMode=true;
 			this.#cellCursor.classList.add("edit-mode");
-			this.#input=document.createElement("input");
+			if (this.#cellCursorCellStruct.edit.dataType==="textarea") {
+				this.#input=document.createElement("textarea");
+				this.#input.addEventListener('input', e=>this.#autoTextAreaResize.call(this,e));
+			} else
+				this.#input=document.createElement("input");
 			this.#cellCursor.appendChild(this.#input);
 			this.#input.focus();
-			this.#input.value=this.#selectedCellVal;
+			this.#input.value=this.#selectedCellVal??"";
 			if (this.#cellCursorCellStruct.edit.maxLength)
 				this.#input.maxLength=this.#cellCursorCellStruct.edit.maxLength;
 			this.#input.placeholder=this.#cellCursorCellStruct.edit.placeholder??"";
