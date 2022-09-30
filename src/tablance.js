@@ -624,6 +624,10 @@ class Tablance {
 			}
 		}
 		this.#cellCursor.innerHTML="";
+		if (this.#cellCursorCellStruct.edit.dataType==="textarea") {
+			this.#autoTextAreaResize();
+			this.#adjustCursorPosSize(this.#selectedCell);
+		}
 		this.#container.focus();//make the table focused again so that it accepts keystrokes
 	}
 
