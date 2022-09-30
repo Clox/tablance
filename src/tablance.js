@@ -329,7 +329,7 @@ class Tablance {
 			break; case "+":
 				this.#expandRow(this.#selectedCell.parentElement,this.#cellCursorRowIndex);
 			break; case "-":
-				this.#contractRow(this.#selectedCell.parentElement,this.#cellCursorRowIndex);
+				this.#contractRow(this.#cellCursorRowIndex);
 		}
 	}
 
@@ -369,9 +369,12 @@ class Tablance {
 		this.#animateCellcursorPos();
 	}
 
-	#contractRow(tr,dataRowIndex) {
+	#contractRow(dataRowIndex) {
 		if (!this.#expansion||!this.#expandedRowHeights[dataRowIndex])
 			return;
+		const tr=this.#mainTbody.querySelector(`[data-data-row-index="${dataRowIndex}"].expanded`);
+		if (this.#cellCursorRowIndex===dataRowIndex&&this.#activeExpansionCell)
+			this.#selectMainTableCell(tr.cells[this.#cellCursorColIndex]);
 		const contentDiv=tr.nextSibling.querySelector(".content");
 		const contractFinished=()=> {
 			tr.classList.remove("expanded");
@@ -548,7 +551,7 @@ class Tablance {
 
 	#toggleRowExpanded(tr) {
 		if (tr.classList.contains("expanded"))
-			this.#contractRow(tr,tr.dataset.dataRowIndex);
+			this.#contractRow(tr.dataset.dataRowIndex);
 		else
 			this.#expandRow(tr,tr.dataset.dataRowIndex);
 	}
