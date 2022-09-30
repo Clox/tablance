@@ -98,15 +98,8 @@ class Tablance {
 	 * 			width String The width of the column. This can be in either px or % units.
 	 * 				In case of % it will be calculated on the remaining space after all the fixed widths
 	 * 				have been accounted for.
-	 * 			edit: Object {//field is editable if this object is supplied and its disabled-prop is falsey
-	 * 				dataType String This is mandatory and specifies the type of input. Possible values are:
-	 * 					"text"(single line text), "textarea"(multi-line text),"number"(number with stepper),
-	 * 					"date"(a date and possibly time with a calendar), "select"(selection of multiple items).
-	 * 				Depending on which one is selected certain properties
-	 * 					below are (dis)allowed.
-	 * 				maxLength int Sets max-length for strings if dataType is text
-	 * 				placeholder String adds a placeholder-string to the input-element
-	 * 			}
+	 * 			edit: See param expansion -> edit. This is the same as that one expect textareas are only valid for
+	 * 												expansion-cells and not directly in a maintable-cell
 	 * 			render Function pass in a callback-function here and what it returns will be used as value for the
 	 * 					cells. It will get called with a reference to the data-row as its first argument, column-object
 	 * 					as second, data-row-index as third and column-index and fourth.
@@ -131,7 +124,15 @@ class Tablance {
   	 * 				type:"field",//this is what will display data and which also can be editable
   	 * 				title:"Foobar",//displayed title if placed in list
   	 * 				id:"foobar",//the key of the property in the data that the row should display
-	 * 				edit: See param columns -> edit, the structure is the same
+	 * 				maxHeight int For textareas, sets the max-height in pixels that it should be able to be resized to
+	 * 				edit: Object {//field is editable if this object is supplied and its disabled-prop is falsey
+	 * 				dataType String This is mandatory and specifies the type of input. Possible values are:
+	 * 					"text"(single line text), "textarea"(multi-line text),"number"(number with stepper),
+	 * 					"date"(a date and possibly time with a calendar), "select"(selection of multiple items).
+	 * 				Depending on which one is selected certain properties
+	 * 					below are (dis)allowed.
+	 * 				maxLength int Sets max-length for strings if dataType is text
+	 * 				placeholder String adds a placeholder-string to the input-element
   	 * 			}
   	 * 			{
   	 * 				type:"repeated",//used when the number of rows is undefined and where more may be able to be added, 
@@ -563,12 +564,12 @@ class Tablance {
 			this.#expandRow(tr,tr.dataset.dataRowIndex);
 	}
 
-	#autoTextAreaResize(e) {
-		
+	#autoTextAreaResize() {
+		const maxHeight=this.#cellCursorCellStruct.maxHeight??Infinity;
 		//change size of cellcursor which holds the textarea, to the new scrollHeight of textarea. This results in
 		//the height of textarea to change too because its height is 100% of the cellcursor.
 		//also changing the height of the underlying cell which affects the height of the expansion
-		this.#cellCursor.style.height = this.#selectedCell.style.height=this.#input.scrollHeight + 'px';
+		this.#cellCursor.style.height=this.#selectedCell.style.height=Math.min(maxHeight,this.#input.scrollHeight)+'px';
 
 		//need to call this to make the height of the expansion adjust and reflect the change in size of the textarea
 		this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#cellCursorRowIndex);
@@ -1064,10 +1065,17 @@ class Tablance {
 	}
 
 	#updateCell(td,dataIndex,cellStruct) {
+		let valEl=td;
+		if (cellStruct.maxHeight) {
+			td.innerHTML="";
+			valEl=td.appendChild(document.createElement("div"));
+			valEl.style.maxHeight=cellStruct.maxHeight;
+			valEl.style.overflow="auto";
+		}
 		if (cellStruct.render)
-			td.innerText=cellStruct.render(this.#data[dataIndex],cellStruct,dataIndex);
+			valEl.innerText=cellStruct.render(this.#data[dataIndex],cellStruct,dataIndex);
 		else
-			td.innerText=this.#data[dataIndex][cellStruct.id]??"";
+			valEl.innerText=this.#data[dataIndex][cellStruct.id]??"";
 		if (this.#spreadsheet&&(!cellStruct.edit&&cellStruct.type!=="expand"))
 			td.classList.add("disabled");
 	}
