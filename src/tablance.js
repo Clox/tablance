@@ -381,7 +381,7 @@ class Tablance {
 		if (!this.#expansion||!this.#expandedRowHeights[dataRowIndex])
 			return;
 		const tr=this.#mainTbody.querySelector(`[data-data-row-index="${dataRowIndex}"].expanded`);
-		if (this.#cellCursorRowIndex===dataRowIndex&&this.#activeExpansionCell)
+		if (this.#cellCursorRowIndex==dataRowIndex&&this.#activeExpansionCell)
 			this.#selectMainTableCell(tr.cells[this.#cellCursorColIndex]);
 		const contentDiv=tr.nextSibling.querySelector(".content");
 		const contractFinished=()=> {
