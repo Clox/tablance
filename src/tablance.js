@@ -298,38 +298,45 @@ class Tablance {
 
 	#spreadsheetKeyDown(e) {
 		this.#container.style.outline="none";//see #spreadsheetOnFocus
-		switch (e.key) {
-			case "ArrowUp":
-				this.#moveCellCursor(0,-1);
-			break; case "ArrowDown":
-				this.#moveCellCursor(0,1);
-			break; case "ArrowLeft":
-				this.#moveCellCursor(-1,0);
-			break; case "ArrowRight":
-				this.#moveCellCursor(1,0);
-			break; case "Escape":
-				this.#exitEditMode(false);
-			break;  case " ":
-				if (!this.#inEditMode&&this.#selectedCell.classList.contains("expandcol"))
-					return this.#toggleRowExpanded(this.#selectedCell.parentElement);
-			break; case "Enter":
-				e.preventDefault();//prevent newline from being entered into textarea
-				if (!this.#inEditMode) {
+		if (!this.#inEditMode) {
+			switch (e.key) {
+				case "ArrowUp":
+					this.#moveCellCursor(0,-1);
+				break; case "ArrowDown":
+					this.#moveCellCursor(0,1);
+				break; case "ArrowLeft":
+					this.#moveCellCursor(-1,0);
+				break; case "ArrowRight":
+					this.#moveCellCursor(1,0);
+				break; case "Escape":
+					this.#exitEditMode(false);
+				break;  case " ":
 					if (this.#selectedCell.classList.contains("expandcol"))
 						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
-					this.#scrollToCursor();
-					this.#tryEnterEditMode();
-				} else if (e.ctrlKey&&this.#cellCursorCellStruct.edit.dataType==="textarea") {
-						this.#insertAtCursor(this.#input,"\r\n");
-						this.#autoTextAreaResize();
+				break; case "+":
+					this.#expandRow(this.#selectedCell.parentElement,this.#cellCursorRowIndex);
+				break; case "-":
+					this.#contractRow(this.#cellCursorRowIndex);
+				break; case "Enter":
+					if (this.#selectedCell.classList.contains("expandcol"))
+						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
+				this.#scrollToCursor();
+				this.#tryEnterEditMode();
+				e.preventDefault();//prevent newline from being entered into textareas
+			}
+		} else {
+			switch (e.key) {
+				case "Enter":
+				if (e.ctrlKey&&this.#cellCursorCellStruct.edit.dataType==="textarea") {
+					this.#insertAtCursor(this.#input,"\r\n");
+					this.#autoTextAreaResize();
 				} else {
 					this.#exitEditMode(true);
 					this.#moveCellCursor(0,e.shiftKey?-1:1);
 				}
-			break; case "+":
-				this.#expandRow(this.#selectedCell.parentElement,this.#cellCursorRowIndex);
-			break; case "-":
-				this.#contractRow(this.#cellCursorRowIndex);
+				break; case "Escape":
+					this.#exitEditMode(false);
+			}
 		}
 	}
 
@@ -557,14 +564,23 @@ class Tablance {
 	}
 
 	#autoTextAreaResize(e) {
+		
+		//change size of cellcursor which holds the textarea, to the new scrollHeight of textarea. This results in
+		//the height of textarea to change too because its height is 100% of the cellcursor.
+		//also changing the height of the underlying cell which affects the height of the expansion
 		this.#cellCursor.style.height = this.#selectedCell.style.height=this.#input.scrollHeight + 'px';
-		const expansionRow=this.#selectedCell.closest("tr.expansion");
-		const contentDiv=expansionRow.querySelector(".content");
+
+		//need to call this to make the height of the expansion adjust and reflect the change in size of the textarea
+		this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#cellCursorRowIndex);
+	}
+
+	#updateExpansionHeight(expansionTr,rowIndex) {
+		const contentDiv=expansionTr.querySelector(".content");
 		contentDiv.style.height="auto";//auto-adjust height to fit height of textarea correctly. Later set it back to
 									//its new offsetHeight to allow for animating it correctly.
 
 		const prevRowHeight=this.#expandedRowHeights[this.#cellCursorRowIndex];
-		const newRowHeight=this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY;
+		const newRowHeight=this.#rowHeight+expansionTr.offsetHeight+this.#borderSpacingY;
 		this.#expandedRowHeights[this.#cellCursorRowIndex]=newRowHeight;
 
 		contentDiv.style.height=newRowHeight-this.#expansionBordesHeight+"px";
