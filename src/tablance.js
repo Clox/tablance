@@ -344,7 +344,7 @@ class Tablance {
 				break; case "ArrowRight":
 					this.#moveCellCursor(1,0);
 				break; case "Escape":
-					this.#exitEditMode(false);
+					this.#groupEscape();
 				break;  case " ":
 					if (this.#selectedCell.classList.contains("expandcol"))
 						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
@@ -374,6 +374,12 @@ class Tablance {
 					this.#exitEditMode(false);
 			}
 		}
+	}
+
+	#groupEscape() {
+		for (let cellObj=this.#activeExpansionCell; cellObj=cellObj.parent;)
+			if (cellObj.struct.type==="group")
+				return this.#selectExpansionCell(cellObj);
 	}
 
 	#insertAtCursor(myField, myValue) {
