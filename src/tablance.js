@@ -501,16 +501,16 @@ class Tablance {
 		cellObj.struct=groupStructure;
 		groupTable.className="expansion-group";
 		for (let entryI=-1,struct; struct=groupStructure.entries[++entryI];) {
-			if (entryI>0) {
-				let separatorTd=groupTable.insertRow().insertCell();
-				separatorTd.className="separator";
-				separatorTd.appendChild(document.createElement("div"));
-			}
 			let td=groupTable.insertRow().insertCell();
+			if (entryI>0) {
+				const separator=td.appendChild(document.createElement("div"));
+				separator.className="separator";
+			}
 			let header=td.appendChild(document.createElement("h4"));
 			header.innerText=struct.title;
 			
 			let contentDiv=td.appendChild(document.createElement("div"));
+			contentDiv.className="value";
 			path.push(entryI);
 			let cellChild=this.#generateExpansionContent
 													(struct,dataIndex,cellObj.children[entryI]={},td,path,true);
@@ -1153,7 +1153,7 @@ class Tablance {
 
 	#updateCell(cellEl,dataIndex,cellStruct) {
 		if (cellEl.closest("table").classList.contains("expansion-group"))
-			cellEl=cellEl.querySelector("div");
+			cellEl=cellEl.querySelector("div.value");
 		let valEl=cellEl;
 		if (cellStruct.maxHeight) {
 			cellEl.innerHTML="";

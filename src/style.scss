@@ -150,21 +150,23 @@
 		>table {
 			border: 1px solid #bbb;
 			width: 100%;
-			>tbody>tr>td {
-				border: none;
-				&:not(.separator) {
+			>tbody {
+				>tr:not(:first-child)>td {
+					padding-top: 0;
+				}
+				>tr>td {
+					padding: 6px 10px;
+					padding-top: 12;
+					border: none;
 					padding-left: 4px;
-					h4 {
+					>h4 {
 						color: #8c8c8c;
 						line-height: 2px;
 						font-size: 13px;
 						margin-bottom: 5px;
 						font-weight: 500;
 					}
-				}
-				&.separator {
-					padding: 0 10px;
-					>div {
+					>.separator {
 						border-top: 1px dashed #ccc;
 					}
 				}
