@@ -37,7 +37,7 @@ class Tablance {
 	#cellCursor;//The element that for spreadsheets shows which cell is selected
 	#mainRowIndex;//the index of the row that the cellcursor is at
 	#mainColIndex;//the index of the column that the cellcursor is at
-	#cellCursorCellStruct;//reference to the struct-object of the selcted cell. For cells in the maintable this would
+	#activeCellStruct;//reference to the struct-object of the selcted cell. For cells in the maintable this would
 							//point to an object in #colStructs, otherwise to the struct-object of expansion-cells
 	#cellCursorDataObj;//reference to the actual object holding the data that the cell-cursor currently is at.
 						//Usually this will simply point to an object in #data but for data that is nested with
@@ -84,7 +84,7 @@ class Tablance {
 							//						it simply holds the top cell-objects
 							//  index: the index of the cell/object in the children-array of its parent
 							//}
-	#activeExpansionCell;	//points to an object in #openExpansionNavMap and in extension the cell of an expension.
+	#activeExpCell;	//points to an object in #openExpansionNavMap and in extension the cell of an expension.
 							//If this is set then it means the cursor is inside an expansion.
 	#animateCellCursorUntil;//used by #animateCellcursorPos to set the end-time for animation for adjusting its position
 							//while rows are being expanded/contracted
@@ -264,8 +264,8 @@ class Tablance {
 			//#scrollToRow() above, but it doesn't get fired immediately. Running it twice is not a big deal.
 			this.#scrollMethod();
 			let newColIndex=this.#mainColIndex;
-			if (this.#activeExpansionCell) {//moving from inside expansion.might move to another cell inside,or outside
-				this.#selectAdjacentExpansionCell(this.#activeExpansionCell,numRows==1?true:false);
+			if (this.#activeExpCell) {//moving from inside expansion.might move to another cell inside,or outside
+				this.#selectAdjacentExpansionCell(this.#activeExpCell,numRows==1?true:false);
 			} else if (numRows===1&&this.#expandedRowHeights[this.#mainRowIndex]){//moving down into expansion
 				this.#selectFirstSelectableExpansionCell(this.#openExpansions[this.#mainRowIndex],true);
 			} else if (numRows===-1&&this.#expandedRowHeights[this.#mainRowIndex-1]){//moving up into expansion
@@ -276,7 +276,7 @@ class Tablance {
 			}
 			//need to call this a second time. first time is to scroll to old td to make sure the new td is rendered
 			this.#scrollToCursor();//this time it is to actually scroll to the new td
-		} else if (!this.#activeExpansionCell){
+		} else if (!this.#activeExpCell){
 			this.#selectMainTableCell(this.#selectedCell[(numCols>0?"next":"previous")+"Sibling"]);
 		}
 	}
@@ -363,7 +363,7 @@ class Tablance {
 		} else {
 			switch (e.key) {
 				case "Enter":
-				if (e.ctrlKey&&this.#cellCursorCellStruct.edit.dataType==="textarea") {
+				if (e.ctrlKey&&this.#activeCellStruct.edit.dataType==="textarea") {
 					this.#insertAtCursor(this.#input,"\r\n");
 					this.#autoTextAreaResize();
 				} else {
@@ -377,7 +377,7 @@ class Tablance {
 	}
 
 	#groupEscape() {
-		for (let cellObj=this.#activeExpansionCell; cellObj=cellObj.parent;)
+		for (let cellObj=this.#activeExpCell; cellObj=cellObj.parent;)
 			if (cellObj.struct.type==="group")
 				return this.#selectExpansionCell(cellObj);
 	}
@@ -422,7 +422,7 @@ class Tablance {
 		if (!this.#expansion||!this.#expandedRowHeights[dataRowIndex])
 			return;
 		const tr=this.#mainTbody.querySelector(`[data-data-row-index="${dataRowIndex}"].expanded`);
-		if (this.#mainRowIndex==dataRowIndex&&this.#activeExpansionCell)
+		if (this.#mainRowIndex==dataRowIndex&&this.#activeExpCell)
 			this.#selectMainTableCell(tr.cells[this.#mainColIndex]);
 		const contentDiv=tr.nextSibling.querySelector(".content");
 		const contractFinished=()=> {
@@ -507,7 +507,9 @@ class Tablance {
 		cellObj.struct=groupStructure;
 		groupTable.className="expansion-group";
 		for (let entryI=-1,struct; struct=groupStructure.entries[++entryI];) {
-			let td=groupTable.insertRow().insertCell();
+			let tr=groupTable.insertRow();
+			tr.className="empty";//start as empty to hide when closed.updateCell() will remove it if a cell is non-empty
+			let td=tr.insertCell();
 			if (entryI>0) {
 				const separator=td.appendChild(document.createElement("div"));
 				separator.className="separator";
@@ -518,12 +520,13 @@ class Tablance {
 			let contentDiv=td.appendChild(document.createElement("div"));
 			contentDiv.className="value";
 			path.push(entryI);
-			let cellChild=this.#generateExpansionContent
-													(struct,dataIndex,cellObj.children[entryI]={},td,path,true);
+
+			//create cell-object for group-member. nonEmptyDescentants keeps track of how many descendant-cells that are
+			//non-empty in order to mark group-rows as empty to hide them while group is closed
+			let childCellObj=cellObj.children[entryI]={nonEmptyDescentants:0,parent:cellObj,index:entryI};
+
+			let cellChild=this.#generateExpansionContent(struct,dataIndex,childCellObj,td,path,true);
 			path.pop();
-			//cellChild.el=td;//reset the el to the whole td so that cellcursor wraps around the whole td including headers
-			cellChild.parent=cellObj;
-			cellChild.index=entryI;
 		}
 		parentEl.appendChild(groupTable);
 		return cellObj;
@@ -556,10 +559,10 @@ class Tablance {
 	}
 
 	#generateExpansionField(fieldStructure,dataIndex,cellObject,parentEl,path,isGroupMember) {
-		this.#updateCell(parentEl,dataIndex,fieldStructure);
 		if (isGroupMember)
 			parentEl=parentEl.parentElement;
 		cellObject.el=parentEl;
+		this.#updateCell(parentEl,dataIndex,fieldStructure,cellObject);
 		parentEl.dataset.path=path.join("-");
 		cellObject.dataObject=this.#data[dataIndex];
 		cellObject.struct=fieldStructure;
@@ -639,7 +642,7 @@ class Tablance {
 	}
 
 	#autoTextAreaResize() {
-		const maxHeight=this.#cellCursorCellStruct.maxHeight??Infinity;
+		const maxHeight=this.#activeCellStruct.maxHeight??Infinity;
 		//change size of cellcursor which holds the textarea, to the new scrollHeight of textarea. This results in
 		//the height of textarea to change too because its height is 100% of the cellcursor.
 		//also changing the height of the underlying cell which affects the height of the expansion
@@ -665,11 +668,11 @@ class Tablance {
 	}
 
 	#enterCell(e) {
-		if (this.#cellCursorCellStruct.edit) {
-			this.#selectedCellVal=this.#cellCursorDataObj[this.#cellCursorCellStruct.id];
+		if (this.#activeCellStruct.edit) {
+			this.#selectedCellVal=this.#cellCursorDataObj[this.#activeCellStruct.id];
 			this.#inEditMode=true;
 			this.#cellCursor.classList.add("edit-mode");
-			if (this.#cellCursorCellStruct.edit.dataType==="textarea") {
+			if (this.#activeCellStruct.edit.dataType==="textarea") {
 				this.#input=document.createElement("textarea");
 				this.#input.addEventListener('input', e=>this.#autoTextAreaResize.call(this,e));
 			} else
@@ -677,14 +680,14 @@ class Tablance {
 			this.#cellCursor.appendChild(this.#input);
 			this.#input.focus();
 			this.#input.value=this.#selectedCellVal??"";
-			if (this.#cellCursorCellStruct.edit.maxLength)
-				this.#input.maxLength=this.#cellCursorCellStruct.edit.maxLength;
-			this.#input.placeholder=this.#cellCursorCellStruct.edit.placeholder??"";
-			if (this.#cellCursorCellStruct.edit.cleave)
-				new Cleave(this.#input,this.#cellCursorCellStruct.edit.cleave);
-		} else if (this.#cellCursorCellStruct.type==="group") {
-			this.#activeExpansionCell.el.classList.add("open");
-			this.#selectExpansionCell(this.#getFirstSelectableExpansionCell(this.#activeExpansionCell,true,true));
+			if (this.#activeCellStruct.edit.maxLength)
+				this.#input.maxLength=this.#activeCellStruct.edit.maxLength;
+			this.#input.placeholder=this.#activeCellStruct.edit.placeholder??"";
+			if (this.#activeCellStruct.edit.cleave)
+				new Cleave(this.#input,this.#activeCellStruct.edit.cleave);
+		} else if (this.#activeCellStruct.type==="group") {
+			this.#activeExpCell.el.classList.add("open");
+			this.#selectExpansionCell(this.#getFirstSelectableExpansionCell(this.#activeExpCell,true,true));
 		}
 	}
 
@@ -697,12 +700,12 @@ class Tablance {
 		if (save) {
 			newVal=this.#input.value;
 			if (newVal!=this.#selectedCellVal) {
-				this.#cellCursorDataObj[this.#cellCursorCellStruct.id]=newVal;
-				this.#updateCell(this.#selectedCell,this.#mainRowIndex,this.#cellCursorCellStruct);
+				this.#cellCursorDataObj[this.#activeCellStruct.id]=newVal;
+				this.#updateCell(this.#selectedCell,this.#mainRowIndex,this.#activeCellStruct,this.#activeExpCell);
 			}
 		}
 		this.#cellCursor.innerHTML="";
-		if (this.#cellCursorCellStruct.edit.dataType==="textarea") {
+		if (this.#activeCellStruct.edit.dataType==="textarea") {
 			this.#autoTextAreaResize();
 			this.#adjustCursorPosSize(this.#selectedCell);
 		}
@@ -713,11 +716,11 @@ class Tablance {
 	#selectMainTableCell(cell) {
 		if (!cell)//in case trying to move up from top row etc
 			return;
-		if (this.#activeExpansionCell) {
-			for (let oldCellParent=this.#activeExpansionCell; oldCellParent=oldCellParent.parent;)
+		if (this.#activeExpCell) {
+			for (let oldCellParent=this.#activeExpCell; oldCellParent=oldCellParent.parent;)
 				if (oldCellParent.struct.type==="group")
 					oldCellParent.el.classList.remove("open");//close any open group above old cell
-			this.#activeExpansionCell=null;//should be null when not inside expansion
+			this.#activeExpCell=null;//should be null when not inside expansion
 		}
 		this.#exitEditMode(true);
 		this.#selectedCell=cell;
@@ -726,13 +729,13 @@ class Tablance {
 		this.#mainRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);
 		if (!cell.parentElement.classList.contains("expansion"))
 			this.#mainColIndex=cell.cellIndex;
-		this.#cellCursorCellStruct=this.#colStructs[this.#mainColIndex];
+		this.#activeCellStruct=this.#colStructs[this.#mainColIndex];
 
 		//make cellcursor click-through if it's on an expand-row-button-td
-		this.#cellCursor.style.pointerEvents=this.#cellCursorCellStruct.type==="expand"?"none":"auto";
+		this.#cellCursor.style.pointerEvents=this.#activeCellStruct.type==="expand"?"none":"auto";
 
 		this.#cellCursorDataObj=this.#data[this.#mainRowIndex];
-		this.#cellCursorCellStruct=this.#colStructs[this.#mainColIndex];
+		this.#activeCellStruct=this.#colStructs[this.#mainColIndex];
 	}
 
 	#selectExpansionCell(cellObject) {
@@ -743,8 +746,8 @@ class Tablance {
 		this.#cellCursor.style.pointerEvents="auto";
 		for (var root=cellObject; root.parent; root=root.parent);
 		this.#mainRowIndex=root.rowIndex;;
-		if (this.#activeExpansionCell)//changing from an old expansionCell
-			for (let oldParent=this.#activeExpansionCell; oldParent=oldParent?.parent;)//traverse parents of old cell
+		if (this.#activeExpCell)//changing from an old expansionCell
+			for (let oldParent=this.#activeExpCell; oldParent=oldParent?.parent;)//traverse parents of old cell
 				if (oldParent.struct.type==="group") {//found a parent-group, which means that group is open
 					for (let newParent=cellObject; newParent=newParent.parent;)//traverse parents of new cell
 						if (newParent===oldParent) {//if this new parent-group is also part of old parents
@@ -753,12 +756,12 @@ class Tablance {
 						}
 					oldParent?.el.classList.remove("open");//if this old parent-group is not part of new then close it
 				}
-		this.#activeExpansionCell=cellObject;
+		this.#activeExpCell=cellObject;
 		this.#exitEditMode(true);
 		this.#adjustCursorPosSize(cellObject.el);
 		this.#selectedCell=cellObject.el;
 		this.#cellCursorDataObj=cellObject.dataObject;
-		this.#cellCursorCellStruct=cellObject.struct;
+		this.#activeCellStruct=cellObject.struct;
 	}
 
 	#adjustCursorPosSize(el,onlyPos=false) {
@@ -1079,19 +1082,19 @@ class Tablance {
 	 * @param {HTMLTableRowElement} tr */
 	#lookForActiveCellInRow(tr) {
 		if (tr.dataset.dataRowIndex==this.#mainRowIndex) {
-			if (!this.#activeExpansionCell)
+			if (!this.#activeExpCell)
 				this.#selectedCell=tr.cells[this.#mainColIndex];
 			else {//if inside expansion
 				//generate the path to the cellObject in #activeExpansionCell by stepping through its parents to root
 				let path=[];
-				for (let cellObject=this.#activeExpansionCell; cellObject.parent; cellObject=cellObject.parent)
+				for (let cellObject=this.#activeExpCell; cellObject.parent; cellObject=cellObject.parent)
 					path.unshift(cellObject.index);
 				//now follow the same path in the new #openExpansionNavMap[rowIndex], eg the cellObjects..
 				let cellObject=this.#openExpansions[this.#mainRowIndex];
 				for (let step of path)
 					cellObject=cellObject.children[step];
 				this.#selectedCell=cellObject.el;
-				this.#activeExpansionCell=cellObject;//should be identical but this allows for the old one to be gc'd
+				this.#activeExpCell=cellObject;//should be identical but this allows for the old one to be gc'd
 			}
 		}
 	}
@@ -1157,7 +1160,7 @@ class Tablance {
 		return tr;
 	}
 
-	#updateCell(cellEl,dataIndex,cellStruct) {
+	#updateCell(cellEl,dataIndex,cellStruct,expCellObj) {
 		if (cellEl.closest("table").classList.contains("expansion-group"))
 			cellEl=cellEl.querySelector("div.value");
 		let valEl=cellEl;
@@ -1167,10 +1170,17 @@ class Tablance {
 			valEl.style.maxHeight=cellStruct.maxHeight;
 			valEl.style.overflow="auto";
 		}
+		let newCellContent;
 		if (cellStruct.render)
-			valEl.innerText=cellStruct.render(this.#data[dataIndex],cellStruct,dataIndex);
+			newCellContent=cellStruct.render(this.#data[dataIndex],cellStruct,dataIndex);
 		else
-			valEl.innerText=this.#data[dataIndex][cellStruct.id]??"";
+			newCellContent=this.#data[dataIndex][cellStruct.id]??"";
+		if (expCellObj&&!newCellContent!=!valEl.innerText) {
+			for (let ancestorCell=expCellObj; ancestorCell; ancestorCell=ancestorCell.parent)
+				if (ancestorCell.nonEmptyDescentants>=0)
+					ancestorCell.el.classList.toggle("empty",!(ancestorCell.nonEmptyDescentants+=newCellContent?1:-1));
+		}
+		valEl.innerText=newCellContent;
 		if (this.#spreadsheet&&(!cellStruct.edit&&cellStruct.type!=="expand"))
 			cellEl.classList.add("disabled");
 	}
