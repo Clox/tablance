@@ -91,14 +91,14 @@
 			top: -5px;
 			font-size: 12px;
 			font-weight: 950;
-			&:before {
+			&::before {
 				content: "+";
 			}
 		}
 	}
 	tr.expanded>td.expandcol>a{
 		background: linear-gradient(to bottom, #FD2B2B, #A51616);
-		>span:before {
+		>span::before {
 			content: "\2013";
 		}
 	}
@@ -158,11 +158,16 @@
 			&:not(.open)>tbody>tr.empty {
 				display: none;
 			}
-			>tbody {
-				>tr:not(:first-child)>td {
+			&.open>tbody>tr,>tbody>tr:not(.empty) + tr:not(.empty) {
+				> td>.separator {
+					display: block;
+				}
+			}
+			>tbody> {
+				tr:not(:first-child)>td {
 					padding-top: 0;
 				}
-				>tr>td {
+				tr>td {
 					padding: 6px 10px;
 					padding-top: 12;
 					border: none;
@@ -176,6 +181,7 @@
 					}
 					>.separator {
 						border-top: 1px dashed #ccc;
+						display: none;
 					}
 				}
 			}
