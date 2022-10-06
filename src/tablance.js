@@ -414,7 +414,6 @@ class Tablance {
 			this.#expBordersHeight=this.#expandedRowHeights[dataRowIndex]-contentDiv.offsetHeight;
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)//adjust scroll-height reflect change...
 			+this.#expandedRowHeights[dataRowIndex]-this.#rowHeight+"px";//...in height of the table
-
 		//animate
 		contentDiv.style.height="0px";//start at 0
 		setTimeout(()=>contentDiv.style.height=this.#expandedRowHeights[dataRowIndex]-this.#expBordersHeight+"px");
@@ -431,12 +430,11 @@ class Tablance {
 		if (contentDiv.style.height==="auto") {//if fully expanded
 			contentDiv.style.height=this.#expandedRowHeights[dataRowIndex]-this.#expBordersHeight+"px";
 			setTimeout(()=>contentDiv.style.height=0);
-		} else if (parseInt(contentDiv.style.height)==0)//if in the middle of expanding (or contracting)
-			//this.#expansionAnimationEnd({e:{target:contentDiv}});
+		} else if (parseInt(contentDiv.style.height)==0)//if previous closing-animation has reached 0 but transitionend 
+		//hasn't been called yet which happens easily, for instance by selecting expand-button and holding space/enter
 			contentDiv.dispatchEvent(new Event('transitionend'));
-		else
+		else//if in the middle of animation, either expanding or contracting. make it head towards 0
 			contentDiv.style.height=0;
-		setTimeout(()=>contentDiv.style.height=0);
 		this.#animateCellcursorPos();
 	}
 
@@ -471,7 +469,7 @@ class Tablance {
 		const expansionCell=expansionRow.insertCell();
 		expansionCell.colSpan=this.#cols.length;
 		const expansionDiv=expansionCell.appendChild(document.createElement("div"));//single div inside td for animate
-		//expansionDiv.style.height=this.#expandedRowHeights[rowIndex]-this.#expansionBordersHeight+"px"
+		expansionDiv.style.height="auto";
 		expansionDiv.className="content";
 		expansionDiv.addEventListener("transitionend",this.#expansionAnimationEnd.bind(this));
 		const shadowLine=expansionDiv.appendChild(document.createElement("div"));
@@ -672,15 +670,11 @@ class Tablance {
 
 	#updateExpansionHeight(expansionTr) {
 		const contentDiv=expansionTr.querySelector(".content");
-		contentDiv.style.height="auto";//auto-adjust height to fit height of textarea correctly. Later set it back to
-									//its new offsetHeight to allow for animating it correctly.
+		contentDiv.style.height="auto";//set to auto in case of in middle of animation, get correct height
 
 		const prevRowHeight=this.#expandedRowHeights[this.#mainRowIndex];
 		const newRowHeight=this.#rowHeight+expansionTr.offsetHeight+this.#borderSpacingY;
 		this.#expandedRowHeights[this.#mainRowIndex]=newRowHeight;
-
-		contentDiv.style.height=newRowHeight-this.#expBordersHeight+"px";
-
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)//adjust scroll-height reflect change...
 			+newRowHeight-prevRowHeight+"px";//...in height of the table
 	}
