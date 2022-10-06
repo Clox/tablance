@@ -57,7 +57,7 @@ class Tablance {
 				//By setting this to true in mouseDownEvent we can 
 				//check which input was used last when the focus-method is triggerd
 	#expansion;//the expansion-argument passed to the constructor
-	#expansionBordesHeight;//when animating expansions for expanding/contracting the height of them fully
+	#expBordersHeight;//when animating expansions for expanding/contracting the height of them fully
 			//expanded needs to be known to know where to animate to and from. This is different from 
 			//#expandedRowIndicesHeights because that is the height of the whole row and not the div inside.
 			//we could retrieve offsetheight of the div each time a row needs to be animated or instead we can get
@@ -88,6 +88,9 @@ class Tablance {
 							//If this is set then it means the cursor is inside an expansion.
 	#animateCellCursorUntil;//used by #animateCellcursorPos to set the end-time for animation for adjusting its position
 							//while rows are being expanded/contracted
+	/* #generatingExpansion=false;//this is a flag that gets set to true when a row gets expanded or an already expanded
+		//row gets scrolled into view, in short whenver the expansion-elements are generated. Then it gets unset when
+		//creation finishes. The reason for having this flag is so that update */
 							
 
 	/**
@@ -407,14 +410,14 @@ class Tablance {
 		const expansionRow=this.#renderExpansion(tr,dataRowIndex,false);
 		this.#expandedRowHeights[dataRowIndex]=this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY;
 		const contentDiv=expansionRow.querySelector(".content");
-		if (!this.#expansionBordesHeight)//see declarataion of #expansionTopBottomBorderWidth
-			this.#expansionBordesHeight=this.#expandedRowHeights[dataRowIndex]-contentDiv.offsetHeight;
+		if (!this.#expBordersHeight)//see declarataion of #expansionTopBottomBorderWidth
+			this.#expBordersHeight=this.#expandedRowHeights[dataRowIndex]-contentDiv.offsetHeight;
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)//adjust scroll-height reflect change...
 			+this.#expandedRowHeights[dataRowIndex]-this.#rowHeight+"px";//...in height of the table
 
 		//animate
-		contentDiv.style.height="0px";
-		setTimeout(()=>contentDiv.style.height=this.#expandedRowHeights[dataRowIndex]-this.#expansionBordesHeight+"px");
+		contentDiv.style.height="0px";//start at 0
+		setTimeout(()=>contentDiv.style.height=this.#expandedRowHeights[dataRowIndex]-this.#expBordersHeight+"px");
 		this.#animateCellcursorPos();
 	}
 
@@ -422,22 +425,18 @@ class Tablance {
 		if (!this.#expansion||!this.#expandedRowHeights[dataRowIndex])
 			return;
 		const tr=this.#mainTbody.querySelector(`[data-data-row-index="${dataRowIndex}"].expanded`);
-		if (this.#mainRowIndex==dataRowIndex&&this.#activeExpCell)
-			this.#selectMainTableCell(tr.cells[this.#mainColIndex]);
+		if (this.#mainRowIndex==dataRowIndex&&this.#activeExpCell)//if cell-cursor is inside the expansion
+			this.#selectMainTableCell(tr.cells[this.#mainColIndex]);//then move it out
 		const contentDiv=tr.nextSibling.querySelector(".content");
-		const contractFinished=()=> {
-			tr.classList.remove("expanded");
-			this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
-				-this.#expandedRowHeights[dataRowIndex]+this.#rowHeight+"px";
-			tr.nextElementSibling.remove();
-			delete this.#expandedRowHeights[dataRowIndex];
-			delete this.#openExpansions[dataRowIndex];
-		};
-		if (contentDiv.style.height!=="0px") {//this is the normal scenario. its open and height is more than 0.
-			contentDiv.style.height="0px";	//so transition it to 0
-			contentDiv.ontransitionend=contractFinished;//and add listener
-		} else //however, if user manages to attempt to contract when height is exactly at 0 which actually isn't too
-			contractFinished();//hard then the event would never fire so just call it directly instead
+		if (contentDiv.style.height==="auto") {//if fully expanded
+			contentDiv.style.height=this.#expandedRowHeights[dataRowIndex]-this.#expBordersHeight+"px";
+			setTimeout(()=>contentDiv.style.height=0);
+		} else if (parseInt(contentDiv.style.height)==0)//if in the middle of expanding (or contracting)
+			//this.#expansionAnimationEnd({e:{target:contentDiv}});
+			contentDiv.dispatchEvent(new Event('transitionend'));
+		else
+			contentDiv.style.height=0;
+		setTimeout(()=>contentDiv.style.height=0);
 		this.#animateCellcursorPos();
 	}
 
@@ -472,14 +471,33 @@ class Tablance {
 		const expansionCell=expansionRow.insertCell();
 		expansionCell.colSpan=this.#cols.length;
 		const expansionDiv=expansionCell.appendChild(document.createElement("div"));//single div inside td for animate
-		expansionDiv.style.height=this.#expandedRowHeights[rowIndex]-this.#expansionBordesHeight+"px"
+		//expansionDiv.style.height=this.#expandedRowHeights[rowIndex]-this.#expansionBordersHeight+"px"
 		expansionDiv.className="content";
+		expansionDiv.addEventListener("transitionend",this.#expansionAnimationEnd.bind(this));
 		const shadowLine=expansionDiv.appendChild(document.createElement("div"));
 		shadowLine.className="expansion-shadow";
 		const navMap=this.#openExpansions[rowIndex]={};
 		const expansion=this.#generateExpansionContent(this.#expansion,rowIndex,navMap,expansionDiv,[]);
 		expansion.rowIndex=rowIndex;
 		return expansionRow;
+	}
+
+	#expansionAnimationEnd(e) {
+		if (parseInt(e.target.style.height)) {//if expand finished
+
+			e.target.style.height="auto";
+		} else {//if contract finished
+
+			const expansionTr=e.target.closest("tr");
+			const mainTr=expansionTr.previousSibling;
+			const dataRowIndex=mainTr.dataset.dataRowIndex;
+			mainTr.classList.remove("expanded");
+			this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
+			 	-this.#expandedRowHeights[dataRowIndex]+this.#rowHeight+"px";
+			expansionTr.remove();
+			delete this.#expandedRowHeights[dataRowIndex];
+			delete this.#openExpansions[dataRowIndex];
+		}
 	}
 
 	/**
@@ -652,7 +670,7 @@ class Tablance {
 		this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
 	}
 
-	#updateExpansionHeight(expansionTr,rowIndex) {
+	#updateExpansionHeight(expansionTr) {
 		const contentDiv=expansionTr.querySelector(".content");
 		contentDiv.style.height="auto";//auto-adjust height to fit height of textarea correctly. Later set it back to
 									//its new offsetHeight to allow for animating it correctly.
@@ -661,7 +679,7 @@ class Tablance {
 		const newRowHeight=this.#rowHeight+expansionTr.offsetHeight+this.#borderSpacingY;
 		this.#expandedRowHeights[this.#mainRowIndex]=newRowHeight;
 
-		contentDiv.style.height=newRowHeight-this.#expansionBordesHeight+"px";
+		contentDiv.style.height=newRowHeight-this.#expBordersHeight+"px";
 
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)//adjust scroll-height reflect change...
 			+newRowHeight-prevRowHeight+"px";//...in height of the table
@@ -701,7 +719,8 @@ class Tablance {
 			newVal=this.#input.value;
 			if (newVal!=this.#selectedCellVal) {
 				this.#cellCursorDataObj[this.#activeCellStruct.id]=newVal;
-				this.#updateCell(this.#selectedCell,this.#mainRowIndex,this.#activeCellStruct,this.#activeExpCell);
+				if (this.#updateCell(this.#selectedCell,this.#mainRowIndex,this.#activeCellStruct,this.#activeExpCell))
+					this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
 			}
 		}
 		this.#cellCursor.innerHTML="";
@@ -1161,6 +1180,7 @@ class Tablance {
 	}
 
 	#updateCell(cellEl,dataIndex,cellStruct,expCellObj) {
+		let numVisibleGrouprowsChange=false;
 		if (cellEl.closest("table").classList.contains("expansion-group"))
 			cellEl=cellEl.querySelector("div.value");
 		let valEl=cellEl;
@@ -1177,11 +1197,16 @@ class Tablance {
 			newCellContent=this.#data[dataIndex][cellStruct.id]??"";
 		if (expCellObj&&!newCellContent!=!valEl.innerText) {
 			for (let ancestorCell=expCellObj; ancestorCell; ancestorCell=ancestorCell.parent)
-				if (ancestorCell.nonEmptyDescentants>=0)
+				if (ancestorCell.nonEmptyDescentants!=null) {
+					if (ancestorCell.nonEmptyDescentants^!!newCellContent)
+						numVisibleGrouprowsChange=true;
 					ancestorCell.el.classList.toggle("empty",!(ancestorCell.nonEmptyDescentants+=newCellContent?1:-1));
+
+				}
 		}
 		valEl.innerText=newCellContent;
 		if (this.#spreadsheet&&(!cellStruct.edit&&cellStruct.type!=="expand"))
 			cellEl.classList.add("disabled");
+		return numVisibleGrouprowsChange;
 	}
 }
