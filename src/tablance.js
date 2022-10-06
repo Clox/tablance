@@ -356,12 +356,11 @@ class Tablance {
 				break; case "-":
 					this.#contractRow(this.#mainRowIndex);
 				break; case "Enter":
+					this.#scrollToCursor();
 					if (this.#selectedCell.classList.contains("expandcol"))
 						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
-				this.#scrollToCursor();
-				this.#enterCell();
-				
-				e.preventDefault();//prevent newline from being entered into textareas
+					this.#enterCell();
+					e.preventDefault();//prevent newline from being entered into textareas
 			}
 		} else {
 			switch (e.key) {
