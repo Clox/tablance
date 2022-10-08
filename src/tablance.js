@@ -140,8 +140,14 @@ class Tablance {
   	 * 			}
   	 * 			{
   	 * 				type:"repeated",//used when the number of rows is undefined and where more may be able to be added, 
-	 * 								//perhaps by the user
-  	 * 				title:"Foobar",//displayed title in placed in a list
+	 * 								//perhaps by the user. Having a list with a repeated->field basically works the same
+	 * 								//as having a list with multiple fields. A list can also mix repeated/dynamic and
+	 * 								//static fields. The structure could look something like:
+	 * 								//list
+	 * 								//	repeated
+	 * 								//		field
+	 * 								//	field1
+	 * 								//	field2
   	 * 				id:"foobar",//this should be the key of an array in the data where each object corresponds to each
 	 * 							//element in this repeated rows.
   	 * 				entry: any entry //may be item or list for instance. the data retrieved for these will be 1
@@ -507,11 +513,17 @@ class Tablance {
 	 * 				in and out of nesting. This path is then added as a data-attribute to the cells that can be
 	 * 				interacted with and this data is then read from and the cell-object can then be retrieved from it.*/
 	#generateExpansionContent(struct,dataIndex,cellObject,parentEl,path,isGroupMember=false) {
+		const args=[struct,dataIndex,cellObject,parentEl,path];
 		switch (struct.type) {
-			case "list": return this.#generateExpansionList(struct,dataIndex,cellObject,parentEl,path);
-			case "field": return this.#generateExpansionField(struct,dataIndex,cellObject,parentEl,path,isGroupMember);
-			case "group": return this.#generateExpansionGroup(struct,dataIndex,cellObject,parentEl,path);
+			case "list": return this.#generateExpansionList(...args);
+			case "field": return this.#generateExpansionField(...args,isGroupMember);
+			case "group": return this.#generateExpansionGroup(...args);
+			case "repeated": return this.#generateExpansionRepeated(...args)
 		}
+	}
+
+	#generateExpansionRepeated(struct,dataIndex,cellObj,parentEl,path) {
+
 	}
 
 	#generateExpansionGroup(groupStructure,dataIndex,cellObj,parentEl,path) {
@@ -538,9 +550,12 @@ class Tablance {
 
 			//create cell-object for group-member. nonEmptyDescentants keeps track of how many descendant-cells that are
 			//non-empty in order to mark group-rows as empty to hide them while group is closed
-			let childCellObj=cellObj.children[entryI]={nonEmptyDescentants:0,parent:cellObj,index:entryI};
+			//selEl is set and will be what the cell-cursor highlights. We do want to highlight the whole td but still
+			//it can't be used as the normal el and therefore get its innerText set when editing it because it also
+			//contains a header-element
+			let childCellObj=cellObj.children[entryI]={nonEmptyDescentants:0,parent:cellObj,index:entryI,selEl:td};
 
-			let cellChild=this.#generateExpansionContent(struct,dataIndex,childCellObj,td,path,true);
+			this.#generateExpansionContent(struct,dataIndex,childCellObj,contentDiv,path,true);
 			path.pop();
 		}
 		parentEl.appendChild(groupTable);
@@ -574,11 +589,11 @@ class Tablance {
 	}
 
 	#generateExpansionField(fieldStructure,dataIndex,cellObject,parentEl,path,isGroupMember) {
-		if (isGroupMember)
-			parentEl=parentEl.parentElement;
+		// if (isGroupMember)
+		// 	parentEl=parentEl.parentElement;
 		cellObject.el=parentEl;
 		this.#updateCell(parentEl,dataIndex,fieldStructure,cellObject);
-		parentEl.dataset.path=path.join("-");
+		cellObject[cellObject.selEl?"selEl":"el"].dataset.path=path.join("-");
 		cellObject.dataObject=this.#data[dataIndex];
 		cellObject.struct=fieldStructure;
 		return cellObject;
@@ -712,8 +727,11 @@ class Tablance {
 			newVal=this.#input.value;
 			if (newVal!=this.#selectedCellVal) {
 				this.#cellCursorDataObj[this.#activeCellStruct.id]=newVal;
-				if (this.#updateCell(this.#selectedCell,this.#mainRowIndex,this.#activeCellStruct,this.#activeExpCell))
-					this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
+				if (this.#activeExpCell){
+					if (this.#updateCell(this.#activeExpCell.el,this.#mainRowIndex,this.#activeCellStruct,this.#activeExpCell))
+						this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
+				} else
+					this.#updateMainRowCell(this.#selectedCell,this.#activeCellStruct);
 			}
 		}
 		this.#cellCursor.innerHTML="";
@@ -770,8 +788,8 @@ class Tablance {
 				}
 		this.#activeExpCell=cellObject;
 		this.#exitEditMode(true);
-		this.#adjustCursorPosSize(cellObject.el);
-		this.#selectedCell=cellObject.el;
+		this.#selectedCell=cellObject.selEl??cellObject.el;
+		this.#adjustCursorPosSize(this.#selectedCell);
 		this.#cellCursorDataObj=cellObject.dataObject;
 		this.#activeCellStruct=cellObject.struct;
 	}
@@ -1172,10 +1190,16 @@ class Tablance {
 		return tr;
 	}
 
+
+	//updateCell is used to update the actual html of a cell. it doesn't change value in memory
+	//passing cellEl makes sense since this is updating the html the element is always needed anyway..
+	//maybe passing dataIndex is reduntant and one could pass cellobject instead? of course, there is no cellobject for
+	//mcells of mainrows...
+	//i think it would make sense to split this method into 2. updateMainRowCell and updateExpansionCell..
 	#updateCell(cellEl,dataIndex,cellStruct,expCellObj) {
 		let numVisibleGrouprowsChange=false;
-		if (cellEl.closest("table").classList.contains("expansion-group"))
-			cellEl=cellEl.querySelector("div.value");
+		// if (cellEl.closest("table").classList.contains("expansion-group"))
+		// 	cellEl=cellEl.querySelector("div.value");
 		let valEl=cellEl;
 		if (cellStruct.maxHeight) {
 			cellEl.innerHTML="";
@@ -1189,17 +1213,58 @@ class Tablance {
 		else
 			newCellContent=this.#data[dataIndex][cellStruct.id]??"";
 		if (expCellObj&&!newCellContent!=!valEl.innerText) {
-			for (let ancestorCell=expCellObj; ancestorCell; ancestorCell=ancestorCell.parent)
-				if (ancestorCell.nonEmptyDescentants!=null) {
-					if (ancestorCell.nonEmptyDescentants^!!newCellContent)
+			for (let cellI=expCellObj; cellI; cellI=cellI.parent)
+				if (cellI.nonEmptyDescentants!=null) {
+					if (cellI.nonEmptyDescentants^!!newCellContent)
 						numVisibleGrouprowsChange=true;
-					ancestorCell.el.classList.toggle("empty",!(ancestorCell.nonEmptyDescentants+=newCellContent?1:-1));
-
+					cellI.el.closest("tr").classList.toggle("empty",!(cellI.nonEmptyDescentants+=newCellContent?1:-1));
 				}
 		}
 		valEl.innerText=newCellContent;
 		if (this.#spreadsheet&&(!cellStruct.edit&&cellStruct.type!=="expand"))
 			cellEl.classList.add("disabled");
 		return numVisibleGrouprowsChange;
+	}
+
+	/**Updates the html-element of a cell inside an expansion. Also updates nonEmptyDescentants of the cell-object of 
+	 * 	group-rows as well as toggling the empty-class of them. Reports back whether visibility has been changed.
+	 * @param {*} cellObject */
+	#updateExpansionCell(cellObject) {
+		if (cellEl.closest("table").classList.contains("expansion-group"))
+			cellEl=cellEl.querySelector("div.value");
+		let valEl=cellEl;
+		if (cellObject.struct.maxHeight) {
+			cellEl.innerHTML="";
+			valEl=cellEl.appendChild(document.createElement("div"));
+			valEl.style.maxHeight=cellObject.struct.maxHeight;
+			valEl.style.overflow="auto";
+		}
+		let newCellContent, oldCellContent=valEl.innerText;
+		if (cellStruct.render)
+			newCellContent=cellStruct.render(this.#data[dataIndex],cellStruct,dataIndex);
+		else
+			newCellContent=this.#data[dataIndex][cellStruct.id]??"";
+		valEl.innerText=newCellContent;
+		if (this.#spreadsheet&&(!cellStruct.edit))
+			cellEl.classList.add("disabled");
+		if (!newCellContent^!oldCellContent&&"isgroup") {//if new is empty and old is non empty or vice versa
+			for (let ancestorCell=expCellObj; ancestorCell; ancestorCell=ancestorCell.parent)
+				if (ancestorCell.nonEmptyDescentants!=null)
+					ancestorCell.el.classList.toggle("empty",!(ancestorCell.nonEmptyDescentants+=newCellContent?1:-1));
+			return true;
+		}
+	}
+
+	/**Updates the html-element of a main-table-cell
+	 * @param {*} cellEl 
+	 * @param {*} colStruct */
+	#updateMainRowCell(cellEl,colStruct) {
+		const dataIndex=cellEl.closest(".main-table>tbody>tr").dataset.dataRowIndex;
+		if (colStruct.render)
+			cellEl.innerText=colStruct.render(this.#data[dataIndex],colStruct,dataIndex);
+		else
+			cellEl.innerText=this.#data[dataIndex][colStruct.id]??"";
+		if (this.#spreadsheet&&(!colStruct.edit&&colStruct.type!=="expand"))
+			cellEl.classList.add("disabled");
 	}
 }
