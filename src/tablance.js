@@ -152,6 +152,8 @@ class Tablance {
 	 * 							//element in this repeated rows.
   	 * 				entry: any entry //may be item or list for instance. the data retrieved for these will be 1
 	 * 								//level deeper so the path from the base would be idOfRepeatedRows->arrayIndex->*
+	 * 				create: Bool //if true then a row is added which can be interacted with to insert more entries
+	 * 				creationText: //used if "create" is true. the text of the creation-cell. default is "Create new"
   	 * 			}
   	 * 			{
   	 * 				type:"group",//used when a set of data should be grouped, like for instance having an address and
@@ -562,8 +564,10 @@ class Tablance {
 				const separator=td.appendChild(document.createElement("div"));
 				separator.className="separator";
 			}
-			let header=td.appendChild(document.createElement("h4"));
-			header.innerText=struct.title;
+			if (struct.title) {
+				let header=td.appendChild(document.createElement("h4"));
+				header.innerText=struct.title;
+			}
 			
 			let contentDiv=td.appendChild(document.createElement("div"));
 			contentDiv.className="value";
@@ -574,7 +578,8 @@ class Tablance {
 			//selEl is set and will be what the cell-cursor highlights. We do want to highlight the whole td but still
 			//it can't be used as the normal el and therefore get its innerText set when editing it because it also
 			//contains a header-element
-			let childCellObj=cellObj.children[entryI]={nonEmptyDescentants:0,parent:cellObj,index:entryI,selEl:td};
+			let childCellObj=cellObj.children[entryI]
+												={nonEmptyDescentants:0,grpTr:tr,parent:cellObj,index:entryI,selEl:td};
 
 			this.#generateExpansionContent(struct,dataIndex,childCellObj,contentDiv,path,rowData);
 			path.pop();
@@ -1251,7 +1256,7 @@ class Tablance {
 		if (!newCellContent!=!oldCellContent) {
 			for (let cellI=cellObject; cellI; cellI=cellI.parent)
 				if (cellI.nonEmptyDescentants!=null)
-					cellI.el.closest("tr").classList.toggle("empty",!(cellI.nonEmptyDescentants+=newCellContent?1:-1));
+					cellI.grpTr.classList.toggle("empty",!(cellI.nonEmptyDescentants+=newCellContent?1:-1));
 			return true;
 		}
 	}

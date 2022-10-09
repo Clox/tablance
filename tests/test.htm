@@ -14,22 +14,30 @@
 			
 			
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
-				{type:"repeated",id:"repeatedStuff",entry:
-					{type:"field",title:"repeated row",id:"foo"}
-				},
-				{type:"group",title:"grupp",entries:[
-					{type:"field",title:"Hello",id:"hello",edit:{dataType:"text"}},
-					{type:"field",title:"World",id:"world",edit:{dataType:"text"}},
-					{type:"field",title:"Emptytest",id:"emptykey",edit:{dataType:"text"}}]},
-				{type:"field",title:"Foobar One",id:"foobar1",edit:{dataType:"text",maxLength:5,placeholder:"boo"}},
-				{type:"field",title:"Foobar Two",id:"foobar2"},
-				{type:"list",title:"Baz entries",titlesColWidth:"6em",entries:[
-					{type:"field",title:"Baz One",id:"baz1"},
-					{type:"field",title:"Baz Two",id:"baz2"},
-					{type:"field",title:"Cleave-datum",id:"date",
-						edit:{cleave:{date: true,delimiter: '-',datePattern: ['Y','m','d']},placeholder:"ÅÅÅÅ-MM-DD"}},
-					{type:"field",title:"Anteckningar",id:"notes",maxHeight:150,edit:{dataType:"textarea"}},
-				]}
+				// {type:"repeated",id:"repeatedField",entry:
+				// 	{type:"field",title:"repeated row",id:"foo"}
+				// },
+				{type:"group",title:"förordnande",entries:[
+						{type:"repeated",id:"custodianshipChanges",entry:
+						{type:"group",entries:[
+								{type:"field",title:"Datum",id:"custodianshipDate"},
+								{type:"field",title:"Typ av ställföreträdarskap",id:"typeOfCustodianship"}
+						]}
+					}
+				]},
+				// {type:"group",title:"grupp",entries:[
+				// 	{type:"field",title:"Hello",id:"hello",edit:{dataType:"text"}},
+				// 	{type:"field",title:"World",id:"world",edit:{dataType:"text"}},
+				// 	{type:"field",title:"Emptytest",id:"emptykey",edit:{dataType:"text"}}]},
+				// {type:"field",title:"Foobar One",id:"foobar1",edit:{dataType:"text",maxLength:5,placeholder:"boo"}},
+				// {type:"field",title:"Foobar Two",id:"foobar2"},
+				// {type:"list",title:"Baz entries",titlesColWidth:"6em",entries:[
+				// 	{type:"field",title:"Baz One",id:"baz1"},
+				// 	{type:"field",title:"Baz Two",id:"baz2"},
+				// 	{type:"field",title:"Cleave-datum",id:"date",
+				// 		edit:{cleave:{date: true,delimiter: '-',datePattern: ['Y','m','d']},placeholder:"ÅÅÅÅ-MM-DD"}},
+				// 	{type:"field",title:"Anteckningar",id:"notes",maxHeight:150,edit:{dataType:"textarea"}},
+				// ]}
 			]};
 			
 
@@ -45,7 +53,9 @@
 					data.push({desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,descLetter:String.fromCharCode(ii)
 						,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
 						,hello:"Hallå",world:"Världen"
-						,repeatedStuff:[{foo:"row one in repeated"},{foo:"row two in repeated"}]});
+						,repeatedField:[{foo:"row one in repeated"},{foo:"row two in repeated"}]
+						,repeatedGroup:[{foo1:"blahblah",foo2:"lalala"},{foo1:"bloj",foo2:"kapapa"}]
+						,custodianshipChanges:[{custodianshipDate:"2021-01-01",typeOfCustodianship:"God Man"}]});
 				}
 				myTablance.addData(data);
 			}
