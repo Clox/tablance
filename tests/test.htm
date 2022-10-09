@@ -14,7 +14,9 @@
 			
 			
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
-				//{type:"repeated",},
+				{type:"repeated",id:"repeatedStuff",entry:
+					{type:"field",title:"repeated row",id:"foo"}
+				},
 				{type:"group",title:"grupp",entries:[
 					{type:"field",title:"Hello",id:"hello",edit:{dataType:"text"}},
 					{type:"field",title:"World",id:"world",edit:{dataType:"text"}},
@@ -42,7 +44,8 @@
 				for (let ii=0; ii<1000; ii++) {
 					data.push({desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,descLetter:String.fromCharCode(ii)
 						,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
-						,hello:"Hallå",world:"Världen"});
+						,hello:"Hallå",world:"Världen"
+						,repeatedStuff:[{foo:"row one in repeated"},{foo:"row two in repeated"}]});
 				}
 				myTablance.addData(data);
 			}

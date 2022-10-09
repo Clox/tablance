@@ -480,7 +480,7 @@ class Tablance {
 		const shadowLine=expansionDiv.appendChild(document.createElement("div"));
 		shadowLine.className="expansion-shadow";
 		const cellObject=this.#openExpansions[rowIndex]={};
-		this.#generateExpansionContent(this.#expansion,rowIndex,cellObject,expansionDiv,[]);
+		this.#generateExpansionContent(this.#expansion,rowIndex,cellObject,expansionDiv,[],this.#data[rowIndex]);
 		cellObject.rowIndex=rowIndex;
 		return expansionRow;
 	}
@@ -512,23 +512,42 @@ class Tablance {
 	 * @param []int path Keeps track of the "path" by adding and removing index-numbers from the array when going
 	 * 				in and out of nesting. This path is then added as a data-attribute to the cells that can be
 	 * 				interacted with and this data is then read from and the cell-object can then be retrieved from it.*/
-	#generateExpansionContent(struct,dataIndex,cellObject,parentEl,path,isGroupMember=false) {
+	#generateExpansionContent(struct,dataIndex,cellObject,parentEl,path,rowData) {
 		if (!path.length)
 			cellObject.rowIndex=dataIndex;
-		const args=[struct,dataIndex,cellObject,parentEl,path];
+		const args=[struct,dataIndex,cellObject,parentEl,path,rowData];
 		switch (struct.type) {
 			case "list": return this.#generateExpansionList(...args);
-			case "field": return this.#generateExpansionField(...args,isGroupMember);
+			case "field": return this.#generateExpansionField(...args);
 			case "group": return this.#generateExpansionGroup(...args);
 			case "repeated": return this.#generateExpansionRepeated(...args)
 		}
 	}
 
-	#generateExpansionRepeated(struct,dataIndex,cellObj,parentEl,path) {
-
+	/**This is supposed to get called when a repeated-struct is found however in #generateExpansionList,
+	 * repeated-structs are looked for and handled by that method instead so that titles can be added to the list
+	 * which isn't handled by #generateExpansionContent but by the list-method itself
+	 * @param {*} struct 
+	 * @param {*} dataIndex 
+	 * @param {*} cellObj 
+	 * @param {*} parentEl 
+	 * @param {*} path 
+	 * @param {*} rowData 
+	 * @returns */
+	#generateExpansionRepeated(struct,dataIndex,cellObj,parentEl,path,rowData) {
+		cellObj.struct=struct;
+		cellObj.children=[];
+		const repeatData=rowData[struct.id];
+		if (repeatData?.length) {
+			for (let childI=0; childI<rowData[struct.id].length; childI++) {
+				let childObj=cellObj.children[childI]={parent:cellObj,index:childI};
+				this.#generateExpansionContent(struct.entry,dataIndex,childObj,parentEl,path,repeatData[childI]);
+			}
+			return true;
+		}
 	}
 
-	#generateExpansionGroup(groupStructure,dataIndex,cellObj,parentEl,path) {
+	#generateExpansionGroup(groupStructure,dataIndex,cellObj,parentEl,path,rowData) {
 		cellObj.children=[];
 		const groupTable=document.createElement("table");
 		parentEl.classList.add("group-cell");
@@ -557,47 +576,63 @@ class Tablance {
 			//contains a header-element
 			let childCellObj=cellObj.children[entryI]={nonEmptyDescentants:0,parent:cellObj,index:entryI,selEl:td};
 
-			this.#generateExpansionContent(struct,dataIndex,childCellObj,contentDiv,path,true);
+			this.#generateExpansionContent(struct,dataIndex,childCellObj,contentDiv,path,rowData);
 			path.pop();
 		}
 		parentEl.appendChild(groupTable);
-		return cellObj;
+		return true;
 	}
 
-	#generateExpansionList(listStructure,dataIndex,cellObject,parentEl,path) {
-		cellObject.children=[];
-		cellObject.struct=listStructure;
+	#generateExpansionList(listStructure,dataIndex,listCelObj,parentEl,path,rowData) {
+		listCelObj.children=[];
+		listCelObj.struct=listStructure;
 		const listTable=document.createElement("table");
+		const listTbody=listTable.appendChild(document.createElement("tbody"));
 		listTable.className="expansion-list";
 		let titlesCol=document.createElement("col");
 		listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
 		if (listStructure.titlesColWidth)
 			titlesCol.style.width=listStructure.titlesColWidth;
 		for (let entryI=-1,struct; struct=listStructure.entries[++entryI];) {
-			let listTr=listTable.insertRow();
+			if (struct.type==="repeated"&&rowData[struct.id]?.length) {
+				let repeatCelObj=listCelObj.children[entryI]={parent:listCelObj,index:entryI,children:[],struct:struct};
+				for (let repeatI=-1,itemData; itemData=rowData[struct.id][++repeatI];) {
+					path.push(entryI);
+					this.#generateListItem(listTbody,struct.entry,repeatI,repeatI,repeatCelObj,path,itemData);
+					path.pop();
+				}
+			} else
+				this.#generateListItem(listTbody,struct,entryI,dataIndex,listCelObj,path,rowData);
+		}
+		parentEl.appendChild(listTable);
+		return true;
+	}
+
+	#generateListItem(listTbody,struct,itemIndex,dataIndex,listCelObj,path,data) {
+		let contentTd=document.createElement("td");
+		contentTd.className="value";//not actually sure why but this can't be put inside condition below
+		let cellChild={parent:listCelObj,index:itemIndex};
+		path.push(itemIndex);
+		if (this.#generateExpansionContent(struct,dataIndex,cellChild,contentTd,path,data)) {//generate content
+			//and add it to dom if condition falls true, e.g. content was actually created. it might not be if it is
+			//a repeated and there was no data for it add
+			let listTr=listTbody.insertRow();
 			let titleTd=listTr.insertCell();
 			titleTd.className="title";
 			titleTd.innerText=struct.title;
-			let contentTd=listTr.insertCell();
-			contentTd.className="value";
-			path.push(entryI);
-			cellObject.children[entryI]={parent:cellObject,index:entryI};
-			this.#generateExpansionContent(struct,dataIndex,cellObject.children[entryI],contentTd,path);
-			path.pop();
+			listTr.appendChild(contentTd);
+			listCelObj.children[itemIndex]=cellChild;
 		}
-		parentEl.appendChild(listTable);
-		return cellObject;
+		path.pop();
 	}
 
-	#generateExpansionField(fieldStructure,dataIndex,cellObject,parentEl,path,isGroupMember) {
-		// if (isGroupMember)
-		// 	parentEl=parentEl.parentElement;
+	#generateExpansionField(fieldStructure,dataIndex,cellObject,parentEl,path,rowData) {
 		cellObject.el=parentEl;
 		cellObject[cellObject.selEl?"selEl":"el"].dataset.path=path.join("-");
-		cellObject.dataObject=this.#data[dataIndex];
+		cellObject.dataObject=rowData;
 		cellObject.struct=fieldStructure;
-		this.#updateExpansionCell(cellObject);
-		return cellObject;
+		this.#updateExpansionCell(cellObject,rowData);
+		return true;
 	}
 
 	#scrollToCursor() {
@@ -730,7 +765,7 @@ class Tablance {
 				this.#cellCursorDataObj[this.#activeCellStruct.id]=newVal;
 				if (this.#activeExpCell){
 					//if (this.#updateCell(this.#activeExpCell.el,this.#mainRowIndex,this.#activeCellStruct,this.#activeExpCell))
-					if (this.#updateExpansionCell(this.#activeExpCell))
+					if (this.#updateExpansionCell(this.#activeExpCell,this.#data[this.#mainRowIndex]))
 						this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
 				} else
 					this.#updateMainRowCell(this.#selectedCell,this.#activeCellStruct);
@@ -1196,7 +1231,7 @@ class Tablance {
 	/**Updates the html-element of a cell inside an expansion. Also updates nonEmptyDescentants of the cell-object of 
 	 * 	group-rows as well as toggling the empty-class of them. Reports back whether visibility has been changed.
 	 * @param {*} cellObject */
-	#updateExpansionCell(cellObject) {
+	#updateExpansionCell(cellObject,rowData) {
 		let cellEl=cellObject.el,rootCell=cellObject;
 		for (;rootCell.parent;rootCell=rootCell.parent);//get the highest cellObject in order to retrieve data-row-index
 		if (cellObject.struct.maxHeight) {//if there's a maxHeight stated, which is used for textareas
@@ -1207,9 +1242,9 @@ class Tablance {
 		}
 		let newCellContent,oldCellContent=cellEl.innerText;
 		if (cellObject.struct.render)
-			newCellContent=cellObject.struct.render(this.#data[rootCell.rowIndex],cellObject.struct,rootCell.rowIndex);
+			newCellContent=cellObject.struct.render(rowData,cellObject.struct,rootCell.rowIndex);
 		else
-			newCellContent=this.#data[rootCell.rowIndex][cellObject.struct.id]??"";
+			newCellContent=rowData[cellObject.struct.id]??"";
 		if (this.#spreadsheet&&(!cellObject.struct.edit&&cellObject.struct.type!=="expand"))
 			cellEl.classList.add("disabled");
 		cellEl.innerText=newCellContent;
