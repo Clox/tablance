@@ -91,6 +91,11 @@ class Tablance {
 	/* #generatingExpansion=false;//this is a flag that gets set to true when a row gets expanded or an already expanded
 		//row gets scrolled into view, in short whenver the expansion-elements are generated. Then it gets unset when
 		//creation finishes. The reason for having this flag is so that update */
+	#ignoreClicksUntil;//when being inside an open group and trying to double-click on another cell further down to
+		//interact with it the first click will highlight it but then the current group closes and what's below it will
+		//get shifted up and the second click hits something else. By setting this var to current time plus 500 ms
+		//when a group closes and checking if current time is past this one in mouseDown handler we'll ignore the second
+		//click which is better user-experience
 							
 
 	/**
@@ -249,6 +254,19 @@ class Tablance {
 		this.#container.addEventListener("focus",e=>this.#spreadsheetOnFocus(e));
 		this.#mainTable.addEventListener("mousedown",e=>this.#mainTableMouseDown(e));
 		this.#cellCursor.addEventListener("dblclick",e=>this.#enterCell(e));
+		this.#mainTable.addEventListener("dblclick",e=>this.#tableDblClick(e));
+
+	}
+
+	/**Event-handler for double-clicking the table. This is not used for interacting with cells but instead a
+	 * dblclick-handler on the cellCursor is used for that. This is used to preventDefault/ignore click completely
+	 * if #ignoreClicksUntil is applicable. See decleration of of #ignoreClicksUntil for more info. Without this
+	 * handler the interaction of cells for tje double-click is already ignored however the double-click will still
+	 * have a default action which is to highlight text in cells. Another way of preventing this would be to mark
+	 * the text as non selectable via css*/
+	#tableDblClick(e) {
+		if (Date.now()<this.#ignoreClicksUntil)//see decleration of #ignoreClicksUntil
+			e.preventDefault();
 	}
 
 	#spreadsheetOnFocus(e) {
@@ -680,6 +698,8 @@ class Tablance {
 	}
 	
 	#mainTableMouseDown(e) {
+		if (Date.now()<this.#ignoreClicksUntil)//see decleration of #ignoreClicksUntil
+			return;
 		if (e.which===3)//if right click
 			return;
 		const mainTr=e.target.closest(".main-table>tbody>tr");
@@ -803,8 +823,11 @@ class Tablance {
 			return;
 		if (this.#activeExpCell) {
 			for (let oldCellParent=this.#activeExpCell; oldCellParent=oldCellParent.parent;)
-				if (oldCellParent.struct.type==="group")
+				if (oldCellParent.struct.type==="group") {
 					oldCellParent.el.classList.remove("open");//close any open group above old cell
+					this.#ignoreClicksUntil=Date.now()+500;
+					console.log("set ignoreClicksUntil to "+this.#ignoreClicksUntil)
+				}
 			this.#activeExpCell=null;//should be null when not inside expansion
 		}
 		this.#exitEditMode(true);
@@ -839,7 +862,10 @@ class Tablance {
 							oldParent=null;//break out of outer loop
 							break;
 						}
-					oldParent?.el.classList.remove("open");//if this old parent-group is not part of new then close it
+					if (oldParent) {
+						oldParent.el.classList.remove("open");//if old parent-group is not part of new then close it
+						this.#ignoreClicksUntil=Date.now()+500;
+					}
 				}
 		this.#activeExpCell=cellObject;
 		this.#exitEditMode(true);
