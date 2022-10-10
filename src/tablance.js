@@ -545,7 +545,9 @@ class Tablance {
 		if (repeatData?.length) {
 			for (let childI=0; childI<rowData[struct.id].length; childI++) {
 				let childObj=cellObj.children[childI]={parent:cellObj,index:childI};
+				path.push(childI);
 				this.#generateExpansionContent(struct.entry,dataIndex,childObj,parentEl,path,repeatData[childI]);
+				path.pop();
 			}
 			return true;
 		}
@@ -590,6 +592,7 @@ class Tablance {
 		if (groupStructure.closedRender) {
 			groupTable.classList.add("closed-render");
 			const renderRow=groupTable.insertRow();
+			renderRow.dataset.path=path.join("-");
 			renderRow.className="group-render";
 			const renderCell=renderRow.insertCell();
 			renderCell.innerText=groupStructure.closedRender(rowData);
