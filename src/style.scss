@@ -127,6 +127,15 @@
 				//vertical borders so they don't reach all the way to the top
 				padding-top: 10px;
 			}
+			table.expansion-group>tbody>tr>td {
+				padding: 0;
+				&:first-child>h4 {
+					margin-top: 5px;
+				}
+				>div {
+					padding: 0;
+				}
+			}
 			table.expansion-list {
 				border-spacing: 0;
 				width: 100%;
@@ -161,6 +170,14 @@
 			&.open>tbody>tr,>tbody>tr:not(.empty) + tr:not(.empty) {
 				> td>.separator {
 					display: block;
+				}
+			}
+			&.closed-render {
+				&.open>tbody>tr.group-render {
+					display: none;
+				}
+				&:not(.open)>tbody>tr:not(.group-render) {
+					display: none;
 				}
 			}
 			>tbody> {

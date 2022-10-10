@@ -161,6 +161,8 @@ class Tablance {
 	 * 							//with enter/doubleclick
   	 * 				title:"Foobar",//displayed title if placed in list
   	 * 				entries: Array any entries. fields, lists, etc.. 
+	 * 				closedRender: Function //pass a method here that will get the data for the group as first arg.
+	 * 								//it needs to return a string which will replace the group-content when it is closed
   	 * 			}
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							"searchbar" Bool that defaults to true. If true then there will be a searchbar that
@@ -550,6 +552,7 @@ class Tablance {
 	}
 
 	#generateExpansionGroup(groupStructure,dataIndex,cellObj,parentEl,path,rowData) {
+		parentEl.dataset.path=path.join("-");
 		cellObj.children=[];
 		const groupTable=document.createElement("table");
 		parentEl.classList.add("group-cell");
@@ -583,6 +586,13 @@ class Tablance {
 
 			this.#generateExpansionContent(struct,dataIndex,childCellObj,contentDiv,path,rowData);
 			path.pop();
+		}
+		if (groupStructure.closedRender) {
+			groupTable.classList.add("closed-render");
+			const renderRow=groupTable.insertRow();
+			renderRow.className="group-render";
+			const renderCell=renderRow.insertCell();
+			renderCell.innerText=groupStructure.closedRender(rowData);
 		}
 		parentEl.appendChild(groupTable);
 		return true;
