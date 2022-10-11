@@ -136,8 +136,11 @@ class Tablance {
 	 * 				maxHeight int For textareas, sets the max-height in pixels that it should be able to be resized to
 	 * 				edit: Object {//field is editable if this object is supplied and its disabled-prop is falsey
 	 * 				dataType String This is mandatory and specifies the type of input. Possible values are:
-	 * 					"text"(single line text), "textarea"(multi-line text),"number"(number with stepper),
-	 * 					"date"(a date and possibly time with a calendar), "select"(selection of multiple items).
+	 * 					"text"(single line text),
+	 * 					"textarea"(multi-line text),
+	 * 					"number"(number with stepper),
+	 * 					"date"(a date and possibly time with a calendar),
+	 * 					"select"(selection of multiple items).
 	 * 				Depending on which one is selected certain properties
 	 * 					below are (dis)allowed.
 	 * 				maxLength int Sets max-length for strings if dataType is text
@@ -254,19 +257,7 @@ class Tablance {
 		this.#container.addEventListener("focus",e=>this.#spreadsheetOnFocus(e));
 		this.#mainTable.addEventListener("mousedown",e=>this.#mainTableMouseDown(e));
 		this.#cellCursor.addEventListener("dblclick",e=>this.#enterCell(e));
-		this.#mainTable.addEventListener("dblclick",e=>this.#tableDblClick(e));
 
-	}
-
-	/**Event-handler for double-clicking the table. This is not used for interacting with cells but instead a
-	 * dblclick-handler on the cellCursor is used for that. This is used to preventDefault/ignore click completely
-	 * if #ignoreClicksUntil is applicable. See decleration of of #ignoreClicksUntil for more info. Without this
-	 * handler the interaction of cells for tje double-click is already ignored however the double-click will still
-	 * have a default action which is to highlight text in cells. Another way of preventing this would be to mark
-	 * the text as non selectable via css*/
-	#tableDblClick(e) {
-		if (Date.now()<this.#ignoreClicksUntil)//see decleration of #ignoreClicksUntil
-			e.preventDefault();
 	}
 
 	#spreadsheetOnFocus(e) {
@@ -768,6 +759,9 @@ class Tablance {
 	}
 
 	#enterCell(e) {
+		if (this.#inEditMode)
+			return;
+		let defaultPlaceholder="";
 		if (this.#activeCellStruct.edit) {
 			this.#selectedCellVal=this.#cellCursorDataObj[this.#activeCellStruct.id];
 			this.#inEditMode=true;
@@ -775,6 +769,17 @@ class Tablance {
 			if (this.#activeCellStruct.edit.dataType==="textarea") {
 				this.#input=document.createElement("textarea");
 				this.#input.addEventListener('input', e=>this.#autoTextAreaResize.call(this,e));
+			} else if (this.#activeCellStruct.edit.dataType==="date") {
+				this.#input=document.createElement("input");
+				//this.#input.type="date";//using Pikaday instead which I find more user-friendly. Calendar can be opened
+										//up right away and typing manualy is still permitted
+				defaultPlaceholder="ÅÅÅÅ-MM-DD";
+				if (!Pikaday)
+					console.warn("Pikaday-library not found");
+				else
+					new Pikaday({field:this.#input,
+						toString: date=> `${date.getFullYear()}-${date.getMonth()+1}-${date.getMonth()+1}`
+					});
 			} else
 				this.#input=document.createElement("input");
 			this.#cellCursor.appendChild(this.#input);
@@ -782,7 +787,7 @@ class Tablance {
 			this.#input.value=this.#selectedCellVal??"";
 			if (this.#activeCellStruct.edit.maxLength)
 				this.#input.maxLength=this.#activeCellStruct.edit.maxLength;
-			this.#input.placeholder=this.#activeCellStruct.edit.placeholder??"";
+			this.#input.placeholder=this.#activeCellStruct.edit.placeholder??defaultPlaceholder;
 			if (this.#activeCellStruct.edit.cleave)
 				new Cleave(this.#input,this.#activeCellStruct.edit.cleave);
 		} else if (this.#activeCellStruct.type==="group") {

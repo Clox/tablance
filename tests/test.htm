@@ -2,6 +2,10 @@
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/cleave.js/1.0.2/cleave.min.js" integrity="sha512-SvgzybymTn9KvnNGu0HxXiGoNeOi0TTK7viiG0EGn2Qbeu/NFi3JdWrJs2JHiGA1Lph+dxiDv5F9gDlcgBzjfA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 	<script src="../src/tablance.js"></script>
 	<link rel="stylesheet" href="../styles/style.min.css">
+
+	<script src="https://cdn.jsdelivr.net/npm/pikaday/pikaday.js"></script>
+	<link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/pikaday/css/pikaday.css">
+
 	<script>
 		document.addEventListener("DOMContentLoaded", ()=>{
 			function descFunc(dataRow,col,rowIndex,colIndex) {
@@ -14,6 +18,7 @@
 			
 			
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
+				{type:"field",title:"Date",id:"date",edit:{dataType:"date"}},
 				{type:"repeated",id:"repeatedField",entry:
 					{type:"field",title:"repeated row",id:"foo"}
 				},
