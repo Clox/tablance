@@ -782,6 +782,7 @@ class Tablance {
 				onClose:()=>{
 					pikaContainer.remove();
 					pika.destroy();
+					setTimeout(()=>this.#exitEditMode(true));
 				},
 				container:pikaContainer,
 				firstDay:1,//week starts on monday
@@ -794,7 +795,6 @@ class Tablance {
 					weekdays      : ['Söndag','Måndag','Tisdag','Onsdag','Torsdag','Fredag','Lördag'],
 					weekdaysShort : ['Sön','Mån','Tis','Ons','Tor','Fre','Lör']
 				}
-				
 			});
 			//if true then the picker shoould be below the cellCursor, otherwise above
 			const below=parseInt(this.#cellCursor.style.top)<this.#scrollBody.scrollTop+this.#scrollBody.clientHeight/2;
