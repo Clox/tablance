@@ -769,16 +769,34 @@ class Tablance {
 
 	#openDateEdit(e) {
 		this.#input=document.createElement("input");
-		let pika;
+		let pika,pikaContainer;
 		//this.#input.type="date";//using Pikaday instead which I find more user-friendly. Calendar can be opened
 								//up right away and typing manualy is still permitted
 		if (!Pikaday)
 			console.warn("Pikaday-library not found");
 		else {
+			pikaContainer=this.#scrollingContent.appendChild(document.createElement("div"));
+			pikaContainer.className="pika-container";
 			pika=new Pikaday({field:this.#input,
 				toString: d=>d.getFullYear()+"-"+('0'+(d.getMonth()+1)).slice(-2)+"-"+('0'+d.getDate()).slice(-2),
-				onClose:()=>pika.destroy(),
+				onClose:()=>{
+					pikaContainer.remove();
+					pika.destroy();
+				},
+				container:pikaContainer
 			});
+			//if true then the picker shoould be below the cellCursor, otherwise above
+			const below=parseInt(this.#cellCursor.style.top)<this.#scrollBody.scrollTop+this.#scrollBody.clientHeight/2;
+			
+			if (below) {
+				pikaContainer.style.top=parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight+"px";
+				this.#cellCursor.style.zIndex=0;//prevent that the shadow of the cellcursor falls on the picker
+			} else {
+			 	requestAnimationFrame(()=>pikaContainer.style.top=parseInt(this.#cellCursor.style.top)
+				 														-pikaContainer.firstChild.offsetHeight+"px");
+				this.#cellCursor.style.zIndex=10000;//prevent that the shadow of the picker falls on the cellcursor
+			}
+			pikaContainer.style.left=this.#cellCursor.style.left;
 			if (e instanceof KeyboardEvent)
 				e.stopPropagation();//otherwise the enter-press is propagated to Pikaday, immediately closing it
 			this.#input.addEventListener("input",onInput.bind(this));
@@ -786,7 +804,6 @@ class Tablance {
 		new Cleave(this.#input,{date: true,delimiter: '-',datePattern: ['Y', 'm', 'd']});
 		
 		function onInput(e) {
-			console.log("on input");	
 			const inputVal=this.#input.value;
 			pika.setDate(this.#input.value);
 			//the above line will change the text above by guessing where there should be zeroes and such so prevent
@@ -860,7 +877,6 @@ class Tablance {
 				if (oldCellParent.struct.type==="group") {
 					oldCellParent.el.classList.remove("open");//close any open group above old cell
 					this.#ignoreClicksUntil=Date.now()+500;
-					console.log("set ignoreClicksUntil to "+this.#ignoreClicksUntil)
 				}
 			this.#activeExpCell=null;//should be null when not inside expansion
 		}
