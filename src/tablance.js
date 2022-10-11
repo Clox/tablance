@@ -378,7 +378,7 @@ class Tablance {
 					this.#scrollToCursor();
 					if (this.#selectedCell.classList.contains("expandcol"))
 						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
-					this.#enterCell();
+					this.#enterCell(e);
 					e.preventDefault();//prevent newline from being entered into textareas
 			}
 		} else {
@@ -776,10 +776,17 @@ class Tablance {
 				defaultPlaceholder="ÅÅÅÅ-MM-DD";
 				if (!Pikaday)
 					console.warn("Pikaday-library not found");
-				else
-					new Pikaday({field:this.#input,
-						toString: date=> `${date.getFullYear()}-${date.getMonth()+1}-${date.getMonth()+1}`
+				else {
+					const pikaday=new Pikaday({field:this.#input,
+						toString: date=> `${date.getFullYear()}-${date.getMonth()+1}-${date.getMonth()+1}`,
+						//keyboardInput:false,
+						//bound:false
 					});
+					if (e instanceof KeyboardEvent)
+						e.stopPropagation();//otherwise the enter-press is propagated to Pikaday, immediately closing it
+				}
+				new Cleave(this.#input,{date: true,delimiter: '-',datePattern: ['Y', 'm', 'd']});
+				
 			} else
 				this.#input=document.createElement("input");
 			this.#cellCursor.appendChild(this.#input);
