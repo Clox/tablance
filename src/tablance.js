@@ -354,6 +354,15 @@ class Tablance {
 	
 
 	#spreadsheetKeyDown(e) {
+		if (this.#inEditMode&&this.#activeCellStruct.edit.dataType==="date") {
+			if (e.key.slice(0,5)==="Arrow") {
+				if (e.ctrlKey)
+					e.stopPropagation();//allow moving textcursor if ctrl is held so prevent date-change then
+				else
+					e.preventDefault();//prevent textcursor from moving when arrowkey-selecting dates in date-picker
+			} else if (e.key==="Backspace")
+				e.stopPropagation();
+		}
 		this.#container.style.outline="none";//see #spreadsheetOnFocus
 		if (!this.#inEditMode) {
 			switch (e.key) {
@@ -758,6 +767,34 @@ class Tablance {
 			+newRowHeight-prevRowHeight+"px";//...in height of the table
 	}
 
+	#openDateEdit(e) {
+		this.#input=document.createElement("input");
+		let pika;
+		//this.#input.type="date";//using Pikaday instead which I find more user-friendly. Calendar can be opened
+								//up right away and typing manualy is still permitted
+		if (!Pikaday)
+			console.warn("Pikaday-library not found");
+		else {
+			pika=new Pikaday({field:this.#input,
+				toString: d=>d.getFullYear()+"-"+('0'+(d.getMonth()+1)).slice(-2)+"-"+('0'+d.getDate()).slice(-2),
+				onClose:()=>pika.destroy(),
+			});
+			if (e instanceof KeyboardEvent)
+				e.stopPropagation();//otherwise the enter-press is propagated to Pikaday, immediately closing it
+			this.#input.addEventListener("input",onInput.bind(this));
+		}
+		new Cleave(this.#input,{date: true,delimiter: '-',datePattern: ['Y', 'm', 'd']});
+		
+		function onInput(e) {
+			console.log("on input");	
+			const inputVal=this.#input.value;
+			pika.setDate(this.#input.value);
+			//the above line will change the text above by guessing where there should be zeroes and such so prevent
+			//that by setting it back so that the user can type freely
+			this.#input.value=inputVal;
+		}
+	}
+
 	#enterCell(e) {
 		if (this.#inEditMode)
 			return;
@@ -770,23 +807,8 @@ class Tablance {
 				this.#input=document.createElement("textarea");
 				this.#input.addEventListener('input', e=>this.#autoTextAreaResize.call(this,e));
 			} else if (this.#activeCellStruct.edit.dataType==="date") {
-				this.#input=document.createElement("input");
-				//this.#input.type="date";//using Pikaday instead which I find more user-friendly. Calendar can be opened
-										//up right away and typing manualy is still permitted
 				defaultPlaceholder="ÅÅÅÅ-MM-DD";
-				if (!Pikaday)
-					console.warn("Pikaday-library not found");
-				else {
-					const pikaday=new Pikaday({field:this.#input,
-						toString: date=> `${date.getFullYear()}-${date.getMonth()+1}-${date.getMonth()+1}`,
-						//keyboardInput:false,
-						//bound:false
-					});
-					if (e instanceof KeyboardEvent)
-						e.stopPropagation();//otherwise the enter-press is propagated to Pikaday, immediately closing it
-				}
-				new Cleave(this.#input,{date: true,delimiter: '-',datePattern: ['Y', 'm', 'd']});
-				
+				this.#openDateEdit(e);
 			} else
 				this.#input=document.createElement("input");
 			this.#cellCursor.appendChild(this.#input);
