@@ -334,6 +334,9 @@
 		width: 14.285714285714286%;
 		padding: 0;
 		border:none;//added by Clox
+		&.is-empty {
+			cursor:default;
+		}
 	}
 
 	.pika-table th {
