@@ -136,15 +136,19 @@ class Tablance {
 	 * 				maxHeight int For textareas, sets the max-height in pixels that it should be able to be resized to
 	 * 				edit: Object {//field is editable if this object is supplied and its disabled-prop is falsey
 	 * 				dataType String This is mandatory and specifies the type of input. Possible values are:
-	 * 					"text"(single line text),
-	 * 					"textarea"(multi-line text),
-	 * 					"number"(number with stepper),
-	 * 					"date"(a date and possibly time with a calendar),
-	 * 					"select"(selection of multiple items).
-	 * 				Depending on which one is selected certain properties
-	 * 					below are (dis)allowed.
-	 * 				maxLength int Sets max-length for strings if dataType is text
-	 * 				placeholder String adds a placeholder-string to the input-element
+	 * 						"text"(single line text),
+	 * 						"textarea"(multi-line text),
+	 * 						"number"(number with stepper),
+	 * 						"date"(a date and possibly time with a calendar),
+	 * 						"select"(selection of multiple items).
+	 * 					Depending on which one is selected certain properties
+	 * 						below are (dis)allowed.
+	 * 					maxLength int Sets max-length for strings if dataType is text
+	 * 					placeholder String adds a placeholder-string to the input-element
+	 * 					options: Array //may be supplied if dataType is "select". Each element should be an object: {
+	 * 						value:the value of the cell will be mapped to the option with the same value
+	 * 						text:unless a render-method has been specified then this is what will be shown to the user
+	 * 					}
   	 * 			}
   	 * 			{
   	 * 				type:"repeated",//used when the number of rows is undefined and where more may be able to be added, 
@@ -796,10 +800,7 @@ class Tablance {
 					weekdaysShort : ['Sön','Mån','Tis','Ons','Tor','Fre','Lör']
 				}
 			});
-			//if true then the picker shoould be below the cellCursor, otherwise above
-			const below=parseInt(this.#cellCursor.style.top)<this.#scrollBody.scrollTop+this.#scrollBody.clientHeight/2;
-			
-			if (below) {
+			if (this.#alignPickerBelowCellCursor()) {
 				pikaContainer.style.top=parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight+"px";
 				this.#cellCursor.style.zIndex=0;//prevent that the shadow of the cellcursor falls on the picker
 			} else {
@@ -813,6 +814,8 @@ class Tablance {
 			this.#input.addEventListener("input",onInput.bind(this));
 		}
 		new Cleave(this.#input,{date: true,delimiter: '-',datePattern: ['Y', 'm', 'd']});
+		this.#cellCursor.appendChild(this.#input);
+		this.#input.value=this.#selectedCellVal??"";
 		
 		function onInput(e) {
 			const inputVal=this.#input.value;
@@ -823,6 +826,13 @@ class Tablance {
 		}
 	}
 
+	/**Looks to see if there's more space above or below the cell-cursor in order to determine if a picker should be
+	 * aligned above or below it. Returns true if it should be below or false if above.*/
+	#alignPickerBelowCellCursor() {
+		return parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight/2
+															<this.#scrollBody.scrollTop+this.#scrollBody.clientHeight/2;
+	}
+
 	#enterCell(e) {
 		if (this.#inEditMode)
 			return;
@@ -831,17 +841,24 @@ class Tablance {
 			this.#selectedCellVal=this.#cellCursorDataObj[this.#activeCellStruct.id];
 			this.#inEditMode=true;
 			this.#cellCursor.classList.add("edit-mode");
-			if (this.#activeCellStruct.edit.dataType==="textarea") {
-				this.#input=document.createElement("textarea");
-				this.#input.addEventListener('input', e=>this.#autoTextAreaResize.call(this,e));
-			} else if (this.#activeCellStruct.edit.dataType==="date") {
-				defaultPlaceholder="ÅÅÅÅ-MM-DD";
-				this.#openDateEdit(e);
-			} else
-				this.#input=document.createElement("input");
-			this.#cellCursor.appendChild(this.#input);
+			switch (this.#activeCellStruct.edit.dataType) {
+				case "textarea":
+					this.#input=this.#cellCursor.appendChild(document.createElement("textarea"));
+					this.#input.addEventListener('input', e=>this.#autoTextAreaResize.call(this,e));
+					this.#input.value=this.#selectedCellVal??"";
+				break; case "date":
+					defaultPlaceholder="ÅÅÅÅ-MM-DD";
+					this.#openDateEdit(e);
+				break; case "select":
+					this.#openSelectEdit(e);
+				break; default:
+					this.#input=this.#cellCursor.appendChild(document.createElement("input"));
+					this.#input.addEventListener("change",()=>console.log("input change"));
+					this.#input.value=this.#selectedCellVal??"";
+			}
+			
 			this.#input.focus();
-			this.#input.value=this.#selectedCellVal??"";
+			
 			if (this.#activeCellStruct.edit.maxLength)
 				this.#input.maxLength=this.#activeCellStruct.edit.maxLength;
 			this.#input.placeholder=this.#activeCellStruct.edit.placeholder??defaultPlaceholder;
@@ -853,7 +870,70 @@ class Tablance {
 		}
 	}
 
+	#openSelectEdit() {
+		let highlightedOptIndex=0,selectedOptIndex=0;
+		const options=this.#activeCellStruct.edit.options;
+		const selectContainer=document.createElement("div");
+		const inputWrapper=selectContainer.appendChild(document.createElement("div"));//we use this to give the
+		inputWrapper.classList.add("input-wrapper");//input-element a margin. Can't put padding in container because
+							//that would cause the highlight-box of selected options not to go all the way to the sides
+		this.#input=inputWrapper.appendChild(document.createElement("input"));
+		this.#input.addEventListener("keydown",inputKeyDown.bind(this));
+		const ul=selectContainer.appendChild(document.createElement("ul"));
+		ul.addEventListener("mouseover",ulMouseOver);
+		for (const opt of this.#activeCellStruct.edit.options) {
+			const li=ul.appendChild(document.createElement("li"));
+			li.innerText=opt.text;
+			li.dataset.value=opt.value;
+		}
+		ul.children[highlightedOptIndex].classList.add("highlighted");
+		ul.children[selectedOptIndex].classList.add("selected");
+		this.#scrollingContent.appendChild(selectContainer);
+		selectContainer.className="tablance-select-container";
+		selectContainer.style.left=parseInt(this.#cellCursor.style.left)+"px";
+		if (this.#alignPickerBelowCellCursor()) {
+			selectContainer.style.top=parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight+"px";
+			this.#cellCursor.style.zIndex=0;//prevent that the shadow of the cellcursor falls on the picker
+		} else {
+			selectContainer.style.top=parseInt(this.#cellCursor.style.top)-selectContainer.offsetHeight+"px";
+			this.#cellCursor.style.zIndex=10000;
+		}
+
+		window.addEventListener("click",windowClick.bind(this));
+
+		function ulMouseOver(e) {
+			ul.children[highlightedOptIndex].classList.remove("highlighted");
+			ul.children[highlightedOptIndex=[...e.target.parentElement.children].indexOf(e.target)].classList.add("highlighted");
+		}
+
+		function windowClick(e) {
+			for (var el=e.target; el!=selectContainer&&(el=el.parentElement););//go up until container or root is found
+			if (!el) {//click was outside select-container
+				selectContainer.remove();
+				this.#exitEditMode(false);
+			}
+		}
+
+		function inputKeyDown(e) {
+			if (["ArrowDown","ArrowUp"].includes(e.key)){
+				e.preventDefault();//prevents moving the textcursor when pressing up or down
+				if(e.key==="ArrowDown"&&highlightedOptIndex<options.length-1||e.key==="ArrowUp"&&highlightedOptIndex>0){
+					ul.children[highlightedOptIndex].classList.remove("highlighted");
+					ul.children[highlightedOptIndex+=e.key==="ArrowDown"?1:-1].classList.add("highlighted");
+				}
+			} else if (e.key==="Enter") {
+				selectOpt.bind(this,highlightedOptIndex);
+			}
+		}
+		function selectOpt(index) {
+			if (this.#activeExpCell)//if inside expansion
+				this.#activeExpCell.dataObject[struct.id]=struct.edit.options[index].value;
+		}
+	}
+
 	#exitEditMode(save) {
+		//console.log("exiteditmode");
+console.trace();
 		let newVal;
 		if (!this.#inEditMode)
 			return;
@@ -1348,6 +1428,8 @@ class Tablance {
 		let newCellContent,oldCellContent=cellEl.innerText;
 		if (cellObject.struct.render)
 			newCellContent=cellObject.struct.render(rowData,cellObject.struct,rootCell.rowIndex);
+		else if (cellObject.struct.edit?.dataType==="select")
+			newCellContent=cellObject.struct.edit.options.find(opt=>opt.value==rowData[cellObject.struct.id])?.text??"";
 		else
 			newCellContent=rowData[cellObject.struct.id]??"";
 		if (this.#spreadsheet&&(!cellObject.struct.edit&&cellObject.struct.type!=="expand"))
