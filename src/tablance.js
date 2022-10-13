@@ -401,7 +401,6 @@ class Tablance {
 					this.#insertAtCursor(this.#input,"\r\n");
 					this.#autoTextAreaResize();
 				} else {
-					this.#exitEditMode(true);
 					this.#moveCellCursor(0,e.shiftKey?-1:1);
 				}
 				break; case "Escape":
@@ -990,6 +989,7 @@ console.trace();
 	#selectExpansionCell(cellObject) {
 		if (!cellObject)
 			return;
+		this.#exitEditMode(true);
 
 		//remove cellcursor click-through in case an expand-button-cell was previously selected
 		this.#cellCursor.style.pointerEvents="auto";
@@ -1009,7 +1009,6 @@ console.trace();
 					}
 				}
 		this.#activeExpCell=cellObject;
-		this.#exitEditMode(true);
 		this.#selectedCell=cellObject.selEl??cellObject.el;
 		this.#adjustCursorPosSize(this.#selectedCell);
 		this.#cellCursorDataObj=cellObject.dataObject;
