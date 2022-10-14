@@ -50,8 +50,8 @@ class Tablance {
 	//center it around the cell. It is also used in conjunction with cellCursorOutlineWidth to adjust margins of the
 	//main-table in order to reveal the outermost line when an outermost cell is selected
 	#cellCursorOutlineWidth;//px-width as int, used in conjunction with #cellCursorBorderWidths to adjust margins of the
-	#input;//input-element of cell-cursor. Can be different kind of inputs depending on data
 	//main-table in order to reveal the outermost line when an outermost cell is selected
+	#inputVal;//the current val of the input when in edit-mode. Will be read and commited if cell is exited correctly
 	highlightOnFocus=true;//when the spreadsheet is focused  we want focus-outline to appear but only if focused by
 				//keyboard-tabbing, and not when clicking or exiting out of edit-mode which again focuses the table.
 				//By setting this to true in mouseDownEvent we can 
@@ -185,6 +185,7 @@ class Tablance {
 	 * 													is sorted in descending order
 	 * 							"sortNoneHtml" String - html to be added to the end of the th-element when the column
 	 * 													is not sorted
+	 * 							"defaultDatePlaceholder" String - a default placeholder used for date-inputs.
 	 * */
 	constructor(container,columns,staticRowHeight=false,spreadsheet=false,expansion=null,opts=null) {
 		this.#container=container;
@@ -397,12 +398,7 @@ class Tablance {
 		} else {
 			switch (e.key) {
 				case "Enter":
-				if (e.ctrlKey&&this.#activeCellStruct.edit.dataType==="textarea") {
-					this.#insertAtCursor(this.#input,"\r\n");
-					this.#autoTextAreaResize();
-				} else {
 					this.#moveCellCursor(0,e.shiftKey?-1:1);
-				}
 				break; case "Escape":
 					this.#exitEditMode(false);
 			}
@@ -748,12 +744,12 @@ class Tablance {
 			this.#expandRow(tr,parseInt(tr.dataset.dataRowIndex));
 	}
 
-	#autoTextAreaResize() {
+	#autoTextAreaResize(textarea) {
 		const maxHeight=this.#activeCellStruct.maxHeight??Infinity;
 		//change size of cellcursor which holds the textarea, to the new scrollHeight of textarea. This results in
 		//the height of textarea to change too because its height is 100% of the cellcursor.
 		//also changing the height of the underlying cell which affects the height of the expansion
-		this.#cellCursor.style.height=this.#selectedCell.style.height=Math.min(maxHeight,this.#input.scrollHeight)+'px';
+		this.#cellCursor.style.height=this.#selectedCell.style.height=Math.min(maxHeight,textarea.scrollHeight)+'px';
 
 		//need to call this to make the height of the expansion adjust and reflect the change in size of the textarea
 		this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
@@ -771,7 +767,7 @@ class Tablance {
 	}
 
 	#openDateEdit(e) {
-		this.#input=document.createElement("input");
+		const input=document.createElement("input");
 		let pika,pikaContainer;
 		//this.#input.type="date";//using Pikaday instead which I find more user-friendly. Calendar can be opened
 								//up right away and typing manualy is still permitted
@@ -780,7 +776,7 @@ class Tablance {
 		else {
 			pikaContainer=this.#scrollingContent.appendChild(document.createElement("div"));
 			pikaContainer.className="pika-container";
-			pika=new Pikaday({field:this.#input,
+			pika=new Pikaday({field:input,
 				toString: d=>d.getFullYear()+"-"+('0'+(d.getMonth()+1)).slice(-2)+"-"+('0'+d.getDate()).slice(-2),
 				onClose:()=>{
 					pikaContainer.remove();
@@ -810,18 +806,20 @@ class Tablance {
 			pikaContainer.style.left=this.#cellCursor.style.left;
 			if (e instanceof KeyboardEvent)
 				e.stopPropagation();//otherwise the enter-press is propagated to Pikaday, immediately closing it
-			this.#input.addEventListener("input",onInput.bind(this));
+			input.addEventListener("input",onInput.bind(this));
 		}
-		new Cleave(this.#input,{date: true,delimiter: '-',datePattern: ['Y', 'm', 'd']});
-		this.#cellCursor.appendChild(this.#input);
-		this.#input.value=this.#selectedCellVal??"";
+		new Cleave(input,{date: true,delimiter: '-',datePattern: ['Y', 'm', 'd']});
+		this.#cellCursor.appendChild(input);
+		input.value=this.#selectedCellVal??"";
+		input.placeholder=this.#activeCellStruct.edit.placeholder??this.#opts.defaultDatePlaceholder??"";
+		input.focus();
 		
 		function onInput(e) {
-			const inputVal=this.#input.value;
-			pika.setDate(this.#input.value);
+			const inputVal=input.value;
+			pika.setDate(input.value);
 			//the above line will change the text above by guessing where there should be zeroes and such so prevent
 			//that by setting it back so that the user can type freely
-			this.#input.value=inputVal;
+			input.value=inputVal;
 		}
 	}
 
@@ -835,49 +833,66 @@ class Tablance {
 	#enterCell(e) {
 		if (this.#inEditMode)
 			return;
-		let defaultPlaceholder="";
 		if (this.#activeCellStruct.edit) {
 			this.#selectedCellVal=this.#cellCursorDataObj[this.#activeCellStruct.id];
 			this.#inEditMode=true;
 			this.#cellCursor.classList.add("edit-mode");
 			switch (this.#activeCellStruct.edit.dataType) {
 				case "textarea":
-					this.#input=this.#cellCursor.appendChild(document.createElement("textarea"));
-					this.#input.addEventListener('input', e=>this.#autoTextAreaResize.call(this,e));
-					this.#input.value=this.#selectedCellVal??"";
+					this.#openTextAreaEdit(e);
 				break; case "date":
-					defaultPlaceholder="ÅÅÅÅ-MM-DD";
 					this.#openDateEdit(e);
 				break; case "select":
 					this.#openSelectEdit(e);
-				break; default:
-					this.#input=this.#cellCursor.appendChild(document.createElement("input"));
-					this.#input.addEventListener("change",()=>console.log("input change"));
-					this.#input.value=this.#selectedCellVal??"";
+				break; default: case "text": 
+					this.#openTextEdit(e);
 			}
-			
-			this.#input.focus();
-			
-			if (this.#activeCellStruct.edit.maxLength)
-				this.#input.maxLength=this.#activeCellStruct.edit.maxLength;
-			this.#input.placeholder=this.#activeCellStruct.edit.placeholder??defaultPlaceholder;
-			if (this.#activeCellStruct.edit.cleave)
-				new Cleave(this.#input,this.#activeCellStruct.edit.cleave);
 		} else if (this.#activeCellStruct.type==="group") {
 			this.#activeExpCell.el.classList.add("open");
 			this.#selectExpansionCell(this.#getFirstSelectableExpansionCell(this.#activeExpCell,true,true));
 		}
 	}
 
+	#openTextEdit() {
+		const input=this.#cellCursor.appendChild(document.createElement("input"));
+		input.addEventListener("change",()=>this.#inputVal=input.value);
+		input.value=this.#selectedCellVal??"";
+		input.focus();
+		if (this.#activeCellStruct.edit.maxLength)
+			input.maxLength=this.#activeCellStruct.edit.maxLength;
+		input.placeholder=this.#activeCellStruct.edit.placeholder;
+		if (this.#activeCellStruct.edit.cleave)
+			new Cleave(input,this.#activeCellStruct.edit.cleave);
+	}
+
+	#openTextAreaEdit() {
+		const textarea=this.#cellCursor.appendChild(document.createElement("textarea"));
+		textarea.addEventListener('input', e=>this.#autoTextAreaResize(textarea));
+		textarea.value=this.#selectedCellVal??"";
+		textarea.addEventListener("keydown",keydown.bind(this));
+		textarea.focus();
+		textarea.addEventListener("change",()=>this.#inputVal=textarea.value);
+		if (this.#activeCellStruct.edit.maxLength)
+			textarea.maxLength=this.#activeCellStruct.edit.maxLength;
+		textarea.placeholder=this.#activeCellStruct.edit.placeholder??"";
+		function keydown(e) {
+			if (e.key==="Enter"&&e.ctrlKey) {
+				this.#insertAtCursor(textarea,"\r\n");
+				this.#autoTextAreaResize(textarea);
+				e.stopPropagation();
+			}
+		}
+	}
+
 	#openSelectEdit() {
-		let highlightedOptIndex=0,selectedOptIndex=0;
+		let highlightedIndex=0,selectedOptIndex=0;
 		const options=this.#activeCellStruct.edit.options;
 		const selectContainer=document.createElement("div");
 		const inputWrapper=selectContainer.appendChild(document.createElement("div"));//we use this to give the
 		inputWrapper.classList.add("input-wrapper");//input-element a margin. Can't put padding in container because
 							//that would cause the highlight-box of selected options not to go all the way to the sides
-		this.#input=inputWrapper.appendChild(document.createElement("input"));
-		this.#input.addEventListener("keydown",inputKeyDown.bind(this));
+		const input=inputWrapper.appendChild(document.createElement("input"));
+		input.addEventListener("keydown",inputKeyDown.bind(this));
 		const ul=selectContainer.appendChild(document.createElement("ul"));
 		ul.addEventListener("mouseover",ulMouseOver);
 		for (const opt of this.#activeCellStruct.edit.options) {
@@ -885,7 +900,7 @@ class Tablance {
 			li.innerText=opt.text;
 			li.dataset.value=opt.value;
 		}
-		ul.children[highlightedOptIndex].classList.add("highlighted");
+		ul.children[highlightedIndex].classList.add("highlighted");
 		ul.children[selectedOptIndex].classList.add("selected");
 		this.#scrollingContent.appendChild(selectContainer);
 		selectContainer.className="tablance-select-container";
@@ -899,10 +914,11 @@ class Tablance {
 		}
 
 		window.addEventListener("click",windowClick.bind(this));
+		input.focus();
 
 		function ulMouseOver(e) {
-			ul.children[highlightedOptIndex].classList.remove("highlighted");
-			ul.children[highlightedOptIndex=[...e.target.parentElement.children].indexOf(e.target)].classList.add("highlighted");
+			ul.children[highlightedIndex].classList.remove("highlighted");
+			ul.children[highlightedIndex=[...e.target.parentElement.children].indexOf(e.target)].classList.add("highlighted");
 		}
 
 		function windowClick(e) {
@@ -916,32 +932,38 @@ class Tablance {
 		function inputKeyDown(e) {
 			if (["ArrowDown","ArrowUp"].includes(e.key)){
 				e.preventDefault();//prevents moving the textcursor when pressing up or down
-				if(e.key==="ArrowDown"&&highlightedOptIndex<options.length-1||e.key==="ArrowUp"&&highlightedOptIndex>0){
-					ul.children[highlightedOptIndex].classList.remove("highlighted");
-					ul.children[highlightedOptIndex+=e.key==="ArrowDown"?1:-1].classList.add("highlighted");
+				if(e.key==="ArrowDown"&&highlightedIndex<options.length-1||e.key==="ArrowUp"&&highlightedIndex>0){
+					ul.children[highlightedIndex].classList.remove("highlighted");
+					ul.children[highlightedIndex+=e.key==="ArrowDown"?1:-1].classList.add("highlighted");
 				}
 			} else if (e.key==="Enter") {
-				selectOpt.bind(this,highlightedOptIndex);
+				selectOpt.call(this);
+				this.#moveCellCursor(0,e.shiftKey?-1:1);
+				e.stopPropagation();
 			}
 		}
-		function selectOpt(index) {
-			if (this.#activeExpCell)//if inside expansion
-				this.#activeExpCell.dataObject[struct.id]=struct.edit.options[index].value;
+		function selectOpt() {
+			this.#inputVal=this.#activeCellStruct.edit.options[highlightedIndex].value;
+			//this.#exitEditMode(true);
+			close();
+		}
+		function close() {
+			selectContainer.remove();
 		}
 	}
 
 	#exitEditMode(save) {
-		//console.log("exiteditmode");
-console.trace();
-		let newVal;
 		if (!this.#inEditMode)
 			return;
+			
+		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
+		this.#container.focus();//so that #inputVal gets updated
+
 		this.#inEditMode=false;
 		this.#cellCursor.classList.remove("edit-mode");
 		if (save) {
-			newVal=this.#input.value;
-			if (newVal!=this.#selectedCellVal) {
-				this.#cellCursorDataObj[this.#activeCellStruct.id]=newVal;
+			if (this.#inputVal!=this.#selectedCellVal) {
+				this.#cellCursorDataObj[this.#activeCellStruct.id]=this.#inputVal;
 				if (this.#activeExpCell){
 					//if (this.#updateCell(this.#activeExpCell.el,this.#mainRowIndex,this.#activeCellStruct,this.#activeExpCell))
 					if (this.#updateExpansionCell(this.#activeExpCell,this.#data[this.#mainRowIndex]))
@@ -952,16 +974,18 @@ console.trace();
 		}
 		this.#cellCursor.innerHTML="";
 		if (this.#activeCellStruct.edit.dataType==="textarea") {
-			this.#autoTextAreaResize();
+			//this.#autoTextAreaResize();
 			this.#adjustCursorPosSize(this.#selectedCell);
 		}
 		this.highlightOnFocus=false;
-		this.#container.focus();//make the table focused again so that it accepts keystrokes
+		
 	}
 
 	#selectMainTableCell(cell) {
 		if (!cell)//in case trying to move up from top row etc
 			return;
+		this.#exitEditMode(true);
+
 		if (this.#activeExpCell) {
 			for (let oldCellParent=this.#activeExpCell; oldCellParent=oldCellParent.parent;)
 				if (oldCellParent.struct.type==="group") {
@@ -970,7 +994,7 @@ console.trace();
 				}
 			this.#activeExpCell=null;//should be null when not inside expansion
 		}
-		this.#exitEditMode(true);
+		
 		this.#selectedCell=cell;
 		this.#adjustCursorPosSize(cell);
 		
