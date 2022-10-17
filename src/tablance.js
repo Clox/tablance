@@ -994,7 +994,7 @@ class Tablance {
 		}
 		function ulClick(e) {
 			if (e.target.tagName=="LI") {//not sure if ul could be the target? check here to make sure
-				this.#inputVal=options[[...ul]].value;
+				this.#inputVal=options[[...ul.children].indexOf(e.target)].value;
 				close();
 				this.#exitEditMode(true);
 			}
