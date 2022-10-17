@@ -895,6 +895,7 @@ class Tablance {
 		input.addEventListener("keydown",inputKeyDown.bind(this));
 		const ul=selectContainer.appendChild(document.createElement("ul"));
 		ul.addEventListener("mouseover",ulMouseOver);
+		ul.addEventListener("click",ulClick.bind(this));
 		for (const opt of this.#activeCellStruct.edit.options) {
 			const li=ul.appendChild(document.createElement("li"));
 			li.innerText=opt.text;
@@ -920,7 +921,6 @@ class Tablance {
 			ul.children[highlightedIndex].classList.remove("highlighted");
 			ul.children[highlightedIndex=[...e.target.parentElement.children].indexOf(e.target)].classList.add("highlighted");
 		}
-
 		function windowClick(e) {
 			for (var el=e.target; el!=selectContainer&&(el=el.parentElement););//go up until container or root is found
 			if (!el) {//click was outside select-container
@@ -928,7 +928,6 @@ class Tablance {
 				this.#exitEditMode(false);
 			}
 		}
-
 		function inputKeyDown(e) {
 			if (["ArrowDown","ArrowUp"].includes(e.key)){
 				e.preventDefault();//prevents moving the textcursor when pressing up or down
@@ -944,11 +943,16 @@ class Tablance {
 		}
 		function selectOpt() {
 			this.#inputVal=this.#activeCellStruct.edit.options[highlightedIndex].value;
-			//this.#exitEditMode(true);
 			close();
 		}
 		function close() {
 			selectContainer.remove();
+		}
+		function ulClick(e) {
+			if (e.target.tagName=="LI") {//not sure if ul could be the target? check here to make sure
+				selectOpt.call(this);
+				this.#exitEditMode(true);
+			}
 		}
 	}
 
