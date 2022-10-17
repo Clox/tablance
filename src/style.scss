@@ -211,16 +211,23 @@
 		background-color: white;
 		min-width: 15em;
 		>.input-wrapper {
-			margin: 6px;
-			>input {
-				border: 1px solid #aaa;
-				border-radius: 0.1875rem;
-				line-height: 28px;
-				width: 100%;
-				&:focus {
-					outline: none;
-					box-shadow: inset 0 1px 3px rgba(0,0,0,.06),0 0 5px rgba(19,131,179,.7);
+			&:not(.hide) {
+				margin: 6px;
+				>input {
+					border: 1px solid #aaa;
+					border-radius: 0.1875rem;
+					line-height: 28px;
+					width: 100%;
+					&:focus {
+						outline: none;
+						box-shadow: inset 0 1px 3px rgba(0,0,0,.06),0 0 5px rgba(19,131,179,.7);
+					}
 				}
+			}
+			&.hide {
+				opacity: 0;
+				position: absolute;
+				pointer-events: none;
 			}
 		}
 		>div.no-results {

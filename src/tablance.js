@@ -149,8 +149,11 @@ class Tablance {
 	 * 						value:the value of the cell will be mapped to the option with the same value
 	 * 						text:unless a render-method has been specified then this is what will be shown to the user
 	 * 					}
-	 * 					noResultsText String A string which is displayed when a user filters the options in a select 
-	 * 						and there are no results. Can also be set globally via param opts->defaultSelectNoResultText
+	 * 				noResultsText String For dataType "select", a string which is displayed when a user filters the 
+	 * 					options in a select and there are no results. 
+	 * 					Can also be set globally via param opts->defaultSelectNoResultText
+	 * 				minOptsFilter Integer - The minimum number of options required for the filter-input to appear
+	 * 					Can also be set via param opts-defaultMinOptsFilter
   	 * 			}
   	 * 			{
   	 * 				type:"repeated",//used when the number of rows is undefined and where more may be able to be added, 
@@ -190,6 +193,8 @@ class Tablance {
 	 * 							"defaultDatePlaceholder" String - a default placeholder used for date-inputs.
 	 * 							"defaultSelectNoResultText" String - a default string which is displayed when a user
 	 * 									filters the options in a select and there are no results
+	 * 							"defaultMinOptsFilter" Integer The minimum number of options required for the
+	 * 								filter-input of edit-dataType "select" to appear
 	 * */
 	constructor(container,columns,staticRowHeight=false,spreadsheet=false,expansion=null,opts=null) {
 		this.#container=container;
@@ -895,11 +900,18 @@ class Tablance {
 		const selectContainer=document.createElement("div");
 		let options=[...this.#activeCellStruct.edit.options];
 		const inputWrapper=selectContainer.appendChild(document.createElement("div"));//we use this to give the
+		const input=inputWrapper.appendChild(document.createElement("input"));
+		const windowClickBound=windowClick.bind(this);
 		inputWrapper.classList.add("input-wrapper");//input-element a margin. Can't put padding in container because
 							//that would cause the highlight-box of selected options not to go all the way to the sides
-		const input=inputWrapper.appendChild(document.createElement("input"));
+		const filtering=options.length>=(this.#activeCellStruct.edit.minOptsFilter??this.#opts.defaultMinOptsFilter??5);
+		if (filtering) {
+			input.addEventListener("input",inputInput.bind(this));
+		} else
+			inputWrapper.classList.add("hide");
+		
 		input.addEventListener("keydown",inputKeyDown.bind(this));
-		input.addEventListener("input",inputInput.bind(this));
+		
 		const ul=selectContainer.appendChild(document.createElement("ul"));
 		ul.addEventListener("mouseover",ulMouseOver.bind(this));
 		ul.addEventListener("click",ulClick.bind(this));
@@ -920,7 +932,7 @@ class Tablance {
 			this.#cellCursor.style.zIndex=10000;
 		}
 
-		window.addEventListener("click",windowClick.bind(this));
+		window.addEventListener("click",windowClickBound);
 		input.focus();
 
 		function renderOpts(opts,selectedVal) {
@@ -951,11 +963,15 @@ class Tablance {
 			highlightOpt.call(this,[...e.target.parentNode.children].indexOf(e.target));
 		}
 		function windowClick(e) {
-			for (var el=e.target; el!=selectContainer&&(el=el.parentElement););//go up until container or root is found
+			for (let el=e.target; el!=selectContainer&&(el=el.parentElement););//go up until container or root is found
 				if (!el) {//click was outside select-container
-					selectContainer.remove();
+					close();
 					this.#exitEditMode(false);
 				}
+		}
+		function close() {
+			selectContainer.remove();
+			window.removeEventListener("click",windowClickBound);
 		}
 		function highlightOpt(index,deselectOld=true) {
 			deselectOld&&ul.children[highlightIndex].classList.remove("highlighted");
@@ -970,15 +986,16 @@ class Tablance {
 					highlightOpt.call(this,newIndex);
 			} else if (e.key==="Enter") {
 				this.#inputVal=options[highlightIndex].value;
-				selectContainer.remove();
+				close();
 				this.#moveCellCursor(0,e.shiftKey?-1:1);
 				e.stopPropagation();
 			} else if (e.key==="Escape")
-				selectContainer.remove();
+				close();
 		}
 		function ulClick(e) {
 			if (e.target.tagName=="LI") {//not sure if ul could be the target? check here to make sure
-				selectContainer.remove();
+				this.#inputVal=options[[...ul]].value;
+				close();
 				this.#exitEditMode(true);
 			}
 		}
