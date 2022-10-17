@@ -869,7 +869,7 @@ class Tablance {
 		input.focus();
 		if (this.#activeCellStruct.edit.maxLength)
 			input.maxLength=this.#activeCellStruct.edit.maxLength;
-		input.placeholder=this.#activeCellStruct.edit.placeholder;
+		input.placeholder=this.#activeCellStruct.edit.placeholder??"";
 		if (this.#activeCellStruct.edit.cleave)
 			new Cleave(input,this.#activeCellStruct.edit.cleave);
 	}
