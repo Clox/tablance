@@ -16,10 +16,12 @@
 					,render:descFunc}
 				,{id:"amount",title:"Amount",width:"70px"},{id:"balance",title:"Balance",width:"70px"}];
 			
-			
+			const foods=[{text:"banana",value:1},{text:"apple",value:2},{text:"cucumber",value:3},
+						{text:"orange",value:4},{text:"grapes",value:5},{text:"melon",value:6},
+						{text:"pineapple",value:7},{text:"carrot",value:8}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
 				{type:"field",title:"Select",id:"sel",edit:{dataType:"select"
-															,options:[{text:"banana",value:1},{text:"apple",value:2}]}},
+						,options:foods}},
 				{type:"field",title:"Date",id:"date",edit:{dataType:"date"}},
 				{type:"repeated",id:"repeatedField",entry:
 					{type:"field",title:"repeated row",id:"foo"}
@@ -51,7 +53,7 @@
 
 
 			const myTablance=new Tablance(document.getElementById("tablanceContainer1"),myTablanceCols,true,true
-				,myExpansion,{defaultDatePlaceholder:"ÅÅÅÅ-MM-DD"});
+				,myExpansion,{defaultDatePlaceholder:"ÅÅÅÅ-MM-DD",defaultSelectNoResultText:"Inga resultat"});
 
 			
 			for (let i=0; i<3; i++) {
@@ -60,7 +62,7 @@
 					data.push({desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,descLetter:String.fromCharCode(ii)
 						,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
 						,hello:"Hallå",world:"Världen"
-						,sel:Math.round(Math.random())+1
+						,sel:Math.round(Math.random()*(foods.length-1))+1
 						,repeatedField:[{foo:"row one in repeated"},{foo:"row two in repeated"}]
 						,repeatedGroup:[{foo1:"blahblah",foo2:"lalala"},{foo1:"bloj",foo2:"kapapa"}]
 						,custodianshipChanges:[

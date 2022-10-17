@@ -149,6 +149,8 @@ class Tablance {
 	 * 						value:the value of the cell will be mapped to the option with the same value
 	 * 						text:unless a render-method has been specified then this is what will be shown to the user
 	 * 					}
+	 * 					noResultsText String A string which is displayed when a user filters the options in a select 
+	 * 						and there are no results. Can also be set globally via param opts->defaultSelectNoResultText
   	 * 			}
   	 * 			{
   	 * 				type:"repeated",//used when the number of rows is undefined and where more may be able to be added, 
@@ -186,6 +188,8 @@ class Tablance {
 	 * 							"sortNoneHtml" String - html to be added to the end of the th-element when the column
 	 * 													is not sorted
 	 * 							"defaultDatePlaceholder" String - a default placeholder used for date-inputs.
+	 * 							"defaultSelectNoResultText" String - a default string which is displayed when a user
+	 * 									filters the options in a select and there are no results
 	 * */
 	constructor(container,columns,staticRowHeight=false,spreadsheet=false,expansion=null,opts=null) {
 		this.#container=container;
@@ -886,27 +890,25 @@ class Tablance {
 
 	#openSelectEdit() {
 		let highlightIndex=0;
+		let filterText="";
 		this.#inputVal=this.#cellCursorDataObj[this.#activeCellStruct.id];
-		const options=this.#activeCellStruct.edit.options, selectContainer=document.createElement("div");
+		const selectContainer=document.createElement("div");
+		let options=[...this.#activeCellStruct.edit.options];
 		const inputWrapper=selectContainer.appendChild(document.createElement("div"));//we use this to give the
 		inputWrapper.classList.add("input-wrapper");//input-element a margin. Can't put padding in container because
 							//that would cause the highlight-box of selected options not to go all the way to the sides
 		const input=inputWrapper.appendChild(document.createElement("input"));
 		input.addEventListener("keydown",inputKeyDown.bind(this));
+		input.addEventListener("input",inputInput.bind(this));
 		const ul=selectContainer.appendChild(document.createElement("ul"));
 		ul.addEventListener("mouseover",ulMouseOver.bind(this));
 		ul.addEventListener("click",ulClick.bind(this));
-		const optsByVal={};
-		for (let optI=-1,opt; opt=this.#activeCellStruct.edit.options[++optI];) {
-			const li=ul.appendChild(document.createElement("li"));
-			li.innerText=opt.text;
-			li.dataset.value=opt.value;
-			optsByVal[opt.value]=opt;
-			if (this.#inputVal==opt.value) {
-				li.classList.add("selected","highlighted");
-				highlightIndex=optI;
-			}
-		}
+		const noResults=selectContainer.appendChild(document.createElement("div"));
+		noResults.innerText=
+					this.#activeCellStruct.edit.noResultsText??this.#opts.defaultSelectNoResultText??"No results found";
+		noResults.className="no-results";
+		renderOpts(options,this.#inputVal);
+		
 		this.#scrollingContent.appendChild(selectContainer);
 		selectContainer.className="tablance-select-container";
 		selectContainer.style.left=parseInt(this.#cellCursor.style.left)+"px";
@@ -921,6 +923,30 @@ class Tablance {
 		window.addEventListener("click",windowClick.bind(this));
 		input.focus();
 
+		function renderOpts(opts,selectedVal) {
+			ul.innerHTML="";
+			for (let optI=-1,opt; opt=opts[++optI];) {
+				const li=ul.appendChild(document.createElement("li"));
+				li.innerText=opt.text;
+				if (selectedVal==opt.value) {
+					li.classList.add("selected","highlighted");
+					highlightIndex=optI;
+				}
+			}
+		}
+
+		function inputInput(e) {
+			if (!input.value.includes(filterText)||!filterText)//unless text was added to beginning or end
+				options=[...this.#activeCellStruct.edit.options];//start off with all options there are
+			for (let i=-1,opt; opt=options[++i];)
+				if (!opt.text.includes(input.value))//if searchstring wasn't found in this opt
+					options.splice(i--,1);//then remove it from view
+			highlightIndex=null;
+			renderOpts(options,this.#inputVal);
+			if (options.length&&highlightIndex==null)//selected option isn't among the now visible ones
+				highlightOpt.call(this,0,false);
+			noResults.style.display=options.length?"none":"block";
+		}
 		function ulMouseOver(e) {
 			highlightOpt.call(this,[...e.target.parentNode.children].indexOf(e.target));
 		}
@@ -931,18 +957,19 @@ class Tablance {
 					this.#exitEditMode(false);
 				}
 		}
-		function highlightOpt(index) {
-			ul.children[highlightIndex].classList.remove("highlighted");
+		function highlightOpt(index,deselectOld=true) {
+			deselectOld&&ul.children[highlightIndex].classList.remove("highlighted");
 			ul.children[highlightIndex=index].classList.add("highlighted");
-			this.#inputVal=this.#activeCellStruct.edit.options[index].value;
+			
 		}
 		function inputKeyDown(e) {
 			if (["ArrowDown","ArrowUp"].includes(e.key)){
 				e.preventDefault();//prevents moving the textcursor when pressing up or down
 				const newIndex=highlightIndex+(e.key==="ArrowDown"?1:-1);
-				if (newIndex<options.length&&newIndex>=0)
+				if (options.length&&newIndex<options.length&&newIndex>=0)
 					highlightOpt.call(this,newIndex);
 			} else if (e.key==="Enter") {
+				this.#inputVal=options[highlightIndex].value;
 				selectContainer.remove();
 				this.#moveCellCursor(0,e.shiftKey?-1:1);
 				e.stopPropagation();
