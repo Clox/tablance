@@ -946,7 +946,8 @@ class Tablance {
 				selectContainer.remove();
 				this.#moveCellCursor(0,e.shiftKey?-1:1);
 				e.stopPropagation();
-			}
+			} else if (e.key==="Escape")
+				selectContainer.remove();
 		}
 		function ulClick(e) {
 			if (e.target.tagName=="LI") {//not sure if ul could be the target? check here to make sure
