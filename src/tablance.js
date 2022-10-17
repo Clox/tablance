@@ -885,24 +885,28 @@ class Tablance {
 	}
 
 	#openSelectEdit() {
-		let highlightedIndex=0,selectedOptIndex=0;
-		const options=this.#activeCellStruct.edit.options;
-		const selectContainer=document.createElement("div");
+		let highlightIndex=0;
+		this.#inputVal=this.#cellCursorDataObj[this.#activeCellStruct.id];
+		const options=this.#activeCellStruct.edit.options, selectContainer=document.createElement("div");
 		const inputWrapper=selectContainer.appendChild(document.createElement("div"));//we use this to give the
 		inputWrapper.classList.add("input-wrapper");//input-element a margin. Can't put padding in container because
 							//that would cause the highlight-box of selected options not to go all the way to the sides
 		const input=inputWrapper.appendChild(document.createElement("input"));
 		input.addEventListener("keydown",inputKeyDown.bind(this));
 		const ul=selectContainer.appendChild(document.createElement("ul"));
-		ul.addEventListener("mouseover",ulMouseOver);
+		ul.addEventListener("mouseover",ulMouseOver.bind(this));
 		ul.addEventListener("click",ulClick.bind(this));
-		for (const opt of this.#activeCellStruct.edit.options) {
+		const optsByVal={};
+		for (let optI=-1,opt; opt=this.#activeCellStruct.edit.options[++optI];) {
 			const li=ul.appendChild(document.createElement("li"));
 			li.innerText=opt.text;
 			li.dataset.value=opt.value;
+			optsByVal[opt.value]=opt;
+			if (this.#inputVal==opt.value) {
+				li.classList.add("selected","highlighted");
+				highlightIndex=optI;
+			}
 		}
-		ul.children[highlightedIndex].classList.add("highlighted");
-		ul.children[selectedOptIndex].classList.add("selected");
 		this.#scrollingContent.appendChild(selectContainer);
 		selectContainer.className="tablance-select-container";
 		selectContainer.style.left=parseInt(this.#cellCursor.style.left)+"px";
@@ -918,39 +922,35 @@ class Tablance {
 		input.focus();
 
 		function ulMouseOver(e) {
-			ul.children[highlightedIndex].classList.remove("highlighted");
-			ul.children[highlightedIndex=[...e.target.parentElement.children].indexOf(e.target)].classList.add("highlighted");
+			highlightOpt.call(this,[...e.target.parentNode.children].indexOf(e.target));
 		}
 		function windowClick(e) {
 			for (var el=e.target; el!=selectContainer&&(el=el.parentElement););//go up until container or root is found
-			if (!el) {//click was outside select-container
-				selectContainer.remove();
-				this.#exitEditMode(false);
-			}
+				if (!el) {//click was outside select-container
+					selectContainer.remove();
+					this.#exitEditMode(false);
+				}
+		}
+		function highlightOpt(index) {
+			ul.children[highlightIndex].classList.remove("highlighted");
+			ul.children[highlightIndex=index].classList.add("highlighted");
+			this.#inputVal=this.#activeCellStruct.edit.options[index].value;
 		}
 		function inputKeyDown(e) {
 			if (["ArrowDown","ArrowUp"].includes(e.key)){
 				e.preventDefault();//prevents moving the textcursor when pressing up or down
-				if(e.key==="ArrowDown"&&highlightedIndex<options.length-1||e.key==="ArrowUp"&&highlightedIndex>0){
-					ul.children[highlightedIndex].classList.remove("highlighted");
-					ul.children[highlightedIndex+=e.key==="ArrowDown"?1:-1].classList.add("highlighted");
-				}
+				const newIndex=highlightIndex+(e.key==="ArrowDown"?1:-1);
+				if (newIndex<options.length&&newIndex>=0)
+					highlightOpt.call(this,newIndex);
 			} else if (e.key==="Enter") {
-				selectOpt.call(this);
+				selectContainer.remove();
 				this.#moveCellCursor(0,e.shiftKey?-1:1);
 				e.stopPropagation();
 			}
 		}
-		function selectOpt() {
-			this.#inputVal=this.#activeCellStruct.edit.options[highlightedIndex].value;
-			close();
-		}
-		function close() {
-			selectContainer.remove();
-		}
 		function ulClick(e) {
 			if (e.target.tagName=="LI") {//not sure if ul could be the target? check here to make sure
-				selectOpt.call(this);
+				selectContainer.remove();
 				this.#exitEditMode(true);
 			}
 		}
