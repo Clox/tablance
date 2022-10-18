@@ -153,7 +153,10 @@ class Tablance {
 	 * 					options in a select and there are no results. 
 	 * 					Can also be set globally via param opts->defaultSelectNoResultText
 	 * 				minOptsFilter Integer - The minimum number of options required for the filter-input to appear
-	 * 					Can also be set via param opts-defaultMinOptsFilter
+	 * 					Can also be set via param opts->defaultMinOptsFilter
+	 * 				allowSelectEmpty bool - Used for dataType "select". Default is true. Pins an empty-option at the top
+	 * 				emptyOptString String - Specifies the text of the empty option if allowSelectEmpty is true. Can also
+	 * 					be set via param opts->defaultEmptyOptString
   	 * 			}
   	 * 			{
   	 * 				type:"repeated",//used when the number of rows is undefined and where more may be able to be added, 
@@ -195,6 +198,8 @@ class Tablance {
 	 * 									filters the options in a select and there are no results
 	 * 							"defaultMinOptsFilter" Integer The minimum number of options required for the
 	 * 								filter-input of edit-dataType "select" to appear
+	 * 							"defaultEmptyOptString" Specifies the default text of the empty options for
+	 * 							dataType "select" if allowSelectEmpty is true
 	 * */
 	constructor(container,columns,staticRowHeight=false,spreadsheet=false,expansion=null,opts=null) {
 		this.#container=container;
@@ -894,32 +899,38 @@ class Tablance {
 	}
 
 	#openSelectEdit() {
-		let highlightIndex=0;
+		let highlightLiIndex,highlightUlIndex;
 		let filterText="";
 		this.#inputVal=this.#cellCursorDataObj[this.#activeCellStruct.id];
 		const selectContainer=document.createElement("div");
-		let options=[...this.#activeCellStruct.edit.options];
+		let opts=[...this.#activeCellStruct.edit.options];
 		const inputWrapper=selectContainer.appendChild(document.createElement("div"));//we use this to give the
 		const input=inputWrapper.appendChild(document.createElement("input"));
-		const windowClickBound=windowClick.bind(this);
+		const windowClickBound=windowClick.bind(this);//saving reference to bound func so handler can be removed later
+		const allowEmpty=this.#activeCellStruct.edit.allowSelectEmpty??true;
+		const emptyString=this.#activeCellStruct.edit.emptyOptString??this.#opts.defaultEmptyOptString??"Empty";
 		inputWrapper.classList.add("input-wrapper");//input-element a margin. Can't put padding in container because
 							//that would cause the highlight-box of selected options not to go all the way to the sides
-		const filtering=options.length>=(this.#activeCellStruct.edit.minOptsFilter??this.#opts.defaultMinOptsFilter??5);
-		if (filtering) {
-			input.addEventListener("input",inputInput.bind(this));
-		} else
-			inputWrapper.classList.add("hide");
-		
+		const ulDiv=selectContainer.appendChild(document.createElement("div"));
+		if (opts.length>=(this.#activeCellStruct.edit.minOptsFilter??this.#opts.defaultMinOptsFilter??5)) {
+			input.addEventListener("input",inputInput.bind(this));//filtering is allowed, add listener to the input
+		} else//else hide the input. still want to keep it to recieve focus and listening to keystrokes. tried focusing
+			inputWrapper.classList.add("hide");//container-divs instead of input but for some reason it messed up scroll
 		input.addEventListener("keydown",inputKeyDown.bind(this));
+		const pinnedUl=ulDiv.appendChild(document.createElement("ul"));
+		const ul=ulDiv.appendChild(document.createElement("ul"));
+		pinnedUl.classList.add("pinned");
+		for (let i=allowEmpty?0:1,currentUl;i<2&&(currentUl=i?ul:pinnedUl);i++) {
+			currentUl.dataset.ulIndex=i;
+			renderOpts(currentUl,i?opts:[{text:emptyString}],this.#inputVal);
+			currentUl.addEventListener("mouseover",ulMouseOver.bind(this));
+			currentUl.addEventListener("click",ulClick.bind(this));
+		}		
 		
-		const ul=selectContainer.appendChild(document.createElement("ul"));
-		ul.addEventListener("mouseover",ulMouseOver.bind(this));
-		ul.addEventListener("click",ulClick.bind(this));
 		const noResults=selectContainer.appendChild(document.createElement("div"));
 		noResults.innerText=
 					this.#activeCellStruct.edit.noResultsText??this.#opts.defaultSelectNoResultText??"No results found";
 		noResults.className="no-results";
-		renderOpts(options,this.#inputVal);
 		
 		this.#scrollingContent.appendChild(selectContainer);
 		selectContainer.className="tablance-select-container";
@@ -935,57 +946,67 @@ class Tablance {
 		window.addEventListener("click",windowClickBound);
 		input.focus();
 
-		function renderOpts(opts,selectedVal) {
+		function renderOpts(ul,opts,selectedVal) {
+			let foundSelected=false;
 			ul.innerHTML="";
 			for (let optI=-1,opt; opt=opts[++optI];) {
 				const li=ul.appendChild(document.createElement("li"));
 				li.innerText=opt.text;
 				if (selectedVal==opt.value) {
+					foundSelected=true;
 					li.classList.add("selected","highlighted");
-					highlightIndex=optI;
+					highlightLiIndex=optI;
+					highlightUlIndex=parseInt(ul.dataset.ulIndex);
 				}
 			}
+			return foundSelected;
 		}
 
 		function inputInput(e) {
 			if (!input.value.includes(filterText)||!filterText)//unless text was added to beginning or end
-				options=[...this.#activeCellStruct.edit.options];//start off with all options there are
-			for (let i=-1,opt; opt=options[++i];)
+				opts=[...this.#activeCellStruct.edit.options];//start off with all options there are
+			for (let i=-1,opt; opt=opts[++i];)
 				if (!opt.text.includes(input.value))//if searchstring wasn't found in this opt
-					options.splice(i--,1);//then remove it from view
-			highlightIndex=null;
-			renderOpts(options,this.#inputVal);
-			if (options.length&&highlightIndex==null)//selected option isn't among the now visible ones
-				highlightOpt.call(this,0,false);
-			noResults.style.display=options.length?"none":"block";
+					opts.splice(i--,1);//then remove it from view
+			if (!renderOpts(ul,opts,this.#inputVal)&&highlightUlIndex)//didnt find selected opt & empty is not selected
+					if (opts.length)//there are visible opts
+						highlightOpt.call(this,1,0);//select first among the filtered ones
+					else if (allowEmpty)//there are not visible ones after filtering but empty is available
+						highlightOpt.call(this,0,0);//select empty
+			noResults.style.display=opts.length?"none":"block";
 		}
 		function ulMouseOver(e) {
-			highlightOpt.call(this,[...e.target.parentNode.children].indexOf(e.target));
+			highlightOpt.call(this,parseInt(e.target.closest("ul").dataset.ulIndex)
+																,[...e.target.parentNode.children].indexOf(e.target));
 		}
 		function windowClick(e) {
-			for (let el=e.target; el!=selectContainer&&(el=el.parentElement););//go up until container or root is found
-				if (!el) {//click was outside select-container
-					close();
-					this.#exitEditMode(false);
-				}
+			for (var el=e.target; el!=selectContainer&&(el=el.parentElement););//go up until container or root is found
+			if (!el) {//click was outside select-container
+				close();
+				this.#exitEditMode(false);
+			}
 		}
 		function close() {
 			selectContainer.remove();
 			window.removeEventListener("click",windowClickBound);
 		}
-		function highlightOpt(index,deselectOld=true) {
-			deselectOld&&ul.children[highlightIndex].classList.remove("highlighted");
-			ul.children[highlightIndex=index].classList.add("highlighted");
-			
+		function highlightOpt(ulIndex,liIndex) {
+			ulDiv.children[highlightUlIndex].children[highlightLiIndex]?.classList.remove("highlighted");
+			ulDiv.children[highlightUlIndex=ulIndex].children[highlightLiIndex=liIndex].classList.add("highlighted");
 		}
 		function inputKeyDown(e) {
 			if (["ArrowDown","ArrowUp"].includes(e.key)){
 				e.preventDefault();//prevents moving the textcursor when pressing up or down
-				const newIndex=highlightIndex+(e.key==="ArrowDown"?1:-1);
-				if (options.length&&newIndex<options.length&&newIndex>=0)
-					highlightOpt.call(this,newIndex);
+				const newIndex=highlightLiIndex+(e.key==="ArrowDown"?1:-1);
+				if (highlightUlIndex) {
+					if (opts.length&&newIndex<opts.length&&newIndex>=0)
+						highlightOpt.call(this,1,newIndex);
+					else if (newIndex==-1&&allowEmpty)
+						highlightOpt.call(this,0,0);
+				} else if (opts.length&&newIndex==1)
+					highlightOpt.call(this,1,0);
 			} else if (e.key==="Enter") {
-				this.#inputVal=options[highlightIndex].value;
+				this.#inputVal=highlightUlIndex?opts[highlightLiIndex].value:null;
 				close();
 				this.#moveCellCursor(0,e.shiftKey?-1:1);
 				e.stopPropagation();
@@ -994,7 +1015,7 @@ class Tablance {
 		}
 		function ulClick(e) {
 			if (e.target.tagName=="LI") {//not sure if ul could be the target? check here to make sure
-				this.#inputVal=options[[...ul.children].indexOf(e.target)].value;
+				this.#inputVal=e.currentTarget.dataset.ulIndex==1?opts[[...ul.children].indexOf(e.target)].value:null;
 				close();
 				this.#exitEditMode(true);
 			}
