@@ -21,7 +21,7 @@
 						{text:"pineapple",value:7},{text:"carrot",value:8}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
 				{type:"field",title:"Select",id:"sel",edit:{dataType:"select"
-						,options:foods,minOptsFilter:0}},
+						,options:foods,minOptsFilter:0,allowSelectEmpty:false}},
 				{type:"field",title:"Date",id:"date",edit:{dataType:"date"}},
 				{type:"repeated",id:"repeatedField",entry:
 					{type:"field",title:"repeated row",id:"foo"}
@@ -29,8 +29,10 @@
 				{type:"group",title:"förordnande",entries:[
 						{type:"repeated",id:"custodianshipChanges",entry:
 						{type:"group",closedRender:data=>`${data.type} sedan ${data.date}`,entries:[
-								{type:"field",title:"Datum",id:"date"},
-								{type:"field",title:"Typ av ställföreträdarskap",id:"type"}
+								{type:"field",title:"Datum",id:"date",edit:{dataType:"date"}},
+								{type:"field",title:"Typ av ställföreträdarskap",id:"type",edit:{dataType:"select",
+									options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"}]
+								}}
 						]}
 					}
 				]},
@@ -62,7 +64,7 @@
 					data.push({desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,descLetter:String.fromCharCode(ii)
 						,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
 						,hello:"Hallå",world:"Världen"
-						,sel:Math.round(Math.random()*(foods.length-1))+1
+						,sel:null//Math.round(Math.random()*(foods.length-1))+1
 						,repeatedField:[{foo:"row one in repeated"},{foo:"row two in repeated"}]
 						,repeatedGroup:[{foo1:"blahblah",foo2:"lalala"},{foo1:"bloj",foo2:"kapapa"}]
 						,custodianshipChanges:[

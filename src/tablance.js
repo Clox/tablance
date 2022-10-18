@@ -596,6 +596,7 @@ class Tablance {
 			let tr=groupTable.insertRow();
 			tr.className="empty";//start as empty to hide when closed.updateCell() will remove it if a cell is non-empty
 			let td=tr.insertCell();
+			td.classList.toggle("disabled",struct.type=="field"&&!struct.edit)
 			if (entryI>0) {
 				const separator=td.appendChild(document.createElement("div"));
 				separator.className="separator";
@@ -925,7 +926,9 @@ class Tablance {
 			renderOpts(currentUl,i?opts:[{text:emptyString}],this.#inputVal);
 			currentUl.addEventListener("mouseover",ulMouseOver.bind(this));
 			currentUl.addEventListener("click",ulClick.bind(this));
-		}		
+		}
+		if (!allowEmpty&&this.#inputVal==null)
+			highlightOpt(1,0);//for selects where initial value is null but null cant be selected
 		
 		const noResults=selectContainer.appendChild(document.createElement("div"));
 		noResults.innerText=
@@ -991,7 +994,7 @@ class Tablance {
 			window.removeEventListener("click",windowClickBound);
 		}
 		function highlightOpt(ulIndex,liIndex) {
-			ulDiv.children[highlightUlIndex].children[highlightLiIndex]?.classList.remove("highlighted");
+			ulDiv.children[highlightUlIndex]?.children[highlightLiIndex]?.classList.remove("highlighted");
 			ulDiv.children[highlightUlIndex=ulIndex].children[highlightLiIndex=liIndex].classList.add("highlighted");
 		}
 		function inputKeyDown(e) {
