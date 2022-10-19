@@ -910,7 +910,7 @@ class Tablance {
 				cellI=0;
 			}
 		}
-		console.log(cell)
+		repeatCreater.index++;
 		repeatCreater.el.parentElement.appendChild(repeatCreater.el);
 		this.#selectExpansionCell(cell);
 		
