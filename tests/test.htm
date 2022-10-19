@@ -21,17 +21,18 @@
 						{text:"pineapple",value:7},{text:"carrot",value:8}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
 				{type:"field",title:"Select",id:"sel",edit:{dataType:"select"
-						,options:foods,minOptsFilter:0,allowSelectEmpty:false}},
+						,options:foods,minOptsFilter:1000,allowSelectEmpty:true}},
 				{type:"field",title:"Date",id:"date",edit:{dataType:"date"}},
 				{type:"repeated",id:"repeatedField",entry:
 					{type:"field",title:"repeated row",id:"foo"}
 				},
 				{type:"group",title:"förordnande",entries:[
-						{type:"repeated",id:"custodianshipChanges",entry:
+					{type:"repeated",id:"custodianshipChanges",create:true,creationText:"Lägg till",entry:
 						{type:"group",closedRender:data=>`${data.type} sedan ${data.date}`,entries:[
 								{type:"field",title:"Datum",id:"date",edit:{dataType:"date"}},
 								{type:"field",title:"Typ av ställföreträdarskap",id:"type",edit:{dataType:"select",
 									options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"}]
+									,allowSelectEmpty:false
 								}}
 						]}
 					}
@@ -68,7 +69,7 @@
 						,repeatedField:[{foo:"row one in repeated"},{foo:"row two in repeated"}]
 						,repeatedGroup:[{foo1:"blahblah",foo2:"lalala"},{foo1:"bloj",foo2:"kapapa"}]
 						,custodianshipChanges:[
-											{date:"2021-01-01",type:"God Man"},{date:"2022-01-01",type:"Förvaltare"}]});
+										{date:"2021-01-01",type:"trustee"},{date:"2022-01-01",type:"administrator"}]});
 				}
 				myTablance.addData(data);
 			}

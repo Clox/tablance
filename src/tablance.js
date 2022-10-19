@@ -155,8 +155,8 @@ class Tablance {
 	 * 				minOptsFilter Integer - The minimum number of options required for the filter-input to appear
 	 * 					Can also be set via param opts->defaultMinOptsFilter
 	 * 				allowSelectEmpty bool - Used for dataType "select". Default is true. Pins an empty-option at the top
-	 * 				emptyOptString String - Specifies the text of the empty option if allowSelectEmpty is true. Can also
-	 * 					be set via param opts->defaultEmptyOptString
+	 * 				emptyOptString String - For dataType "select", specifies the text of the empty option if 
+	 * 					allowSelectEmpty is true. Can also be set via param opts->defaultEmptyOptString
   	 * 			}
   	 * 			{
   	 * 				type:"repeated",//used when the number of rows is undefined and where more may be able to be added, 
@@ -572,22 +572,33 @@ class Tablance {
 	#generateExpansionRepeated(struct,dataIndex,cellObj,parentEl,path,rowData) {
 		cellObj.struct=struct;
 		cellObj.children=[];
-		const repeatData=rowData[struct.id];
-		if (repeatData?.length) {
+		const repeatData=cellObj.rowData=rowData[struct.id];
+		if (repeatData?.length)
 			for (let childI=0; childI<rowData[struct.id].length; childI++) {
 				let childObj=cellObj.children[childI]={parent:cellObj,index:childI};
 				path.push(childI);
 				this.#generateExpansionContent(struct.entry,dataIndex,childObj,parentEl,path,repeatData[childI]);
 				path.pop();
 			}
-			return true;
+		if (struct.create) {
+			const creationTable=parentEl.appendChild(document.createElement("table"));
+			const creationCell=creationTable.insertRow().insertCell();
+			creationCell.innerText=struct.creationText??"Insert new";
+			creationTable.classList.add("repeat-insertion");
+			cellObj.children.push(
+								{parent:cellObj,el:creationTable,index:repeatData.length,struct:{type:"repeatCreate"}});
+			creationTable.dataset.path=path.join("-")+"-"+repeatData.length;
+			
 		}
+			
+		return !!repeatData?.length||struct.create;
 	}
 
 	#generateExpansionGroup(groupStructure,dataIndex,cellObj,parentEl,path,rowData) {
 		parentEl.dataset.path=path.join("-");
 		cellObj.children=[];
 		const groupTable=document.createElement("table");
+		console.log(groupTable);
 		parentEl.classList.add("group-cell");
 		cellObj.el=groupTable;//so that the whole group-table can be selected
 		cellObj.struct=groupStructure;
@@ -865,7 +876,32 @@ class Tablance {
 		} else if (this.#activeCellStruct.type==="group") {
 			this.#activeExpCell.el.classList.add("open");
 			this.#selectExpansionCell(this.#getFirstSelectableExpansionCell(this.#activeExpCell,true,true));
+		} else if (this.#activeCellStruct.type==="repeatCreate") {
+			this.#repeatInsertNew(this.#activeExpCell);
 		}
+	}
+
+	#repeatInsertNew(repeatCreater) {
+		const reptPar=repeatCreater.parent;
+		const indexOfNew=reptPar.children;
+		const childObj=reptPar.children[indexOfNew]={parent:reptPar,index:indexOfNew};
+		const path=repeatCreater.el.dataset.path.split("-") ;
+		const data=reptPar.rowData[indexOfNew]={};
+		this.#generateExpansionContent(reptPar.struct.entry,indexOfNew,childObj,repeatCreater.el.parentNode,path,data);
+		for (var cellPar=childObj,cellI=0,cell=childObj;cell.struct.type!="field";cell=cellPar.children[cellI++]){
+			if (cell.struct.type==="group")
+				cell.el.classList.add("open");
+			if (cell.children) {
+				cellPar=cell;
+				cellI=0;
+			}
+		}
+		console.log(cell)
+		repeatCreater.el.parentElement.appendChild(repeatCreater.el);
+		this.#selectExpansionCell(cell);
+		
+		
+		//console.log(repeatCreater);
 	}
 
 	#openTextEdit() {
@@ -1017,7 +1053,7 @@ class Tablance {
 				close();
 		}
 		function ulClick(e) {
-			if (e.target.tagName=="LI") {//not sure if ul could be the target? check here to make sure
+			if (e.target.tagName.toLowerCase()=="li") {//not sure if ul could be the target? check here to make sure
 				this.#inputVal=e.currentTarget.dataset.ulIndex==1?opts[[...ul.children].indexOf(e.target)].value:null;
 				close();
 				this.#exitEditMode(true);

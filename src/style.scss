@@ -136,6 +136,10 @@
 					padding: 0;
 				}
 			}
+			.repeat-insertion td{
+				padding: 0;
+				color: gray;
+			}
 			table.expansion-list {
 				border-spacing: 0;
 				width: 100%;
@@ -162,6 +166,9 @@
 	.group-cell{
 		padding: 4px;
 		>table {
+			&:not(:last-child) {
+				margin-bottom: 4px;
+			}
 			border: 1px solid #bbb;
 			width: 100%;
 			&:not(.open)>tbody>tr.empty {
