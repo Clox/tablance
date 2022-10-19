@@ -1076,9 +1076,16 @@ class Tablance {
 			if (this.#inputVal!=this.#selectedCellVal) {
 				this.#cellCursorDataObj[this.#activeCellStruct.id]=this.#inputVal;
 				if (this.#activeExpCell){
-					//if (this.#updateCell(this.#activeExpCell.el,this.#mainRowIndex,this.#activeCellStruct,this.#activeExpCell))
-					if (this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj))
+					const doHeightUpdate=this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj);
+					if (doHeightUpdate)
 						this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
+					for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)//update closed-group-renders
+						if (cell.struct.closedRender) {//found a group with a closed-group-render func
+							let cell2;
+							for (cell2=cell;!cell2.rowData;cell2=cell2.parent);//look for ancestor with rowData
+							cell.el.rows[cell.el.rows.length-1].cells[0].innerText
+								=cell.struct.closedRender(cell2?.rowData[cell2.index]??this.#data[this.#mainRowIndex]);
+						}
 				} else
 					this.#updateMainRowCell(this.#selectedCell,this.#activeCellStruct);
 			}
