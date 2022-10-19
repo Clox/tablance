@@ -598,7 +598,6 @@ class Tablance {
 		parentEl.dataset.path=path.join("-");
 		cellObj.children=[];
 		const groupTable=document.createElement("table");
-		console.log(groupTable);
 		parentEl.classList.add("group-cell");
 		cellObj.el=groupTable;//so that the whole group-table can be selected
 		cellObj.struct=groupStructure;
@@ -882,6 +881,19 @@ class Tablance {
 		}
 	}
 
+	#closeGroup(groupObject) {
+		groupObject.el.classList.remove("open");
+		if (groupObject.updateRenderOnClose) {//if group is flagged for having its closed-render updated on close
+			delete groupObject.updateRenderOnClose;//delete the flag so it doesn't get triggered again
+			let cell,renderText;
+			//look for ancestor-cell with rowData which repeated rows have. It's a sub-data-row of #data.
+			//if we got all the way to the root without finding any repeated-rows then use datarow directly from #data
+			for (cell=groupObject.parent;!cell.rowData&&cell.parent;cell=cell.parent);//look for ancestor with rowData
+			renderText=groupObject.struct.closedRender(cell.parent?cell.rowData[cell.index]:this.#data[cell.rowIndex]);
+			groupObject.el.rows[groupObject.el.rows.length-1].cells[0].innerText=renderText;
+		}
+	}
+
 	#repeatInsertNew(repeatCreater) {
 		const reptPar=repeatCreater.parent;
 		const indexOfNew=reptPar.children.length-1;
@@ -1080,12 +1092,8 @@ class Tablance {
 					if (doHeightUpdate)
 						this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
 					for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)//update closed-group-renders
-						if (cell.struct.closedRender) {//found a group with a closed-group-render func
-							let cell2;
-							for (cell2=cell;!cell2.rowData;cell2=cell2.parent);//look for ancestor with rowData
-							cell.el.rows[cell.el.rows.length-1].cells[0].innerText
-								=cell.struct.closedRender(cell2?.rowData[cell2.index]??this.#data[this.#mainRowIndex]);
-						}
+						if (cell.struct.closedRender)//found a group with a closed-group-render func
+							cell.updateRenderOnClose=true;
 				} else
 					this.#updateMainRowCell(this.#selectedCell,this.#activeCellStruct);
 			}
@@ -1107,7 +1115,7 @@ class Tablance {
 		if (this.#activeExpCell) {
 			for (let oldCellParent=this.#activeExpCell; oldCellParent=oldCellParent.parent;)
 				if (oldCellParent.struct.type==="group") {
-					oldCellParent.el.classList.remove("open");//close any open group above old cell
+					this.#closeGroup(oldCellParent);//close any open group above old cell
 					this.#ignoreClicksUntil=Date.now()+500;
 				}
 			this.#activeExpCell=null;//should be null when not inside expansion
@@ -1146,7 +1154,7 @@ class Tablance {
 							break;
 						}
 					if (oldParent) {
-						oldParent.el.classList.remove("open");//if old parent-group is not part of new then close it
+						this.#closeGroup(oldParent)//if old parent-group is not part of new then close it
 						this.#ignoreClicksUntil=Date.now()+500;
 					}
 				}
