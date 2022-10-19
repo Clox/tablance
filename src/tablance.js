@@ -833,6 +833,7 @@ class Tablance {
 			if (e instanceof KeyboardEvent)
 				e.stopPropagation();//otherwise the enter-press is propagated to Pikaday, immediately closing it
 			input.addEventListener("input",onInput.bind(this));
+			input.addEventListener("change",()=>this.#inputVal=input.value);
 		}
 		new Cleave(input,{date: true,delimiter: '-',datePattern: ['Y', 'm', 'd']});
 		this.#cellCursor.appendChild(input);
