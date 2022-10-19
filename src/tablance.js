@@ -1076,7 +1076,7 @@ class Tablance {
 				this.#cellCursorDataObj[this.#activeCellStruct.id]=this.#inputVal;
 				if (this.#activeExpCell){
 					//if (this.#updateCell(this.#activeExpCell.el,this.#mainRowIndex,this.#activeCellStruct,this.#activeExpCell))
-					if (this.#updateExpansionCell(this.#activeExpCell,this.#data[this.#mainRowIndex]))
+					if (this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj))
 						this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
 				} else
 					this.#updateMainRowCell(this.#selectedCell,this.#activeCellStruct);
