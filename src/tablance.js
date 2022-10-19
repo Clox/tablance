@@ -884,8 +884,9 @@ class Tablance {
 
 	#repeatInsertNew(repeatCreater) {
 		const reptPar=repeatCreater.parent;
-		const indexOfNew=reptPar.children;
-		const childObj=reptPar.children[indexOfNew]={parent:reptPar,index:indexOfNew};
+		const indexOfNew=reptPar.children.length-1;
+		const childObj={parent:reptPar,index:indexOfNew};
+		reptPar.children.splice(indexOfNew,0,childObj);
 		const path=repeatCreater.el.dataset.path.split("-") ;
 		const data=reptPar.rowData[indexOfNew]={};
 		this.#generateExpansionContent(reptPar.struct.entry,indexOfNew,childObj,repeatCreater.el.parentNode,path,data);
