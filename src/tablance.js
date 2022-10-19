@@ -584,7 +584,7 @@ class Tablance {
 			const creationTable=parentEl.appendChild(document.createElement("table"));
 			const creationCell=creationTable.insertRow().insertCell();
 			creationCell.innerText=struct.creationText??"Insert new";
-			creationTable.classList.add("repeat-insertion");
+			creationTable.classList.add("repeat-insertion","empty");//empty for hiding it when group is closed if group
 			cellObj.children.push(
 								{parent:cellObj,el:creationTable,index:repeatData.length,struct:{type:"repeatCreate"}});
 			creationTable.dataset.path=path.join("-")+"-"+repeatData.length;

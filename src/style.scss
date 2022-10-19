@@ -171,8 +171,10 @@
 			}
 			border: 1px solid #bbb;
 			width: 100%;
-			&:not(.open)>tbody>tr.empty {
-				display: none;
+			&:not(.open)>tbody>tr {
+				&.empty,>td>div>.empty {
+					display: none;
+				}
 			}
 			&.open>tbody>tr,>tbody>tr:not(.empty) + tr:not(.empty) {
 				> td>.separator {
