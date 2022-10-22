@@ -147,14 +147,21 @@ class Tablance {
 	 * 						"number"(number with stepper),
 	 * 						"date"(a date and possibly time with a calendar),
 	 * 						"select"(selection of multiple items).
+	 * 						"button"(simple button)
 	 * 					Depending on which one is selected certain properties
 	 * 						below are (dis)allowed.
 	 * 					maxLength int Sets max-length for strings if dataType is text
 	 * 					placeholder String adds a placeholder-string to the input-element
-	 * 					options: Array //may be supplied if dataType is "select". Each element should be an object: {
-	 * 						value:the value of the cell will be mapped to the option with the same value
-	 * 						text:unless a render-method has been specified then this is what will be shown to the user
-	 * 					}
+	 * 				options: Array //may be supplied if dataType is "select". Each element should be an object: {
+	 * 					value:the value of the cell will be mapped to the option with the same value
+	 * 					text:unless a render-method has been specified then this is what will be shown to the user
+	 * 				}
+  	 * 				btnText: String,//If datatype is "button" then this will be the text on it
+	 * 				clickHandler:Function //Used for datatype "button". A callback-function that will get called when
+	 * 						//the button is pressed. It will get passed arguments 1:dataObject,2:mainDataIndex, 3:struct
+	 * 						//,4:cellObject if inside expansion
+  	 * 			}
+	 * 
 	 * 				noResultsText String For dataType "select", a string which is displayed when a user filters the 
 	 * 					options in a select and there are no results. 
 	 * 					Can also be set globally via param opts->defaultSelectNoResultText
@@ -164,6 +171,7 @@ class Tablance {
 	 * 				emptyOptString String - For dataType "select", specifies the text of the empty option if 
 	 * 					allowSelectEmpty is true. Can also be set via param opts->defaultEmptyOptString
   	 * 			}
+	 * 			{
   	 * 			{
   	 * 				type:"repeated",//used when the number of rows is undefined and where more may be able to be added, 
 	 * 								//perhaps by the user. Having a list with a repeated->field basically works the same
@@ -599,7 +607,7 @@ class Tablance {
 		const args=[struct,dataIndex,cellObject,parentEl,path,rowData];
 		switch (struct.type) {
 			case "list": return this.#generateExpansionList(...args);
-			case "field": return this.#generateExpansionField(...args);
+			case "field": return this.#generateField(...args);
 			case "group": return this.#generateExpansionGroup(...args);
 			case "repeated": return this.#generateExpansionRepeated(...args);
 			case "collection": return this.#generateExpansionCollection(...args);
@@ -639,6 +647,13 @@ class Tablance {
 		}
 			
 		return !!repeatData?.length||struct.create;
+	}
+
+	#generateExpansionButton(struct,dataIndex,cellObj,parentEl,path,rowData) {
+		const btn=parentEl.appendChild(document.createElement("button"));
+		btn.innerText=struct.edit.btnText;
+		cellObj.el=btn;
+		return true;
 	}
 
 	#generateExpansionGroup(groupStructure,dataIndex,cellObj,parentEl,path,rowData) {
@@ -759,19 +774,24 @@ class Tablance {
 			let listTr=listTbody.insertRow();
 			let titleTd=listTr.insertCell();
 			titleTd.className="title";
-			titleTd.innerText=struct.title;
+			titleTd.innerText=struct.title??"";
 			listTr.appendChild(contentTd);
 			listCelObj.children[itemIndex]=cellChild;
 		}
 		path.pop();
 	}
 
-	#generateExpansionField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {
-		cellObject.el=parentEl;
-		cellObject[cellObject.selEl?"selEl":"el"].dataset.path=path.join("-");
+	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {
+		
 		cellObject.dataObject=rowData;
 		cellObject.struct=fieldStructure;
-		this.#updateExpansionCell(cellObject,rowData);
+		if (fieldStructure.edit?.dataType==="button")
+			this.#generateExpansionButton(fieldStructure,mainIndex,cellObject,parentEl,path,rowData);
+		else {
+			cellObject.el=parentEl;
+			this.#updateExpansionCell(cellObject,rowData);
+		}
+		cellObject[cellObject.selEl?"selEl":"el"].dataset.path=path.join("-");
 		return true;
 	}
 

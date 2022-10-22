@@ -26,6 +26,7 @@
 				{type:"repeated",id:"repeatedField",entry:
 					{type:"field",title:"repeated row",id:"foo"}
 				},
+				{type:"field",edit:{dataType:"button",btnText:"Cool button"}},
 				{type:"group",title:"förordnande",entries:[
 					{type:"repeated",id:"custodianshipChanges",create:true,creationText:"Lägg till",entry:
 						{type:"group",closedRender:data=>`${data.type} sedan ${data.date}`,entries:[
@@ -36,6 +37,16 @@
 								}}
 						]}
 					}
+				]},
+				{type:"collection",title:"Bunch ",entries:[
+					{type:"field",title:"First thing",id:"first"},
+					{type:"field",title:"Second thing",id:"second"},
+					{type:"field",title:"Third thing",id:"third"},
+					{type:"field",edit:{dataType:"button",btnText:"My button"}},
+					{type:"field",title:"Fourth thing",id:"fourth"},
+					{type:"field",title:"Fifth thing",id:"fifth"},
+					{type:"field",title:"Sixth thing",id:"sixth"},
+					{type:"field",title:"Seventh thing",id:"seventh"},
 				]},
 				{type:"group",title:"grupp",entries:[
 					{type:"field",title:"Hello",id:"hello",edit:{dataType:"text"}},
@@ -50,15 +61,6 @@
 						edit:{cleave:{date: true,delimiter: '-',datePattern: ['Y','m','d']},placeholder:"ÅÅÅÅ-MM-DD"}},
 					{type:"field",title:"Anteckningar",id:"notes",maxHeight:150,edit:{dataType:"textarea"}},
 				]},
-				{type:"collection",title:"Bunch ",entries:[
-					{type:"field",title:"First thing",id:"first"},
-					{type:"field",title:"Second thing",id:"second"},
-					{type:"field",title:"Third thing",id:"third"},
-					{type:"field",title:"Fourth thing",id:"fourth"},
-					{type:"field",title:"Fifth thing",id:"fifth"},
-					{type:"field",title:"Sixth thing",id:"sixth"},
-					{type:"field",title:"Seventh thing",id:"seventh"},
-				]}
 			]};
 			
 
