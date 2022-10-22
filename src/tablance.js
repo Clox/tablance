@@ -124,11 +124,17 @@ class Tablance {
 	 * 			{//this is an entry that holds multiple rows laid out vertically, each item in the list can have a 
 	 * 			 //title on the left side by specifying "title" in each item within the list
   	 *				type:"list",
-	 *				title:"Foobar",//displayed title if placed in list placed in a list as they can be nested
+	 *				title:"Foobar",//displayed title if placed in a container which displays the title
 	 * 				entries:[]//each element should be another entry
 	 * 				titlesColWidth:String Width of the column with the titles. Don't forget adding the unit.
 	 * 					Default is null which enables setting the width via css.
 	 *			}
+	 *			{	
+	 *				type: "collection" //basically like a list but each item is inlined, meaning they will be lined up
+	 *									//in a horizontal line and will also wrap to multiple lines if needed
+	 *				title:"Foobar",//displayed title if placed in a container which displays the title
+	 * 				entries:[]//each element should be another entry
+	 *	 		}
 	 *			{
   	 * 				type:"field",//this is what will display data and which also can be editable
   	 * 				title:"Foobar",//displayed title if placed in list
@@ -555,7 +561,8 @@ class Tablance {
 			case "list": return this.#generateExpansionList(...args);
 			case "field": return this.#generateExpansionField(...args);
 			case "group": return this.#generateExpansionGroup(...args);
-			case "repeated": return this.#generateExpansionRepeated(...args)
+			case "repeated": return this.#generateExpansionRepeated(...args);
+			case "collection": return this.#generateExpansionCollection(...args);
 		}
 	}
 
@@ -643,7 +650,40 @@ class Tablance {
 		return true;
 	}
 
-	#generateExpansionList(listStructure,dataIndex,listCelObj,parentEl,path,rowData) {
+	#generateExpansionCollection(collectionStructure,mainIndex,collObj,parentEl,path,rowData) {
+		parentEl.classList.add("collection");
+		collObj.children=[];
+		collObj.struct=collectionStructure;
+		for (let entryI=-1,struct; struct=collectionStructure.entries[++entryI];) {
+			path.push(entryI);
+			const celObj=collObj.children[entryI]={parent:collObj,index:entryI,struct:struct};
+			if (struct.type==="repeated"&&rowData[struct.id]?.length) {
+				celObj.children=[];
+				for (let repeatI=-1,repeatData;repeatData=rowData[struct.id][++repeatI];) {
+					let repeatdObj=celObj.children[repeatI]={parent:celObj,index:repeatI,struct:struct.entry};
+					this.#generateCollectionItem(struct,mainIndex,repeatdObj,parentEl,path,repeatData);
+				}
+			} else {
+				this.#generateCollectionItem(struct,mainIndex,celObj,parentEl,path,rowData);
+			}
+			path.pop();
+		}
+		return true;
+	}
+
+	#generateCollectionItem(struct,mainIndex,cellObj,parentEl,path,data) {
+		const containerSpan=cellObj.selEl=document.createElement("span");
+		if (struct.title) {
+			const header=containerSpan.appendChild(document.createElement("h4"));
+			header.innerText=struct.title;
+		}
+		let contentDiv=containerSpan.appendChild(document.createElement("div"));
+		contentDiv.className="value";
+		if (this.#generateExpansionContent(struct,mainIndex,cellObj,contentDiv,path,data))
+			parentEl.appendChild(containerSpan);
+	}
+
+	#generateExpansionList(listStructure,mainIndex,listCelObj,parentEl,path,rowData) {
 		listCelObj.children=[];
 		listCelObj.struct=listStructure;
 		const listTable=document.createElement("table");
@@ -662,18 +702,18 @@ class Tablance {
 					path.pop();
 				}
 			} else
-				this.#generateListItem(listTbody,struct,entryI,dataIndex,listCelObj,path,rowData);
+				this.#generateListItem(listTbody,struct,entryI,mainIndex,listCelObj,path,rowData);
 		}
 		parentEl.appendChild(listTable);
 		return true;
 	}
 
-	#generateListItem(listTbody,struct,itemIndex,dataIndex,listCelObj,path,data) {
+	#generateListItem(listTbody,struct,itemIndex,mainIndex,listCelObj,path,data) {
 		let contentTd=document.createElement("td");
 		contentTd.className="value";//not actually sure why but this can't be put inside condition below
 		let cellChild={parent:listCelObj,index:itemIndex};
 		path.push(itemIndex);
-		if (this.#generateExpansionContent(struct,dataIndex,cellChild,contentTd,path,data)) {//generate content
+		if (this.#generateExpansionContent(struct,mainIndex,cellChild,contentTd,path,data)) {//generate content
 			//and add it to dom if condition falls true, e.g. content was actually created. it might not be if it is
 			//a repeated and there was no data for it add
 			let listTr=listTbody.insertRow();
@@ -686,7 +726,7 @@ class Tablance {
 		path.pop();
 	}
 
-	#generateExpansionField(fieldStructure,dataIndex,cellObject,parentEl,path,rowData) {
+	#generateExpansionField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {
 		cellObject.el=parentEl;
 		cellObject[cellObject.selEl?"selEl":"el"].dataset.path=path.join("-");
 		cellObject.dataObject=rowData;
@@ -1547,9 +1587,9 @@ class Tablance {
 	/**Update the values of a row in the table. The tr needs to be passed in as well as the index of the data in #data
 	 * The row needs to already have the right amount of td's.
 	 * @param {HTMLTableRowElement} tr The tr-element whose cells that should be updated*/
-	#updateRowValues(tr,dataIndex) {
-		tr.dataset.dataRowIndex=dataIndex;
-		const dataRow=this.#data[dataIndex];
+	#updateRowValues(tr,mainIndex) {
+		tr.dataset.dataRowIndex=mainIndex;
+		const dataRow=this.#data[mainIndex];
 		for (let colI=0; colI<this.#colStructs.length; colI++) {
 			let td=tr.cells[colI];
 			let colStruct=this.#colStructs[colI];

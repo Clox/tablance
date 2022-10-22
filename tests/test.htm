@@ -49,6 +49,15 @@
 					{type:"field",title:"Cleave-datum",id:"cleaveDate",
 						edit:{cleave:{date: true,delimiter: '-',datePattern: ['Y','m','d']},placeholder:"ÅÅÅÅ-MM-DD"}},
 					{type:"field",title:"Anteckningar",id:"notes",maxHeight:150,edit:{dataType:"textarea"}},
+				]},
+				{type:"collection",title:"Bunch ",entries:[
+					{type:"field",title:"First thing",id:"first"},
+					{type:"field",title:"Second thing",id:"second"},
+					{type:"field",title:"Third thing",id:"third"},
+					{type:"field",title:"Fourth thing",id:"fourth"},
+					{type:"field",title:"Fifth thing",id:"fifth"},
+					{type:"field",title:"Sixth thing",id:"sixth"},
+					{type:"field",title:"Seventh thing",id:"seventh"},
 				]}
 			]};
 			
@@ -69,7 +78,9 @@
 						,repeatedField:[{foo:"row one in repeated"},{foo:"row two in repeated"}]
 						,repeatedGroup:[{foo1:"blahblah",foo2:"lalala"},{foo1:"bloj",foo2:"kapapa"}]
 						,custodianshipChanges:[
-										{date:"2021-01-01",type:"trustee"},{date:"2022-01-01",type:"administrator"}]});
+										{date:"2021-01-01",type:"trustee"},{date:"2022-01-01",type:"administrator"}],
+						first:"One",second:"Second",third:"Third",fourth:"Fourth",fifth:"Five",sixth:"Sixth"
+						,seventh:"Seven"});
 				}
 				myTablance.addData(data);
 			}
