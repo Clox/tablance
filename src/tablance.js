@@ -340,6 +340,8 @@ class Tablance {
 
 	#moveInsideCollection(numCols,numRows) {
 		const currentCellX=this.#activeExpCell.el.offsetLeft;
+		const currentCellTop=this.#activeExpCell.el.offsetTop;
+		const currentCellBottom=this.#activeExpCell.el.offsetTop+this.#activeExpCell.el.offsetHeight;
 		if (numCols) {//moving left or right
 			const nextCell=this.#activeExpCell.parent.children[this.#activeExpCell.index+numCols];
 			if ((nextCell?.el.offsetLeft>currentCellX)==(numCols>0))
@@ -348,7 +350,9 @@ class Tablance {
 			let closestCell,closestCellX;
 			const siblings=this.#activeExpCell.parent.children;
 			for (let i=this.#activeExpCell.index,otherCell;otherCell=siblings[i+=numRows];) {
-				if (otherCell.el.offsetTop==this.#activeExpCell.el.offsetTop)
+				const onSameLine=Math.max(otherCell.el.offsetTop,currentCellTop) <= 
+										Math.min(otherCell.el.offsetTop+otherCell.el.offsetHeight,currentCellBottom);
+				if (onSameLine)
 					continue;
 				else if (closestCell&&(otherCell.el.offsetLeft<closestCellX)===(numRows>0))//scrolled past whole row
 					break;
