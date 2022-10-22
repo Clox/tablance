@@ -302,9 +302,11 @@ class Tablance {
 
 	#moveCellCursor(numCols,numRows) {
 		//const newColIndex=Math.min(this.#cols.length-1,Math.max(0,this.#cellCursorColIndex+numCols));
-		let newTd;
 		this.#scrollToCursor();
-		if (numRows) {//moving up or down
+
+		if (this.#activeExpCell?.parent?.struct.type==="collection")
+			this.#moveInsideCollection(numCols,numRows);
+		else if (numRows) {//moving up or down
 
 			//need to call this manually before getting the td-element or else it might not even exist yet. 
 			//#onScrollStaticRowHeight() will actually get called once more through the scroll-event since we called
@@ -312,7 +314,7 @@ class Tablance {
 			this.#scrollMethod();
 			let newColIndex=this.#mainColIndex;
 			if (this.#activeExpCell) {//moving from inside expansion.might move to another cell inside,or outside
-				this.#selectAdjacentExpansionCell(this.#activeExpCell,numRows==1?true:false);
+					this.#selectAdjacentExpansionCell(this.#activeExpCell,numRows==1?true:false);
 			} else if (numRows===1&&this.#expandedRowHeights[this.#mainRowIndex]){//moving down into expansion
 				this.#selectFirstSelectableExpansionCell(this.#openExpansions[this.#mainRowIndex],true);
 			} else if (numRows===-1&&this.#expandedRowHeights[this.#mainRowIndex-1]){//moving up into expansion
@@ -325,6 +327,33 @@ class Tablance {
 			this.#scrollToCursor();//this time it is to actually scroll to the new td
 		} else if (!this.#activeExpCell){
 			this.#selectMainTableCell(this.#selectedCell[(numCols>0?"next":"previous")+"Sibling"]);
+		}
+	}
+
+	#moveInsideCollection(numCols,numRows) {
+		const currentCellX=this.#activeExpCell.el.offsetLeft;
+		if (numCols) {//moving left or right
+			const nextCell=this.#activeExpCell.parent.children[this.#activeExpCell.index+numCols];
+			if ((nextCell?.el.offsetLeft>currentCellX)==(numCols>0))
+				this.#selectExpansionCell(nextCell);
+		} else {//moving up or down
+			let closestCell,closestCellX;
+			const siblings=this.#activeExpCell.parent.children;
+			for (let i=this.#activeExpCell.index,otherCell;otherCell=siblings[i+=numRows];) {
+				if (otherCell.el.offsetTop==this.#activeExpCell.el.offsetTop)
+					continue;
+				else if (closestCell&&(otherCell.el.offsetLeft<closestCellX)===(numRows>0))//scrolled past whole row
+					break;
+				if (!closestCell||Math.abs(otherCell.el.offsetLeft-currentCellX)<Math.abs(closestCellX-currentCellX)) {
+					closestCell=otherCell;
+					closestCellX=closestCell.el.offsetLeft;
+				} else//if further away than current closest one.
+					break;
+			}
+			if (closestCell)
+				this.#selectExpansionCell(closestCell);
+			else
+				this.#selectAdjacentExpansionCell(this.#activeExpCell.parent,numRows==1?true:false);
 		}
 	}
 
@@ -370,7 +399,18 @@ class Tablance {
 		if (!onlyGetChild&&cellObj.el)
 			return cellObj;
 		const children=cellObj.children;
-		for (let childI=isGoingDown?0:children.length-1; childI>=0&&childI<children.length; childI+=isGoingDown||-1) {
+		let startI=isGoingDown?0:children.length-1;
+		if (cellObj.struct.type==="collection"&&!isGoingDown) {
+			let chosenCell;
+			for (let i=startI,otherCell;otherCell=children[i--];) {
+				if (!chosenCell||otherCell.el.offsetLeft<chosenCell.el.offsetLeft)
+					chosenCell=otherCell;
+				else
+					break;
+			}
+			startI=chosenCell.index;
+		}
+		for (let childI=startI;childI>=0&&childI<children.length; childI+=isGoingDown||-1){
 			let resultObj=this.#getFirstSelectableExpansionCell(children[childI],isGoingDown);
 			if (resultObj)
 				return resultObj;
