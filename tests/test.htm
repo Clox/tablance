@@ -26,7 +26,7 @@
 				{type:"repeated",id:"repeatedField",entry:
 					{type:"field",title:"repeated row",id:"foo"}
 				},
-				{type:"field",edit:{dataType:"button",btnText:"Cool button"}},
+				{type:"field",edit:{dataType:"button",btnText:"Cool button",clickHandler:btnClickHandler}},
 				{type:"group",title:"förordnande",entries:[
 					{type:"repeated",id:"custodianshipChanges",create:true,creationText:"Lägg till",entry:
 						{type:"group",closedRender:data=>`${data.type} sedan ${data.date}`,entries:[
@@ -87,6 +87,13 @@
 				myTablance.addData(data);
 			}
 		});
+		function btnClickHandler(e,dataObject,mainIndex,struct,cellObject) {
+			console.log(e);
+			console.log(dataObject);
+			console.log(mainIndex);
+			console.log(struct);
+			console.log(cellObject);
+		}
 	</script>
 </head>
 

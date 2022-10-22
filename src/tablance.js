@@ -158,8 +158,8 @@ class Tablance {
 	 * 				}
   	 * 				btnText: String,//If datatype is "button" then this will be the text on it
 	 * 				clickHandler:Function //Used for datatype "button". A callback-function that will get called when
-	 * 						//the button is pressed. It will get passed arguments 1:dataObject,2:mainDataIndex, 3:struct
-	 * 						//,4:cellObject if inside expansion
+	 * 						//the button is pressed. It will get passed arguments 1:event, 2:dataObject,3:mainDataIndex,
+	 * 						//4:struct,5:cellObject(if inside expansion)
   	 * 			}
 	 * 
 	 * 				noResultsText String For dataType "select", a string which is displayed when a user filters the 
@@ -456,6 +456,8 @@ class Tablance {
 				break;  case " ":
 					if (this.#selectedCell.classList.contains("expandcol"))
 						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
+					else if (this.#activeCellStruct.edit?.dataType==="button")
+						this.#enterCell(e);
 				break; case "+":
 					this.#expandRow(this.#selectedCell.parentElement,this.#mainRowIndex);
 				break; case "-":
@@ -653,10 +655,16 @@ class Tablance {
 		return !!repeatData?.length||struct.create;
 	}
 
-	#generateExpansionButton(struct,dataIndex,cellObj,parentEl,path,rowData) {
+	#generateButton(struct,mainIndex,cellObj,parentEl,path,rowData) {
 		const btn=parentEl.appendChild(document.createElement("button"));
+		btn.tabIndex="-1";//so it can't be tabbed to
 		btn.innerText=struct.edit.btnText;
 		cellObj.el=btn;
+		btn.addEventListener("click",e=>struct.edit.clickHandler(e,rowData,mainIndex,struct,cellObj));
+
+		//prevent gaining focus upon clicking it whhich would cause problems. It should be "focused" by having the
+		//cellcursor on its cell which triggers it with enter-key anyway
+		btn.addEventListener("mousedown",e=>e.preventDefault());
 		return true;
 	}
 
@@ -790,7 +798,7 @@ class Tablance {
 		cellObject.dataObject=rowData;
 		cellObject.struct=fieldStructure;
 		if (fieldStructure.edit?.dataType==="button")
-			this.#generateExpansionButton(fieldStructure,mainIndex,cellObject,parentEl,path,rowData);
+			this.#generateButton(fieldStructure,mainIndex,cellObject,parentEl,path,rowData);
 		else {
 			cellObject.el=parentEl;
 			this.#updateExpansionCell(cellObject,rowData);
@@ -964,6 +972,8 @@ class Tablance {
 		if (this.#inEditMode)
 			return;
 		if (this.#activeCellStruct.edit) {
+			if (this.#activeCellStruct.edit.dataType==="button")
+				return this.#activeExpCell.el.click();
 			this.#selectedCellVal=this.#cellCursorDataObj[this.#activeCellStruct.id];
 			this.#inEditMode=true;
 			this.#cellCursor.classList.add("edit-mode");
@@ -1233,8 +1243,9 @@ class Tablance {
 			this.#mainColIndex=cell.cellIndex;
 		this.#activeCellStruct=this.#colStructs[this.#mainColIndex];
 
-		//make cellcursor click-through if it's on an expand-row-button-td
-		this.#cellCursor.style.pointerEvents=this.#activeCellStruct.type==="expand"?"none":"auto";
+		//make cellcursor click-through if it's on an expand-row-button-td or button
+		const noPointerEvent=this.#activeCellStruct.type==="expand"||this.#activeCellStruct.edit.dataType==="button";
+		this.#cellCursor.style.pointerEvents=noPointerEvent?"none":"auto";
 
 		this.#cellCursorDataObj=this.#data[this.#mainRowIndex];
 		this.#activeCellStruct=this.#colStructs[this.#mainColIndex];
@@ -1267,6 +1278,9 @@ class Tablance {
 		this.#adjustCursorPosSize(this.#selectedCell);
 		this.#cellCursorDataObj=cellObject.dataObject;
 		this.#activeCellStruct=cellObject.struct;
+
+		//make cellcursor click-through if it's on a button
+		this.#cellCursor.style.pointerEvents=this.#activeCellStruct.edit?.dataType==="button"?"none":"auto";
 	}
 
 	#adjustCursorPosSize(el,onlyPos=false) {
