@@ -434,9 +434,11 @@ class Tablance {
 			startI=chosenCell.index;
 		}
 		for (let childI=startI;childI>=0&&childI<children.length; childI+=isGoingDown||-1){
-			let resultObj=this.#getFirstSelectableExpansionCell(children[childI],isGoingDown);
-			if (resultObj)
-				return resultObj;
+			if ((children[childI].el??children[childI].selEl)?.offsetParent) {
+				const resultObj=this.#getFirstSelectableExpansionCell(children[childI],isGoingDown);
+				if (resultObj)
+					return resultObj;
+			}
 		}
 	}
 	
