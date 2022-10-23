@@ -133,6 +133,20 @@
 					display: inline-block;
 					padding: 3px;
 				}
+				&.delete-controls {
+					&:not(.delete-confirming)>:not(.delete) {
+						display: none;
+					}
+					&.delete-confirming>.delete {
+						display: none;
+					}
+					.no {
+						margin-right: -2em;
+						h4{
+							color: red;
+						}
+					}
+				}
 			}
 			table.expansion-group>tbody>tr>td {
 				padding: 0;
@@ -169,6 +183,7 @@
 				}
 			}
 			h4 {
+				margin-top: 5px;
 				color: #787878;
 				line-height: 2px;
 				font-size: 13px;

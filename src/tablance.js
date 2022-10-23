@@ -134,6 +134,7 @@ class Tablance {
 	 *									//in a horizontal line and will also wrap to multiple lines if needed
 	 *				title:"Foobar",//displayed title if placed in a container which displays the title
 	 * 				entries:[]//each element should be another entry
+	 * 				class:String Css-classes to be added to the collection-div
 	 *	 		}
 	 *			{
   	 * 				type:"field",//this is what will display data and which also can be editable
@@ -141,6 +142,7 @@ class Tablance {
   	 * 				id:"foobar",//the key of the property in the data that the row should display
 	 * 				maxHeight int For textareas, sets the max-height in pixels that it should be able to be resized to
 	 * 				edit: Object {//field is editable if this object is supplied and its disabled-prop is falsey
+	 * 				class:String Css-classes to be added to the field
 	 * 				dataType String This is mandatory and specifies the type of input. Possible values are:
 	 * 						"text"(single line text),
 	 * 						"textarea"(multi-line text),
@@ -188,6 +190,10 @@ class Tablance {
 	 * 								//level deeper so the path from the base would be idOfRepeatedRows->arrayIndex->*
 	 * 				create: Bool //if true then a row is added which can be interacted with to insert more entries
 	 * 				creationText: //used if "create" is true. the text of the creation-cell. default is "Create new"
+	 * 				deleteText: //used if "create" is true. the text of the deletion-button. default is "Delete"
+	 * 				deleteAreYouSureText: //used if "create" is true. text above yes/no-btns. default is "Are you sure?"
+	 * 				areYouSureYesText: //used if "create" is true. text of confirm-button for delete. Default is "Yes"
+	 * 				areYouSureNoText: //used if "create" is true. text of cancel-button for delete. Default is "No"
   	 * 			}
   	 * 			{
   	 * 				type:"group",//used when a set of data should be grouped, like for instance having an address and
@@ -343,16 +349,21 @@ class Tablance {
 		const currentCellTop=this.#activeExpCell.el.offsetTop;
 		const currentCellBottom=this.#activeExpCell.el.offsetTop+this.#activeExpCell.el.offsetHeight;
 		if (numCols) {//moving left or right
-			const nextCell=this.#activeExpCell.parent.children[this.#activeExpCell.index+numCols];
-			if ((nextCell?.el.offsetLeft>currentCellX)==(numCols>0))
-				this.#selectExpansionCell(nextCell);
+			for (let i=this.#activeExpCell.index,nextCell;nextCell=this.#activeExpCell.parent.children[i+=numCols];) {
+				if (nextCell.el.offsetParent != null)
+					if ((nextCell?.el.offsetLeft>currentCellX)==(numCols>0)) {
+						this.#selectExpansionCell(nextCell);
+						break;
+					}
+			}
 		} else {//moving up or down
 			let closestCell,closestCellX;
 			const siblings=this.#activeExpCell.parent.children;
 			for (let i=this.#activeExpCell.index,otherCell;otherCell=siblings[i+=numRows];) {
-				const onSameLine=Math.max(otherCell.el.offsetTop,currentCellTop) <= 
-										Math.min(otherCell.el.offsetTop+otherCell.el.offsetHeight,currentCellBottom);
-				if (onSameLine)
+				const skipCell=Math.max(otherCell.el.offsetTop,currentCellTop) <= 					 //cells are on the
+								Math.min(otherCell.el.offsetTop+otherCell.el.offsetHeight,currentCellBottom)//same line
+								||otherCell.el.offsetParent == null;//cell is hidden
+				if (skipCell)
 					continue;
 				else if (closestCell&&(otherCell.el.offsetLeft<closestCellX)===(numRows>0))//scrolled past whole row
 					break;
@@ -634,13 +645,25 @@ class Tablance {
 		cellObj.struct=struct;
 		cellObj.children=[];
 		const repeatData=cellObj.rowData=rowData[struct.id];
-		if (repeatData?.length)
+		if (repeatData?.length) {
+			if (struct.create&&struct.entry.type==="group") {//if repeater is group then add delete-controls
+				const deleteControls={type:"collection",class:"delete-controls",entries:[
+					{type:"field",edit:{dataType:"button",btnText:struct.deleteText??"Delete"
+						,clickHandler:beginDelete.bind(this)},class:"delete"},
+					{type:"field",edit:{dataType:"button",btnText:struct.areYouSureNoText??"No",
+						clickHandler:cancelDelete.bind(this)},class:"no"
+						,title:struct.deleteAreYouSureText??"Are you sure?"},
+					{type:"field",edit:{dataType:"button",btnText:struct.areYouSureYesText??"Yes",
+						clickHandler:(e,data,mainIndex,strct,cel)=>this.#deleteCell(cel.parent.parent)},class:"yes"}]};
+				struct.entry.entries=[...struct.entry.entries,deleteControls];
+			}
 			for (let childI=0; childI<rowData[struct.id].length; childI++) {
 				let childObj=cellObj.children[childI]={parent:cellObj,index:childI};
 				path.push(childI);
 				this.#generateExpansionContent(struct.entry,dataIndex,childObj,parentEl,path,repeatData[childI]);
 				path.pop();
 			}
+		}
 		if (struct.create) {
 			const creationTable=parentEl.appendChild(document.createElement("table"));
 			const creationCell=creationTable.insertRow().insertCell();
@@ -649,18 +672,28 @@ class Tablance {
 			cellObj.children.push(
 								{parent:cellObj,el:creationTable,index:repeatData.length,struct:{type:"repeatCreate"}});
 			creationTable.dataset.path=path.join("-")+"-"+repeatData.length;
-			
 		}
-			
+		
 		return !!repeatData?.length||struct.create;
+		function beginDelete(e,data,mainIndex,struct,cell) {
+			if (!cell.parent.parent.creating) {
+				cell.parent.containerEl.classList.add("delete-confirming");
+				this.#moveInsideCollection(1);//move away from the delete-button which now dissapeared, to the next btn
+			} else
+				this.#deleteCell(cell.parent.parent);
+		}
+		function cancelDelete(e,data,mainIndex,struct,cell) {
+				cell.parent.containerEl.classList.remove("delete-confirming");
+				this.#selectExpansionCell(cell.parent.children[0]);
+		}
 	}
 
 	#generateButton(struct,mainIndex,cellObj,parentEl,path,rowData) {
 		const btn=parentEl.appendChild(document.createElement("button"));
 		btn.tabIndex="-1";//so it can't be tabbed to
 		btn.innerText=struct.edit.btnText;
-		cellObj.el=btn;
-		btn.addEventListener("click",e=>struct.edit.clickHandler(e,rowData,mainIndex,struct,cellObj));
+		cellObj.el=cellObj.selEl=btn;
+		btn.addEventListener("click",e=>struct.edit.clickHandler?.(e,rowData,mainIndex,struct,cellObj));
 
 		//prevent gaining focus upon clicking it whhich would cause problems. It should be "focused" by having the
 		//cellcursor on its cell which triggers it with enter-key anyway
@@ -671,6 +704,7 @@ class Tablance {
 	#generateExpansionGroup(groupStructure,dataIndex,cellObj,parentEl,path,rowData) {
 		parentEl.dataset.path=path.join("-");
 		cellObj.children=[];
+		cellObj.rowData=rowData;
 		const groupTable=document.createElement("table");
 		parentEl.classList.add("group-cell");
 		cellObj.el=groupTable;//so that the whole group-table can be selected
@@ -718,9 +752,10 @@ class Tablance {
 	}
 
 	#generateExpansionCollection(collectionStructure,mainIndex,collObj,parentEl,path,rowData) {
-		parentEl.classList.add("collection");
 		collObj.children=[];
 		collObj.struct=collectionStructure;
+		const container=collObj.containerEl=parentEl.appendChild(document.createElement("div"));
+		container.classList.add("collection",...collectionStructure.class?.split(" ")??[]);
 		for (let entryI=-1,struct; struct=collectionStructure.entries[++entryI];) {
 			path.push(entryI);
 			const celObj=collObj.children[entryI]={parent:collObj,index:entryI,struct:struct};
@@ -728,10 +763,10 @@ class Tablance {
 				celObj.children=[];
 				for (let repeatI=-1,repeatData;repeatData=rowData[struct.id][++repeatI];) {
 					let repeatdObj=celObj.children[repeatI]={parent:celObj,index:repeatI,struct:struct.entry};
-					this.#generateCollectionItem(struct,mainIndex,repeatdObj,parentEl,path,repeatData);
+					this.#generateCollectionItem(struct,mainIndex,repeatdObj,container,path,repeatData);
 				}
 			} else {
-				this.#generateCollectionItem(struct,mainIndex,celObj,parentEl,path,rowData);
+				this.#generateCollectionItem(struct,mainIndex,celObj,container,path,rowData);
 			}
 			path.pop();
 		}
@@ -748,6 +783,8 @@ class Tablance {
 		contentDiv.className="value";
 		if (this.#generateExpansionContent(struct,mainIndex,cellObj,contentDiv,path,data))
 			parentEl.appendChild(containerSpan);
+		if (struct.class)
+			containerSpan.className+=" "+struct.class;
 	}
 
 	#generateExpansionList(listStructure,mainIndex,listCelObj,parentEl,path,rowData) {
@@ -763,6 +800,7 @@ class Tablance {
 		for (let entryI=-1,struct; struct=listStructure.entries[++entryI];) {
 			if (struct.type==="repeated"&&rowData[struct.id]?.length) {
 				let repeatCelObj=listCelObj.children[entryI]={parent:listCelObj,index:entryI,children:[],struct:struct};
+				repeatCelObj.rowData=rowData[struct.id];
 				for (let repeatI=-1,itemData; itemData=rowData[struct.id][++repeatI];) {
 					path.push(entryI);
 					this.#generateListItem(listTbody,struct.entry,repeatI,repeatI,repeatCelObj,path,itemData);
@@ -793,8 +831,7 @@ class Tablance {
 		path.pop();
 	}
 
-	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {
-		
+	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {	
 		cellObject.dataObject=rowData;
 		cellObject.struct=fieldStructure;
 		if (fieldStructure.edit?.dataType==="button")
@@ -1011,7 +1048,7 @@ class Tablance {
 	#repeatInsertNew(repeatCreater) {
 		const reptPar=repeatCreater.parent;
 		const indexOfNew=reptPar.children.length-1;
-		const childObj={parent:reptPar,index:indexOfNew};
+		const childObj={parent:reptPar,index:indexOfNew,creating:true};//creating means it hasn't been commited yet
 		reptPar.children.splice(indexOfNew,0,childObj);
 		const path=repeatCreater.el.dataset.path.split("-") ;
 		const data=reptPar.rowData[indexOfNew]={};
@@ -1027,9 +1064,20 @@ class Tablance {
 		repeatCreater.index++;
 		repeatCreater.el.parentElement.appendChild(repeatCreater.el);
 		this.#selectExpansionCell(cell);
-		
-		
-		//console.log(repeatCreater);
+	}
+
+	#deleteCell(cellObj) {
+		let newCell;
+		for (let i=cellObj.index,otherCell; otherCell=cellObj.parent.children[++i];)
+			otherCell.index--;
+		if (cellObj.parent.children.length>=cellObj.index+1)
+			newCell=cellObj.parent.children[cellObj.index+1];
+		else if (cellObj.parent.children.length>1)
+			newCell=cellObj.parent.children[cellObj.index-1];
+		cellObj.parent.children.splice(cellObj.index,1);
+		cellObj.parent.rowData.splice(cellObj.index,1);
+		cellObj.el.remove();
+		this.#selectExpansionCell(newCell??cellObj.parent.parent);
 	}
 
 	#openTextEdit() {
