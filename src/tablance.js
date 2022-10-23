@@ -1067,17 +1067,36 @@ class Tablance {
 	}
 
 	#deleteCell(cellObj) {
-		let newCell;
+		let newSelectedCell;
 		for (let i=cellObj.index,otherCell; otherCell=cellObj.parent.children[++i];)
 			otherCell.index--;
+		
 		if (cellObj.parent.children.length>=cellObj.index+1)
-			newCell=cellObj.parent.children[cellObj.index+1];
+			newSelectedCell=cellObj.parent.children[cellObj.index+1];
 		else if (cellObj.parent.children.length>1)
-			newCell=cellObj.parent.children[cellObj.index-1];
+			newSelectedCell=cellObj.parent.children[cellObj.index-1];
 		cellObj.parent.children.splice(cellObj.index,1);
 		cellObj.parent.rowData.splice(cellObj.index,1);
 		cellObj.el.remove();
-		this.#selectExpansionCell(newCell??cellObj.parent.parent);
+		this.#selectExpansionCell(newSelectedCell??cellObj.parent.parent);
+
+
+		//correct the dataset.path of clickable elements so they can still be clicked
+		const path=[];//get the current path
+		let rootEl;
+		for (let pathCell=cellObj;pathCell;pathCell=pathCell.parent) {
+			if (pathCell.index!=null)
+				path.unshift(pathCell.index);
+			rootEl=pathCell.el??pathCell.selEl??rootEl;
+		}
+		for (const pathEl of rootEl.closest(".expansion").querySelectorAll('[data-path]')) {
+			const otherPath=pathEl.dataset.path.split("-");
+			for (var i=0; i<path.length-1&&path[i]==otherPath[i]; i++);
+			if (i==path.length-1&&otherPath[i]>path[i]) {
+				otherPath[i]--;
+				pathEl.dataset.path=otherPath.join("-");
+			}
+		}
 	}
 
 	#openTextEdit() {
