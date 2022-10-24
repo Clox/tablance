@@ -675,6 +675,8 @@ class Tablance {
 					{type:"field",edit:{dataType:"button"
 						,btnText:struct.areYouSureYesText??this.#opts.deleteAreYouSureYesText??"Yes",
 						clickHandler:(e,data,mainIndex,strct,cel)=>this.#deleteCell(cel.parent.parent)},class:"yes"}]};
+				struct={...struct};//make shallow copy so original is not affected
+				struct.entry={...struct.entry};
 				struct.entry.entries=[...struct.entry.entries,deleteControls];
 			}
 			for (let childI=0; childI<rowData[struct.id].length; childI++) {
