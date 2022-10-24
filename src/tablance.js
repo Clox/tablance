@@ -128,6 +128,8 @@ class Tablance {
 	 * 				entries:[]//each element should be another entry
 	 * 				titlesColWidth:String Width of the column with the titles. Don't forget adding the unit.
 	 * 					Default is null which enables setting the width via css.
+	 * 				onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
+	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
 	 *			}
 	 *			{	
 	 *				type: "collection" //basically like a list but each item is inlined, meaning they will be lined up
@@ -135,6 +137,8 @@ class Tablance {
 	 *				title:"Foobar",//displayed title if placed in a container which displays the title
 	 * 				entries:[]//each element should be another entry
 	 * 				class:String Css-classes to be added to the collection-div
+	 * 				onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
+	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
 	 *	 		}
 	 *			{
   	 * 				type:"field",//this is what will display data and which also can be editable
@@ -143,6 +147,8 @@ class Tablance {
 	 * 				maxHeight int For textareas, sets the max-height in pixels that it should be able to be resized to
 	 * 				edit: Object {//field is editable if this object is supplied and its disabled-prop is falsey
 	 * 				class:String Css-classes to be added to the field
+	 * 				onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
+	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
 	 * 				dataType String This is mandatory and specifies the type of input. Possible values are:
 	 * 						"text"(single line text),
 	 * 						"textarea"(multi-line text),
@@ -191,9 +197,13 @@ class Tablance {
 	 * 				create: Bool //if true then a row is added which can be interacted with to insert more entries
 	 * 				creationText: //used if "create" is true. the text of the creation-cell. default is "Create new"
 	 * 				deleteText: //used if "create" is true. the text of the deletion-button. default is "Delete"
+	 * 							//can also be set via param opts->defaultRepeatDeleteText
 	 * 				deleteAreYouSureText: //used if "create" is true. text above yes/no-btns. default is "Are you sure?"
+	 * 							//can also be set via param opts->defaultrepeatDeleteAreYouSureText
 	 * 				areYouSureYesText: //used if "create" is true. text of confirm-button for delete. Default is "Yes"
+	 * 							//can also be set via param opts->defaultrepeatDeleteAreYouSureYesText
 	 * 				areYouSureNoText: //used if "create" is true. text of cancel-button for delete. Default is "No"
+	 * 							//can also be set via param opts->defaultrepeatDeleteAreYouSureNoText
   	 * 			}
   	 * 			{
   	 * 				type:"group",//used when a set of data should be grouped, like for instance having an address and
@@ -219,7 +229,11 @@ class Tablance {
 	 * 							"defaultMinOptsFilter" Integer The minimum number of options required for the
 	 * 								filter-input of edit-dataType "select" to appear
 	 * 							"defaultEmptyOptString" Specifies the default text of the empty options for
-	 * 							dataType "select" if allowSelectEmpty is true
+	 * 								dataType "select" if allowSelectEmpty is true
+	 * 							"defaultRepeatDeleteText" String default text used in the deletion of repeat-items
+	 * 							"deleteAreYouSureText" String default text used in the deletion of repeat-items
+	 * 							"areYouSureYesText"  String default text used in the deletion of repeat-items
+	 * 							"areYouSureNoText"	 String default text used in the deletion of repeat-items
 	 * */
 	constructor(container,columns,staticRowHeight=false,spreadsheet=false,expansion=null,opts=null) {
 		this.#container=container;
@@ -649,13 +663,17 @@ class Tablance {
 		const repeatData=cellObj.rowData=rowData[struct.id];
 		if (repeatData?.length) {
 			if (struct.create&&struct.entry.type==="group") {//if repeater is group then add delete-controls
-				const deleteControls={type:"collection",class:"delete-controls",entries:[
-					{type:"field",edit:{dataType:"button",btnText:struct.deleteText??"Delete"
+				const deleteControls={type:"collection",class:"delete-controls"
+					,onBlur:cel=>cel.selEl.querySelector(".collection").classList.remove("delete-confirming")
+					,entries:[{type:"field",edit:{dataType:"button",
+						btnText:struct.deleteText??this.#opts.defaultRepeatDeleteText??"Delete"
 						,clickHandler:beginDelete.bind(this)},class:"delete"},
-					{type:"field",edit:{dataType:"button",btnText:struct.areYouSureNoText??"No",
+					{type:"field",edit:{dataType:"button"
+						,btnText:struct.areYouSureNoText??this.#opts.deleteAreYouSureNoText??"No",
 						clickHandler:cancelDelete.bind(this)},class:"no"
-						,title:struct.deleteAreYouSureText??"Are you sure?"},
-					{type:"field",edit:{dataType:"button",btnText:struct.areYouSureYesText??"Yes",
+						,title:struct.deleteAreYouSureText??this.#opts.deleteAreYouSureText??"Are you sure?"},
+					{type:"field",edit:{dataType:"button"
+						,btnText:struct.areYouSureYesText??this.#opts.deleteAreYouSureYesText??"Yes",
 						clickHandler:(e,data,mainIndex,strct,cel)=>this.#deleteCell(cel.parent.parent)},class:"yes"}]};
 				struct.entry.entries=[...struct.entry.entries,deleteControls];
 			}
@@ -754,8 +772,7 @@ class Tablance {
 	}
 
 	#generateExpansionCollection(collectionStructure,mainIndex,collObj,parentEl,path,rowData) {
-		collObj.children=[];
-		collObj.struct=collectionStructure;
+		Object.assign(collObj,{children:[],struct:collectionStructure,rowData:rowData});
 		const container=collObj.containerEl=parentEl.appendChild(document.createElement("div"));
 		container.classList.add("collection",...collectionStructure.class?.split(" ")??[]);
 		for (let entryI=-1,struct; struct=collectionStructure.entries[++entryI];) {
@@ -1287,7 +1304,6 @@ class Tablance {
 			this.#adjustCursorPosSize(this.#selectedCell);
 		}
 		this.highlightOnFocus=false;
-		
 	}
 
 	#selectMainTableCell(cell) {
@@ -1296,11 +1312,13 @@ class Tablance {
 		this.#exitEditMode(true);
 
 		if (this.#activeExpCell) {
-			for (let oldCellParent=this.#activeExpCell; oldCellParent=oldCellParent.parent;)
+			for (let oldCellParent=this.#activeExpCell; oldCellParent=oldCellParent.parent;) {
 				if (oldCellParent.struct.type==="group") {
 					this.#closeGroup(oldCellParent);//close any open group above old cell
 					this.#ignoreClicksUntil=Date.now()+500;
 				}
+				oldCellParent.struct.onBlur?.(oldCellParent,this.#mainRowIndex);
+			}
 			this.#activeExpCell=null;//should be null when not inside expansion
 		}
 		
@@ -1330,16 +1348,19 @@ class Tablance {
 		for (var root=cellObject; root.parent; root=root.parent);
 		this.#mainRowIndex=root.rowIndex;;
 		if (this.#activeExpCell)//changing from an old expansionCell
-			for (let oldParent=this.#activeExpCell; oldParent=oldParent?.parent;)//traverse parents of old cell
-				if (oldParent.struct.type==="group") {//found a parent-group, which means that group is open
+			for (let oldParnt=this.#activeExpCell; oldParnt=oldParnt?.parent;)//traverse parents of old cell
+				if(oldParnt.struct.type==="group"||oldParnt.struct.onBlur){//found parent-group,means its open(or blur)
 					for (let newParent=cellObject; newParent=newParent.parent;)//traverse parents of new cell
-						if (newParent===oldParent) {//if this new parent-group is also part of old parents
-							oldParent=null;//break out of outer loop
+						if (newParent===oldParnt) {//if this new parent-group is also part of old parents
+							oldParnt=null;//break out of outer loop
 							break;
 						}
-					if (oldParent) {
-						this.#closeGroup(oldParent)//if old parent-group is not part of new then close it
-						this.#ignoreClicksUntil=Date.now()+500;
+					if (oldParnt) {
+						if(oldParnt.struct.type==="group") {
+							this.#closeGroup(oldParnt)//if old parent-group is not part of new then close it
+							this.#ignoreClicksUntil=Date.now()+500;
+						} else
+							oldParnt.struct.onBlur?.(oldParnt,this.#mainRowIndex);
 					}
 				}
 		this.#activeExpCell=cellObject;
