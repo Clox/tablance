@@ -1333,7 +1333,7 @@ class Tablance {
 		this.#activeCellStruct=this.#colStructs[this.#mainColIndex];
 
 		//make cellcursor click-through if it's on an expand-row-button-td or button
-		const noPointerEvent=this.#activeCellStruct.type==="expand"||this.#activeCellStruct.edit.dataType==="button";
+		const noPointerEvent=this.#activeCellStruct.type==="expand"||this.#activeCellStruct.edit?.dataType==="button";
 		this.#cellCursor.style.pointerEvents=noPointerEvent?"none":"auto";
 
 		this.#cellCursorDataObj=this.#data[this.#mainRowIndex];
