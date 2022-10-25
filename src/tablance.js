@@ -282,7 +282,6 @@ class Tablance {
 
 	#onSearchInput(e) {
 		this.#filterData(this.#searchInput.value);
-
 	}
 
 	#setupSpreadsheet() {
@@ -1528,27 +1527,25 @@ class Tablance {
 	}
 
 	#filterData(filterString) {
+		this.#openExpansions={};
+		this.#expandedRowHeights={};
+		for (const tr of this.#mainTbody.querySelectorAll("tr.expansion"))
+		 	tr.remove();
 		this.#filter=filterString;
-
 		const colsToFilterBy=[];
-		for (let col of this.#colStructs) {
+		for (let col of this.#colStructs)
 			if (col.type!=="expand")
 				colsToFilterBy.push(col);
-		}
-
-		if (!filterString||filterString=="")
-			this.#data=this.#allData;
-		else {
+		if (filterString) {
 			this.#data=[];
-			for (let dataRow of this.#allData) {
-				for (let col of colsToFilterBy) {
+			for (let dataRow of this.#allData)
+				for (let col of colsToFilterBy)
 					if (dataRow[col.id].includes(filterString)) {
 						this.#data.push(dataRow);
 						break;
 					}
-				}
-			}
-		}
+		} else
+			this.#data=this.#allData;
 		this.#scrollRowIndex=0;
 		this.#refreshRows();
 		this.#refreshTableSizerNoExpansions();
@@ -1710,8 +1707,7 @@ class Tablance {
 		}
 	}
 
-	#refreshTableSizerNoExpansions() {
-		
+	#refreshTableSizerNoExpansions() {	
 		this.#tableSizer.style.top=this.#scrollRowIndex*this.#rowHeight+"px";
 		this.#tableSizer.style.height=(this.#data.length-this.#scrollRowIndex)*this.#rowHeight+"px";
 	}
