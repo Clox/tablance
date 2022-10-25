@@ -334,11 +334,6 @@ class Tablance {
 		if (this.#activeExpCell?.parent?.struct.type==="collection")
 			this.#moveInsideCollection(numCols,numRows);
 		else if (numRows) {//moving up or down
-
-			//need to call this manually before getting the td-element or else it might not even exist yet. 
-			//#onScrollStaticRowHeight() will actually get called once more through the scroll-event since we called
-			//#scrollToRow() above, but it doesn't get fired immediately. Running it twice is not a big deal.
-			this.#scrollMethod();
 			let newColIndex=this.#mainColIndex;
 			if (this.#activeExpCell) {//moving from inside expansion.might move to another cell inside,or outside
 					this.#selectAdjacentExpansionCell(this.#activeExpCell,numRows==1?true:false);
@@ -485,8 +480,10 @@ class Tablance {
 					else if (this.#activeCellStruct.edit?.dataType==="button")
 						this.#enterCell(e);
 				break; case "+":
+					this.#scrollToCursor();
 					this.#expandRow(this.#selectedCell.parentElement,this.#mainRowIndex);
 				break; case "-":
+					this.#scrollToCursor();
 					this.#contractRow(this.#mainRowIndex);
 				break; case "Enter":
 					this.#scrollToCursor();
@@ -882,6 +879,10 @@ class Tablance {
 				this.#scrollBody.scrollTop=cursorY-scrollHeight/2+cursorHeight/2
 								+(distanceFromCenter<0?1:-1)*scrollHeight*distanceRatioDeadzone/2;
 		}
+		//need to call this manually so that elements that are expected to exist after scroll are guaranteed to do so.
+		//changing this.#scrollBody.scrollTop actually calls this method anyway but not until all other code as hun.
+		//This will cause it to run it twice but it's not a big deal.
+		this.#scrollMethod();
 	}
 
 	#spreadsheetMouseDown(e) {
@@ -1023,6 +1024,12 @@ class Tablance {
 	#alignPickerBelowCellCursor() {
 		return parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight/2
 															<this.#scrollBody.scrollTop+this.#scrollBody.clientHeight/2;
+	}
+
+	/**Returns true or false depending on if the cellcursor is "in view". It might not actually be in view but as long
+	 * as it's a row that is present in the DOM then it will return true* */
+	#cellCursorIsInDom() {
+		return !!this.#selectedCell.offsetParent;
 	}
 
 	#enterCell(e) {
@@ -1645,7 +1652,7 @@ class Tablance {
 
 				this.#lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row
 			}
-		} else {//if scrolling up
+		} else if (newScrY<parseInt(this.#scrollY)) {//if scrolling up
 			while (newScrY<parseInt(this.#tableSizer.style.top)) {//while top row is below top of viewport
 				this.#scrollRowIndex--;
 
