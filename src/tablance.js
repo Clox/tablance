@@ -939,12 +939,19 @@ class Tablance {
 			this.#expandRow(tr,parseInt(tr.dataset.dataRowIndex));
 	}
 
-	#autoTextAreaResize(textarea) {
+	#autoTextAreaResize(e) {
 		const maxHeight=this.#activeCellStruct.maxHeight??Infinity;
-		//change size of cellcursor which holds the textarea, to the new scrollHeight of textarea. This results in
-		//the height of textarea to change too because its height is 100% of the cellcursor.
-		//also changing the height of the underlying cell which affects the height of the expansion
-		this.#cellCursor.style.height=this.#selectedCell.style.height=Math.min(maxHeight,textarea.scrollHeight)+'px';
+		
+		//__auto-resize__
+		//first set height to auto.This won't make it auto-resize or anything but will rather set its height to about 40
+		e.target.style.height="auto";
+		//then set size of cellcursor, and also the underlying cell in order to make expansion-height adjust to scroll-
+		//height of the textarea. Also add 1px because *sometimes* without logic the textarea would recieve a scrollbar
+		//which can scroll about 1 px. Not sure if 1px is actually sufficent but let's start there.
+		this.#cellCursor.style.height=this.#selectedCell.style.height=Math.min(maxHeight,e.target.scrollHeight+1)+"px";
+		//now set height of textarea to 100% of cellcursor which height is set with above line. this line and the one
+		//setting it to auto "could" be skipped but that will result in the textarea not shrinking when needed.
+		e.target.style.height="100%";
 
 		//need to call this to make the height of the expansion adjust and reflect the change in size of the textarea
 		this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
@@ -1140,18 +1147,18 @@ class Tablance {
 
 	#openTextAreaEdit() {
 		const textarea=this.#cellCursor.appendChild(document.createElement("textarea"));
-		textarea.addEventListener('input', e=>this.#autoTextAreaResize(textarea));
+		textarea.addEventListener('input', this.#autoTextAreaResize.bind(this));
 		textarea.value=this.#selectedCellVal??"";
 		textarea.addEventListener("keydown",keydown.bind(this));
 		textarea.focus();
-		textarea.addEventListener("change",()=>this.#inputVal=textarea.value);
+		textarea.addEventListener("change",e=>this.#inputVal=textarea.value);
 		if (this.#activeCellStruct.edit.maxLength)
 			textarea.maxLength=this.#activeCellStruct.edit.maxLength;
 		textarea.placeholder=this.#activeCellStruct.edit.placeholder??"";
 		function keydown(e) {
 			if (e.key==="Enter"&&e.ctrlKey) {
 				this.#insertAtCursor(textarea,"\r\n");
-				this.#autoTextAreaResize(textarea);
+				textarea.dispatchEvent(new Event('input'));//trigger input so that autoTextAreaResize gets called
 				e.stopPropagation();
 			}
 		}
