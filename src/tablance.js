@@ -1148,6 +1148,11 @@ class Tablance {
 	#openTextAreaEdit() {
 		const textarea=this.#cellCursor.appendChild(document.createElement("textarea"));
 		textarea.addEventListener('input', this.#autoTextAreaResize.bind(this));
+
+		{	const {paddingLeft,paddingRight,paddingTop,paddingBottom}=window.getComputedStyle(this.#selectedCell);
+			//add the padding of the cell to the textarea for consistency
+			Object.assign(textarea.style,{paddingLeft,paddingRight,paddingTop,paddingBottom});}
+		
 		textarea.value=this.#selectedCellVal??"";
 		textarea.addEventListener("keydown",keydown.bind(this));
 		textarea.focus();
