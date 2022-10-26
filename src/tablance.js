@@ -1165,6 +1165,9 @@ class Tablance {
 				this.#insertAtCursor(textarea,"\r\n");
 				textarea.dispatchEvent(new Event('input'));//trigger input so that autoTextAreaResize gets called
 				e.stopPropagation();
+			} else if (e.key==="Escape") {
+				textarea.value=this.#selectedCellVal??"";
+				textarea.dispatchEvent(new Event('input'));
 			}
 		}
 	}
@@ -1320,7 +1323,6 @@ class Tablance {
 		}
 		this.#cellCursor.innerHTML="";
 		if (this.#activeCellStruct.edit.dataType==="textarea") {
-			//this.#autoTextAreaResize();
 			this.#adjustCursorPosSize(this.#selectedCell);
 		}
 		this.highlightOnFocus=false;
