@@ -1789,6 +1789,7 @@ class Tablance {
 		let cellEl=cellObject.el,rootCell=cellObject;
 		for (;rootCell.parent;rootCell=rootCell.parent);//get the highest cellObject in order to retrieve data-row-index
 		if (cellObject.struct.maxHeight) {//if there's a maxHeight stated, which is used for textareas
+			cellEl.innerHTML="";//empty the cell, otherwise multiple calls to this would add more and more content to it
 			cellEl=cellEl.appendChild(document.createElement("div"));//then put a div inside and change cellEl to that
 			cellEl.style.maxHeight=cellObject.struct.maxHeight;//then set its maxHeight
 			cellEl.style.overflow="auto";//and male it scrollable
