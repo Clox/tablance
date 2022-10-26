@@ -37,7 +37,7 @@ class Tablance {
 	#cellCursor;//The element that for spreadsheets shows which cell is selected
 	#mainRowIndex;//the index of the row that the cellcursor is at
 	#mainColIndex;//the index of the column that the cellcursor is at
-	#activeCellStruct;//reference to the struct-object of the selcted cell. For cells in the maintable this would
+	#activeStruct;//reference to the struct-object of the selcted cell. For cells in the maintable this would
 							//point to an object in #colStructs, otherwise to the struct-object of expansion-cells
 	#cellCursorDataObj;//reference to the actual object holding the data that the cell-cursor currently is at.
 						//Usually this will simply point to an object in #data but for data that is nested with
@@ -147,6 +147,8 @@ class Tablance {
 	 * 				maxHeight int For textareas, sets the max-height in pixels that it should be able to be resized to
 	 * 				edit: Object {//field is editable if this object is supplied and its disabled-prop is falsey
 	 * 				class:String Css-classes to be added to the field
+	 * 				onChange: Function Callback fired when the user has changed.
+	 * 					It will get passed arguments: 1:newValue,2:oldValue,3:rowData,4:struct,5s:cellObject, 
 	 * 				onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
 	 * 				dataType String This is mandatory and specifies the type of input. Possible values are:
@@ -168,8 +170,6 @@ class Tablance {
 	 * 				clickHandler:Function //Used for datatype "button". A callback-function that will get called when
 	 * 						//the button is pressed. It will get passed arguments 1:event, 2:dataObject,3:mainDataIndex,
 	 * 						//4:struct,5:cellObject(if inside expansion)
-  	 * 			}
-	 * 
 	 * 				noResultsText String For dataType "select", a string which is displayed when a user filters the 
 	 * 					options in a select and there are no results. 
 	 * 					Can also be set globally via param opts->defaultSelectNoResultText
@@ -180,7 +180,6 @@ class Tablance {
 	 * 					allowSelectEmpty is true. Can also be set via param opts->defaultEmptyOptString
   	 * 			}
 	 * 			{
-  	 * 			{
   	 * 				type:"repeated",//used when the number of rows is undefined and where more may be able to be added, 
 	 * 								//perhaps by the user. Having a list with a repeated->field basically works the same
 	 * 								//as having a list with multiple fields. A list can also mix repeated/dynamic and
@@ -448,7 +447,7 @@ class Tablance {
 	
 
 	#spreadsheetKeyDown(e) {
-		if (this.#inEditMode&&this.#activeCellStruct.edit.dataType==="date") {
+		if (this.#inEditMode&&this.#activeStruct.edit.dataType==="date") {
 			if (e.key.slice(0,5)==="Arrow") {
 				if (e.ctrlKey)
 					e.stopPropagation();//allow moving textcursor if ctrl is held so prevent date-change then
@@ -473,7 +472,7 @@ class Tablance {
 				break;  case " ":
 					if (this.#selectedCell.classList.contains("expandcol"))
 						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
-					else if (this.#activeCellStruct.edit?.dataType==="button")
+					else if (this.#activeStruct.edit?.dataType==="button")
 						this.#enterCell(e);
 				break; case "+":
 					this.#scrollToCursor();
@@ -936,7 +935,7 @@ class Tablance {
 	}
 
 	#autoTextAreaResize(e) {
-		const maxHeight=this.#activeCellStruct.maxHeight??Infinity;
+		const maxHeight=this.#activeStruct.maxHeight??Infinity;
 		
 		//__auto-resize__
 		//first set height to auto.This won't make it auto-resize or anything but will rather set its height to about 40
@@ -1010,7 +1009,7 @@ class Tablance {
 		new Cleave(input,{date: true,delimiter: '-',datePattern: ['Y', 'm', 'd']});
 		this.#cellCursor.appendChild(input);
 		input.value=this.#selectedCellVal??"";
-		input.placeholder=this.#activeCellStruct.edit.placeholder??this.#opts.defaultDatePlaceholder??"";
+		input.placeholder=this.#activeStruct.edit.placeholder??this.#opts.defaultDatePlaceholder??"";
 		input.focus();
 		
 		function onInput(e) {
@@ -1038,13 +1037,13 @@ class Tablance {
 	#enterCell(e) {
 		if (this.#inEditMode)
 			return;
-		if (this.#activeCellStruct.edit) {
-			if (this.#activeCellStruct.edit.dataType==="button")
+		if (this.#activeStruct.edit) {
+			if (this.#activeStruct.edit.dataType==="button")
 				return this.#activeExpCell.el.click();
-			this.#selectedCellVal=this.#cellCursorDataObj[this.#activeCellStruct.id];
+			this.#selectedCellVal=this.#cellCursorDataObj[this.#activeStruct.id];
 			this.#inEditMode=true;
 			this.#cellCursor.classList.add("edit-mode");
-			switch (this.#activeCellStruct.edit.dataType) {
+			switch (this.#activeStruct.edit.dataType) {
 				case "textarea":
 					this.#openTextAreaEdit(e);
 				break; case "date":
@@ -1054,10 +1053,10 @@ class Tablance {
 				break; default: case "text": 
 					this.#openTextEdit(e);
 			}
-		} else if (this.#activeCellStruct.type==="group") {
+		} else if (this.#activeStruct.type==="group") {
 			this.#activeExpCell.el.classList.add("open");
 			this.#selectExpansionCell(this.#getFirstSelectableExpansionCell(this.#activeExpCell,true,true));
-		} else if (this.#activeCellStruct.type==="repeatCreate") {
+		} else if (this.#activeStruct.type==="repeatCreate") {
 			this.#repeatInsertNew(this.#activeExpCell);
 		}
 	}
@@ -1134,11 +1133,11 @@ class Tablance {
 		input.addEventListener("change",()=>this.#inputVal=input.value);
 		input.value=this.#selectedCellVal??"";
 		input.focus();
-		if (this.#activeCellStruct.edit.maxLength)
-			input.maxLength=this.#activeCellStruct.edit.maxLength;
-		input.placeholder=this.#activeCellStruct.edit.placeholder??"";
-		if (this.#activeCellStruct.edit.cleave)
-			new Cleave(input,this.#activeCellStruct.edit.cleave);
+		if (this.#activeStruct.edit.maxLength)
+			input.maxLength=this.#activeStruct.edit.maxLength;
+		input.placeholder=this.#activeStruct.edit.placeholder??"";
+		if (this.#activeStruct.edit.cleave)
+			new Cleave(input,this.#activeStruct.edit.cleave);
 	}
 
 	#openTextAreaEdit() {
@@ -1153,9 +1152,9 @@ class Tablance {
 		textarea.addEventListener("keydown",keydown.bind(this));
 		textarea.focus();
 		textarea.addEventListener("change",e=>this.#inputVal=textarea.value);
-		if (this.#activeCellStruct.edit.maxLength)
-			textarea.maxLength=this.#activeCellStruct.edit.maxLength;
-		textarea.placeholder=this.#activeCellStruct.edit.placeholder??"";
+		if (this.#activeStruct.edit.maxLength)
+			textarea.maxLength=this.#activeStruct.edit.maxLength;
+		textarea.placeholder=this.#activeStruct.edit.placeholder??"";
 		function keydown(e) {
 			if (e.key==="Enter"&&e.ctrlKey) {
 				this.#insertAtCursor(textarea,"\r\n");
@@ -1171,18 +1170,18 @@ class Tablance {
 	#openSelectEdit() {
 		let highlightLiIndex,highlightUlIndex;
 		let filterText="";
-		this.#inputVal=this.#cellCursorDataObj[this.#activeCellStruct.id];
+		this.#inputVal=this.#cellCursorDataObj[this.#activeStruct.id];
 		const selectContainer=document.createElement("div");
-		let opts=[...this.#activeCellStruct.edit.options];
+		let opts=[...this.#activeStruct.edit.options];
 		const inputWrapper=selectContainer.appendChild(document.createElement("div"));//we use this to give the
 		const input=inputWrapper.appendChild(document.createElement("input"));
 		const windowClickBound=windowClick.bind(this);//saving reference to bound func so handler can be removed later
-		const allowEmpty=this.#activeCellStruct.edit.allowSelectEmpty??true;
-		const emptyString=this.#activeCellStruct.edit.emptyOptString??this.#opts.defaultEmptyOptString??"Empty";
+		const allowEmpty=this.#activeStruct.edit.allowSelectEmpty??true;
+		const emptyString=this.#activeStruct.edit.emptyOptString??this.#opts.defaultEmptyOptString??"Empty";
 		inputWrapper.classList.add("input-wrapper");//input-element a margin. Can't put padding in container because
 							//that would cause the highlight-box of selected options not to go all the way to the sides
 		const ulDiv=selectContainer.appendChild(document.createElement("div"));
-		if (opts.length>=(this.#activeCellStruct.edit.minOptsFilter??this.#opts.defaultMinOptsFilter??5)) {
+		if (opts.length>=(this.#activeStruct.edit.minOptsFilter??this.#opts.defaultMinOptsFilter??5)) {
 			input.addEventListener("input",inputInput.bind(this));//filtering is allowed, add listener to the input
 		} else//else hide the input. still want to keep it to recieve focus and listening to keystrokes. tried focusing
 			inputWrapper.classList.add("hide");//container-divs instead of input but for some reason it messed up scroll
@@ -1201,7 +1200,7 @@ class Tablance {
 		
 		const noResults=selectContainer.appendChild(document.createElement("div"));
 		noResults.innerText=
-					this.#activeCellStruct.edit.noResultsText??this.#opts.defaultSelectNoResultText??"No results found";
+					this.#activeStruct.edit.noResultsText??this.#opts.defaultSelectNoResultText??"No results found";
 		noResults.className="no-results";
 		
 		this.#scrollingContent.appendChild(selectContainer);
@@ -1236,7 +1235,7 @@ class Tablance {
 
 		function inputInput(e) {
 			if (!input.value.includes(filterText)||!filterText)//unless text was added to beginning or end
-				opts=[...this.#activeCellStruct.edit.options];//start off with all options there are
+				opts=[...this.#activeStruct.edit.options];//start off with all options there are
 			for (let i=-1,opt; opt=opts[++i];)
 				if (!opt.text.includes(input.value))//if searchstring wasn't found in this opt
 					opts.splice(i--,1);//then remove it from view
@@ -1303,24 +1302,23 @@ class Tablance {
 
 		this.#inEditMode=false;
 		this.#cellCursor.classList.remove("edit-mode");
-		if (save) {
-			if (this.#inputVal!=this.#selectedCellVal) {
-				this.#cellCursorDataObj[this.#activeCellStruct.id]=this.#inputVal;
-				if (this.#activeExpCell){
-					const doHeightUpdate=this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj);
-					if (doHeightUpdate)
-						this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
-					for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)//update closed-group-renders
-						if (cell.struct.closedRender)//found a group with a closed-group-render func
-							cell.updateRenderOnClose=true;
-				} else
-					this.#updateMainRowCell(this.#selectedCell,this.#activeCellStruct);
-			}
+		if (save&&this.#inputVal!=this.#selectedCellVal) {
+			this.#activeStruct.edit.onChange?.(this.#inputVal,this.#selectedCellVal,this.#cellCursorDataObj
+																			,this.#activeStruct,this.#activeExpCell);
+			this.#cellCursorDataObj[this.#activeStruct.id]=this.#inputVal;
+			if (this.#activeExpCell){
+				const doHeightUpdate=this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj);
+				if (doHeightUpdate)
+					this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
+				for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)//update closed-group-renders
+					if (cell.struct.closedRender)//found a group with a closed-group-render func
+						cell.updateRenderOnClose=true;
+			} else
+				this.#updateMainRowCell(this.#selectedCell,this.#activeStruct);
 		}
 		this.#cellCursor.innerHTML="";
-		if (this.#activeCellStruct.edit.dataType==="textarea") {
+		if (this.#activeStruct.edit.dataType==="textarea")
 			this.#adjustCursorPosSize(this.#selectedCell);
-		}
 		this.highlightOnFocus=false;
 	}
 
@@ -1346,14 +1344,14 @@ class Tablance {
 		this.#mainRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);
 		if (!cell.parentElement.classList.contains("expansion"))
 			this.#mainColIndex=cell.cellIndex;
-		this.#activeCellStruct=this.#colStructs[this.#mainColIndex];
+		this.#activeStruct=this.#colStructs[this.#mainColIndex];
 
 		//make cellcursor click-through if it's on an expand-row-button-td or button
-		const noPointerEvent=this.#activeCellStruct.type==="expand"||this.#activeCellStruct.edit?.dataType==="button";
+		const noPointerEvent=this.#activeStruct.type==="expand"||this.#activeStruct.edit?.dataType==="button";
 		this.#cellCursor.style.pointerEvents=noPointerEvent?"none":"auto";
 
 		this.#cellCursorDataObj=this.#data[this.#mainRowIndex];
-		this.#activeCellStruct=this.#colStructs[this.#mainColIndex];
+		this.#activeStruct=this.#colStructs[this.#mainColIndex];
 	}
 
 	#selectExpansionCell(cellObject) {
@@ -1385,10 +1383,10 @@ class Tablance {
 		this.#selectedCell=cellObject.selEl??cellObject.el;
 		this.#adjustCursorPosSize(this.#selectedCell);
 		this.#cellCursorDataObj=cellObject.dataObject;
-		this.#activeCellStruct=cellObject.struct;
+		this.#activeStruct=cellObject.struct;
 
 		//make cellcursor click-through if it's on a button
-		this.#cellCursor.style.pointerEvents=this.#activeCellStruct.edit?.dataType==="button"?"none":"auto";
+		this.#cellCursor.style.pointerEvents=this.#activeStruct.edit?.dataType==="button"?"none":"auto";
 	}
 
 	#adjustCursorPosSize(el,onlyPos=false) {

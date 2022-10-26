@@ -12,8 +12,8 @@
 				return `foobar ${rowIndex} - ${dataRow.descLetter}`
 			}
 			const myTablanceCols=[{type:"expand"}
-				,{id:"desc",title:"Description",edit:{dataType:"text",maxLength:5,placeholder:"placeholder"}
-					,render:descFunc}
+				,{id:"desc",title:"Description",edit:{onChange:(...args)=>console.log(args),
+					dataType:"text",maxLength:5,placeholder:"placeholder"},render:descFunc}
 				,{id:"amount",title:"Amount",width:"70px"},{id:"balance",title:"Balance",width:"70px"}];
 			
 			const foods=[{text:"banana",value:1},{text:"apple",value:2},{text:"cucumber",value:3},
@@ -22,7 +22,7 @@
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
 				{type:"field",title:"Select",id:"sel",edit:{dataType:"select"
 						,options:foods,minOptsFilter:1000,allowSelectEmpty:true}},
-				{type:"field",title:"Date",id:"date",edit:{dataType:"date"}},
+				{type:"field",title:"Date",id:"date",edit:{dataType:"date",onChange:(...args)=>console.log(args)}},
 				{type:"repeated",id:"repeatedField",entry:
 					{type:"field",title:"repeated row",id:"foo"}
 				},
