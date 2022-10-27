@@ -148,7 +148,7 @@ class Tablance {
 	 * 				edit: Object {//field is editable if this object is supplied and its disabled-prop is falsey
 	 * 				class:String Css-classes to be added to the field
 	 * 				onChange: Function Callback fired when the user has changed.
-	 * 					It will get passed arguments: 1:newValue,2:oldValue,3:rowData,4:struct,5s:cellObject, 
+	 * 					It will get passed arguments: 1:newValue,2:oldValue,3:rowData,4:struct,5:cellObject
 	 * 				onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
 	 * 				dataType String This is mandatory and specifies the type of input. Possible values are:
@@ -194,6 +194,9 @@ class Tablance {
   	 * 				entry: any entry //may be item or list for instance. the data retrieved for these will be 1
 	 * 								//level deeper so the path from the base would be idOfRepeatedRows->arrayIndex->*
 	 * 				create: Bool //if true then a row is added which can be interacted with to insert more entries
+	 * 				onCreate: Function Callback fired when the user has committed a new row. It is counted as committed
+	 * 					when the cell-cursor has left the repeat-row after having created it.
+	 * 					It will get passed arguments: 1:rowData,2:cellObject
 	 * 				creationText: //used if "create" is true. the text of the creation-cell. default is "Create new"
 	 * 				deleteText: //used if "create" is true. the text of the deletion-button. default is "Delete"
 	 * 							//can also be set via param opts->defaultRepeatDeleteText
@@ -1330,6 +1333,11 @@ class Tablance {
 		this.highlightOnFocus=false;
 	}
 
+	#commitRepeatedInsert(repeatEntry) {
+		repeatEntry.creating=false;
+		repeatEntry.parent.struct.onCreate?.(repeatEntry.rowData,repeatEntry)
+	}
+
 	#selectMainTableCell(cell) {
 		if (!cell)//in case trying to move up from top row etc
 			return;
@@ -1341,6 +1349,8 @@ class Tablance {
 					this.#closeGroup(oldCellParent);//close any open group above old cell
 					this.#ignoreClicksUntil=Date.now()+500;
 				}
+				if (oldCellParent.creating)
+					this.#commitRepeatedInsert(oldCellParent);
 				oldCellParent.struct.onBlur?.(oldCellParent,this.#mainRowIndex);
 			}
 			this.#activeExpCell=null;//should be null when not inside expansion
@@ -1373,18 +1383,23 @@ class Tablance {
 		this.#mainRowIndex=root.rowIndex;;
 		if (this.#activeExpCell)//changing from an old expansionCell
 			for (let oldParnt=this.#activeExpCell; oldParnt=oldParnt?.parent;)//traverse parents of old cell
-				if(oldParnt.struct.type==="group"||oldParnt.struct.onBlur){//found parent-group,means its open(or blur)
+				if(oldParnt.struct.type==="group"||oldParnt.struct.onBlur||oldParnt.creating){//found a group or cell
+					//...with onBlur or cell that is being created. For any of these we want to observe the cell being
+					//left so that appropriate action can be taken
 					for (let newParent=cellObject; newParent=newParent.parent;)//traverse parents of new cell
 						if (newParent===oldParnt) {//if this new parent-group is also part of old parents
 							oldParnt=null;//break out of outer loop
 							break;
 						}
 					if (oldParnt) {
-						if(oldParnt.struct.type==="group") {
+						if (oldParnt.struct.type==="group") {
 							this.#closeGroup(oldParnt)//if old parent-group is not part of new then close it
 							this.#ignoreClicksUntil=Date.now()+500;
-						} else
+						}
+						if (oldParnt.struct.onBlur)
 							oldParnt.struct.onBlur?.(oldParnt,this.#mainRowIndex);
+						if (oldParnt.creating)
+							this.#commitRepeatedInsert(oldParnt);
 					}
 				}
 		this.#activeExpCell=cellObject;

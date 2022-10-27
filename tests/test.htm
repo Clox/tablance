@@ -28,9 +28,9 @@
 				},
 				{type:"field",edit:{dataType:"button",btnText:"Cool button",clickHandler:btnClickHandler}},
 				{type:"group",title:"förordnande",entries:[
-					{type:"repeated",id:"custodianshipChanges",create:true,creationText:"Lägg till"
-					,deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort",areYouSureYesText:"Ja"
-					,areYouSureNoText:"Nej",entry:
+					{type:"repeated",id:"custodianshipChanges",create:true,onCreate:(...args)=>console.log(args)
+					,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
+					,areYouSureYesText:"Ja",areYouSureNoText:"Nej",entry:
 						{type:"group",closedRender:data=>`${data.type} sedan ${data.date}`,entries:[
 								{type:"field",title:"Datum",id:"date",edit:{dataType:"date"}},
 								{type:"field",title:"Typ av ställföreträdarskap",id:"type",edit:{dataType:"select",
