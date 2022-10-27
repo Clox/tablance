@@ -662,23 +662,7 @@ class Tablance {
 		cellObj.children=[];
 		const repeatData=cellObj.rowData=rowData[struct.id];
 		if (repeatData?.length) {
-			if (struct.create&&struct.entry.type==="group") {//if repeater is group then add delete-controls
-				const deleteControls={type:"collection",class:"delete-controls"
-					,onBlur:cel=>cel.selEl.querySelector(".collection").classList.remove("delete-confirming")
-					,entries:[{type:"field",edit:{dataType:"button",
-						btnText:struct.deleteText??this.#opts.defaultRepeatDeleteText??"Delete"
-						,clickHandler:beginDelete.bind(this)},class:"delete"},
-					{type:"field",edit:{dataType:"button"
-						,btnText:struct.areYouSureNoText??this.#opts.deleteAreYouSureNoText??"No",
-						clickHandler:cancelDelete.bind(this)},class:"no"
-						,title:struct.deleteAreYouSureText??this.#opts.deleteAreYouSureText??"Are you sure?"},
-					{type:"field",edit:{dataType:"button"
-						,btnText:struct.areYouSureYesText??this.#opts.deleteAreYouSureYesText??"Yes",
-						clickHandler:(e,data,mainIndex,strct,cel)=>this.#deleteCell(cel.parent.parent)},class:"yes"}]};
-				struct={...struct};//make shallow copy so original is not affected
-				struct.entry={...struct.entry};
-				struct.entry.entries=[...struct.entry.entries,deleteControls];
-			}
+			struct=this.#getStructCopyWithDeleteControlsMaybe(struct);
 			for (let childI=0; childI<rowData[struct.id].length; childI++) {
 				let childObj=cellObj.children[childI]={parent:cellObj,index:childI};
 				path.push(childI);
@@ -697,17 +681,40 @@ class Tablance {
 		}
 		
 		return !!repeatData?.length||struct.create;
-		function beginDelete(e,data,mainIndex,struct,cell) {
-			if (!cell.parent.parent.creating) {
-				cell.parent.containerEl.classList.add("delete-confirming");
-				this.#moveInsideCollection(1);//move away from the delete-button which now dissapeared, to the next btn
-			} else
-				this.#deleteCell(cell.parent.parent);
+	}
+
+	#beginDeleteRepeated(e,data,mainIndex,struct,cell) {
+		if (!cell.parent.parent.creating) {
+			cell.parent.containerEl.classList.add("delete-confirming");
+			this.#moveInsideCollection(1);//move away from the delete-button which now dissapeared, to the next btn
+		} else
+			this.#deleteCell(cell.parent.parent);
+	}
+
+	#cancelDelete(e,data,mainIndex,struct,cell) {
+			cell.parent.containerEl.classList.remove("delete-confirming");
+			this.#selectExpansionCell(cell.parent.children[0]);
+	}
+
+	#getStructCopyWithDeleteControlsMaybe(struct) {
+		if (struct.create&&struct.entry.type==="group") {//if repeater is group then add delete-controls
+			const deleteControls={type:"collection",class:"delete-controls"
+				,onBlur:cel=>cel.selEl.querySelector(".collection").classList.remove("delete-confirming")
+				,entries:[{type:"field",edit:{dataType:"button",
+					btnText:struct.deleteText??this.#opts.defaultRepeatDeleteText??"Delete"
+					,clickHandler:this.#beginDeleteRepeated.bind(this)},class:"delete"},
+				{type:"field",edit:{dataType:"button"
+					,btnText:struct.areYouSureNoText??this.#opts.deleteAreYouSureNoText??"No",
+					clickHandler:this.#cancelDelete.bind(this)},class:"no"
+					,title:struct.deleteAreYouSureText??this.#opts.deleteAreYouSureText??"Are you sure?"},
+				{type:"field",edit:{dataType:"button"
+					,btnText:struct.areYouSureYesText??this.#opts.deleteAreYouSureYesText??"Yes",
+					clickHandler:(e,data,mainIndex,strct,cel)=>this.#deleteCell(cel.parent.parent)},class:"yes"}]};
+			struct={...struct};//make shallow copy so original is not affected
+			struct.entry={...struct.entry};
+			struct.entry.entries=[...struct.entry.entries,deleteControls];
 		}
-		function cancelDelete(e,data,mainIndex,struct,cell) {
-				cell.parent.containerEl.classList.remove("delete-confirming");
-				this.#selectExpansionCell(cell.parent.children[0]);
-		}
+		return struct;
 	}
 
 	#generateButton(struct,mainIndex,cellObj,parentEl,path,rowData) {
@@ -1072,8 +1079,9 @@ class Tablance {
 		const childObj={parent:reptPar,index:indexOfNew,creating:true};//creating means it hasn't been commited yet
 		reptPar.children.splice(indexOfNew,0,childObj);
 		const path=repeatCreater.el.dataset.path.split("-") ;
-		const data=reptPar.rowData[indexOfNew]={};
-		this.#generateExpansionContent(reptPar.struct.entry,indexOfNew,childObj,repeatCreater.el.parentNode,path,data);
+		const data=reptPar.rowData[indexOfNew]={};		
+		const struct=this.#getStructCopyWithDeleteControlsMaybe(reptPar.struct);
+		this.#generateExpansionContent(struct.entry,indexOfNew,childObj,repeatCreater.el.parentNode,path,data);
 		for (var cellPar=childObj,cellI=0,cell=childObj;cell.struct.type!="field";cell=cellPar.children[cellI++]){
 			if (cell.struct.type==="group")
 				cell.el.classList.add("open");
