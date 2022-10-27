@@ -145,40 +145,46 @@ class Tablance {
   	 * 				title:"Foobar",//displayed title if placed in list
   	 * 				id:"foobar",//the key of the property in the data that the row should display
 	 * 				maxHeight int For textareas, sets the max-height in pixels that it should be able to be resized to
-	 * 				edit: Object {//field is editable if this object is supplied and its disabled-prop is falsey
 	 * 				class:String Css-classes to be added to the field
-	 * 				onChange: Function Callback fired when the user has changed.
-	 * 					It will get passed arguments: 1:newValue,2:oldValue,3:rowData,4:struct,5:cellObject
-	 * 				onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
-	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
-	 * 				dataType String This is mandatory and specifies the type of input. Possible values are:
-	 * 						"text"(single line text),
-	 * 						"textarea"(multi-line text),
-	 * 						"number"(number with stepper),
-	 * 						"date"(a date and possibly time with a calendar),
-	 * 						"select"(selection of multiple items).
-	 * 						"button"(simple button)
-	 * 					Depending on which one is selected certain properties
-	 * 						below are (dis)allowed.
-	 * 					maxLength int Sets max-length for strings if dataType is text
-	 * 					placeholder String adds a placeholder-string to the input-element
-	 * 				options: Array //may be supplied if dataType is "select". Each element should be an object: {
-	 * 					value:the value of the cell will be mapped to the option with the same value
-	 * 					text:unless a render-method has been specified then this is what will be shown to the user
-	 * 				}
-  	 * 				btnText: String,//If datatype is "button" then this will be the text on it
-	 * 				clickHandler:Function //Used for datatype "button". A callback-function that will get called when
-	 * 						//the button is pressed. It will get passed arguments 1:event, 2:dataObject,3:mainDataIndex,
-	 * 						//4:struct,5:cellObject(if inside expansion)
-	 * 				noResultsText String For dataType "select", a string which is displayed when a user filters the 
-	 * 					options in a select and there are no results. 
-	 * 					Can also be set globally via param opts->defaultSelectNoResultText
-	 * 				minOptsFilter Integer - The minimum number of options required for the filter-input to appear
-	 * 					Can also be set via param opts->defaultMinOptsFilter
-	 * 				allowSelectEmpty bool - Used for dataType "select". Default is true. Pins an empty-option at the top
-	 * 				emptyOptString String - For dataType "select", specifies the text of the empty option if 
-	 * 					allowSelectEmpty is true. Can also be set via param opts->defaultEmptyOptString
-  	 * 			}
+	 * 				edit: Object {//field is editable if this object is supplied and its disabled-prop is falsey
+	 * 					onChange: Function Callback fired when the user has changed.
+	 * 						It will get passed arguments: 1:newValue,2:oldValue,3:rowData,4:struct,5:cellObject
+	 * 					onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
+	 * 							It will get passed arguments 1:cellObject, 2:mainIndex
+	 * 					enabled Function - If present then this function will be run and if it returns falsey then the
+	 * 										cell will not be editable. It may also return an object structured as:
+	 * 										{enabled:Bool, message:String}. The message will be displayed to the user 
+	 * 											if edit is attempted and enabled is set to false, disabling the field
+	 * 							It gets passed the following arguments - 
+	 * 													1:struct,2:rowData,3:mainIndex,4:cellObject(if in expansion)
+	 * 					dataType String This is mandatory and specifies the type of input. Possible values are:
+	 * 							"text"(single line text),
+	 * 							"textarea"(multi-line text),
+	 * 							"number"(number with stepper),
+	 * 							"date"(a date and possibly time with a calendar),
+	 * 							"select"(selection of multiple items).
+	 * 							"button"(simple button)
+	 * 						Depending on which one is selected certain properties
+	 * 							below are (dis)allowed.
+	 * 						maxLength int Sets max-length for strings if dataType is text
+	 * 						placeholder String adds a placeholder-string to the input-element
+	 * 					options: Array //may be supplied if dataType is "select". Each element should be an object: {
+	 * 						value:the value of the cell will be mapped to the option with the same value
+	 * 						text:unless a render-method has been specified then this is what will be shown to the user
+	 * 					}
+  	 * 					btnText: String,//If datatype is "button" then this will be the text on it
+	 * 					clickHandler:Function //Used for datatype "button". A callback-function that will get called 
+	 * 							//when the button is pressed. It will get passed arguments 1:event, 2:dataObject
+	 * 							//,3:mainDataIndex,4:struct,5:cellObject(if inside expansion)
+	 * 					noResultsText String For dataType "select", a string which is displayed when a user filters the 
+	 * 						options in a select and there are no results. 
+	 * 						Can also be set globally via param opts->defaultSelectNoResultText
+	 * 					minOptsFilter Integer - The minimum number of options required for the filter-input to appear
+	 * 						Can also be set via param opts->defaultMinOptsFilter
+	 * 					allowSelectEmpty bool - Used for dataType "select". Default true.Pins an empty-option at the top
+	 * 					emptyOptString String - For dataType "select", specifies the text of the empty option if 
+	 * 						allowSelectEmpty is true. Can also be set via param opts->defaultEmptyOptString
+  	 * 			}}
 	 * 			{
   	 * 				type:"repeated",//used when the number of rows is undefined and where more may be able to be added, 
 	 * 								//perhaps by the user. Having a list with a repeated->field basically works the same
@@ -711,11 +717,10 @@ class Tablance {
 		return struct;
 	}
 
-	#generateButton(struct,mainIndex,cellObj,parentEl,path,rowData) {
+	#generateButton(struct,mainIndex,parentEl,rowData,cellObj=null) {
 		const btn=parentEl.appendChild(document.createElement("button"));
 		btn.tabIndex="-1";//so it can't be tabbed to
 		btn.innerText=struct.edit.btnText;
-		cellObj.el=cellObj.selEl=btn;
 		btn.addEventListener("click",e=>struct.edit.clickHandler?.(e,rowData,mainIndex,struct,cellObj));
 
 		//prevent gaining focus upon clicking it whhich would cause problems. It should be "focused" by having the
@@ -856,12 +861,8 @@ class Tablance {
 	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {	
 		cellObject.dataObject=rowData;
 		cellObject.struct=fieldStructure;
-		if (fieldStructure.edit?.dataType==="button")
-			this.#generateButton(fieldStructure,mainIndex,cellObject,parentEl,path,rowData);
-		else {
-			cellObject.el=parentEl;
-			this.#updateExpansionCell(cellObject,rowData);
-		}
+		cellObject.el=parentEl;
+		this.#updateExpansionCell(cellObject,rowData);
 		cellObject[cellObject.selEl?"selEl":"el"].dataset.path=path.join("-");
 		return true;
 	}
@@ -1810,8 +1811,7 @@ class Tablance {
 	 * 	group-rows as well as toggling the empty-class of them. Reports back whether visibility has been changed.
 	 * @param {*} cellObject */
 	#updateExpansionCell(cellObject,rowData) {
-		let cellEl=cellObject.el,rootCell=cellObject;
-		for (;rootCell.parent;rootCell=rootCell.parent);//get the highest cellObject in order to retrieve data-row-index
+		let cellEl=cellObject.el;
 		if (cellObject.struct.maxHeight) {//if there's a maxHeight stated, which is used for textareas
 			cellEl.innerHTML="";//empty the cell, otherwise multiple calls to this would add more and more content to it
 			cellEl=cellEl.appendChild(document.createElement("div"));//then put a div inside and change cellEl to that
@@ -1819,21 +1819,40 @@ class Tablance {
 			cellEl.style.overflow="auto";//and male it scrollable
 			//can't make td directly scrollable which is why the div is needed
 		}
-		let newCellContent,oldCellContent=cellEl.innerText;
-		if (cellObject.struct.render)
-			newCellContent=cellObject.struct.render(rowData,cellObject.struct,rootCell.rowIndex);
-		else if (cellObject.struct.edit?.dataType==="select")
-			newCellContent=cellObject.struct.edit.options.find(opt=>opt.value==rowData[cellObject.struct.id])?.text??"";
-		else
-			newCellContent=rowData[cellObject.struct.id]??"";
-		if (this.#spreadsheet&&(!cellObject.struct.edit&&cellObject.struct.type!=="expand"))
-			cellEl.classList.add("disabled");
-		cellEl.innerText=newCellContent;
-		if (!newCellContent!=!oldCellContent) {
-			for (let cellI=cellObject; cellI; cellI=cellI.parent)
-				if (cellI.nonEmptyDescentants!=null)
-					cellI.grpTr.classList.toggle("empty",!(cellI.nonEmptyDescentants+=newCellContent?1:-1));
-			return true;
+		for (var rootCell=cellObject;rootCell.parent;rootCell=rootCell.parent);
+		const oldCellContent=cellEl.innerText;
+		this.#updateCell(cellObject.struct,cellEl,rowData,rootCell.rowIndex,cellObject);
+		if (cellObject.struct.edit?.dataType!=="button") {
+			const newCellContent=cellEl.innerText;
+			if (!newCellContent!=!oldCellContent) {
+				for (let cellI=cellObject; cellI; cellI=cellI.parent)
+					if (cellI.nonEmptyDescentants!=null)
+						cellI.grpTr.classList.toggle("empty",!(cellI.nonEmptyDescentants+=newCellContent?1:-1));
+				return true;
+			}
+		} else
+			cellObject.el=cellObject.selEl=cellObject.el.querySelector("button");
+	}
+
+	#updateCell(struct,el,rowData,mainIndex,cellObj=null) {
+		if (struct.edit?.dataType==="button") {
+			this.#generateButton(struct,mainIndex,el,rowData,cellObj);
+		} else {
+			let newCellContent;
+			if (struct.render)
+				newCellContent=struct.render(rowData,struct,mainIndex);
+			else if (struct.edit?.dataType==="select")
+				newCellContent=struct.edit.options.find(opt=>opt.value==rowData[struct.id])?.text??"";
+			else
+				newCellContent=rowData[struct.id]??"";
+			let isDisabled=false;
+			if (this.#spreadsheet&&struct.type!=="expand") {
+				const enabledFuncResult=struct.edit?.enabled?.(struct,rowData,mainIndex,cellObj);
+				if (!struct.edit||enabledFuncResult==false||enabledFuncResult?.enabled==false)
+					isDisabled=true;
+			}
+			el.classList.toggle("disabled",isDisabled);
+			el.innerText=newCellContent;
 		}
 	}
 
@@ -1841,12 +1860,7 @@ class Tablance {
 	 * @param {*} cellEl 
 	 * @param {*} colStruct */
 	#updateMainRowCell(cellEl,colStruct) {
-		const dataIndex=cellEl.closest(".main-table>tbody>tr").dataset.dataRowIndex;
-		if (colStruct.render)
-			cellEl.innerText=colStruct.render(this.#data[dataIndex],colStruct,dataIndex);
-		else
-			cellEl.innerText=this.#data[dataIndex][colStruct.id]??"";
-		if (this.#spreadsheet&&(!colStruct.edit&&colStruct.type!=="expand"))
-			cellEl.classList.add("disabled");
+		const mainIndex=cellEl.closest(".main-table>tbody>tr").dataset.dataRowIndex;
+		this.#updateCell(colStruct,cellEl,this.#data[mainIndex],mainIndex);
 	}
 }

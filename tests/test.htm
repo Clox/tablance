@@ -13,7 +13,7 @@
 			}
 			const myTablanceCols=[{type:"expand"}
 				,{id:"desc",title:"Description",edit:{onChange:(...args)=>console.log(args),
-					dataType:"text",maxLength:5,placeholder:"placeholder"},render:descFunc}
+					dataType:"text",maxLength:5,placeholder:"placeholder",enabled:()=>Math.random()>.5},render:descFunc}
 				,{id:"amount",title:"Amount",width:"70px"},{id:"balance",title:"Balance",width:"70px"}];
 			
 			const foods=[{text:"banana",value:1},{text:"apple",value:2},{text:"cucumber",value:3},
