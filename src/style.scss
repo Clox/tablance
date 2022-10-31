@@ -25,8 +25,11 @@
 		//transition: left .15s ease-out,top .15s ease-out,height .15s ease-out,width .15s ease-out;
 
 		position: absolute;
-		outline:2px solid blue;
 		cursor:cell;
+		outline:2px solid blue;
+		&.disabled {
+			outline:2px solid red;
+		}
 		&.edit-mode {
 			box-shadow: 1px 1px 7px #222;
 			cursor:auto;
@@ -65,6 +68,9 @@
 		cursor: cell;
 		&.expandCol {
 			cursor:pointer;
+		}
+		&.disabled {
+			background-color: #f2f2f2;
 		}
 	}
 	td.expandcol>a {

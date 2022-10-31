@@ -1356,7 +1356,7 @@ class Tablance {
 			}
 			this.#activeExpCell=null;//should be null when not inside expansion
 		}
-		
+		this.#cellCursor.classList.toggle("disabled",cell.classList.contains("disabled"));
 		this.#selectedCell=cell;
 		this.#adjustCursorPosSize(cell);
 		
@@ -1377,6 +1377,8 @@ class Tablance {
 		if (!cellObject)
 			return;
 		this.#exitEditMode(true);
+
+		this.#cellCursor.classList.toggle("disabled",(cellObject.selEl??cellObject.el).classList.contains("disabled"));
 
 		//remove cellcursor click-through in case an expand-button-cell was previously selected
 		this.#cellCursor.style.pointerEvents="auto";
