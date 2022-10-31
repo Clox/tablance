@@ -23,6 +23,10 @@ class Tablance {
 	#borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
 	#rowHeight=0;//the height of (non expanded) rows with #borderSpacingY included. Assume 0 first until first row added
+	#rowInnerHeight=0;//this is the height that the div inside main-tds should be set to. It's calculated from 
+					//#rowHeight minus top&bottom-padding minus #borderSpacingY of td. This is needed to make sure each
+					//row is always of the same height and things don't get messed up because some row is heigher
+					//because it has high content.
 	#staticRowHeight;//This is set in the constructor. If it is true then all rows should be of same height which
 					 //improves performance.
 	#spreadsheet;//whether the table is a spreadsheet, which is set in the constructor
@@ -1772,8 +1776,13 @@ class Tablance {
 			if (this.#expandedRowHeights[this.#scrollRowIndex+this.#numRenderedRows-1])
 				this.#renderExpansion(lastTr,this.#scrollRowIndex+this.#numRenderedRows-1);
 			this.#lookForActiveCellInRow(lastTr);//look for active cell (cellcursor) in the row
-			if (!this.#rowHeight)//if there were no rows prior to this
+			if (!this.#rowHeight) {//if there were no rows prior to this
 				this.#rowHeight=lastTr.offsetHeight+this.#borderSpacingY;
+				const tdComputedStyle=window.getComputedStyle(lastTr.firstChild);
+				for (let prop of ["paddingTop","paddingBottom","borderBottomWidth","borderTopWidth"])
+					this.#rowInnerHeight-=parseInt(tdComputedStyle[prop]);
+				this.#rowInnerHeight=this.#rowInnerHeight+lastTr.offsetHeight+"px";
+			}
 		}
 	}
 
@@ -1801,7 +1810,7 @@ class Tablance {
 			let td=tr.cells[colI];
 			let colStruct=this.#colStructs[colI];
 			if (colStruct.type==="expand")
-				td.innerHTML="<a><span></span></a>";
+				td.innerHTML="<div><a><span></span></a></div>";
 			else 
 				this.#updateMainRowCell(td,colStruct);
 		}
@@ -1823,7 +1832,7 @@ class Tablance {
 		}
 		for (var rootCell=cellObject;rootCell.parent;rootCell=rootCell.parent);
 		const oldCellContent=cellEl.innerText;
-		this.#updateCell(cellObject.struct,cellEl,rowData,rootCell.rowIndex,cellObject);
+		this.#updateCell(cellObject.struct,cellEl,cellObject.selEl,rowData,rootCell.rowIndex,cellObject);
 		if (cellObject.struct.edit?.dataType!=="button") {
 			const newCellContent=cellEl.innerText;
 			if (!newCellContent!=!oldCellContent) {
@@ -1836,7 +1845,7 @@ class Tablance {
 			cellObject.el=cellObject.selEl=cellObject.el.querySelector("button");
 	}
 
-	#updateCell(struct,el,rowData,mainIndex,cellObj=null) {
+	#updateCell(struct,el,selEl,rowData,mainIndex,cellObj=null) {
 		if (struct.edit?.dataType==="button") {
 			this.#generateButton(struct,mainIndex,el,rowData,cellObj);
 		} else {
@@ -1853,7 +1862,7 @@ class Tablance {
 				if (!struct.edit||enabledFuncResult==false||enabledFuncResult?.enabled==false)
 					isDisabled=true;
 			}
-			(cellObj?.selEl??el).classList.toggle("disabled",isDisabled);
+			(selEl??el).classList.toggle("disabled",isDisabled);
 			el.innerText=newCellContent;
 		}
 	}
@@ -1862,7 +1871,10 @@ class Tablance {
 	 * @param {*} cellEl 
 	 * @param {*} colStruct */
 	#updateMainRowCell(cellEl,colStruct) {
+		cellEl.innerHTML="";
 		const mainIndex=cellEl.closest(".main-table>tbody>tr").dataset.dataRowIndex;
-		this.#updateCell(colStruct,cellEl,this.#data[mainIndex],mainIndex);
+		const contentDiv=cellEl.appendChild(document.createElement("div"));//needed to be able to control height of td
+		contentDiv.style.height=this.#rowInnerHeight||"auto";
+		this.#updateCell(colStruct,contentDiv,cellEl,this.#data[mainIndex],mainIndex);
 	}
 }

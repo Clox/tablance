@@ -11,9 +11,6 @@
 		overflow: auto;
 		>div {
 			position: relative;
-			>table {/* main-table */
-				position: relative;/* need to be able to offset it in order to counter when top row gets added/removed*/
-			}
 		}
 	}
 	th {
@@ -73,7 +70,7 @@
 			background-color: #f2f2f2;
 		}
 	}
-	td.expandcol>a {
+	td.expandcol>div>a {
 		display: block;
 		margin: auto;
 		background: linear-gradient(to bottom, #3DF651, #21A516);
