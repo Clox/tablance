@@ -66,9 +66,6 @@
 		&.expandCol {
 			cursor:pointer;
 		}
-		&.disabled {
-			background-color: #f2f2f2;
-		}
 	}
 	td.expandcol>a {
 		display: block;
@@ -106,12 +103,15 @@
 		padding: 0;
 		border-left: 15px solid #D8D8E7;
 		border-bottom: 2px solid #D8D8E7;
-		.value:empty::after {
-			content: "\00A0";//add non-breaking space to empty cells so they are still rendered at uniform height
-		}
 		>div {
 			overflow: hidden;//hide overflowing content when expanding/contracting-animating
 			transition: height .15s ease-out;
+			.disabled {
+				background-color: #f2f2f2;
+			}
+			.value:empty::after {
+				content: "\00A0";//add non-breaking space to empty cells so they are still rendered at uniform height
+			}
 			>div.expansion-shadow {
 				margin-top: -6px;
 				left: 0;
@@ -128,7 +128,6 @@
 				padding-top: 10px;
 			}
 			.collection {
-				gap: 5px;
 				>span {
 					display: inline-block;
 					padding: 3px;

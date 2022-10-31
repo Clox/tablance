@@ -1851,7 +1851,7 @@ class Tablance {
 				if (!struct.edit||enabledFuncResult==false||enabledFuncResult?.enabled==false)
 					isDisabled=true;
 			}
-			el.classList.toggle("disabled",isDisabled);
+			(cellObj?.selEl??el).classList.toggle("disabled",isDisabled);
 			el.innerText=newCellContent;
 		}
 	}
