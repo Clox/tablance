@@ -1768,7 +1768,9 @@ class Tablance {
 			lastTr=this.#mainTable.insertRow();
 			this.#numRenderedRows++;
 			for (let i=0; i<this.#colStructs.length; i++) {
-				let cell=lastTr.insertCell();
+				const cell=lastTr.insertCell();
+				cell.appendChild(document.createElement("div"));
+				cell.firstChild.style.height=this.#rowInnerHeight||"auto";				
 				if (this.#colStructs[i].type==="expand")
 					cell.classList.add("expandcol");
 			}
@@ -1810,7 +1812,7 @@ class Tablance {
 			let td=tr.cells[colI];
 			let colStruct=this.#colStructs[colI];
 			if (colStruct.type==="expand")
-				td.innerHTML="<div><a><span></span></a></div>";
+				td.innerHTML=`<div style="height:${this.#rowInnerHeight||"auto"}"><a><span></span></a></div>`;
 			else 
 				this.#updateMainRowCell(td,colStruct);
 		}
@@ -1871,10 +1873,8 @@ class Tablance {
 	 * @param {*} cellEl 
 	 * @param {*} colStruct */
 	#updateMainRowCell(cellEl,colStruct) {
-		cellEl.innerHTML="";
+		cellEl.firstChild.innerHTML="";
 		const mainIndex=cellEl.closest(".main-table>tbody>tr").dataset.dataRowIndex;
-		const contentDiv=cellEl.appendChild(document.createElement("div"));//needed to be able to control height of td
-		contentDiv.style.height=this.#rowInnerHeight||"auto";
-		this.#updateCell(colStruct,contentDiv,cellEl,this.#data[mainIndex],mainIndex);
+		this.#updateCell(colStruct,cellEl.firstChild,cellEl,this.#data[mainIndex],mainIndex);
 	}
 }
