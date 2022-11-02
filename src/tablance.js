@@ -304,6 +304,7 @@ class Tablance {
 		this.#container.classList.add("spreadsheet");
 		this.#cellCursor=this.#scrollingContent.appendChild(document.createElement("div"));
 		this.#cellCursor.className="cell-cursor";
+		this.#cellCursor.style.display="none";
 		
 		//remove any border-spacing beacuse if the spacing is clicked the target-element will be the table itself and
 		//no cell will be selected which is bad user experience. Set it to 0 for headerTable too in order to match
@@ -329,7 +330,7 @@ class Tablance {
 	}
 
 	#spreadsheetOnFocus(e) {
-		if (this.#mainRowIndex==null)
+		if (this.#mainRowIndex==null&&this.#data.length)
 			this.#selectMainTableCell(this.#mainTbody.rows[0].cells[0]);
 		//when the table is tabbed to, whatever focus-outline that the css has set for it should show, but then when the
 		//user starts to navigate using the keyboard we want to hide it because it is a bit distracting when both it and
@@ -1430,6 +1431,7 @@ class Tablance {
 		const cellPos=el.getBoundingClientRect();
 		this.#cellCursor.style.top=cellPos.y-tableSizerPos.y+this.#tableSizer.offsetTop+"px";
 		this.#cellCursor.style.left=cellPos.x-tableSizerPos.x+"px";
+		this.#cellCursor.style.display="block";//it starts at display none since #setupSpreadsheet, so make visible now
 		if (!onlyPos) {
 			this.#cellCursor.style.height=cellPos.height+"px";
 			this.#cellCursor.style.width=cellPos.width+"px";
@@ -1601,7 +1603,6 @@ class Tablance {
 	}
 
 	addData(data) {
-		const priorlyEmpty=!data.length;
 		this._allData=this._allData.concat(data);
 		//this.#data.push(...data);//much faster than above but causes "Maximum call stack size exceeded" for large data
 		this.#sortData();
@@ -1909,7 +1910,6 @@ class Tablance {
 				td.style.backgroundColor="blue";
 			}
 			setTimeout(()=>{
-				console.log(currentColors);
 				for (const td of tr.children) {
 					td.style.transition="background-color 1s linear";
 					td.style.backgroundColor=currentColors.shift();
