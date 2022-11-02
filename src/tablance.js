@@ -1534,6 +1534,7 @@ class Tablance {
 
 		this.#tableSizer=this.#scrollingContent.appendChild(document.createElement("div"));
 		this.#tableSizer.style.position="relative";
+		this.#tableSizer.style.top="0px";//need to have so that scrolling works properly when reading parseInt of it
 		this.#tableSizer.className="table-sizer";
 
 		this.#mainTable=this.#tableSizer.appendChild(document.createElement("table"));
@@ -1607,6 +1608,7 @@ class Tablance {
 	}
 
 	addData(data, highlight=false) {
+		const oldLen=this.#data.length;
 		if (highlight)
 			this.#searchInput.value=this.#filter="";//remove any filter
 		this._allData=this._allData.concat(data);
@@ -1620,8 +1622,10 @@ class Tablance {
 				this.#refreshRows();
 			else
 				this.#maybeAddTrs();
-			this.#refreshTableSizerNoExpansions();
+			const numNewInData=this.#data.length-oldLen;
+			this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+numNewInData*this.#rowHeight+"px";
 		}
+		return;
 		if (highlight) {
 			for (let dataRow of data)
 				this.#highlightRowIndex(this.#data.indexOf(dataRow));
