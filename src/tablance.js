@@ -31,7 +31,7 @@ class Tablance {
 					 //improves performance.
 	#spreadsheet;//whether the table is a spreadsheet, which is set in the constructor
 	#opts; //reference to the object passed as opts in the constructor
-	#sortingCols=[{index:0,order:"asc"}];//contains data on how the table currently is sorted. It is an array of 
+	#sortingCols=[];//contains data on how the table currently is sorted. It is an array of 
 										//objects which each contain "index" which is the index of the column and
 										//"order" which value should be either "desc" or "asc". The array may contain
 										//multiple of these objects for having it sorted on multiple ones.
@@ -1500,9 +1500,14 @@ class Tablance {
 
 	#sortData() {
 		const sortCols=this.#sortingCols;
+		if (!sortCols.length)
+			return false;
+		this.#openExpansions={};
+		this.#expandedRowHeights={};
 		for (let sortCol of sortCols)//go through all the columns in the sorting-order and set their id (the 
 			sortCol.id=this.#colStructs[sortCol.index].id;			//key of that  column in the data) for fast access
 		this.#data.sort(compare);
+		return true;
 		
 		function compare(a,b) {
 			for (let sortCol of sortCols) {
@@ -1602,20 +1607,25 @@ class Tablance {
 	}
 
 	addData(data, highlight=false) {
+		if (highlight)
+			this.#searchInput.value=this.#filter="";//remove any filter
 		this._allData=this._allData.concat(data);
 		//this.#data.push(...data);//much faster than above but causes "Maximum call stack size exceeded" for large data
-		this.#sortData();
+		let sortingOccured=this.#sortData();
 		if (this.#filter)
 			this.#filterData(this.#filter);
 		else {
 			this.#data=this._allData;
-			this.#maybeAddTrs();
+			if (sortingOccured)
+				this.#refreshRows();
+			else
+				this.#maybeAddTrs();
 			this.#refreshTableSizerNoExpansions();
 		}
 		if (highlight) {
-			for (let dataRow of data) {
+			for (let dataRow of data)
 				this.#highlightRowIndex(this.#data.indexOf(dataRow));
-			}
+			this.scrollToDataRow(data[0],false);
 		}
 	}
 
@@ -1891,7 +1901,6 @@ class Tablance {
 
 	scrollToDataRow(dataRow,highlight=true) {
 		let scrollY=0;
-		console.log(this.#scrollBody);
 		for (let i=-1,otherDataRow;otherDataRow=this.#data[++i];) {
 			if (otherDataRow==dataRow) {
 				scrollY=scrollY-this.#scrollBody.offsetHeight/2+this.#rowHeight;
