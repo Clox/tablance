@@ -100,9 +100,8 @@ class Tablance {
 		//get shifted up and the second click hits something else. By setting this var to current time plus 500 ms
 		//when a group closes and checking if current time is past this one in mouseDown handler we'll ignore the second
 		//click which is better user-experience
-	#highlightRowIndexOnScrollIntoView;//Can be set to the index of a row that is outside of the view. When it is 
-		//scrolled into view it will be highlighted. Used to scroll to and highlight a specific row because the row
-		//can't be highlighted immediately since it might not even exist in the dom yet.
+	#highlightRowsOnView={};//Rows can be added to this object with rowindex in #data as key, value needs to be truthy.
+		//Rows that are outside of view can be added and when scrolled into view they will be highlighted. 
 
 							
 
@@ -1602,7 +1601,7 @@ class Tablance {
 		this.#refreshTableSizerNoExpansions();
 	}
 
-	addData(data) {
+	addData(data, highlight=false) {
 		this._allData=this._allData.concat(data);
 		//this.#data.push(...data);//much faster than above but causes "Maximum call stack size exceeded" for large data
 		this.#sortData();
@@ -1612,7 +1611,12 @@ class Tablance {
 			this.#data=this._allData;
 			this.#maybeAddTrs();
 			this.#refreshTableSizerNoExpansions();
-		}		
+		}
+		if (highlight) {
+			for (let dataRow of data) {
+				this.#highlightRowIndex(this.#data.indexOf(dataRow));
+			}
+		}
 	}
 
 	#refreshRows() {
@@ -1819,8 +1823,8 @@ class Tablance {
 			else 
 				this.#updateMainRowCell(td,colStruct);
 		}
-		if (mainIndex===this.#highlightRowIndexOnScrollIntoView) {
-			this.#highlightRowIndexOnScrollIntoView=null;
+		if (this.#highlightRowsOnView[mainIndex]) {
+			delete this.#highlightRowsOnView[mainIndex];
 			this.#highlightRowIndex(mainIndex);
 		}
 		return tr;
@@ -1916,7 +1920,7 @@ class Tablance {
 				}
 			})
 		} else {
-			this.#highlightRowIndexOnScrollIntoView=index;
+			this.#highlightRowsOnView[index]=true;
 		}
 
 	}
