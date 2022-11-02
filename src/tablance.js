@@ -1744,8 +1744,9 @@ class Tablance {
 				this.#lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row
 
 				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)
-										-this.#expandedRowHeights[this.#scrollRowIndex]+this.#rowHeight+"px";
-				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
+				 				-(this.#expandedRowHeights[this.#scrollRowIndex]??this.#rowHeight)+this.#rowHeight+"px";
+				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
+										+(this.#expandedRowHeights[this.#scrollRowIndex]??this.#rowHeight)+"px";
 			}
 		}
 		this.#scrollY=newScrY;
