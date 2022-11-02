@@ -8,8 +8,8 @@ class Tablance {
 	#cols=[];//array of col-elements for each column
 	#headerTr;//the tr for the top header-row
 	#headerTable;//the tabe for the #headerTr. This table only contains that one row.
-	#allData=[];//contains all, unfiltered data that has been added via addData()
-	#data=[];//with no filter applied(empty seachbar) then this is reference to #allData, otherwise is a subset of it
+	_allData=[];//contains all, unfiltered data that has been added via addData()
+	#data=[];//with no filter applied(empty seachbar) then this is reference to _allData, otherwise is a subset of it
 	#scrollRowIndex=0;//the index in the #data of the top row in the view
 	#scrollBody;//resides directly inside #container and is the element with the scrollbar. It contains #scrollingDiv
 	#scrollingContent;//a div that is inside #scrollbody and holds #tablesizer and #cellCursor if spreadsheet
@@ -56,7 +56,7 @@ class Tablance {
 	#cellCursorOutlineWidth;//px-width as int, used in conjunction with #cellCursorBorderWidths to adjust margins of the
 	//main-table in order to reveal the outermost line when an outermost cell is selected
 	#inputVal;//the current val of the input when in edit-mode. Will be read and commited if cell is exited correctly
-	highlightOnFocus=true;//when the spreadsheet is focused  we want focus-outline to appear but only if focused by
+	#highlightOnFocus=true;//when the spreadsheet is focused  we want focus-outline to appear but only if focused by
 				//keyboard-tabbing, and not when clicking or exiting out of edit-mode which again focuses the table.
 				//By setting this to true in mouseDownEvent we can 
 				//check which input was used last when the focus-method is triggerd
@@ -100,6 +100,10 @@ class Tablance {
 		//get shifted up and the second click hits something else. By setting this var to current time plus 500 ms
 		//when a group closes and checking if current time is past this one in mouseDown handler we'll ignore the second
 		//click which is better user-experience
+	#highlightRowIndexOnScrollIntoView;//Can be set to the index of a row that is outside of the view. When it is 
+		//scrolled into view it will be highlighted. Used to scroll to and highlight a specific row because the row
+		//can't be highlighted immediately since it might not even exist in the dom yet.
+
 							
 
 	/**
@@ -331,12 +335,12 @@ class Tablance {
 		//user starts to navigate using the keyboard we want to hide it because it is a bit distracting when both it and
 		//a cell is highlighted. Thats why #spreadsheetKeyDown sets outline to none, and this line undos that
 		//also, we dont want it to show when focusing by mouse so we use #focusMethod (see its declaration)
-		if (this.highlightOnFocus)
+		if (this.#highlightOnFocus)
 			this.#container.style.removeProperty("outline");
 		else
 			this.#container.style.outline="none"
 			
-		this.highlightOnFocus=true;
+		this.#highlightOnFocus=true;
 	}
 
 	#moveCellCursor(numCols,numRows) {
@@ -897,7 +901,7 @@ class Tablance {
 
 	#spreadsheetMouseDown(e) {
 		if (document.activeElement!==this.#container)
-			this.highlightOnFocus=false;//see decleration
+			this.#highlightOnFocus=false;//see decleration
 		this.#container.style.outline="none";//see #spreadsheetOnFocus
 	}
 	
@@ -1335,7 +1339,7 @@ class Tablance {
 		this.#cellCursor.innerHTML="";
 		if (this.#activeStruct.edit.dataType==="textarea")
 			this.#adjustCursorPosSize(this.#selectedCell);
-		this.highlightOnFocus=false;
+		this.#highlightOnFocus=false;
 	}
 
 	#commitRepeatedInsert(repeatEntry) {
@@ -1583,14 +1587,14 @@ class Tablance {
 				colsToFilterBy.push(col);
 		if (filterString) {
 			this.#data=[];
-			for (let dataRow of this.#allData)
+			for (let dataRow of this._allData)
 				for (let col of colsToFilterBy)
 					if (dataRow[col.id].includes(filterString)) {
 						this.#data.push(dataRow);
 						break;
 					}
 		} else
-			this.#data=this.#allData;
+			this.#data=this._allData;
 		this.#scrollRowIndex=0;
 		this.#refreshRows();
 		this.#refreshTableSizerNoExpansions();
@@ -1598,13 +1602,13 @@ class Tablance {
 
 	addData(data) {
 		const priorlyEmpty=!data.length;
-		this.#allData=this.#allData.concat(data);
+		this._allData=this._allData.concat(data);
 		//this.#data.push(...data);//much faster than above but causes "Maximum call stack size exceeded" for large data
 		this.#sortData();
 		if (this.#filter)
 			this.#filterData(this.#filter);
 		else {
-			this.#data=this.#allData;
+			this.#data=this._allData;
 			this.#maybeAddTrs();
 			this.#refreshTableSizerNoExpansions();
 		}		
@@ -1763,7 +1767,6 @@ class Tablance {
 		const scrH=this.#scrollBody.offsetHeight;
 		const dataLen=this.#data.length;
 		//if there are fewer trs than datarows, and if there is empty space below bottom tr
-		
 		while ((this.#numRenderedRows-1)*this.#rowHeight<scrH&&this.#scrollRowIndex+this.#numRenderedRows<dataLen) {
 			lastTr=this.#mainTable.insertRow();
 			this.#numRenderedRows++;
@@ -1807,7 +1810,6 @@ class Tablance {
 	 * @param {HTMLTableRowElement} tr The tr-element whose cells that should be updated*/
 	#updateRowValues(tr,mainIndex) {
 		tr.dataset.dataRowIndex=mainIndex;
-		const dataRow=this.#data[mainIndex];
 		for (let colI=0; colI<this.#colStructs.length; colI++) {
 			let td=tr.cells[colI];
 			let colStruct=this.#colStructs[colI];
@@ -1815,6 +1817,10 @@ class Tablance {
 				td.innerHTML=`<div style="height:${this.#rowInnerHeight||"auto"}"><a><span></span></a></div>`;
 			else 
 				this.#updateMainRowCell(td,colStruct);
+		}
+		if (mainIndex===this.#highlightRowIndexOnScrollIntoView) {
+			this.#highlightRowIndexOnScrollIntoView=null;
+			this.#highlightRowIndex(mainIndex);
 		}
 		return tr;
 	}
@@ -1876,5 +1882,42 @@ class Tablance {
 		cellEl.firstChild.innerHTML="";
 		const mainIndex=cellEl.closest(".main-table>tbody>tr").dataset.dataRowIndex;
 		this.#updateCell(colStruct,cellEl.firstChild,cellEl,this.#data[mainIndex],mainIndex);
+	}
+
+	scrollToDataRow(dataRow,highlight=true) {
+		let scrollY=0;
+		console.log(this.#scrollBody);
+		for (let i=-1,otherDataRow;otherDataRow=this.#data[++i];) {
+			if (otherDataRow==dataRow) {
+				scrollY=scrollY-this.#scrollBody.offsetHeight/2+this.#rowHeight;
+				this.#scrollBody.scrollTo({top:scrollY,behavior:'smooth'});
+				if (highlight)
+					this.#highlightRowIndex(i);
+				return;
+			}
+			scrollY+=this.#expandedRowHeights[i]??this.#rowHeight;
+		}
+	}
+
+	#highlightRowIndex(index) {
+		const tr=this.#mainTbody.querySelector(`[data-data-row-index="${index}"]`);
+		if (tr) {
+			const currentColors=[];
+			for (const td of tr.children) {
+				currentColors.push(window.getComputedStyle(td).backgroundColor);
+				td.style.transition = "none";
+				td.style.backgroundColor="blue";
+			}
+			setTimeout(()=>{
+				console.log(currentColors);
+				for (const td of tr.children) {
+					td.style.transition="background-color 1s linear";
+					td.style.backgroundColor=currentColors.shift();
+				}
+			})
+		} else {
+			this.#highlightRowIndexOnScrollIntoView=index;
+		}
+
 	}
 }

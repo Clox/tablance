@@ -70,8 +70,8 @@
 
 			const myTablance=new Tablance(document.getElementById("tablanceContainer1"),myTablanceCols,true,true
 				,myExpansion,{defaultDatePlaceholder:"ÅÅÅÅ-MM-DD",defaultSelectNoResultText:"Inga resultat"});
+			window.tablance=myTablance;//to play with public methods via console
 
-			
 			for (let i=0; i<3; i++) {
 				let data=[];
 				for (let ii=0; ii<1000; ii++) {
