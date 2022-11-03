@@ -1598,6 +1598,7 @@ class Tablance {
 
 	#filterData(filterString) {
 		this.#openExpansions={};
+		this.#expandedRowHeights={keys:[],vals:[]};
 		for (const tr of this.#mainTbody.querySelectorAll("tr.expansion"))
 		 	tr.remove();
 		this.#filter=filterString;
