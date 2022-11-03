@@ -1624,13 +1624,12 @@ class Tablance {
 		const oldLen=this.#data.length;
 		if (highlight)
 			this.#searchInput.value=this.#filter="";//remove any filter
-		this._allData=this._allData.concat(data);
+		this.#data=this._allData=this._allData.concat(data);
 		//this.#data.push(...data);//much faster than above but causes "Maximum call stack size exceeded" for large data
 		let sortingOccured=this.#sortData();
 		if (this.#filter)
 			this.#filterData(this.#filter);
 		else {
-			this.#data=this._allData;
 			if (sortingOccured)
 				this.#refreshTable();
 			else
@@ -1638,11 +1637,10 @@ class Tablance {
 			const numNewInData=this.#data.length-oldLen;
 			this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+numNewInData*this.#rowHeight+"px";
 		}
-		return;
 		if (highlight) {
 			for (let dataRow of data)
 				this.#highlightRowIndex(this.#data.indexOf(dataRow));
-			this.scrollToDataRow(data[0],false);
+			this.scrollToDataRow(data[0],false);//false for not highlighting, above line does the highlight anyway
 		}
 	}
 
