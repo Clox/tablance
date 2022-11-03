@@ -1491,7 +1491,7 @@ class Tablance {
 		this.#updateHeaderSortClasses();
 		e.preventDefault();//prevent text-selection when shift-clicking and double-clicking
 		this.#sortData();
-		this.#refreshRows();
+		this.#refreshTable();
 	}
 
 	#updateHeaderSortClasses() {
@@ -1518,7 +1518,6 @@ class Tablance {
 		const sortCols=this.#sortingCols;
 		if (!sortCols.length)
 			return false;
-		this.#openExpansions={};
 		for (let sortCol of sortCols)//go through all the columns in the sorting-order and set their id (the 
 			sortCol.id=this.#colStructs[sortCol.index].id;			//key of that  column in the data) for fast access
 		this.#data.sort(compare);
@@ -1617,7 +1616,7 @@ class Tablance {
 		} else
 			this.#data=this._allData;
 		this.#scrollRowIndex=0;
-		this.#refreshRows();
+		this.#refreshTable();
 		this.#refreshTableSizerNoExpansions();
 	}
 
@@ -1633,7 +1632,7 @@ class Tablance {
 		else {
 			this.#data=this._allData;
 			if (sortingOccured)
-				this.#refreshRows();
+				this.#refreshTable();
 			else
 				this.#maybeAddTrs();
 			const numNewInData=this.#data.length-oldLen;
@@ -1647,10 +1646,21 @@ class Tablance {
 		}
 	}
 
-	#refreshRows() {
-		this.#mainTbody.replaceChildren();
-		this.#numRenderedRows=0;
-		this.#maybeAddTrs();
+	/**Refreshes the table-rows. Should be used after sorting or filtering or such.*/
+	#refreshTable() {
+		//In order to render everything correctly and know which rows should be rendered in the view we need to go from
+		//top to bottom because the number of expanded rows above the view might have changed. So go to 
+		//#scrollRowIndex 0 to start at top row, also set #scrollY to 0 so the scrollMethod compares the current
+		//scrollTop with 0.
+		this.#scrollRowIndex=this.#scrollY=0;
+
+		//adjust the sizer to what its top and height would be when scrolled all the way up.
+		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+parseInt(this.#tableSizer.style.top)+"px";
+		this.#tableSizer.style.top=this.#numRenderedRows=0;
+
+		this.#mainTbody.replaceChildren();//remove all the tr-elements
+		this.#maybeAddTrs();//add them again and with their correct data, at least based on them being the top rows 
+		this.#scrollMethod();//now scroll back to the real scroll-position
 	}
 
 	/**This onScroll-handler is used when rows are of static height and can't be expanded either.
@@ -1666,7 +1676,7 @@ class Tablance {
 			return;
 		if(Math.abs(newScrollRowIndex-this.#scrollRowIndex)>this.#mainTbody.rows.length){//if scrolling by whole page(s)
 			this.#scrollRowIndex=parseInt(scrY/this.#rowHeight);
-			this.#refreshRows();
+			this.#refreshTable();
 		} else {
 			const scrollSignum=Math.sign(newScrollRowIndex-this.#scrollRowIndex);//1 if moving down, -1 if up
 			do {
