@@ -96,7 +96,7 @@
 			}
 		}
 	}
-	tr.expanded>td.expandcol>a{
+	tr.expanded>td.expandcol>div>a{
 		background: linear-gradient(to bottom, #FD2B2B, #A51616);
 		>span::before {
 			content: "\2013";
