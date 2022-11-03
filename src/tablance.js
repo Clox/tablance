@@ -1521,6 +1521,7 @@ class Tablance {
 		for (let sortCol of sortCols)//go through all the columns in the sorting-order and set their id (the 
 			sortCol.id=this.#colStructs[sortCol.index].id;			//key of that  column in the data) for fast access
 		this.#data.sort(compare);
+		this.#mainRowIndex=this.#data.indexOf(this.#cellCursorDataObj);
 		return true;
 		
 		function compare(a,b) {
@@ -1656,6 +1657,9 @@ class Tablance {
 		//adjust the sizer to what its top and height would be when scrolled all the way up.
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+parseInt(this.#tableSizer.style.top)+"px";
 		this.#tableSizer.style.top=this.#numRenderedRows=0;
+
+		//its position and size needs to be udated.Hide for now and let #updateRowValues or #renderExpansion add it back
+		this.#cellCursor.style.display="none";
 
 		this.#mainTbody.replaceChildren();//remove all the tr-elements
 		this.#maybeAddTrs();//add them again and with their correct data, at least based on them being the top rows 
@@ -1796,6 +1800,7 @@ class Tablance {
 				this.#selectedCell=cellObject.el;
 				this.#activeExpCell=cellObject;//should be identical but this allows for the old one to be gc'd
 			}
+			this.#adjustCursorPosSize(this.#selectedCell);
 		}
 	}
 
