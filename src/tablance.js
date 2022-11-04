@@ -278,11 +278,11 @@ class Tablance {
 		if (spreadsheet)
 			this.#setupSpreadsheet();
 		if (opts.sortAscHtml==null)
-			opts.sortAscHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#000" '
-									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
-		if (opts.sortDescHtml==null)
-			opts.sortDescHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
+			opts.sortAscHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#000" points="4,10,0,6,8,6"/></svg>';
+		if (opts.sortDescHtml==null)
+			opts.sortDescHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#000" '
+									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
 		if (opts.sortNoneHtml==null)
 			opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
@@ -1532,10 +1532,8 @@ class Tablance {
 		
 		function compare(a,b) {
 			for (let sortCol of sortCols) {
-				if (a[sortCol.id]<b[sortCol.id])
-					return sortCol.order=="asc"?-1:1;
-				if (a[sortCol.id]>b[sortCol.id])
-					return sortCol.order=="asc"?1:-1;
+				if (a[sortCol.id]!=b[sortCol.id])
+					return (a[sortCol.id]>b[sortCol.id]?1:-1)*(sortCol.order=="asc"?1:-1);
 			}
 		}
 	}
