@@ -286,6 +286,7 @@ class Tablance {
 		if (opts.sortNoneHtml==null)
 			opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
+		this.#updateHeaderSortHtml();
 	}
 
 	#setupSearchbar() {
@@ -1455,17 +1456,20 @@ class Tablance {
 
 	#createTableHeader() {
 		this.#headerTable=this.#container.appendChild(document.createElement("table"));
+		this.#headerTable.classList.add("header-table");
 		const thead=this.#headerTable.appendChild(document.createElement("thead"));
 		this.#headerTr=thead.insertRow();
 		for (let col of this.#colStructs) {
 			let th=document.createElement("th");
 			th.addEventListener("mousedown",e=>this.#onThClick(e));
-			this.#headerTr.appendChild(th).innerText=col.title??"";
+			this.#headerTr.appendChild(th).innerText=col.title??"\xa0";//non breaking space if nothing else or else
+																	//sorting arrows wont be positioned correctly
 
 			//create the divs used for showing html for sorting-up/down-arrow or whatever has been configured
 			col.sortDiv=th.appendChild(document.createElement("DIV"));
 			col.sortDiv.className="sortSymbol";
 		}
+		this.#headerTr.appendChild(document.createElement("th"));
 	}
 
 	#onThClick(e) {
@@ -1488,14 +1492,16 @@ class Tablance {
 				this.#sortingCols.push({index:clickedIndex,order:"asc"});
 			else
 				this.#sortingCols=[{index:clickedIndex,order:"asc"}];
-		this.#updateHeaderSortClasses();
+		this.#updateHeaderSortHtml();
 		e.preventDefault();//prevent text-selection when shift-clicking and double-clicking
 		this.#sortData();
 		this.#refreshTable();
 	}
 
-	#updateHeaderSortClasses() {
+	#updateHeaderSortHtml() {
 		for (let [thIndex,th] of Object.entries(this.#headerTr.cells)) {
+			if (thIndex==this.#headerTr.cells.length-1)
+				break;
 			let order=null;
 			let sortDiv=this.#colStructs[thIndex].sortDiv;
 			for (let sortingCol of this.#sortingCols) {
@@ -1590,10 +1596,12 @@ class Tablance {
 			for (let col of this.#colStructs)
 				if (!col.width)//if undefined width
 					col.pxWidth=(areaWidth-sumFixedAndFlexibleWidth)/numUndefinedWidths;
-			for (let colI=0; colI<this.#colStructs.length; colI++) 
+			for (var colI=0; colI<this.#colStructs.length; colI++) 
 				this.#cols[colI].style.width=this.#headerTr.cells[colI].style.width=this.#colStructs[colI].pxWidth+"px";
 		}			
-		this.#headerTable.style.width=areaWidth+"px";
+		this.#headerTr.cells[colI].style.width=this.#scrollBody.offsetWidth-areaWidth+"px";
+		console.log(areaWidth);
+		this.#headerTable.style.width=this.#scrollBody.offsetWidth+"px";
 		this.#adjustCursorPosSize(this.#selectedCell);
 	}
 
@@ -1964,6 +1972,5 @@ class Tablance {
 		} else {
 			this.#highlightRowsOnView[index]=true;
 		}
-
 	}
 }
