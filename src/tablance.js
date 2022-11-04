@@ -1524,15 +1524,22 @@ class Tablance {
 		const sortCols=this.#sortingCols;
 		if (!sortCols.length)
 			return false;
-		for (let sortCol of sortCols)//go through all the columns in the sorting-order and set their id (the 
-			sortCol.id=this.#colStructs[sortCol.index].id;			//key of that  column in the data) for fast access
-		this.#data.sort(compare);
+		for (let sortCol of sortCols) {//go through all the columns in the sorting-order and set their id (the 
+			sortCol.id=this.#colStructs[sortCol.index].id;		//key of that  column in the data) for fast access
+			sortCol.type=this.#colStructs[sortCol.index].type;
+		}
+		this.#data.sort(compare.bind(this));
 		this.#mainRowIndex=this.#data.indexOf(this.#cellCursorDataObj);
 		return true;
 		
 		function compare(a,b) {
 			for (let sortCol of sortCols) {
-				if (a[sortCol.id]!=b[sortCol.id])
+				if (sortCol.type==="expand") {
+					let aIsExpanded=this.#expandedRowHeights.keys.indexOf(a)!=-1;
+					let bIsExpanded=this.#expandedRowHeights.keys.indexOf(b)!=-1;
+					if (aIsExpanded!=bIsExpanded)
+						return (aIsExpanded<bIsExpanded?1:-1)*(sortCol.order=="asc"?1:-1);
+				} else if (a[sortCol.id]!=b[sortCol.id])
 					return (a[sortCol.id]>b[sortCol.id]?1:-1)*(sortCol.order=="asc"?1:-1);
 			}
 		}
