@@ -22,6 +22,9 @@
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
 				{type:"field",title:"Select",id:"sel",edit:{dataType:"select"
 						,options:foods,minOptsFilter:1000,allowSelectEmpty:true}},
+				{type:"repeated",id:"addresses",entry:{type:"group",entries:
+					[{type:"field",title:"Gata",id:"street"},{type:"field",title:"Postnummer",id:"zip"}
+						,{type:"field",title:"Ort",id:"city"}]}},
 				{type:"field",title:"Date",id:"date",edit:{dataType:"date",onChange:(...args)=>console.log(args)}},
 				{type:"repeated",id:"repeatedField",entry:
 					{type:"field",title:"repeated row",id:"foo"}

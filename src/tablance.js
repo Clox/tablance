@@ -861,18 +861,25 @@ class Tablance {
 		listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
 		if (listStructure.titlesColWidth)
 			titlesCol.style.width=listStructure.titlesColWidth;
-		for (let entryI=-1,struct; struct=listStructure.entries[++entryI];) {
-			if (struct.type==="repeated"&&rowData[struct.id]?.length) {
-				let repeatCelObj=listCelObj.children[entryI]={parent:listCelObj,index:entryI,children:[],struct:struct};
-				repeatCelObj.rowData=rowData[struct.id];
-				for (let repeatI=-1,itemData; itemData=rowData[struct.id][++repeatI];) {
-					path.push(entryI);
-					this.#generateListItem(listTbody,struct.entry,repeatI,repeatI,repeatCelObj,path,itemData);
-					path.pop();
+		let entryI=0;
+		for (const struct of listStructure.entries)
+			if (struct.type==="repeated") {
+				if (rowData[struct.id]?.length) {
+					let rptObj=listCelObj.children[entryI]={parent:listCelObj,index:entryI,children:[],struct:struct};
+					rptObj.rowData=rowData[struct.id];
+					let repeatI=0;
+					for (const itemData of rowData[struct.id]) {
+						path.push(entryI);
+						if (this.#generateListItem(listTbody,struct.entry,repeatI,repeatI,rptObj,path,itemData))
+							repeatI++;
+						path.pop();
+					}
+					entryI++;
 				}
-			} else
+			} else {
 				this.#generateListItem(listTbody,struct,entryI,mainIndex,listCelObj,path,rowData);
-		}
+				entryI++;
+			}
 		parentEl.appendChild(listTable);
 		return true;
 	}
@@ -891,6 +898,8 @@ class Tablance {
 			titleTd.innerText=struct.title??"";
 			listTr.appendChild(contentTd);
 			listCelObj.children[itemIndex]=cellChild;
+			path.pop();
+			return true;
 		}
 		path.pop();
 	}
