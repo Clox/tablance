@@ -557,9 +557,19 @@ class Tablance {
 		}
 	}
 
+	#unsortCol(id,type) {
+		for (let sortCol,i=-1;sortCol=this.#sortingCols[++i];)
+			if (id&&id==sortCol.id||type&&type==sortCol.type) {
+				this.#sortingCols.splice(i,1);
+				this.#updateHeaderSortHtml();
+				return;
+			}
+	}
+
 	#expandRow(tr,dataRowIndex) {
 		if (!this.#expansion||this.#expHeightGet(dataRowIndex))
 			return;
+		this.#unsortCol(null,"expand");
 		const expansionRow=this.#renderExpansion(tr,dataRowIndex,false);
 		this.#expHeightSet(dataRowIndex,this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY);
 		const contentDiv=expansionRow.querySelector(".content");
@@ -576,6 +586,7 @@ class Tablance {
 	#contractRow(dataRowIndex) {
 		if (!this.#expansion||!this.#expHeightGet(dataRowIndex))
 			return;
+		this.#unsortCol(null,"expand");
 		const tr=this.#mainTbody.querySelector(`[data-data-row-index="${dataRowIndex}"].expanded`);
 		if (this.#mainRowIndex==dataRowIndex&&this.#activeExpCell)//if cell-cursor is inside the expansion
 			this.#selectMainTableCell(tr.cells[this.#mainColIndex]);//then move it out
@@ -1350,8 +1361,10 @@ class Tablance {
 				for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)//update closed-group-renders
 					if (cell.struct.closedRender)//found a group with a closed-group-render func
 						cell.updateRenderOnClose=true;
-			} else
+			} else {
 				this.#updateMainRowCell(this.#selectedCell,this.#activeStruct);
+				this.#unsortCol(this.#activeStruct.id);
+			}
 		}
 		this.#cellCursor.innerHTML="";
 		if (this.#activeStruct.edit.dataType==="textarea")
@@ -1487,11 +1500,13 @@ class Tablance {
 				break;
 			}
 		}
-		if (sortingColIndex==this.#sortingCols.length)//if the clicked header wasn't sorted upon at all
-			if (e.shiftKey)
-				this.#sortingCols.push({index:clickedIndex,order:"asc"});
-			else
-				this.#sortingCols=[{index:clickedIndex,order:"asc"}];
+		if (sortingColIndex==this.#sortingCols.length) {//if the clicked header wasn't sorted upon at all
+			const {id,type}=this.#colStructs[clickedIndex];
+			const sortCol={id,type,order:"asc",index:clickedIndex};
+			if (!e.shiftKey)
+				this.#sortingCols=[];
+			this.#sortingCols.push(sortCol);
+		}
 		this.#updateHeaderSortHtml();
 		e.preventDefault();//prevent text-selection when shift-clicking and double-clicking
 		this.#sortData();
@@ -1524,10 +1539,6 @@ class Tablance {
 		const sortCols=this.#sortingCols;
 		if (!sortCols.length)
 			return false;
-		for (let sortCol of sortCols) {//go through all the columns in the sorting-order and set their id (the 
-			sortCol.id=this.#colStructs[sortCol.index].id;		//key of that  column in the data) for fast access
-			sortCol.type=this.#colStructs[sortCol.index].type;
-		}
 		this.#data.sort(compare.bind(this));
 		this.#mainRowIndex=this.#data.indexOf(this.#cellCursorDataObj);
 		return true;
@@ -1604,8 +1615,7 @@ class Tablance {
 			for (var colI=0; colI<this.#colStructs.length; colI++) 
 				this.#cols[colI].style.width=this.#headerTr.cells[colI].style.width=this.#colStructs[colI].pxWidth+"px";
 		}			
-		this.#headerTr.cells[colI].style.width=this.#scrollBody.offsetWidth-areaWidth+"px";
-		console.log(areaWidth);
+		this.#headerTr.cells[colI].style.width=this.#scrollBody.offsetWidth-areaWidth+"px";;
 		this.#headerTable.style.width=this.#scrollBody.offsetWidth+"px";
 		this.#adjustCursorPosSize(this.#selectedCell);
 	}
