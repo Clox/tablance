@@ -76,7 +76,7 @@ class Tablance {
 	#numRenderedRows=0;//number of tr-elements in the table excluding tr's that are expansions (expansions too are tr's)
 	#openExpansions={};//for any row that is expanded and also in view this will hold navigational data which
 							//is read from when clicking or navigating using keyboard to know which cell is next, and
-							//which elemnts even are selectable and so on. Keys are data-row-index. As soon as a row
+							//which elements even are selectable and so on. Keys are data-row-index. As soon as a row
 							//is either contracted or scrolled out of view it is removed from here and then re-added
 							//if expanded again or scrolled into view.
 							//keys are rowDataindex and the values are "cell-objects" structured as: {
@@ -854,52 +854,45 @@ class Tablance {
 	#generateExpansionList(listStructure,mainIndex,listCelObj,parentEl,path,rowData) {
 		listCelObj.children=[];
 		listCelObj.struct=listStructure;
-		const listTable=document.createElement("table");
-		const listTbody=listTable.appendChild(document.createElement("tbody"));
+		const listTable=listCelObj.listTable=document.createElement("table");
 		listTable.className="expansion-list";
 		let titlesCol=document.createElement("col");
 		listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
 		if (listStructure.titlesColWidth)
 			titlesCol.style.width=listStructure.titlesColWidth;
-		let entryI=0;
-		for (const struct of listStructure.entries)
+		for (let entryI=-1,struct; struct=listStructure.entries[++entryI];) {
 			if (struct.type==="repeated") {
-				if (rowData[struct.id]?.length) {
-					let rptObj=listCelObj.children[entryI]={parent:listCelObj,index:entryI,children:[],struct:struct};
-					rptObj.rowData=rowData[struct.id];
-					let repeatI=0;
+				let rptCelObj=listCelObj.children[entryI]={parent:listCelObj,index:entryI,children:[],struct:struct};
+				if (rowData[struct.id]?.length){
+					rptCelObj.rowData=rowData[struct.id];
 					for (const itemData of rowData[struct.id]) {
 						path.push(entryI);
-						if (this.#generateListItem(listTbody,struct.entry,repeatI,repeatI,rptObj,path,itemData))
-							repeatI++;
+						this.#generateListItem(listTable,struct.entry,mainIndex,rptCelObj,path,itemData);
 						path.pop();
 					}
-					entryI++;
 				}
-			} else {
-				this.#generateListItem(listTbody,struct,entryI,mainIndex,listCelObj,path,rowData);
-				entryI++;
-			}
+			} else
+				this.#generateListItem(listTable,struct,mainIndex,listCelObj,path,rowData);
+		}
 		parentEl.appendChild(listTable);
 		return true;
 	}
 
-	#generateListItem(listTbody,struct,itemIndex,mainIndex,listCelObj,path,data) {
+	#generateListItem(listTable,struct,mainIndex,listCelObj,path,data,insertBeforeEl) {
 		let contentTd=document.createElement("td");
 		contentTd.className="value";//not actually sure why but this can't be put inside condition below
-		let cellChild={parent:listCelObj,index:itemIndex};
-		path.push(itemIndex);
+		let cellChild={parent:listCelObj,index:listCelObj.children.length};
+		path.push(listCelObj.children.length);
 		if (this.#generateExpansionContent(struct,mainIndex,cellChild,contentTd,path,data)) {//generate content
 			//and add it to dom if condition falls true, e.g. content was actually created. it might not be if it is
 			//a repeated and there was no data for it add
-			let listTr=listTbody.insertRow();
+			let listTr=document.createElement("tr");
+			listTable.insertBefore(listTr,insertBeforeEl);
 			let titleTd=listTr.insertCell();
 			titleTd.className="title";
 			titleTd.innerText=struct.title??"";
 			listTr.appendChild(contentTd);
-			listCelObj.children[itemIndex]=cellChild;
-			path.pop();
-			return true;
+			listCelObj.children.push(cellChild);
 		}
 		path.pop();
 	}
@@ -1996,5 +1989,64 @@ class Tablance {
 		} else {
 			this.#highlightRowsOnView[index]=true;
 		}
+	}
+
+	insertRepeatData(dataRow_or_mainIndex,dataPath,data) {
+		let dataRow,mainIndex;
+		if (typeof dataRow_or_mainIndex=="number")
+			dataRow=this.#data[mainIndex=dataRow_or_mainIndex];
+		else //if (typeof dataRow_or_mainIndex=="object")
+			mainIndex=this.#data.indexOf(dataRow=dataRow_or_mainIndex);
+		if (typeof dataPath=="string")
+			dataPath=[dataPath];
+		let dataPortion=dataRow;
+		for (let dataStep of dataPath) {
+			// if (!dataPortion[dataStep]) {//doesn't exist yet?
+			// 	dataPortion[dataStep]
+			// }
+			dataPortion=dataPortion[dataStep];
+		}
+		dataPortion.push(data);
+		const expansionObj=this.#openExpansions[mainIndex];
+		const path=[];
+		const celObj=findCellObjByData(expansionObj,dataPortion,path);
+		let closestRenderedCelObj;//the closest parent that is rendered
+		for (let otherCelObj=celObj; otherCelObj=otherCelObj.parent;) {
+			if (otherCelObj.el||otherCelObj.listTable) {
+				closestRenderedCelObj=otherCelObj
+				break;
+			}
+		}
+		const siblingBelow=findClosestRenderedSibling(celObj);
+		const nextSibl=(siblingBelow.el??siblingBelow.listTable).parentElement;
+		this.#generateListItem(closestRenderedCelObj.listTable,celObj.struct.entry,mainIndex,celObj,path,data,nextSibl);
+		this.#adjustCursorPosSize(this.#selectedCell,true);
+
+		function findClosestRenderedSibling(startCell) {
+			for (let i=startCell.index,otherCell; otherCell=startCell.parent.children[++i];) {
+				if (otherCell.el||otherCell.listTable)
+					return otherCell;
+				if (otherCell.children) {
+					const lastRenderedChild=findClosestRenderedSibling(otherCell.children[0]);
+					if (lastRenderedChild)
+						return lastRenderedChild;
+				}
+			}
+			
+		}
+		function findCellObjByData(searchInObj,data,path) {
+			if (searchInObj.rowData==data)
+				return searchInObj;
+			if (searchInObj.children)
+				for (let childI=-1,child;child=searchInObj.children[++childI];) {
+					path.push(childI);
+					const childMatch=findCellObjByData(child,data);
+					if (childMatch)
+						return childMatch;
+					path.pop();
+				}
+					
+		}
+		//now find dataPortion in celObj
 	}
 }
