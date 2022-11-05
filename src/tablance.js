@@ -645,6 +645,8 @@ class Tablance {
 	}
 
 	#expansionAnimationEnd(e) {
+		if (e.currentTarget!==e.target)
+			return;//otherwise it will apply to transitions of child-elements as well
 		if (parseInt(e.target.style.height)) {//if expand finished
 
 			e.target.style.height="auto";
@@ -895,6 +897,7 @@ class Tablance {
 			listCelObj.children.push(cellChild);
 		}
 		path.pop();
+		return contentTd;
 	}
 
 	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {	
@@ -1973,25 +1976,13 @@ class Tablance {
 
 	#highlightRowIndex(index) {
 		const tr=this.#mainTbody.querySelector(`[data-data-row-index="${index}"]`);
-		if (tr) {
-			const currentColors=[];
-			for (const td of tr.children) {
-				currentColors.push(window.getComputedStyle(td).backgroundColor);
-				td.style.transition = "none";
-				td.style.backgroundColor="blue";
-			}
-			setTimeout(()=>{
-				for (const td of tr.children) {
-					td.style.transition="background-color 1s linear";
-					td.style.backgroundColor=currentColors.shift();
-				}
-			})
-		} else {
+		if (tr)
+			this.#highlightElements(tr.children);
+		else
 			this.#highlightRowsOnView[index]=true;
-		}
 	}
 
-	insertRepeatData(dataRow_or_mainIndex,dataPath,data) {
+	insertRepeatData(dataRow_or_mainIndex,dataPath,data,scrollTo) {
 		let dataRow,mainIndex;
 		if (typeof dataRow_or_mainIndex=="number")
 			dataRow=this.#data[mainIndex=dataRow_or_mainIndex];
@@ -2008,18 +1999,25 @@ class Tablance {
 		}
 		dataPortion.push(data);
 		const expansionObj=this.#openExpansions[mainIndex];
+		if (!expansionObj)
+			return;
 		const path=[];
 		const celObj=findCellObjByData(expansionObj,dataPortion,path);
-		let closestRenderedCelObj;//the closest parent that is rendered
+		let listObj;//the closest parent that is rendered
 		for (let otherCelObj=celObj; otherCelObj=otherCelObj.parent;) {
 			if (otherCelObj.el||otherCelObj.listTable) {
-				closestRenderedCelObj=otherCelObj
+				listObj=otherCelObj
 				break;
 			}
 		}
-		const siblingBelow=findClosestRenderedSibling(celObj);
-		const nextSibl=(siblingBelow.el??siblingBelow.listTable).parentElement;
-		this.#generateListItem(closestRenderedCelObj.listTable,celObj.struct.entry,mainIndex,celObj,path,data,nextSibl);
+		const nextSiblingObj=findClosestRenderedSibling(celObj);
+		const nextSibl=(nextSiblingObj.el??nextSiblingObj.listTable).parentElement;
+		const newEl=this.#generateListItem(listObj.listTable,celObj.struct.entry,mainIndex,celObj,path,data,nextSibl);
+		if (scrollTo){
+			newEl.scrollIntoView({behavior:'smooth',block:"center"});
+			this.#highlightElements([newEl,...newEl.getElementsByTagName('*')]);
+		}
+
 		this.#adjustCursorPosSize(this.#selectedCell,true);
 
 		function findClosestRenderedSibling(startCell) {
@@ -2031,8 +2029,7 @@ class Tablance {
 					if (lastRenderedChild)
 						return lastRenderedChild;
 				}
-			}
-			
+			}	
 		}
 		function findCellObjByData(searchInObj,data,path) {
 			if (searchInObj.rowData==data)
@@ -2047,6 +2044,20 @@ class Tablance {
 				}
 					
 		}
-		//now find dataPortion in celObj
+	}
+	#highlightElements(elements) {
+		console.log(elements)
+		const origColors=[];
+		for (const el of elements) {
+			origColors.push(window.getComputedStyle(el).backgroundColor);
+			el.style.transition = "none";
+			el.style.backgroundColor="blue";
+		}
+		setTimeout(()=>{
+			for (const el of elements) {
+				el.style.transition="background-color 1s linear";
+				el.style.backgroundColor=origColors.shift();
+			}
+		});
 	}
 }
