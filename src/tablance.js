@@ -857,6 +857,7 @@ class Tablance {
 		listCelObj.children=[];
 		listCelObj.struct=listStructure;
 		const listTable=listCelObj.listTable=document.createElement("table");
+		listTable.appendChild(document.createElement("tbody"));
 		listTable.className="expansion-list";
 		let titlesCol=document.createElement("col");
 		listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
@@ -889,7 +890,7 @@ class Tablance {
 			//and add it to dom if condition falls true, e.g. content was actually created. it might not be if it is
 			//a repeated and there was no data for it add
 			let listTr=document.createElement("tr");
-			listTable.insertBefore(listTr,insertBeforeEl);
+			listTable.firstChild.insertBefore(listTr,insertBeforeEl);
 			let titleTd=listTr.insertCell();
 			titleTd.className="title";
 			titleTd.innerText=struct.title??"";
@@ -2045,6 +2046,7 @@ class Tablance {
 					
 		}
 	}
+
 	#highlightElements(elements) {
 		console.log(elements)
 		const origColors=[];
