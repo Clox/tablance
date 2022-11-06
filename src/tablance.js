@@ -89,7 +89,7 @@ class Tablance {
 							//						it simply holds the top cell-objects
 							//  index: the index of the cell/object in the children-array of its parent
 							//}
-	#activeExpCell;	//points to an object in #openExpansionNavMap and in extension the cell of an expension.
+	#activeExpCell;	//points to an object in #openExpansionNavMap and in extension the cell of an expansion.
 							//If this is set then it means the cursor is inside an expansion.
 	#animateCellCursorUntil;//used by #animateCellcursorPos to set the end-time for animation for adjusting its position
 							//while rows are being expanded/contracted
@@ -190,6 +190,14 @@ class Tablance {
 	 * 					minOptsFilter Integer - The minimum number of options required for the filter-input to appear
 	 * 						Can also be set via param opts->defaultMinOptsFilter
 	 * 					allowSelectEmpty bool - Used for dataType "select". Default true.Pins an empty-option at the top
+	 * 					allowCreateNew bool - Used for dataType "select". Allows user to create new options.
+	 * 								If this is true then minOptsFilter will be ignored, input-field is required anyway.
+	 * 					createNewOptionHandler Function - Used for dataType "select". Callback which is called when
+	 * 						the user creates a new option, which can be done if allowCreateNew is true. It will get 
+	 * 							passed arguments 1:new option-object,2:event, 3:dataObject
+	 * 							//,4:mainDataIndex,5:struct,6:cellObject(if inside expansion)
+	 * 					selectInputPlaceholder String - Used for dataType "select". A placeholder for the input which
+	 * 						is visible either if the number of options exceed minOptsFilter or allowCreateNew is true
 	 * 					emptyOptString String - For dataType "select", specifies the text of the empty option if 
 	 * 						allowSelectEmpty is true. Can also be set via param opts->defaultEmptyOptString
   	 * 			}}
@@ -1222,39 +1230,47 @@ class Tablance {
 	}
 
 	#openSelectEdit() {
+		const self=this;//to have access to this(tablance-instance) inside closures
 		let highlightLiIndex,highlightUlIndex;
 		let filterText="";
+		const edit=this.#activeStruct.edit;
 		this.#inputVal=this.#cellCursorDataObj[this.#activeStruct.id];
 		const selectContainer=document.createElement("div");
-		let opts=[...this.#activeStruct.edit.options];
-		const inputWrapper=selectContainer.appendChild(document.createElement("div"));//we use this to give the
+		let opts=[...edit.options];
+		const inputWrapper=selectContainer.appendChild(document.createElement("div"));//used to give the input margins
 		const input=inputWrapper.appendChild(document.createElement("input"));
 		const windowClickBound=windowClick.bind(this);//saving reference to bound func so handler can be removed later
-		const allowEmpty=this.#activeStruct.edit.allowSelectEmpty??true;
-		const emptyString=this.#activeStruct.edit.emptyOptString??this.#opts.defaultEmptyOptString??"Empty";
+		const allowEmpty=edit.allowSelectEmpty??true;
+		let canCreate=false;//whether the create-button is currently available. This firstly depends on edit.allowCreate
+					//but also the current value of the input and if there already is an option matching that exactly
+		const emptyString=edit.emptyOptString??this.#opts.defaultEmptyOptString??"Empty";
 		inputWrapper.classList.add("input-wrapper");//input-element a margin. Can't put padding in container because
 							//that would cause the highlight-box of selected options not to go all the way to the sides
 		const ulDiv=selectContainer.appendChild(document.createElement("div"));
-		if (opts.length>=(this.#activeStruct.edit.minOptsFilter??this.#opts.defaultMinOptsFilter??5)) {
+		if (edit.allowCreateNew||opts.length>=(edit.minOptsFilter??this.#opts.defaultMinOptsFilter??5)) {
 			input.addEventListener("input",inputInput.bind(this));//filtering is allowed, add listener to the input
 		} else//else hide the input. still want to keep it to recieve focus and listening to keystrokes. tried focusing
 			inputWrapper.classList.add("hide");//container-divs instead of input but for some reason it messed up scroll
 		input.addEventListener("keydown",inputKeyDown.bind(this));
+		input.placeholder=edit.selectInputPlaceholder??"";
 		const pinnedUl=ulDiv.appendChild(document.createElement("ul"));
-		const ul=ulDiv.appendChild(document.createElement("ul"));
+		const mainUl=ulDiv.appendChild(document.createElement("ul"));
 		pinnedUl.classList.add("pinned");
-		for (let i=allowEmpty?0:1,currentUl;i<2&&(currentUl=i?ul:pinnedUl);i++) {
-			currentUl.dataset.ulIndex=i;
-			renderOpts(currentUl,i?opts:[{text:emptyString}],this.#inputVal);
-			currentUl.addEventListener("mouseover",ulMouseOver.bind(this));
-			currentUl.addEventListener("click",ulClick.bind(this));
+		for (let i=-1,ul;ul=[pinnedUl,mainUl][++i];) {
+			ul.dataset.ulIndex=i;
+			ul.addEventListener("mouseover",ulMouseOver.bind(this));
+			ul.addEventListener("click",ulClick.bind(this));
 		}
+		renderOpts(pinnedUl,[{text:emptyString}],this.#inputVal);
+		const creationLi=pinnedUl.appendChild(document.createElement("li"));
+		creationLi.style.display="none";
+		renderOpts(mainUl,opts,this.#inputVal);
+		
 		if (!allowEmpty&&this.#inputVal==null)
 			highlightOpt(1,0);//for selects where initial value is null but null cant be selected
 		
 		const noResults=selectContainer.appendChild(document.createElement("div"));
-		noResults.innerText=
-					this.#activeStruct.edit.noResultsText??this.#opts.defaultSelectNoResultText??"No results found";
+		noResults.innerText=edit.noResultsText??this.#opts.defaultSelectNoResultText??"No results found";
 		noResults.className="no-results";
 		
 		this.#scrollingContent.appendChild(selectContainer);
@@ -1274,13 +1290,13 @@ class Tablance {
 		function renderOpts(ul,opts,selectedVal) {
 			let foundSelected=false;
 			ul.innerHTML="";
-			for (let optI=-1,opt; opt=opts[++optI];) {
+			for (const opt of opts) {
 				const li=ul.appendChild(document.createElement("li"));
 				li.innerText=opt.text;
-				if (selectedVal==opt.value) {
+				if (selectedVal==opt.value||selectedVal==opt) {
 					foundSelected=true;
 					li.classList.add("selected","highlighted");
-					highlightLiIndex=optI;
+					highlightLiIndex=ul.children.length-1;
 					highlightUlIndex=parseInt(ul.dataset.ulIndex);
 				}
 			}
@@ -1288,17 +1304,22 @@ class Tablance {
 		}
 
 		function inputInput(e) {
+			canCreate=true;
 			if (!input.value.includes(filterText)||!filterText)//unless text was added to beginning or end
-				opts=[...this.#activeStruct.edit.options];//start off with all options there are
+				opts=[...edit.options];//start off with all options there are
 			for (let i=-1,opt; opt=opts[++i];)
 				if (!opt.text.includes(input.value))//if searchstring wasn't found in this opt
 					opts.splice(i--,1);//then remove it from view
-			if (!renderOpts(ul,opts,this.#inputVal)&&highlightUlIndex)//didnt find selected opt & empty is not selected
+				else if (opt.text.toLowerCase()==input.value.toLowerCase())
+					canCreate=false;
+			creationLi.style.display=canCreate?"block":"none";
+			if (!renderOpts(mainUl,opts,this.#inputVal)&&highlightUlIndex)//didnt find selected opt & empty is not selected
 					if (opts.length)//there are visible opts
 						highlightOpt.call(this,1,0);//select first among the filtered ones
 					else if (allowEmpty)//there are not visible ones after filtering but empty is available
 						highlightOpt.call(this,0,0);//select empty
 			noResults.style.display=opts.length?"none":"block";
+			creationLi.innerText=`Create [${filterText=input.value}]`;
 		}
 		function ulMouseOver(e) {
 			highlightOpt.call(this,parseInt(e.target.closest("ul").dataset.ulIndex)
@@ -1311,36 +1332,45 @@ class Tablance {
 				this.#exitEditMode(false);
 			}
 		}
-		function close() {
+		function close(e) {
+			if (!highlightUlIndex&&highlightLiIndex) {//if create new option
+				edit.options.push(self.#inputVal={text:filterText});
+				edit.createNewOptionHandler?.(self.#inputVal,e,self.#cellCursorDataObj,self.#mainRowIndex
+																			,self.#activeStruct,self.#activeExpCell);
+			} else {
+				self.#inputVal=highlightUlIndex?opts[highlightLiIndex]:null;
+			}
 			selectContainer.remove();
 			window.removeEventListener("click",windowClickBound);
 		}
 		function highlightOpt(ulIndex,liIndex) {
-			ulDiv.children[highlightUlIndex]?.children[highlightLiIndex]?.classList.remove("highlighted");
+			ulDiv.getElementsByClassName("highlighted")[0]?.classList.remove("highlighted");
 			ulDiv.children[highlightUlIndex=ulIndex].children[highlightLiIndex=liIndex].classList.add("highlighted");
 		}
 		function inputKeyDown(e) {
 			if (["ArrowDown","ArrowUp"].includes(e.key)){
 				e.preventDefault();//prevents moving the textcursor when pressing up or down
 				const newIndex=highlightLiIndex+(e.key==="ArrowDown"?1:-1);
-				if (highlightUlIndex) {
-					if (opts.length&&newIndex<opts.length&&newIndex>=0)
-						highlightOpt.call(this,1,newIndex);
-					else if (newIndex==-1&&allowEmpty)
-						highlightOpt.call(this,0,0);
-				} else if (opts.length&&newIndex==1)
-					highlightOpt.call(this,1,0);
+				if (highlightUlIndex) {//currently somewhere in the main ul
+					if (opts.length&&newIndex<opts.length&&newIndex>=0)//moving within main
+						highlightOpt(1,newIndex);
+					else if (newIndex==-1&&(allowEmpty||canCreate))//moving into pinned
+						highlightOpt(0,canCreate?1:0);
+				} else if ((!newIndex&&allowEmpty)||(newIndex==1&&canCreate))//moving within pinned
+					highlightOpt(0,newIndex);
+				else if (((newIndex==1&&!canCreate)||newIndex==2)&&opts.length) //moving from pinned to main
+					highlightOpt(1,0);
 			} else if (e.key==="Enter") {
-				this.#inputVal=highlightUlIndex?opts[highlightLiIndex].value:null;
-				close();
+				close(e);
 				this.#moveCellCursor(0,e.shiftKey?-1:1);
 				e.stopPropagation();
 			} else if (e.key==="Escape")
-				close();
+				close(e);
 		}
 		function ulClick(e) {
 			if (e.target.tagName.toLowerCase()=="li") {//not sure if ul could be the target? check here to make sure
-				this.#inputVal=e.currentTarget.dataset.ulIndex==1?opts[[...ul.children].indexOf(e.target)].value:null;
+				highlightUlIndex=e.currentTarget.dataset.ulIndex;
+				highlightLiIndex=Array.prototype.indexOf.call(e.currentTarget.children, e.target);
 				close();
 				this.#exitEditMode(true);
 			}
@@ -1937,9 +1967,12 @@ class Tablance {
 			let newCellContent;
 			if (struct.render)
 				newCellContent=struct.render(rowData,struct,mainIndex);
-			else if (struct.edit?.dataType==="select")
-				newCellContent=struct.edit.options.find(opt=>opt.value==rowData[struct.id])?.text??"";
-			else
+			else if (struct.edit?.dataType==="select") {
+				let selOptObj=rowData[struct.id];
+				if (selOptObj&&typeof selOptObj!=="object")
+					selOptObj=struct.edit.options.find(opt=>opt.value==rowData[struct.id]);
+				newCellContent=selOptObj?.text??"";
+			} else
 				newCellContent=rowData[struct.id]??"";
 			let isDisabled=false;
 			if (this.#spreadsheet&&struct.type!=="expand") {
@@ -2048,7 +2081,6 @@ class Tablance {
 	}
 
 	#highlightElements(elements) {
-		console.log(elements)
 		const origColors=[];
 		for (const el of elements) {
 			origColors.push(window.getComputedStyle(el).backgroundColor);
