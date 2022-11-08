@@ -22,7 +22,8 @@
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
 				{type:"field",title:"Select",id:"sel",edit:{dataType:"select",options:foods,minOptsFilter:100
 									,allowCreateNew:true,allowSelectEmpty:true,selectInputPlaceholder:"Sök/Skapa"}},
-				{type:"repeated",id:"addresses",entry:{type:"group",title:"Adress",entries:
+				{type:"repeated",id:"addresses",sortCompare:(a,b)=>a.zip>b.zip?1:-1,entry:{type:"group",title:"Adress"
+					,entries:
 					[{type:"field",title:"Gata",id:"street"},{type:"field",title:"Postnummer",id:"zip"}
 						,{type:"field",title:"Ort",id:"city"}]}},
 				{type:"group",title:"Hemadress",entries:
@@ -85,7 +86,7 @@
 					data.push({desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,descLetter:String.fromCharCode(ii)
 						,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
 						,hello:"Hallå",world:"Världen"
-						,addresses:[{street:"kaplan",zip:54321,city:"skara"}]
+						,addresses:[{street:"kaplan",zip:9999,city:"skara"},{street:"kaplan",zip:8999,city:"skara"}]
 						,sel:foods[0]//Math.round(Math.random()*(foods.length-1))+1
 						,repeatedField:[{foo:"row one in repeated",bar:5},{foo:"row two in repeated",bar:1}
 										,{foo:"row three in repeated",bar:3},{foo:"row four in repeated",bar:30}]

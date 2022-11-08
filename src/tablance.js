@@ -882,9 +882,9 @@ class Tablance {
 				let repeatData=rowData[struct.id];
 				let rptCelObj=listCelObj.children[entryI]={parent:listCelObj,index:entryI,children:[],struct:struct};
 				if (rowData[struct.id]?.length){
+					rptCelObj.rowData=repeatData;
 					if (struct.sortCompare)
 						(repeatData=[...repeatData]).sort(struct.sortCompare);
-					rptCelObj.rowData=repeatData;
 					for (const itemData of repeatData) {
 						path.push(entryI);
 						this.#generateListItem(listTable,struct.entry,mainIndex,rptCelObj,path,itemData);
@@ -898,7 +898,7 @@ class Tablance {
 		return true;
 	}
 
-	#generateListItem(listTable,struct,mainIndex,listCelObj,path,data,insertBeforeEl) {
+	#generateListItem(listTable,struct,mainIndex,listCelObj,path,data,insertBeforeEl=null,index=0) {
 		let contentTd=document.createElement("td");
 		contentTd.className="value";//not actually sure why but this can't be put inside condition below
 		let cellChild={parent:listCelObj,index:listCelObj.children.length};
@@ -2054,7 +2054,13 @@ class Tablance {
 			}
 		}
 		const nextSiblingObj=findClosestRenderedSibling(celObj);
-		const nextSibl=(nextSiblingObj.el??nextSiblingObj.listTable).parentElement;
+		let nextSibl=(nextSiblingObj.el??nextSiblingObj.listTable).parentElement;
+		for(;listObj.listTable.firstChild!=nextSibl.parentElement;nextSibl=nextSibl.parentElement);
+		if (celObj.struct.sortCompare) {
+			const sortedRowData=[...celObj.rowData].sort(celObj.struct.sortCompare);
+			for (let i=sortedRowData.length-1;sortedRowData[i]!=data;i--)
+				nextSibl=nextSibl.previousSibling;
+		}
 		const newEl=this.#generateListItem(listObj.listTable,celObj.struct.entry,mainIndex,celObj,path,data,nextSibl);
 		if (scrollTo){
 			newEl.scrollIntoView({behavior:'smooth',block:"center"});
@@ -2080,7 +2086,7 @@ class Tablance {
 			if (searchInObj.children)
 				for (let childI=-1,child;child=searchInObj.children[++childI];) {
 					path.push(childI);
-					const childMatch=findCellObjByData(child,data);
+					const childMatch=findCellObjByData(child,data,path);
 					if (childMatch)
 						return childMatch;
 					path.pop();
