@@ -219,6 +219,10 @@ class Tablance {
 	 * 				onCreate: Function Callback fired when the user has committed a new row. It is counted as committed
 	 * 					when the cell-cursor has left the repeat-row after having created it.
 	 * 					It will get passed arguments: 1:rowData,2:cellObject
+	 * 				sortCompare: Function Passing in a function allows for sorting the entries. As expected this
+	 * 						function will get called multiple times to compare the entries to one another.
+	 * 						It gets 4 arguments: 1: object A, 2: object B, 3: rowData, 4: cellObject
+	 * 						Return >0 to sort A after B, <0 to sort B after A, or ===0 to keep original order of A and B
 	 * 				creationText: //used if "create" is true. the text of the creation-cell. default is "Create new"
 	 * 				deleteText: //used if "create" is true. the text of the deletion-button. default is "Delete"
 	 * 							//can also be set via param opts->defaultRepeatDeleteText
@@ -707,10 +711,12 @@ class Tablance {
 	#generateExpansionRepeated(struct,dataIndex,cellObj,parentEl,path,rowData) {
 		cellObj.struct=struct;
 		cellObj.children=[];
-		const repeatData=cellObj.rowData=rowData[struct.id];
+		let repeatData=cellObj.rowData=rowData[struct.id];
 		if (repeatData?.length) {
 			struct=this.#getStructCopyWithDeleteControlsMaybe(struct);
-			for (let childI=0; childI<rowData[struct.id].length; childI++) {
+			if (struct.sortCompare)
+				(repeatData=[...repeatData]).sort(struct.sortCompare);
+			for (let childI=0; childI<repeatData.length; childI++) {
 				let childObj=cellObj.children[childI]={parent:cellObj,index:childI};
 				path.push(childI);
 				this.#generateExpansionContent(struct.entry,dataIndex,childObj,parentEl,path,repeatData[childI]);
@@ -873,10 +879,13 @@ class Tablance {
 			titlesCol.style.width=listStructure.titlesColWidth;
 		for (let entryI=-1,struct; struct=listStructure.entries[++entryI];) {
 			if (struct.type==="repeated") {
+				let repeatData=rowData[struct.id];
 				let rptCelObj=listCelObj.children[entryI]={parent:listCelObj,index:entryI,children:[],struct:struct};
 				if (rowData[struct.id]?.length){
-					rptCelObj.rowData=rowData[struct.id];
-					for (const itemData of rowData[struct.id]) {
+					if (struct.sortCompare)
+						(repeatData=[...repeatData]).sort(struct.sortCompare);
+					rptCelObj.rowData=repeatData;
+					for (const itemData of repeatData) {
 						path.push(entryI);
 						this.#generateListItem(listTable,struct.entry,mainIndex,rptCelObj,path,itemData);
 						path.pop();

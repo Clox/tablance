@@ -20,13 +20,17 @@
 						{text:"orange",value:4},{text:"grapes",value:5},{text:"melon",value:6},
 						{text:"pineapple",value:7},{text:"carrot",value:8}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
-				{type:"field",title:"Select",id:"sel",edit:{dataType:"select"
-						,options:foods,minOptsFilter:1000,allowSelectEmpty:true}},
-				{type:"repeated",id:"addresses",entry:{type:"group",entries:
+				{type:"field",title:"Select",id:"sel",edit:{dataType:"select",options:foods,minOptsFilter:100
+									,allowCreateNew:true,allowSelectEmpty:true,selectInputPlaceholder:"Sök/Skapa"}},
+				{type:"repeated",id:"addresses",entry:{type:"group",title:"Adress",entries:
 					[{type:"field",title:"Gata",id:"street"},{type:"field",title:"Postnummer",id:"zip"}
 						,{type:"field",title:"Ort",id:"city"}]}},
+				{type:"group",title:"Hemadress",entries:
+					[{type:"field",title:"Gata",id:"home_street",edit:{dataType:"text"}}
+						,{type:"field",title:"Postnummer",id:"home_zip",edit:{dataType:"text"}}
+						,{type:"field",title:"Ort",id:"home_city",edit:{dataType:"text"}}]},
 				{type:"field",title:"Date",id:"date",edit:{dataType:"date",onChange:(...args)=>console.log(args)}},
-				{type:"repeated",id:"repeatedField",entry:
+				{type:"repeated",id:"repeatedField",sortCompare:(a,b)=>a.bar>b.bar?1:-1,entry:
 					{type:"field",title:"repeated row",id:"foo"}
 				},
 				{type:"field",edit:{dataType:"button",btnText:"Cool button",clickHandler:btnClickHandler}},
@@ -75,14 +79,16 @@
 				,myExpansion,{defaultDatePlaceholder:"ÅÅÅÅ-MM-DD",defaultSelectNoResultText:"Inga resultat"});
 			window.tablance=myTablance;//to play with public methods via console
 
-			for (let i=0; i<3; i++) {
+			for (let i=0; i<1; i++) {
 				let data=[];
-				for (let ii=0; ii<1000; ii++) {
+				for (let ii=0; ii<5; ii++) {
 					data.push({desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,descLetter:String.fromCharCode(ii)
 						,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
 						,hello:"Hallå",world:"Världen"
-						,sel:null//Math.round(Math.random()*(foods.length-1))+1
-						,repeatedField:[{foo:"row one in repeated"},{foo:"row two in repeated"}]
+						,addresses:[{street:"kaplan",zip:54321,city:"skara"}]
+						,sel:foods[0]//Math.round(Math.random()*(foods.length-1))+1
+						,repeatedField:[{foo:"row one in repeated",bar:5},{foo:"row two in repeated",bar:1}
+										,{foo:"row three in repeated",bar:3},{foo:"row four in repeated",bar:30}]
 						,repeatedGroup:[{foo1:"blahblah",foo2:"lalala"},{foo1:"bloj",foo2:"kapapa"}]
 						,custodianshipChanges:[
 										{date:"2021-01-01",type:"trustee"},{date:"2022-01-01",type:"administrator"}],
