@@ -898,11 +898,23 @@ class Tablance {
 		return true;
 	}
 
-	#generateListItem(listTable,struct,mainIndex,listCelObj,path,data,insertBeforeEl=null,index=0) {
+	#generateListItem(listTable,struct,mainIndex,listCelObj,path,data,insertBeforeEl=null,index=null) {
 		let contentTd=document.createElement("td");
-		contentTd.className="value";//not actually sure why but this can't be put inside condition below
-		let cellChild={parent:listCelObj,index:listCelObj.children.length};
-		path.push(listCelObj.children.length);
+		contentTd.className="value";
+		let cellChild={parent:listCelObj,index:index??listCelObj.children.length};
+		
+		if (index!=null) {
+			for (const pathEl of listTable.querySelectorAll('[data-path]')) {
+				const elPath=pathEl.dataset.path.split("-");
+				if (elPath[path.length-1]==path[path.length-1]&&elPath[path.length]>=index) {
+					elPath[path.length]++;
+					pathEl.dataset.path=elPath.join("-");
+				}
+			}
+			//increment inde of all the items after the inserted one
+			for (let i=listCelObj.children.length; i>index; listCelObj.children[--i].index++);
+		}
+		path.push(index??listCelObj.children.length);
 		if (this.#generateExpansionContent(struct,mainIndex,cellChild,contentTd,path,data)) {//generate content
 			//and add it to dom if condition falls true, e.g. content was actually created. it might not be if it is
 			//a repeated and there was no data for it add
@@ -912,7 +924,7 @@ class Tablance {
 			titleTd.className="title";
 			titleTd.innerText=struct.title??"";
 			listTr.appendChild(contentTd);
-			listCelObj.children.push(cellChild);
+			listCelObj.children.splice(index??Infinity,0,cellChild);
 		}
 		path.pop();
 		return contentTd;
@@ -2026,11 +2038,11 @@ class Tablance {
 	}
 
 	insertRepeatData(dataRow_or_mainIndex,dataPath,data,scrollTo) {
-		let dataRow,mainIndex;
+		let dataRow,mainIndx;
 		if (typeof dataRow_or_mainIndex=="number")
-			dataRow=this.#data[mainIndex=dataRow_or_mainIndex];
+			dataRow=this.#data[mainIndx=dataRow_or_mainIndex];
 		else //if (typeof dataRow_or_mainIndex=="object")
-			mainIndex=this.#data.indexOf(dataRow=dataRow_or_mainIndex);
+			mainIndx=this.#data.indexOf(dataRow=dataRow_or_mainIndex);
 		if (typeof dataPath=="string")
 			dataPath=[dataPath];
 		let dataPortion=dataRow;
@@ -2041,7 +2053,7 @@ class Tablance {
 			dataPortion=dataPortion[dataStep];
 		}
 		dataPortion.push(data);
-		const expansionObj=this.#openExpansions[mainIndex];
+		const expansionObj=this.#openExpansions[mainIndx];
 		if (!expansionObj)
 			return;
 		const path=[];
@@ -2054,14 +2066,14 @@ class Tablance {
 			}
 		}
 		const nextSiblingObj=findClosestRenderedSibling(celObj);
-		let nextSibl=(nextSiblingObj.el??nextSiblingObj.listTable).parentElement;
-		for(;listObj.listTable.firstChild!=nextSibl.parentElement;nextSibl=nextSibl.parentElement);
+		let nxtSib=(nextSiblingObj.el??nextSiblingObj.listTable).parentElement;//next sibling/element to insert before
+		for(;listObj.listTable.firstChild!=nxtSib.parentElement;nxtSib=nxtSib.parentElement);
 		if (celObj.struct.sortCompare) {
 			const sortedRowData=[...celObj.rowData].sort(celObj.struct.sortCompare);
-			for (let i=sortedRowData.length-1;sortedRowData[i]!=data;i--)
-				nextSibl=nextSibl.previousSibling;
+			for (var indx=sortedRowData.length-1;sortedRowData[indx]!=data;indx--)
+				nxtSib=nxtSib.previousSibling;
 		}
-		const newEl=this.#generateListItem(listObj.listTable,celObj.struct.entry,mainIndex,celObj,path,data,nextSibl);
+		const newEl=this.#generateListItem(listObj.listTable,celObj.struct.entry,mainIndx,celObj,path,data,nxtSib,indx);
 		if (scrollTo){
 			newEl.scrollIntoView({behavior:'smooth',block:"center"});
 			this.#highlightElements([newEl,...newEl.getElementsByTagName('*')]);
