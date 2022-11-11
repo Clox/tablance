@@ -711,7 +711,7 @@ class Tablance {
 	#generateExpansionRepeated(struct,dataIndex,cellObj,parentEl,path,rowData) {
 		cellObj.struct=struct;
 		cellObj.children=[];
-		let repeatData=cellObj.rowData=rowData[struct.id];
+		let repeatData=cellObj.dataObj=rowData[struct.id];
 		if (repeatData?.length) {
 			struct=this.#getStructCopyWithDeleteControlsMaybe(struct);
 			if (struct.sortCompare)
@@ -785,7 +785,7 @@ class Tablance {
 	#generateExpansionGroup(groupStructure,dataIndex,cellObj,parentEl,path,rowData) {
 		parentEl.dataset.path=path.join("-");
 		cellObj.children=[];
-		cellObj.rowData=rowData;
+		cellObj.dataObj=rowData;
 		const groupTable=document.createElement("table");
 		parentEl.classList.add("group-cell");
 		cellObj.el=groupTable;//so that the whole group-table can be selected
@@ -882,7 +882,7 @@ class Tablance {
 				let repeatData=rowData[struct.id];
 				let rptCelObj=listCelObj.children[entryI]={parent:listCelObj,index:entryI,children:[],struct:struct};
 				if (rowData[struct.id]?.length){
-					rptCelObj.rowData=repeatData;
+					rptCelObj.dataObj=repeatData;
 					if (struct.sortCompare)
 						(repeatData=[...repeatData]).sort(struct.sortCompare);
 					for (const itemData of repeatData) {
@@ -911,7 +911,7 @@ class Tablance {
 					pathEl.dataset.path=elPath.join("-");
 				}
 			}
-			//increment inde of all the items after the inserted one
+			//increment index of all the items after the inserted one
 			for (let i=listCelObj.children.length; i>index; listCelObj.children[--i].index++);
 		}
 		path.push(index??listCelObj.children.length);
@@ -931,7 +931,7 @@ class Tablance {
 	}
 
 	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {	
-		cellObject.dataObject=rowData;
+		cellObject.dataObj=rowData;
 		cellObject.struct=fieldStructure;
 		cellObject.el=parentEl;
 		this.#updateExpansionCell(cellObject,rowData);
@@ -1150,8 +1150,8 @@ class Tablance {
 			let cell,renderText;
 			//look for ancestor-cell with rowData which repeated rows have. It's a sub-data-row of #data.
 			//if we got all the way to the root without finding any repeated-rows then use datarow directly from #data
-			for (cell=groupObject.parent;!cell.rowData&&cell.parent;cell=cell.parent);//look for ancestor with rowData
-			renderText=groupObject.struct.closedRender(cell.parent?cell.rowData[cell.index]:this.#data[cell.rowIndex]);
+			for (cell=groupObject.parent;!cell.dataObj&&cell.parent;cell=cell.parent);//look for ancestor with rowData
+			renderText=groupObject.struct.closedRender(cell.parent?cell.dataObj[cell.index]:this.#data[cell.rowIndex]);
 			groupObject.el.rows[groupObject.el.rows.length-1].cells[0].innerText=renderText;
 		}
 	}
@@ -1162,7 +1162,7 @@ class Tablance {
 		const childObj={parent:reptPar,index:indexOfNew,creating:true};//creating means it hasn't been commited yet
 		reptPar.children.splice(indexOfNew,0,childObj);
 		const path=repeatCreater.el.dataset.path.split("-") ;
-		const data=reptPar.rowData[indexOfNew]={};		
+		const data=reptPar.dataObj[indexOfNew]={};		
 		const struct=this.#getStructCopyWithDeleteControlsMaybe(reptPar.struct);
 		this.#generateExpansionContent(struct.entry,indexOfNew,childObj,repeatCreater.el.parentNode,path,data);
 		for (var cellPar=childObj,cellI=0,cell=childObj;cell.struct.type!="field";cell=cellPar.children[cellI++]){
@@ -1188,7 +1188,7 @@ class Tablance {
 		else if (cellObj.parent.children.length>1)
 			newSelectedCell=cellObj.parent.children[cellObj.index-1];
 		cellObj.parent.children.splice(cellObj.index,1);
-		cellObj.parent.rowData.splice(cellObj.index,1);
+		cellObj.parent.dataObj.splice(cellObj.index,1);
 		cellObj.el.remove();
 		this.#selectExpansionCell(newSelectedCell??cellObj.parent.parent);
 
@@ -1431,7 +1431,7 @@ class Tablance {
 
 	#commitRepeatedInsert(repeatEntry) {
 		repeatEntry.creating=false;
-		repeatEntry.parent.struct.onCreate?.(repeatEntry.rowData,repeatEntry)
+		repeatEntry.parent.struct.onCreate?.(repeatEntry.dataObj,repeatEntry)
 	}
 
 	#selectMainTableCell(cell) {
@@ -1503,7 +1503,7 @@ class Tablance {
 		this.#activeExpCell=cellObject;
 		this.#selectedCell=cellObject.selEl??cellObject.el;
 		this.#adjustCursorPosSize(this.#selectedCell);
-		this.#cellCursorDataObj=cellObject.dataObject;
+		this.#cellCursorDataObj=cellObject.dataObj;
 		this.#activeStruct=cellObject.struct;
 
 		//make cellcursor click-through if it's on a button
@@ -2037,50 +2037,73 @@ class Tablance {
 			this.#highlightRowsOnView[index]=true;
 	}
 
-	insertRepeatData(dataRow_or_mainIndex,dataPath,data,scrollTo) {
-		let dataRow,mainIndx;
+	updateData(dataRow_or_mainIndex,dataPath,data,scrollTo) {
+		let dataRow,mainIndx,updatedEl,path=[];
 		if (typeof dataRow_or_mainIndex=="number")
 			dataRow=this.#data[mainIndx=dataRow_or_mainIndex];
 		else //if (typeof dataRow_or_mainIndex=="object")
 			mainIndx=this.#data.indexOf(dataRow=dataRow_or_mainIndex);
-		if (typeof dataPath=="string")
-			dataPath=[dataPath];
-		let dataPortion=dataRow;
-		for (let dataStep of dataPath) {
-			// if (!dataPortion[dataStep]) {//doesn't exist yet?
-			// 	dataPortion[dataStep]
-			// }
-			dataPortion=dataPortion[dataStep];
+		const pathArr=typeof dataPath=="string"?dataPath.split(/\.|(?=\[\])/):dataPath;
+		let celObj=this.#openExpansions[mainIndx],celData=dataRow;
+		for (let i=-1,dataStep,dataPortion=dataRow; dataStep=pathArr[++i];) {
+			if (i<pathArr.length-1) {//if not at last step yet meaning this is a container
+				if (!dataPortion[dataStep])//the container doesn't exist
+					dataPortion=dataPortion[dataStep=="[]"?dataPortion.length:dataStep]
+											=(isNaN(pathArr[i+1])&&pathArr[i+1]!=="[]")?{}:[];//then create it
+				else
+					dataPortion=dataPortion[dataStep];
+			} else//at last step
+				dataPortion[dataStep=="[]"?dataPortion.length:dataStep]=data;
+			if (celObj)
+				for (let child,childI=-1; child=celObj.children[++childI];)
+					if (child.struct.type=="repeated"&&child.dataObj==dataPortion||child.struct.id==dataStep) {
+						celObj=child;
+						celData=dataPortion;
+						path.push(childI);
+						break;
+					}
 		}
-		dataPortion.push(data);
-		const expansionObj=this.#openExpansions[mainIndx];
-		if (!expansionObj)
-			return;
-		const path=[];
-		const celObj=findCellObjByData(expansionObj,dataPortion,path);
-		let listObj;//the closest parent that is rendered
-		for (let otherCelObj=celObj; otherCelObj=otherCelObj.parent;) {
-			if (otherCelObj.el||otherCelObj.listTable) {
-				listObj=otherCelObj
-				break;
+		if (celObj) {
+			switch (celObj.struct.type) {
+				case "field":
+					this.#updateExpansionCell(celObj,celData);
+				break; case "repeated":
+					updatedEl=this.#insertRepeatData(celObj,celData[celData.length-1],mainIndx,path);
 			}
+			if (scrollTo){
+				newEl.scrollIntoView({behavior:'smooth',block:"center"});
+				this.#highlightElements([updatedEl,...updatedEl.getElementsByTagName('*')]);
+			}
+			this.#adjustCursorPosSize(this.#selectedCell,true);
+		} else {
+			if (mainIndx>=this.#scrollRowIndex&&mainIndx<this.#scrollRowIndex+this.#numRenderedRows) {
+				const tr=this.#mainTbody.querySelector(`[data-data-row-index="${mainIndx}"]:not(.expansion)`);
+				for (let i=-1,colStruct;colStruct=this.#colStructs[++i];)
+					if (colStruct.id==dataPath)
+						return this.#updateMainRowCell(tr.cells[i],colStruct);
+				if (!celObj)
+					return;
+			}
+			if (scrollTo)
+				scrollToDataRow(dataRow,true);
 		}
+	}
+
+
+
+
+	#insertRepeatData(celObj,data,mainIndex,path) {
 		const nextSiblingObj=findClosestRenderedSibling(celObj);
-		let nxtSib=(nextSiblingObj.el??nextSiblingObj.listTable).parentElement;//next sibling/element to insert before
-		for(;listObj.listTable.firstChild!=nxtSib.parentElement;nxtSib=nxtSib.parentElement);
+		let nextSibl=(nextSiblingObj.el??nextSiblingObj.listTable).parentElement;//next sibling/element to insert before
+		if (nextSiblingObj.parent.struct.type=="list")
+			nextSibl=nextSibl.parentElement;
 		if (celObj.struct.sortCompare) {
-			const sortedRowData=[...celObj.rowData].sort(celObj.struct.sortCompare);
+			const sortedRowData=[...celObj.dataObj].sort(celObj.struct.sortCompare);
 			for (var indx=sortedRowData.length-1;sortedRowData[indx]!=data;indx--)
-				nxtSib=nxtSib.previousSibling;
+				nextSibl=nextSibl.previousSibling;
 		}
-		const newEl=this.#generateListItem(listObj.listTable,celObj.struct.entry,mainIndx,celObj,path,data,nxtSib,indx);
-		if (scrollTo){
-			newEl.scrollIntoView({behavior:'smooth',block:"center"});
-			this.#highlightElements([newEl,...newEl.getElementsByTagName('*')]);
-		}
-
-		this.#adjustCursorPosSize(this.#selectedCell,true);
-
+		const listTable=nextSibl.parentNode.parentNode;
+		return this.#generateListItem(listTable,celObj.struct.entry,mainIndex,celObj,path,data,nextSibl,indx);
 		function findClosestRenderedSibling(startCell) {
 			for (let i=startCell.index,otherCell; otherCell=startCell.parent.children[++i];) {
 				if (otherCell.el||otherCell.listTable)
@@ -2091,19 +2114,6 @@ class Tablance {
 						return lastRenderedChild;
 				}
 			}	
-		}
-		function findCellObjByData(searchInObj,data,path) {
-			if (searchInObj.rowData==data)
-				return searchInObj;
-			if (searchInObj.children)
-				for (let childI=-1,child;child=searchInObj.children[++childI];) {
-					path.push(childI);
-					const childMatch=findCellObjByData(child,data,path);
-					if (childMatch)
-						return childMatch;
-					path.pop();
-				}
-					
 		}
 	}
 
