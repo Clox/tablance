@@ -887,24 +887,24 @@ class Tablance {
 						(repeatData=[...repeatData]).sort(struct.sortCompare);
 					for (const itemData of repeatData) {
 						path.push(entryI);
-						this.#generateListItem(listTable,struct.entry,mainIndex,rptCelObj,path,itemData);
+						this.#generateListItem(listTable.firstChild,struct.entry,mainIndex,rptCelObj,path,itemData);
 						path.pop();
 					}
 				}
 			} else
-				this.#generateListItem(listTable,struct,mainIndex,listCelObj,path,rowData);
+				this.#generateListItem(listTable.firstChild,struct,mainIndex,listCelObj,path,rowData);
 		}
 		parentEl.appendChild(listTable);
 		return true;
 	}
 
-	#generateListItem(listTable,struct,mainIndex,listCelObj,path,data,insertBeforeEl=null,index=null) {
+	#generateListItem(container,struct,mainIndex,parentObj,path,data,insertBeforeEl=null,index=null) {
 		let contentTd=document.createElement("td");
 		contentTd.className="value";
-		let cellChild={parent:listCelObj,index:index??listCelObj.children.length};
+		let cellChild={parent:parentObj,index:index??parentObj.children.length};
 		
 		if (index!=null) {
-			for (const pathEl of listTable.querySelectorAll('[data-path]')) {
+			for (const pathEl of container.querySelectorAll('[data-path]')) {
 				const elPath=pathEl.dataset.path.split("-");
 				if (elPath[path.length-1]==path[path.length-1]&&elPath[path.length]>=index) {
 					elPath[path.length]++;
@@ -912,19 +912,22 @@ class Tablance {
 				}
 			}
 			//increment index of all the items after the inserted one
-			for (let i=listCelObj.children.length; i>index; listCelObj.children[--i].index++);
+			for (let i=parentObj.children.length; i>index; parentObj.children[--i].index++);
 		}
-		path.push(index??listCelObj.children.length);
+		path.push(index??parentObj.children.length);
 		if (this.#generateExpansionContent(struct,mainIndex,cellChild,contentTd,path,data)) {//generate content
 			//and add it to dom if condition falls true, e.g. content was actually created. it might not be if it is
 			//a repeated and there was no data for it add
+			for (var containerObj=parentObj; containerObj.struct.type=="repeated"; containerObj=containerObj.parent);
 			let listTr=document.createElement("tr");
-			listTable.firstChild.insertBefore(listTr,insertBeforeEl);
-			let titleTd=listTr.insertCell();
-			titleTd.className="title";
-			titleTd.innerText=struct.title??"";
+			container.insertBefore(listTr,insertBeforeEl);
+			if (containerObj.struct.type=="list") {
+				let titleTd=listTr.insertCell();
+				titleTd.className="title";
+				titleTd.innerText=struct.title??"";
+			}
 			listTr.appendChild(contentTd);
-			listCelObj.children.splice(index??Infinity,0,cellChild);
+			parentObj.children.splice(index??Infinity,0,cellChild);
 		}
 		path.pop();
 		return contentTd;
@@ -2037,6 +2040,18 @@ class Tablance {
 			this.#highlightRowsOnView[index]=true;
 	}
 
+	/**Change or add any data in the table
+	 * @param {int|object} dataRow_or_mainIndex Either the actual data-object that should be updated, or its index in
+	 * 											the current view
+	 * @param {string|string[]} dataPath The path to the data-value that should be updated or added to. For a value in
+	 * 				the base which is not nested within repeated-containers it should simplt be the key of the property.
+	 * 				It can either be a string of keys separated by dots(.) or a array where each element is a key.
+	 * 				For repeated-arrays which data should be added to "[]" can be used similiar to how it's done in PHP.
+	 * 				For instance the path could be "foo[]" or "foo[].bar". Objects/arrays will be created recursively
+	 * 				if they don't yet exist.
+	 * @param {*} data The actual data to be replaced with or added
+	 * @param {bool} scrollTo Whether the modified/added data should be scrolled to and highlighted.
+	 * @returns The tablance-object, for chaining*/
 	updateData(dataRow_or_mainIndex,dataPath,data,scrollTo) {
 		let dataRow,mainIndx,updatedEl,path=[];
 		if (typeof dataRow_or_mainIndex=="number")
@@ -2061,13 +2076,6 @@ class Tablance {
 					celObj=childCel;
 				}
 			}
-				/* for (let child,childI=-1; child=celObj.children[++childI];)
-					if (child.struct.type=="repeated"&&child.dataObj==dataPortion||child.struct.id==dataStep) {
-						celObj=child;
-						celData=dataPortion;
-						path.push(childI);
-						break;
-					} */
 		}
 		if (celObj) {
 			switch (celObj.struct.type) {
@@ -2093,6 +2101,7 @@ class Tablance {
 			if (scrollTo)
 				scrollToDataRow(dataRow,true);
 		}
+		return this;
 
 		function findCelRecursive(celObj,dataPortion,dataStep,path) {
 			if (celObj.children)
@@ -2117,18 +2126,21 @@ class Tablance {
 
 
 
-	#insertRepeatData(celObj,data,mainIndex,path) {
-		const nextSiblingObj=findClosestRenderedSibling(celObj);
-		let nextSibl=(nextSiblingObj.el??nextSiblingObj.listTable).parentElement;//next sibling/element to insert before
-		if (nextSiblingObj.parent.struct.type=="list")
-			nextSibl=nextSibl.parentElement;
-		if (celObj.struct.sortCompare) {
-			const sortedRowData=[...celObj.dataObj].sort(celObj.struct.sortCompare);
+	#insertRepeatData(rptCel,data,mainIndex,path) {
+		const nextSiblingObj=findClosestRenderedSibling(rptCel);
+		let nextSibl;
+		if (nextSiblingObj)
+			nextSibl=(nextSiblingObj.el??nextSiblingObj.listTable).parentElement;//next sibling/element to insert before
+		let parentContainerEl=(rptCel.parent.listTable??rptCel.parent.el).firstChild;
+		if (rptCel.parent.struct.type=="list")
+			nextSibl=nextSibl?.parentElement;
+		if (rptCel.struct.sortCompare) {
+			const sortedRowData=[...rptCel.dataObj].sort(rptCel.struct.sortCompare);
 			for (var indx=sortedRowData.length-1;sortedRowData[indx]!=data;indx--)
 				nextSibl=nextSibl.previousSibling;
 		}
-		const listTable=nextSibl.parentNode.parentNode;
-		return this.#generateListItem(listTable,celObj.struct.entry,mainIndex,celObj,path,data,nextSibl,indx);
+		
+		return this.#generateListItem(parentContainerEl,rptCel.struct.entry,mainIndex,rptCel,path,data,nextSibl,indx);
 		function findClosestRenderedSibling(startCell) {
 			for (let i=startCell.index,otherCell; otherCell=startCell.parent.children[++i];) {
 				if (otherCell.el||otherCell.listTable)
