@@ -2054,14 +2054,20 @@ class Tablance {
 					dataPortion=dataPortion[dataStep];
 			} else//at last step
 				dataPortion[dataStep=="[]"?dataPortion.length:dataStep]=data;
-			if (celObj)
-				for (let child,childI=-1; child=celObj.children[++childI];)
+			if (celObj) {
+				const childCel=findCelRecursive(celObj,dataPortion,dataStep,path);
+				if (childCel) {
+					celData=dataPortion;
+					celObj=childCel;
+				}
+			}
+				/* for (let child,childI=-1; child=celObj.children[++childI];)
 					if (child.struct.type=="repeated"&&child.dataObj==dataPortion||child.struct.id==dataStep) {
 						celObj=child;
 						celData=dataPortion;
 						path.push(childI);
 						break;
-					}
+					} */
 		}
 		if (celObj) {
 			switch (celObj.struct.type) {
@@ -2070,7 +2076,7 @@ class Tablance {
 				break; case "repeated":
 					updatedEl=this.#insertRepeatData(celObj,celData[celData.length-1],mainIndx,path);
 			}
-			if (scrollTo){
+			if (scrollTo) {
 				newEl.scrollIntoView({behavior:'smooth',block:"center"});
 				this.#highlightElements([updatedEl,...updatedEl.getElementsByTagName('*')]);
 			}
@@ -2086,6 +2092,25 @@ class Tablance {
 			}
 			if (scrollTo)
 				scrollToDataRow(dataRow,true);
+		}
+
+		function findCelRecursive(celObj,dataPortion,dataStep,path) {
+			if (celObj.children)
+				for (let child,childI=-1; child=celObj.children[++childI];) {
+					path.push(childI);
+					if (child.struct.id==dataStep)
+						return child;
+					if (child.struct.type=="repeated"&&child.dataObj==dataPortion) {
+						path.push(child.index);
+						return child;
+					}
+					if (child.struct.type=="group"||child.struct.type=="list") {
+						const cel=findCelRecursive(child,dataPortion,dataStep,path);
+						if (cel)
+							return cel;
+					}
+					path.pop();
+				}
 		}
 	}
 
