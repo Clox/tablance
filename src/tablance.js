@@ -69,9 +69,14 @@ class Tablance {
 			//#expandedRowIndicesHeights instead
 	#scrollMethod;//this will be set to a reference of the scroll-method that will be used. This depends on settings for
 				//staticRowHeight and expansion
-	#expandedRowHeights={keys:[],vals:[]};//for tables where rows can be expanded this will keep track of which rows
-			//have been expanded and what their total heights are including the mainrow and everything. The structure
-			//is essentially as a hashmap in Java where keys are objects. Vals are simply the combined height. 
+	#rowsMeta={keys:[],vals:[]};//This holds meta-data for the data-rows. The structure is essentially like a hashmap
+			//from Java where objects are used as keys which in this case it is the data-row-object. This is done by
+			//having 2 arrays: keys & vals. A references to a row is placed in "keys" and meta-data placed in "vals"
+			//and index X in "keys" always corresponds to index X in "values". As for the meta-data itself this is
+			//another object:
+			//	h Integer 	If this is present then the row is expanded, otherwise not. The value is the combined height
+			//				of the main row and its expansion-row.
+			//	s Boolean	If true then the row is selected/checked
 	#scrollY=0;//this keeps track of the "old" scrollTop of the table when a scroll occurs to know 
 	#numRenderedRows=0;//number of tr-elements in the table excluding tr's that are expansions (expansions too are tr's)
 	#openExpansions={};//for any row that is expanded and also in view this will hold navigational data which
@@ -342,20 +347,24 @@ class Tablance {
 
 	}
 
-	#expHeightGet(dataIndex) {
-		return this.#expandedRowHeights.vals[this.#expandedRowHeights.keys.indexOf(this.#data[dataIndex])];
+	#rowMetaGet(dataIndex) {
+		return this.#rowsMeta.vals[this.#rowsMeta.keys.indexOf(this.#data[dataIndex])];
 	}
 
-	#expHeightSet(dataIndex,val) {
-		const keyIndex=this.#expandedRowHeights.keys.indexOf(this.#data[dataIndex]);
-		if (keyIndex==-1&&val!=null) {
-			this.#expandedRowHeights.vals.push(val);
-			this.#expandedRowHeights.keys.push(this.#data[dataIndex]);
-		} else if (keyIndex!=-1&&val==null) {
-			this.#expandedRowHeights.vals.splice(keyIndex,1);
-			this.#expandedRowHeights.keys.splice(keyIndex,1);
-		} else if (keyIndex!=-1&&val!=null)
-			this.#expandedRowHeights.vals[keyIndex]=val;	
+	#rowMetaSet(dataIndex,key,val) {
+		const linkIndex=this.#rowsMeta.keys.indexOf(this.#data[dataIndex]);
+		if (linkIndex==-1&&val!=null) {
+			this.#rowsMeta.vals.push({[key]:val});
+			this.#rowsMeta.keys.push(this.#data[dataIndex]);
+		} else if (linkIndex!=-1&&val==null) {
+			delete this.#rowsMeta.vals[linkIndex][key];
+			if (!Object.keys(this.#rowsMeta.vals[linkIndex]).length) {
+				this.#rowsMeta.vals.splice(linkIndex,1);
+				this.#rowsMeta.keys.splice(linkIndex,1);
+			}
+		} else if (linkIndex!=-1&&val!=null)
+			this.#rowsMeta.vals[linkIndex][key]=val;	
+		return val;
 	}
 
 	#spreadsheetOnFocus(e) {
@@ -383,9 +392,9 @@ class Tablance {
 			let newColIndex=this.#mainColIndex;
 			if (this.#activeExpCell) {//moving from inside expansion.might move to another cell inside,or outside
 					this.#selectAdjacentExpansionCell(this.#activeExpCell,numRows==1?true:false);
-			} else if (numRows===1&&this.#expHeightGet(this.#mainRowIndex)){//moving down into expansion
+			} else if (numRows===1&&this.#rowMetaGet(this.#mainRowIndex)?.h){//moving down into expansion
 				this.#selectFirstSelectableExpansionCell(this.#openExpansions[this.#mainRowIndex],true);
-			} else if (numRows===-1&&this.#expHeightGet(this.#mainRowIndex-1)){//moving up into expansion
+			} else if (numRows===-1&&this.#rowMetaGet(this.#mainRowIndex-1)?.h){//moving up into expansion
 				this.#selectFirstSelectableExpansionCell(this.#openExpansions[this.#mainRowIndex-1],false);
 			} else {//moving from and to maintable-cells
 				this.#selectMainTableCell(
@@ -579,24 +588,24 @@ class Tablance {
 	}
 
 	#expandRow(tr,dataRowIndex) {
-		if (!this.#expansion||this.#expHeightGet(dataRowIndex))
+		if (!this.#expansion||this.#rowMetaGet(dataRowIndex)?.h)
 			return;
 		this.#unsortCol(null,"expand");
-		const expansionRow=this.#renderExpansion(tr,dataRowIndex,false);
-		this.#expHeightSet(dataRowIndex,this.#rowHeight+expansionRow.offsetHeight+this.#borderSpacingY);
-		const contentDiv=expansionRow.querySelector(".content");
+		const expRow=this.#renderExpansion(tr,dataRowIndex,false);
+		const expHeight=this.#rowMetaSet(dataRowIndex,"h",this.#rowHeight+expRow.offsetHeight+this.#borderSpacingY);
+		const contentDiv=expRow.querySelector(".content");
 		if (!this.#expBordersHeight)//see declarataion of #expansionTopBottomBorderWidth
-			this.#expBordersHeight=this.#expHeightGet(dataRowIndex)-contentDiv.offsetHeight;
+			this.#expBordersHeight=expHeight-contentDiv.offsetHeight;
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)//adjust scroll-height reflect change...
-			+this.#expHeightGet(dataRowIndex)-this.#rowHeight+"px";//...in height of the table
+			+expHeight-this.#rowHeight+"px";//...in height of the table
 		//animate
 		contentDiv.style.height="0px";//start at 0
-		setTimeout(()=>contentDiv.style.height=this.#expHeightGet(dataRowIndex)-this.#expBordersHeight+"px");
+		setTimeout(()=>contentDiv.style.height=expHeight-this.#expBordersHeight+"px");
 		this.#animateCellcursorPos();
 	}
 
 	#contractRow(dataRowIndex) {
-		if (!this.#expansion||!this.#expHeightGet(dataRowIndex))
+		if (!this.#expansion||!this.#rowMetaGet(dataRowIndex)?.h)
 			return;
 		this.#unsortCol(null,"expand");
 		const tr=this.#mainTbody.querySelector(`[data-data-row-index="${dataRowIndex}"].expanded`);
@@ -604,7 +613,7 @@ class Tablance {
 			this.#selectMainTableCell(tr.cells[this.#mainColIndex]);//then move it out
 		const contentDiv=tr.nextSibling.querySelector(".content");
 		if (contentDiv.style.height==="auto") {//if fully expanded
-			contentDiv.style.height=this.#expHeightGet(dataRowIndex)-this.#expBordersHeight+"px";
+			contentDiv.style.height=this.#rowMetaGet(dataRowIndex).h-this.#expBordersHeight+"px";
 			setTimeout(()=>contentDiv.style.height=0);
 		} else if (parseInt(contentDiv.style.height)==0)//if previous closing-animation has reached 0 but transitionend 
 		//hasn't been called yet which happens easily, for instance by selecting expand-button and holding space/enter
@@ -669,9 +678,9 @@ class Tablance {
 			const dataRowIndex=mainTr.dataset.dataRowIndex;
 			mainTr.classList.remove("expanded");
 			this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
-				 -this.#expHeightGet(dataRowIndex)+this.#rowHeight+"px";
+				 -this.#rowMetaGet(dataRowIndex).h+this.#rowHeight+"px";
 			expansionTr.remove();
-			this.#expHeightSet(dataRowIndex,null);
+			this.#rowMetaSet(dataRowIndex,"h",null);
 			delete this.#openExpansions[dataRowIndex];
 		}
 	}
@@ -1041,9 +1050,9 @@ class Tablance {
 	#updateExpansionHeight(expansionTr) {
 		const contentDiv=expansionTr.querySelector(".content");
 		contentDiv.style.height="auto";//set to auto in case of in middle of animation, get correct height
-		const prevRowHeight=this.#expHeightGet(this.#mainRowIndex);
+		const prevRowHeight=this.#rowMetaGet(this.#mainRowIndex).h;
 		const newRowHeight=this.#rowHeight+expansionTr.offsetHeight+this.#borderSpacingY;
-		this.#expHeightSet(this.#mainRowIndex,newRowHeight);
+		this.#rowMetaSet(this.#mainRowIndex,"h",newRowHeight);
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)//adjust scroll-height reflect change...
 			+newRowHeight-prevRowHeight+"px";//...in height of the table
 	}
@@ -1605,12 +1614,10 @@ class Tablance {
 		
 		function compare(a,b) {
 			for (let sortCol of sortCols) {
-				if (sortCol.type==="expand") {
-					let aIsExpanded=this.#expandedRowHeights.keys.indexOf(a)!=-1;
-					let bIsExpanded=this.#expandedRowHeights.keys.indexOf(b)!=-1;
-					if (aIsExpanded!=bIsExpanded)
-						return (aIsExpanded<bIsExpanded?1:-1)*(sortCol.order=="asc"?1:-1);
-				} else if (a[sortCol.id]!=b[sortCol.id])
+				let aIsExpa,bIsExpa;
+				if (sortCol.type==="expand"&&(aIsExpa=!!this.#rowMetaGet(a)?.h)!=(bIsExpa=!!this.#rowMetaGet(b)?.h))
+					return (aIsExpa<bIsExpa?1:-1)*(sortCol.order=="asc"?1:-1);
+				else if (a[sortCol.id]!=b[sortCol.id])
 					return (a[sortCol.id]>b[sortCol.id]?1:-1)*(sortCol.order=="asc"?1:-1);
 			}
 		}
@@ -1682,7 +1689,7 @@ class Tablance {
 
 	#filterData(filterString) {
 		this.#openExpansions={};
-		this.#expandedRowHeights={keys:[],vals:[]};
+		this.#rowsMeta={keys:[],vals:[]};
 		for (const tr of this.#mainTbody.querySelectorAll("tr.expansion"))
 		 	tr.remove();
 		this.#filter=filterString;
@@ -1784,15 +1791,15 @@ class Tablance {
 		const newScrY=this.#scrollBody.scrollTop;
 		if (newScrY>parseInt(this.#scrollY)) {//if scrolling down
 			while (newScrY-parseInt(this.#tableSizer.style.top)
-			>(this.#expHeightGet(this.#scrollRowIndex)??this.#rowHeight)) {//if a whole top row is outside
+			>(this.#rowMetaGet(this.#scrollRowIndex)?.h??this.#rowHeight)) {//if a whole top row is outside
 				if (this.#scrollRowIndex+this.#numRenderedRows>this.#data.length-1)
 					break;
 				
 
 				//check if the top row (the one that is to be moved to the bottom) is expanded
-				if (this.#expHeightGet(this.#scrollRowIndex)) {
+				let scrollJumpDistance;
+				if (scrollJumpDistance=this.#rowMetaGet(this.#scrollRowIndex)?.h) {
 					delete this.#openExpansions[this.#scrollRowIndex];
-					var scrollJumpDistance=this.#expHeightGet(this.#scrollRowIndex);
 					this.#mainTbody.rows[1].remove();
 					
 				} else {
@@ -1816,7 +1823,7 @@ class Tablance {
 				//also shrink the container of the table the same amount to maintain the scrolling-range.
 				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)-scrollJumpDistance+"px";
 
-				if (this.#expHeightGet(dataIndex))
+				if (this.#rowMetaGet(dataIndex)?.h)
 					this.#renderExpansion(trToMove,dataIndex);
 				else
 					trToMove.classList.remove("expanded");
@@ -1828,7 +1835,7 @@ class Tablance {
 				this.#scrollRowIndex--;
 
 				//check if the bottom row (the one that is to be moved to the top) is expanded
-				if (this.#expHeightGet(this.#scrollRowIndex+this.#numRenderedRows)) {
+				if (this.#rowMetaGet(this.#scrollRowIndex+this.#numRenderedRows)?.h) {
 					delete this.#openExpansions[this.#scrollRowIndex+this.#numRenderedRows];
 					this.#mainTbody.lastChild.remove();//remove the expansion-tr
 				}
@@ -1846,17 +1853,15 @@ class Tablance {
 				//also grow the container of the table the same amount to maintain the scrolling-range.
 				//this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
 
-				if (this.#expHeightGet(this.#scrollRowIndex))
+				if (this.#rowMetaGet(this.#scrollRowIndex)?.h)
 					this.#renderExpansion(trToMove,this.#scrollRowIndex);
 				else
 					trToMove.classList.remove("expanded");
 
 				this.#lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row
-
-				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)
-								 -(this.#expHeightGet(this.#scrollRowIndex)??this.#rowHeight)+this.#rowHeight+"px";
-				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)
-										+(this.#expHeightGet(this.#scrollRowIndex)??this.#rowHeight)+"px";
+				const rowTotalHeight=(this.#rowMetaGet(this.#scrollRowIndex)?.h??this.#rowHeight);
+				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)-rowTotalHeight+this.#rowHeight+"px";
+				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+rowTotalHeight+"px";
 			}
 		}
 		this.#scrollY=newScrY;
@@ -1909,7 +1914,7 @@ class Tablance {
 					cell.classList.add("expandcol");
 			}
 			this.#updateRowValues(lastTr,this.#scrollRowIndex+this.#numRenderedRows-1);
-			if (this.#expHeightGet(this.#scrollRowIndex+this.#numRenderedRows-1))
+			if (this.#rowMetaGet(this.#scrollRowIndex+this.#numRenderedRows-1)?.h)
 				this.#renderExpansion(lastTr,this.#scrollRowIndex+this.#numRenderedRows-1);
 			this.#lookForActiveCellInRow(lastTr);//look for active cell (cellcursor) in the row
 			if (!this.#rowHeight) {//if there were no rows prior to this
@@ -1927,7 +1932,7 @@ class Tablance {
 		const scrH=this.#scrollBody.offsetHeight;
 		const trs=this.#mainTbody.rows;
 		while (this.#numRenderedRows>3&&(this.#numRenderedRows-1)*this.#rowHeight>scrH) {
-			if (this.#expHeightGet(this.#scrollRowIndex+this.#numRenderedRows-1)) {
+			if (this.#rowMetaGet(this.#scrollRowIndex+this.#numRenderedRows-1)?.h) {
 				this.#mainTbody.lastChild.remove();
 				delete this.#openExpansions[this.#scrollRowIndex+this.#numRenderedRows];
 			}
@@ -2028,7 +2033,7 @@ class Tablance {
 					this.#highlightRowIndex(i);
 				return;
 			}
-			scrollY+=this.#expHeightGet(i)??this.#rowHeight;
+			scrollY+=this.#rowMetaGet(i)?.h??this.#rowHeight;
 		}
 	}
 

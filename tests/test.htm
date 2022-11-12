@@ -72,17 +72,15 @@
 					{type:"field",title:"Anteckningar",id:"notes",maxHeight:150,edit:{dataType:"textarea"}},
 				]},
 			]};
-			
-
 
 
 			const myTablance=new Tablance(document.getElementById("tablanceContainer1"),myTablanceCols,true,true
 				,myExpansion,{defaultDatePlaceholder:"ÅÅÅÅ-MM-DD",defaultSelectNoResultText:"Inga resultat"});
 			window.tablance=myTablance;//to play with public methods via console
 
-			for (let i=0; i<1; i++) {
+			for (let i=0; i<3; i++) {
 				let data=[];
-				for (let ii=0; ii<5; ii++) {
+				for (let ii=0; ii<1000; ii++) {
 					data.push({desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,descLetter:String.fromCharCode(ii)
 						,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
 						,hello:"Hallå",world:"Världen"
