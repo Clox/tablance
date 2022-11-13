@@ -1017,11 +1017,13 @@ class Tablance {
 			this.#selectExpansionCell(cellObject);
 		} else {//not in expansion
 			const td=e.target.closest(".main-table>tbody>tr>td");
-				if (td.classList.contains("expand-col")) {
-					if (this.#mainRowIndex==null)
-						this.#selectMainTableCell(td);
+			if (td.classList.contains("expand-col")||td.classList.contains("select-col")) {
+				if (this.#mainRowIndex==null)
+					this.#selectMainTableCell(td);
+				if (td.classList.contains("expand-col"))
 					return this.#toggleRowExpanded(td.parentElement);
-				}
+				return this.#toggleRowSelected(td);
+			}
 			this.#selectMainTableCell(td);
 		}
 	}
@@ -1031,6 +1033,13 @@ class Tablance {
 			this.#contractRow(parseInt(tr.dataset.dataRowIndex));
 		else
 			this.#expandRow(tr,parseInt(tr.dataset.dataRowIndex));
+	}
+
+	#toggleRowSelected(td) {
+		const checked=td.querySelector("input").checked^=1;
+		td.parentElement.classList.toggle("selected",checked);
+		const mainIndex=parseInt(td.parentElement.dataset.dataRowIndex);
+		this.#rowMetaSet(mainIndex,"s",checked?true:null);
 	}
 
 	#autoTextAreaResize(e) {
@@ -1907,6 +1916,7 @@ class Tablance {
 				} else if (this.#colStructs[i].type==="select") {
 					const checkbox=div.appendChild(document.createElement("input"));
 					checkbox.type="checkbox";
+					checkbox.addEventListener("click",this.#preventDefault);
 					cell.classList.add("select-col");
 				}
 			}
@@ -1922,6 +1932,10 @@ class Tablance {
 				this.#rowInnerHeight=this.#rowInnerHeight+lastTr.offsetHeight+"px";
 			}
 		}
+	}
+
+	#preventDefault(e){
+		e.preventDefault();
 	}
 
 	/**Should be called if tr-elements might need to be removed which is when table shrinks*/
@@ -1943,11 +1957,15 @@ class Tablance {
 	 * @param {HTMLTableRowElement} tr The tr-element whose cells that should be updated*/
 	#updateRowValues(tr,mainIndex) {
 		tr.dataset.dataRowIndex=mainIndex;
+		const selected=this.#rowMetaGet(mainIndex)?.s;
+		tr.classList.toggle("selected",!!selected);
 		for (let colI=0; colI<this.#colStructs.length; colI++) {
 			let td=tr.cells[colI];
 			let colStruct=this.#colStructs[colI];
 			if (colStruct.type!="expand"&&colStruct.type!="select")
 				this.#updateMainRowCell(td,colStruct);
+			else if (colStruct.type=="select")
+				td.querySelector("input").checked=selected;
 		}
 		if (this.#highlightRowsOnView[mainIndex]) {
 			delete this.#highlightRowsOnView[mainIndex];

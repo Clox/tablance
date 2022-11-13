@@ -67,9 +67,35 @@
 		cursor: cell;
 		&.expand-col {
 			cursor:pointer;
+			&>div>a {
+				display: block;
+				margin: auto;
+				background: linear-gradient(to bottom, #3DF651, #21A516);
+				border-radius: 100px;
+				height: 3px;
+				width: 3px;
+				color: #FFFFFF;
+				font-family: Arial;
+				padding: 5px;
+				box-shadow: 1px 1px 5px #000000;
+				border: solid #FFFFFF 2px;
+				cursor: pointer;
+				text-align: center;
+				>span {
+					left: -2px;
+					position: relative;
+					top: -5px;
+					font-size: 12px;
+					font-weight: 950;
+					&::before {
+						content: "+";
+					}
+				}
+			}
 		}
 		&.select-col {
 			text-align: center;
+			cursor: default;
 			&>div>input {
 				transform : scale(1.3);
 			}
@@ -78,29 +104,10 @@
 			background-color: #f2f2f2;
 		}
 	}
-	td.expand-col>div>a {
-		display: block;
-		margin: auto;
-		background: linear-gradient(to bottom, #3DF651, #21A516);
-		border-radius: 100px;
-		height: 3px;
-		width: 3px;
-		color: #FFFFFF;
-		font-family: Arial;
-		padding: 5px;
-		box-shadow: 1px 1px 5px #000000;
-		border: solid #FFFFFF 2px;
-		cursor: pointer;
-		text-align: center;
-		>span {
-			left: -2px;
-			position: relative;
-			top: -5px;
-			font-size: 12px;
-			font-weight: 950;
-			&::before {
-				content: "+";
-			}
+	tr.selected>td {
+			background-color: #bab8db;
+		&.disabled {
+			background-color: #918fb5;
 		}
 	}
 	tr.expanded>td.expand-col>div>a{
