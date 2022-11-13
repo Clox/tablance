@@ -1800,43 +1800,23 @@ class Tablance {
 			>(this.#rowMetaGet(this.#scrollRowIndex)?.h??this.#rowHeight)) {//if a whole top row is outside
 				if (this.#scrollRowIndex+this.#numRenderedRows>this.#data.length-1)
 					break;
-				
-
+				let topShift;//height of the row that is at the top before scroll and which will be removed which is the
+																	// amount of pixels the whole table is shiftet by
 				//check if the top row (the one that is to be moved to the bottom) is expanded
-				let scrollJumpDistance;
-				if (scrollJumpDistance=this.#rowMetaGet(this.#scrollRowIndex)?.h) {
+				if (topShift=this.#rowMetaGet(this.#scrollRowIndex)?.h) {
 					delete this.#openExpansions[this.#scrollRowIndex];
 					this.#mainTbody.rows[1].remove();
-					
-				} else {
-					scrollJumpDistance=this.#rowHeight;
-				}
-
-				if (this.#scrollRowIndex===this.#mainRowIndex)//cell-cursor is on moved row
-					this.#selectedCell=null;
-				
-
+				} else
+					topShift=this.#rowHeight;
 				const dataIndex=this.#numRenderedRows+this.#scrollRowIndex;//the data-index of the new row
-
 				this.#scrollRowIndex++;
 
 				//move the top row to bottom and update its values
 				const trToMove=this.#updateRowValues(this.#mainTbody.appendChild(this.#mainTbody.firstChild),dataIndex);
 
 				//move the table down by the height of the removed row to compensate,else the whole table would shift up
-				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)+scrollJumpDistance+"px";
 
-				//also shrink the container of the table the same amount to maintain the scrolling-range.
-				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)-scrollJumpDistance+"px";
-
-				if (this.#rowMetaGet(dataIndex)?.h)
-					this.#renderExpansion(trToMove,dataIndex);
-				else
-					trToMove.classList.remove("expanded");
-
-				this.#lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row. This is needed
-				//in order to reassign the dom-element and such and also adjust the pos of the cellcursor in case
-				//the pos of the cell is not the same due to sorting/filtering
+				this.#doRowScrollExp(trToMove,dataIndex,this.#scrollRowIndex,-topShift);
 			}
 		} else if (newScrY<parseInt(this.#scrollY)) {//if scrolling up
 			while (newScrY<parseInt(this.#tableSizer.style.top)) {//while top row is below top of viewport
@@ -1848,36 +1828,36 @@ class Tablance {
 					this.#mainTbody.lastChild.remove();//remove the expansion-tr
 				}
 
-				if (this.#scrollRowIndex+this.#numRenderedRows===this.#mainRowIndex)//cell-cursor is on moved row
-					this.#selectedCell=null;
-
 				let trToMove=this.#mainTbody.lastChild;									//move bottom row to top
 				this.#mainTbody.prepend(trToMove);
 				this.#updateRowValues(trToMove,this.#scrollRowIndex);//the data of the new row;
 
-				//move the table up by the height of the removed row to compensate,else the whole table would shift down
-				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)-this.#rowHeight+"px";
+				//height of the row that is added at the top which is amount of pixels the whole table is shiftet by
+				const topShift=this.#rowMetaGet(this.#scrollRowIndex)?.h??this.#rowHeight;
 
-				//also grow the container of the table the same amount to maintain the scrolling-range.
-				//this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
-
-				const rowTotalHeight=(this.#rowMetaGet(this.#scrollRowIndex)?.h??this.#rowHeight);
-				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)-rowTotalHeight+this.#rowHeight+"px";
-				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+rowTotalHeight+"px";
-
-				if (this.#rowMetaGet(this.#scrollRowIndex)?.h)
-					this.#renderExpansion(trToMove,this.#scrollRowIndex);
-				else
-					trToMove.classList.remove("expanded");
-
-				this.#lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row. This is needed
-					//in order to reassign the dom-element and such and also adjust the pos of the cellcursor in case
-					//the pos of the cell is not the same due to sorting/filtering
+				this.#doRowScrollExp(trToMove,this.#scrollRowIndex,this.#scrollRowIndex+this.#numRenderedRows,topShift);
 			}
 		}
 		this.#scrollY=newScrY;
 	}
 
+	/**Used by #onScrollStaticRowHeightExpansion whenever a row is actually added/removed(or rather moved)*/
+	#doRowScrollExp(trToMove,newMainIndex,oldMainIndex,topShift) {
+		if (this.#rowMetaGet(newMainIndex)?.h)
+			this.#renderExpansion(trToMove,newMainIndex);
+		else
+			trToMove.classList.remove("expanded");
+		
+		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+topShift+"px";
+		this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)-topShift+"px";
+
+		if (oldMainIndex===this.#mainRowIndex)//cell-cursor is on moved row
+			this.#selectedCell=null;
+
+		this.#lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row. This is needed
+		//in order to reassign the dom-element and such and also adjust the pos of the cellcursor in case
+		//the pos of the cell is not the same due to sorting/filtering
+	}
 	
 
 	/**This should be called on each row that is being scrolled into view that might hold the active cell in order
