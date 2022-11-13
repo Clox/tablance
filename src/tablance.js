@@ -114,7 +114,7 @@ class Tablance {
 	/**
 	 * @param {HTMLElement} container An element which the table is going to be added to
 	 * @param {{}[]} columns An array of objects where each object has the following structure: {
-	 * 			id String A unique identifier for the column. unless "render" is set a prop of this name from the
+	 * 			id String A unique identifier for the column. Unless "render" is set a prop of this name from the
 	 * 						data-rows will be used as value for the cells
 	 * 			title String The header-string of the column
 	 * 			width String The width of the column. This can be in either px or % units.
@@ -125,6 +125,10 @@ class Tablance {
 	 * 			render Function pass in a callback-function here and what it returns will be used as value for the
 	 * 					cells. It will get called with a reference to the data-row as its first argument, column-object
 	 * 					as second, data-row-index as third and column-index and fourth.
+	 * 			type String The default is "data". Possible values are:
+	 * 				"data" - As it it implies, simply to display data but also input-elements such as fields or buttons
+	 * 				"expand" - The column will be buttons used for expanding/contracting the rows. See param expansion
+	 * 				"select" - The column will be checkboxes used to (un)select rows	
 	 * 		}
 	 * 			
 	 * 	@param	{Boolean} staticRowHeight Set to true if all rows are of same height. With this option on, scrolling
@@ -278,7 +282,7 @@ class Tablance {
 		const allowedColProps=["id","title","width","edit","type","render"];
 		for (let col of columns) {
 			let processedCol={};
-			if (col.type=="expand"&&!col.width)
+			if ((col.type=="expand"||col.type=="select")&&!col.width)
 				processedCol.width=50;
 			for (let [colKey,colVal] of Object.entries(col)) {
 				if (allowedColProps.includes(colKey))
@@ -526,7 +530,7 @@ class Tablance {
 				break; case "Escape":
 					this.#groupEscape();
 				break;  case " ":
-					if (this.#selectedCell.classList.contains("expandcol"))
+					if (this.#selectedCell.classList.contains("expand-col"))
 						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
 					else if (this.#activeStruct.edit?.dataType==="button")
 						this.#enterCell(e);
@@ -538,7 +542,7 @@ class Tablance {
 					this.#contractRow(this.#mainRowIndex);
 				break; case "Enter":
 					this.#scrollToCursor();
-					if (this.#selectedCell.classList.contains("expandcol"))
+					if (this.#selectedCell.classList.contains("expand-col"))
 						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
 					this.#enterCell(e);
 					e.preventDefault();//prevent newline from being entered into textareas
@@ -1013,7 +1017,7 @@ class Tablance {
 			this.#selectExpansionCell(cellObject);
 		} else {//not in expansion
 			const td=e.target.closest(".main-table>tbody>tr>td");
-				if (td.classList.contains("expandcol")) {
+				if (td.classList.contains("expand-col")) {
 					if (this.#mainRowIndex==null)
 						this.#selectMainTableCell(td);
 					return this.#toggleRowExpanded(td.parentElement);
@@ -1471,9 +1475,10 @@ class Tablance {
 		if (!cell.parentElement.classList.contains("expansion"))
 			this.#mainColIndex=cell.cellIndex;
 		this.#activeStruct=this.#colStructs[this.#mainColIndex];
-
-		//make cellcursor click-through if it's on an expand-row-button-td or button
-		const noPointerEvent=this.#activeStruct.type==="expand"||this.#activeStruct.edit?.dataType==="button";
+		
+		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
+		const noPointerEvent=this.#activeStruct.type==="expand"||this.#activeStruct.type==="select"
+																		||this.#activeStruct.edit?.dataType==="button";
 		this.#cellCursor.style.pointerEvents=noPointerEvent?"none":"auto";
 
 		this.#cellCursorDataObj=this.#data[this.#mainRowIndex];
@@ -1614,10 +1619,11 @@ class Tablance {
 		
 		function compare(a,b) {
 			for (let sortCol of sortCols) {
-				let aIsExpa,bIsExpa;
-				if (sortCol.type==="expand"&&(aIsExpa=!!this.#rowMetaGet(a)?.h)!=(bIsExpa=!!this.#rowMetaGet(b)?.h))
-					return (aIsExpa<bIsExpa?1:-1)*(sortCol.order=="asc"?1:-1);
-				else if (a[sortCol.id]!=b[sortCol.id])
+				let aMeta,bMeta;
+				if ((sortCol.type==="expand"&&(aMeta=!!this.#rowMetaGet(a)?.h)!=(bMeta=!!this.#rowMetaGet(b)?.h))||
+				(sortCol.type==="select"&&(aMeta=!!this.#rowMetaGet(a)?.s)!=(bMeta=!!this.#rowMetaGet(b)?.s)))
+					return (aMeta<bMeta?1:-1)*(sortCol.order=="asc"?1:-1);
+				if (a[sortCol.id]!=b[sortCol.id])
 					return (a[sortCol.id]>b[sortCol.id]?1:-1)*(sortCol.order=="asc"?1:-1);
 			}
 		}
@@ -1695,7 +1701,7 @@ class Tablance {
 		this.#filter=filterString;
 		const colsToFilterBy=[];
 		for (let col of this.#colStructs)
-			if (col.type!=="expand")
+			if (col.type!=="expand"&&col.type!=="select")
 				colsToFilterBy.push(col);
 		if (filterString) {
 			this.#data=[];
@@ -1908,10 +1914,16 @@ class Tablance {
 			this.#numRenderedRows++;
 			for (let i=0; i<this.#colStructs.length; i++) {
 				const cell=lastTr.insertCell();
-				cell.appendChild(document.createElement("div"));
-				cell.firstChild.style.height=this.#rowInnerHeight||"auto";				
-				if (this.#colStructs[i].type==="expand")
-					cell.classList.add("expandcol");
+				const div=cell.appendChild(document.createElement("div"));//used to set height of cells
+				div.style.height=this.#rowInnerHeight||"auto";				
+				if (this.#colStructs[i].type==="expand") {
+					div.appendChild(document.createElement("a")).appendChild(document.createElement("span"));
+					cell.classList.add("expand-col");
+				} else if (this.#colStructs[i].type==="select") {
+					const checkbox=div.appendChild(document.createElement("input"));
+					checkbox.type="checkbox";
+					cell.classList.add("select-col");
+				}
 			}
 			this.#updateRowValues(lastTr,this.#scrollRowIndex+this.#numRenderedRows-1);
 			if (this.#rowMetaGet(this.#scrollRowIndex+this.#numRenderedRows-1)?.h)
@@ -1949,9 +1961,7 @@ class Tablance {
 		for (let colI=0; colI<this.#colStructs.length; colI++) {
 			let td=tr.cells[colI];
 			let colStruct=this.#colStructs[colI];
-			if (colStruct.type==="expand")
-				td.innerHTML=`<div style="height:${this.#rowInnerHeight||"auto"}"><a><span></span></a></div>`;
-			else 
+			if (colStruct.type!="expand"&&colStruct.type!="select")
 				this.#updateMainRowCell(td,colStruct);
 		}
 		if (this.#highlightRowsOnView[mainIndex]) {

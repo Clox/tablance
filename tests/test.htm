@@ -11,7 +11,7 @@
 			function descFunc(dataRow,col,rowIndex,colIndex) {
 				return `foobar ${rowIndex} - ${dataRow.descLetter}`
 			}
-			const myTablanceCols=[{type:"expand"}
+			const myTablanceCols=[{type:"select"},{type:"expand"}
 				,{id:"desc",title:"Description",edit:{onChange:(...args)=>console.log(args),
 					dataType:"text",maxLength:5,placeholder:"placeholder",enabled:()=>Math.random()>.5},render:descFunc}
 				,{id:"amount",title:"Amount",width:"85px"},{id:"balance",title:"Balance",width:"85px"}];

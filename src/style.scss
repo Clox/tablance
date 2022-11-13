@@ -65,14 +65,20 @@
 		border-right: 1px solid #ddd;
 		padding: 8px 10px;
 		cursor: cell;
-		&.expandCol {
+		&.expand-col {
 			cursor:pointer;
+		}
+		&.select-col {
+			text-align: center;
+			&>div>input {
+				transform : scale(1.3);
+			}
 		}
 		&.disabled {
 			background-color: #f2f2f2;
 		}
 	}
-	td.expandcol>div>a {
+	td.expand-col>div>a {
 		display: block;
 		margin: auto;
 		background: linear-gradient(to bottom, #3DF651, #21A516);
@@ -84,7 +90,6 @@
 		padding: 5px;
 		box-shadow: 1px 1px 5px #000000;
 		border: solid #FFFFFF 2px;
-		
 		cursor: pointer;
 		text-align: center;
 		>span {
@@ -98,7 +103,7 @@
 			}
 		}
 	}
-	tr.expanded>td.expandcol>div>a{
+	tr.expanded>td.expand-col>div>a{
 		background: linear-gradient(to bottom, #FD2B2B, #A51616);
 		>span::before {
 			content: "\2013";
