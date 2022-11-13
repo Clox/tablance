@@ -1834,7 +1834,9 @@ class Tablance {
 				else
 					trToMove.classList.remove("expanded");
 
-				this.#lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row
+				this.#lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row. This is needed
+				//in order to reassign the dom-element and such and also adjust the pos of the cellcursor in case
+				//the pos of the cell is not the same due to sorting/filtering
 			}
 		} else if (newScrY<parseInt(this.#scrollY)) {//if scrolling up
 			while (newScrY<parseInt(this.#tableSizer.style.top)) {//while top row is below top of viewport
@@ -1859,15 +1861,18 @@ class Tablance {
 				//also grow the container of the table the same amount to maintain the scrolling-range.
 				//this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+this.#rowHeight+"px";
 
+				const rowTotalHeight=(this.#rowMetaGet(this.#scrollRowIndex)?.h??this.#rowHeight);
+				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)-rowTotalHeight+this.#rowHeight+"px";
+				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+rowTotalHeight+"px";
+
 				if (this.#rowMetaGet(this.#scrollRowIndex)?.h)
 					this.#renderExpansion(trToMove,this.#scrollRowIndex);
 				else
 					trToMove.classList.remove("expanded");
 
-				this.#lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row
-				const rowTotalHeight=(this.#rowMetaGet(this.#scrollRowIndex)?.h??this.#rowHeight);
-				this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)-rowTotalHeight+this.#rowHeight+"px";
-				this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+rowTotalHeight+"px";
+				this.#lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row. This is needed
+					//in order to reassign the dom-element and such and also adjust the pos of the cellcursor in case
+					//the pos of the cell is not the same due to sorting/filtering
 			}
 		}
 		this.#scrollY=newScrY;
