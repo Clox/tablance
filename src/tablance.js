@@ -1628,10 +1628,14 @@ class Tablance {
 		
 		function compare(a,b) {
 			for (let sortCol of sortCols) {
-				let aMeta,bMeta;
-				if ((sortCol.type==="expand"&&(aMeta=!!this.#rowMetaGet(a)?.h)!=(bMeta=!!this.#rowMetaGet(b)?.h))||
-				(sortCol.type==="select"&&(aMeta=!!this.#rowMetaGet(a)?.s)!=(bMeta=!!this.#rowMetaGet(b)?.s)))
-					return (aMeta<bMeta?1:-1)*(sortCol.order=="asc"?1:-1);
+				if (sortCol.type==="expand"||sortCol.type==="select") {
+					const aMeta=this.#rowMetaGet(this.#data.indexOf(a));
+					const bMeta=this.#rowMetaGet(this.#data.indexOf(b));
+					let aMetaVal,bMetaVal;
+					if ((sortCol.type==="expand"&&(aMetaVal=!!aMeta?.h)!=(bMetaVal=!!bMeta?.h))
+					||(sortCol.type==="select"&&(aMetaVal=!!aMeta?.s)!=(bMetaVal=!!bMeta?.s)))
+						return (aMetaVal<bMetaVal?1:-1)*(sortCol.order=="asc"?1:-1);
+				}
 				if (a[sortCol.id]!=b[sortCol.id])
 					return (a[sortCol.id]>b[sortCol.id]?1:-1)*(sortCol.order=="asc"?1:-1);
 			}
