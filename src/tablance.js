@@ -111,6 +111,8 @@ class Tablance {
 	#lastCheckedIndex;//This is the index of the row that was last (un)checked/selected, meaning the checkbox in the
 					//select-column was interacted with. This is used if the user interacts with another checkbox while
 					//shift is being held
+	#numRowsSelected=0;//number of rows that are selected/checked using the select-column
+	#numRowsInViewSelected=0;//number of rows in the current view/filter that are selected/checked using select-column
 
 							
 
@@ -543,7 +545,7 @@ class Tablance {
 					if (this.#activeStruct.type=="expand")
 						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
 					if (this.#activeStruct.type=="select")
-						return this.#toggleRowSelected(this.#selectedCell,e.shiftKey);
+						return this.#rowCheckboxChange(this.#selectedCell,e.shiftKey);
 					if (e.key==="Enter"||this.#activeStruct.edit?.dataType==="button") {
 						e.preventDefault();//prevent newline from being entered into textareas
 						return this.#enterCell(e);
@@ -1024,7 +1026,7 @@ class Tablance {
 					this.#selectMainTableCell(td);
 				if (td.classList.contains("expand-col"))
 					return this.#toggleRowExpanded(td.parentElement);
-				return this.#toggleRowSelected(td,e.shiftKey);
+				return this.#rowCheckboxChange(td,e.shiftKey);
 			}
 			this.#selectMainTableCell(td);
 		}
@@ -1037,21 +1039,43 @@ class Tablance {
 			this.#expandRow(tr,parseInt(tr.dataset.dataRowIndex));
 	}
 
-	#toggleRowSelected(td,shift) {
+	#rowCheckboxChange(td,shift) {
 		const checked=!td.querySelector("input").checked;
 		const mainIndex=parseInt(td.parentElement.dataset.dataRowIndex);
 		if (!shift)//shift not held, 
 			this.#lastCheckedIndex=mainIndex;//set #lastCheckedIndex to the current index to both start and stop at it
-		const dir=mainIndex>this.#lastCheckedIndex?-1:1;
-		for (var i=mainIndex;dir==1?i<=this.#lastCheckedIndex:i>=this.#lastCheckedIndex;i+=dir){
+		this.#toggleRowsSelected(checked,...[mainIndex,this.#lastCheckedIndex].sort());
+		this.#lastCheckedIndex=mainIndex;//if shift held next time then rows between this and new mainIndex are checked
+	}
+
+	#toggleRowsSelected(checked,fromIndex,toIndex) {
+		for (var i=fromIndex;i<=toIndex; i++){
 			if (i>=this.#scrollRowIndex&&i<this.#scrollRowIndex+this.#numRenderedRows) {
 				const tr=this.#mainTbody.querySelector(`[data-data-row-index="${i}"]`);
-				tr.cells[td.cellIndex].querySelector("input").checked=checked;
+				tr.querySelector(".select-col input").checked=checked;
 				tr.classList.toggle("selected",checked);
+			}
+			const rowMeta=this.#rowMetaGet(i);
+			if (!rowMeta?.s&&checked) {
+				this.#numRowsSelected++;
+				this.#numRowsInViewSelected++;
+			} else if (rowMeta?.s&&!checked) {
+				this.#numRowsSelected--;
+				this.#numRowsInViewSelected--;
 			}
 			this.#rowMetaSet(i,"s",checked?true:null);
 		}
-		this.#lastCheckedIndex=mainIndex;//if shift held next time then rows between this and new mainIndex are checked
+		this.#updateSelectedHeaderState();
+	}
+
+	#updateSelectedHeaderState() {
+		const checkbox=this.#headerTr.querySelector(".select-col input");
+		if (this.#numRowsInViewSelected==this.#data.length||!this.#numRowsInViewSelected) {
+			checkbox.indeterminate=false;
+			checkbox.checked=this.#numRowsInViewSelected;
+		} else {
+			checkbox.indeterminate=true;
+		}
 	}
 
 	#autoTextAreaResize(e) {
@@ -1568,9 +1592,13 @@ class Tablance {
 		const thead=this.#headerTable.appendChild(document.createElement("thead"));
 		this.#headerTr=thead.insertRow();
 		for (let col of this.#colStructs) {
-			let th=document.createElement("th");
-			th.addEventListener("mousedown",e=>this.#onThClick(e));
-			this.#headerTr.appendChild(th).innerText=col.title??"\xa0";//non breaking space if nothing else or else
+			let th=this.#headerTr.appendChild(document.createElement("th"));
+			th.addEventListener("click",e=>this.#onThClick(e));
+			if (col.type=="select") {
+				th.appendChild(this.#createCheckbox());
+				th.classList.add("select-col");
+			} else
+				th.innerText=col.title??"\xa0";//non breaking space if nothing else or else
 																	//sorting arrows wont be positioned correctly
 
 			//create the divs used for showing html for sorting-up/down-arrow or whatever has been configured
@@ -1582,6 +1610,10 @@ class Tablance {
 
 	#onThClick(e) {
 		const clickedIndex=e.currentTarget.cellIndex;
+		if (this.#colStructs[clickedIndex].type=="select"&&e.target.tagName.toLowerCase()=="input") {
+			this.#toggleRowsSelected(e.target.checked,0,this.#data.length-1);
+			return;
+		}
 		let sortingColIndex=-1,sortingCol;
 		while (sortingCol=this.#sortingCols[++sortingColIndex]) {
 			if (sortingCol.index===clickedIndex) {
@@ -1915,6 +1947,20 @@ class Tablance {
 		this.#tableSizer.style.height=(this.#data.length-this.#scrollRowIndex)*this.#rowHeight+"px";
 	}
 
+	#createCheckbox(preventClickSelect) {
+		const checkbox=document.createElement("input");
+		checkbox.type="checkbox";
+		checkbox.tabIndex="-1";
+
+		if (preventClickSelect)//prevent checking and leave to #toggleRowSelected for consistant behavior when 
+			checkbox.addEventListener("click",this.#preventDefault);//clicking checkbox vs clicking its cell
+
+		//prevent gaining focus when clicking it. Otherwise it does gain focus despite tabIndex -1
+		checkbox.addEventListener("mousedown",this.#preventDefault);
+
+		return checkbox;
+	}
+
 	/**Should be called if tr-elements might need to be created which is when data is added or if table grows*/
 	#maybeAddTrs() {
 		let lastTr=this.#mainTbody.lastChild;
@@ -1932,18 +1978,8 @@ class Tablance {
 					div.appendChild(document.createElement("a")).appendChild(document.createElement("span"));
 					cell.classList.add("expand-col");
 				} else if (this.#colStructs[i].type==="select") {
-					const checkbox=div.appendChild(document.createElement("input"));
-					checkbox.type="checkbox";
-					checkbox.tabIndex="-1";
+					div.appendChild(this.#createCheckbox(true));
 					cell.classList.add("select-col");
-
-					//prevent checking and leave to #toggleRowSelected for consistant behavior when 
-					checkbox.addEventListener("click",this.#preventDefault);//clicking checkbox vs clicking its cell
-
-					//prevent gaining focus when clicking it. Otherwise it does gain focus despite tabIndex -1
-					checkbox.addEventListener("mousedown",this.#preventDefault);
-
-					
 				}
 			}
 			this.#updateRowValues(lastTr,this.#scrollRowIndex+this.#numRenderedRows-1);
