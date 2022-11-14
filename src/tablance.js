@@ -1934,8 +1934,16 @@ class Tablance {
 				} else if (this.#colStructs[i].type==="select") {
 					const checkbox=div.appendChild(document.createElement("input"));
 					checkbox.type="checkbox";
-					checkbox.addEventListener("click",this.#preventDefault);
+					checkbox.tabIndex="-1";
 					cell.classList.add("select-col");
+
+					//prevent checking and leave to #toggleRowSelected for consistant behavior when 
+					checkbox.addEventListener("click",this.#preventDefault);//clicking checkbox vs clicking its cell
+
+					//prevent gaining focus when clicking it. Otherwise it does gain focus despite tabIndex -1
+					checkbox.addEventListener("mousedown",this.#preventDefault);
+
+					
 				}
 			}
 			this.#updateRowValues(lastTr,this.#scrollRowIndex+this.#numRenderedRows-1);
