@@ -1022,6 +1022,8 @@ class Tablance {
 		} else {//not in expansion
 			const td=e.target.closest(".main-table>tbody>tr>td");
 			if (td.classList.contains("expand-col")||td.classList.contains("select-col")) {
+				if (e.shiftKey)
+					e.preventDefault();//prevent text-selection when shift-clicking checkboxes
 				if (this.#mainRowIndex==null)
 					this.#selectMainTableCell(td);
 				if (td.classList.contains("expand-col"))
@@ -1044,7 +1046,7 @@ class Tablance {
 		const mainIndex=parseInt(td.parentElement.dataset.dataRowIndex);
 		if (!shift)//shift not held, 
 			this.#lastCheckedIndex=mainIndex;//set #lastCheckedIndex to the current index to both start and stop at it
-		this.#toggleRowsSelected(checked,...[mainIndex,this.#lastCheckedIndex].sort());
+		this.#toggleRowsSelected(checked,...[mainIndex,this.#lastCheckedIndex??mainIndex].sort((a,b)=>a-b));
 		this.#lastCheckedIndex=mainIndex;//if shift held next time then rows between this and new mainIndex are checked
 	}
 
