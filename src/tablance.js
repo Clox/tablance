@@ -108,6 +108,9 @@ class Tablance {
 		//click which is better user-experience
 	#highlightRowsOnView={};//Rows can be added to this object with rowindex in #data as key, value needs to be truthy.
 		//Rows that are outside of view can be added and when scrolled into view they will be highlighted. 
+	#lastCheckedIndex;//This is the index of the row that was last (un)checked/selected, meaning the checkbox in the
+					//select-column was interacted with. This is used if the user interacts with another checkbox while
+					//shift is being held
 
 							
 
@@ -540,7 +543,7 @@ class Tablance {
 					if (this.#activeStruct.type=="expand")
 						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
 					if (this.#activeStruct.type=="select")
-						return this.#toggleRowSelected(this.#selectedCell);
+						return this.#toggleRowSelected(this.#selectedCell,e.shiftKey);
 					if (e.key==="Enter"||this.#activeStruct.edit?.dataType==="button") {
 						e.preventDefault();//prevent newline from being entered into textareas
 						return this.#enterCell(e);
@@ -1021,7 +1024,7 @@ class Tablance {
 					this.#selectMainTableCell(td);
 				if (td.classList.contains("expand-col"))
 					return this.#toggleRowExpanded(td.parentElement);
-				return this.#toggleRowSelected(td);
+				return this.#toggleRowSelected(td,e.shiftKey);
 			}
 			this.#selectMainTableCell(td);
 		}
@@ -1034,11 +1037,21 @@ class Tablance {
 			this.#expandRow(tr,parseInt(tr.dataset.dataRowIndex));
 	}
 
-	#toggleRowSelected(td) {
-		const checked=td.querySelector("input").checked^=1;
-		td.parentElement.classList.toggle("selected",checked);
+	#toggleRowSelected(td,shift) {
+		const checked=!td.querySelector("input").checked;
 		const mainIndex=parseInt(td.parentElement.dataset.dataRowIndex);
-		this.#rowMetaSet(mainIndex,"s",checked?true:null);
+		if (!shift)//shift not held, 
+			this.#lastCheckedIndex=mainIndex;//set #lastCheckedIndex to the current index to both start and stop at it
+		const dir=mainIndex>this.#lastCheckedIndex?-1:1;
+		for (var i=mainIndex;dir==1?i<=this.#lastCheckedIndex:i>=this.#lastCheckedIndex;i+=dir){
+			if (i>=this.#scrollRowIndex&&i<this.#scrollRowIndex+this.#numRenderedRows) {
+				const tr=this.#mainTbody.querySelector(`[data-data-row-index="${i}"]`);
+				tr.cells[td.cellIndex].querySelector("input").checked=checked;
+				tr.classList.toggle("selected",checked);
+			}
+			this.#rowMetaSet(i,"s",checked?true:null);
+		}
+		this.#lastCheckedIndex=mainIndex;//if shift held next time then rows between this and new mainIndex are checked
 	}
 
 	#autoTextAreaResize(e) {
@@ -1761,6 +1774,8 @@ class Tablance {
 		//#scrollRowIndex 0 to start at top row, also set #scrollY to 0 so the scrollMethod compares the current
 		//scrollTop with 0.
 		this.#scrollRowIndex=this.#scrollY=0;
+
+		this.#lastCheckedIndex=null;
 
 		//adjust the sizer to what its top and height would be when scrolled all the way up.
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+parseInt(this.#tableSizer.style.top)+"px";
