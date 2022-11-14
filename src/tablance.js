@@ -1049,6 +1049,7 @@ class Tablance {
 	}
 
 	#toggleRowsSelected(checked,fromIndex,toIndex) {
+		this.#unsortCol(null,"select");
 		for (var i=fromIndex;i<=toIndex; i++){
 			if (i>=this.#scrollRowIndex&&i<this.#scrollRowIndex+this.#numRenderedRows) {
 				const tr=this.#mainTbody.querySelector(`[data-data-row-index="${i}"]`);
