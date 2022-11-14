@@ -529,23 +529,22 @@ class Tablance {
 					this.#moveCellCursor(1,0);
 				break; case "Escape":
 					this.#groupEscape();
-				break;  case " ":
-					if (this.#selectedCell.classList.contains("expand-col"))
-						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
-					else if (this.#activeStruct.edit?.dataType==="button")
-						this.#enterCell(e);
 				break; case "+":
 					this.#scrollToCursor();
 					this.#expandRow(this.#selectedCell.parentElement,this.#mainRowIndex);
 				break; case "-":
 					this.#scrollToCursor();
 					this.#contractRow(this.#mainRowIndex);
-				break; case "Enter":
+				break; case "Enter": case " ":
 					this.#scrollToCursor();
-					if (this.#selectedCell.classList.contains("expand-col"))
+					if (this.#activeStruct.type=="expand")
 						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
-					this.#enterCell(e);
-					e.preventDefault();//prevent newline from being entered into textareas
+					if (this.#activeStruct.type=="select")
+						return this.#toggleRowSelected(this.#selectedCell);
+					if (e.key==="Enter"||this.#activeStruct.edit?.dataType==="button") {
+						e.preventDefault();//prevent newline from being entered into textareas
+						return this.#enterCell(e);
+					}
 			}
 		} else {
 			switch (e.key) {
