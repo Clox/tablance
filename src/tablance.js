@@ -20,6 +20,9 @@ class Tablance {
 				//"true" height of the table so that the scrollbar reflects all the data that can be scrolled through
 	#mainTable;//the actual main-table that contains the actual data. Resides inside #tableSizer
 	#mainTbody;//tbody of #mainTable
+	#multiRowEditSection;//a div displayed under #scrollBody if rows are selected/checked using select-column
+	#multiRowEditSectionHeight="50px";//the height of #multiRowEditSection when fully open
+	#multiRowEditSectionOpen=false;//whether the section is currently open or not
 	#borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
 	#rowHeight=0;//the height of (non expanded) rows with #borderSpacingY included. Assume 0 first until first row added
@@ -96,8 +99,6 @@ class Tablance {
 							//}
 	#activeExpCell;	//points to an object in #openExpansionNavMap and in extension the cell of an expansion.
 							//If this is set then it means the cursor is inside an expansion.
-	#animateCellCursorUntil;//used by #animateCellcursorPos to set the end-time for animation for adjusting its position
-							//while rows are being expanded/contracted
 	/* #generatingExpansion=false;//this is a flag that gets set to true when a row gets expanded or an already expanded
 		//row gets scrolled into view, in short whenver the expansion-elements are generated. Then it gets unset when
 		//creation finishes. The reason for having this flag is so that update */
@@ -113,7 +114,8 @@ class Tablance {
 					//shift is being held
 	#numRowsSelected=0;//number of rows that are selected/checked using the select-column
 	#numRowsInViewSelected=0;//number of rows in the current view/filter that are selected/checked using select-column
-
+	#animations={};//keeps tracks of animations. Key is a unique id-string, identifying the animation so multiple
+					//instances of the same animation can't run. Value is the end-time in ms since epoch.
 							
 
 	/**
@@ -299,10 +301,12 @@ class Tablance {
 			this.#setupSearchbar();
 		this.#createTableHeader();
 		this.#createTableBody();
+		this.#createMultiRowEditSection();
 		(new ResizeObserver(e=>this.#updateSizesOfViewportAndCols())).observe(container);
-		this.#updateSizesOfViewportAndCols();
+		
 		if (spreadsheet)
 			this.#setupSpreadsheet();
+		this.#updateSizesOfViewportAndCols();
 		if (opts.sortAscHtml==null)
 			opts.sortAscHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#000" points="4,10,0,6,8,6"/></svg>';
@@ -353,7 +357,6 @@ class Tablance {
 		this.#container.addEventListener("focus",e=>this.#spreadsheetOnFocus(e));
 		this.#mainTable.addEventListener("mousedown",e=>this.#mainTableMouseDown(e));
 		this.#cellCursor.addEventListener("dblclick",e=>this.#enterCell(e));
-
 	}
 
 	#rowMetaGet(dataIndex) {
@@ -510,7 +513,6 @@ class Tablance {
 				 return this.#getFirstSelectableExpansionCell(children[childI],isGoingDown);
 	}
 	
-
 	#spreadsheetKeyDown(e) {
 		if (this.#inEditMode&&this.#activeStruct.edit.dataType==="date") {
 			if (e.key.slice(0,5)==="Arrow") {
@@ -609,7 +611,7 @@ class Tablance {
 		//animate
 		contentDiv.style.height="0px";//start at 0
 		setTimeout(()=>contentDiv.style.height=expHeight-this.#expBordersHeight+"px");
-		this.#animateCellcursorPos();
+		this.#animate(()=>this.#adjustCursorPosSize(this.#selectedCell,true),500,"cellCursor");
 	}
 
 	#contractRow(dataRowIndex) {
@@ -628,21 +630,7 @@ class Tablance {
 			contentDiv.dispatchEvent(new Event('transitionend'));
 		else//if in the middle of animation, either expanding or contracting. make it head towards 0
 			contentDiv.style.height=0;
-		this.#animateCellcursorPos();
-	}
-
-	#animateCellcursorPos() {
-		const recursiveCellPosAdjust=()=>{
-			if (Date.now()<this.#animateCellCursorUntil)
-				requestAnimationFrame(recursiveCellPosAdjust);
-			else
-				this.#animateCellCursorUntil=null;
-			this.#adjustCursorPosSize(this.#selectedCell,true);
-		}
-
-		if (!this.#animateCellCursorUntil)//not being animated currently
-			requestAnimationFrame(recursiveCellPosAdjust);
-		this.#animateCellCursorUntil=Date.now()+500;
+		this.#animate(()=>this.#adjustCursorPosSize(this.#selectedCell,true),500,"cellCursor");
 	}
 
 	/**Creates the actual content of a expanded row. When the user expands a row #expandRow is first called which in
@@ -1068,16 +1056,37 @@ class Tablance {
 			}
 			this.#rowMetaSet(i,"s",checked?true:null);
 		}
-		this.#updateSelectedHeaderState();
+		this.#updateNumRowsSelectionState();
 	}
 
-	#updateSelectedHeaderState() {
+	#updateNumRowsSelectionState() {
 		const checkbox=this.#headerTr.querySelector(".select-col input");
 		if (this.#numRowsInViewSelected==this.#data.length||!this.#numRowsInViewSelected) {
 			checkbox.indeterminate=false;
 			checkbox.checked=this.#numRowsInViewSelected;
-		} else {
+		} else
 			checkbox.indeterminate=true;
+		if (this.#numRowsSelected^this.#multiRowEditSectionOpen) {
+			this.#multiRowEditSectionOpen=!!this.#numRowsSelected;
+			this.#multiRowEditSection.style.height=this.#numRowsSelected?this.#multiRowEditSectionHeight:0;
+			this.#animate(this.#updateViewportHeight.bind(this),Infinity,"adjustViewportHeight");
+		}
+	}
+
+	#animate(func,runForMs,id) {
+		const runUntil=Date.now()+runForMs;
+		const animations=this.#animations;
+		if (!animations[id]) {
+			animations[id]=runUntil;
+			requestAnimationFrame(frame);
+		} else
+			animations[id]=runUntil;
+		function frame() {
+			func();
+			if (Date.now()<animations[id])
+				requestAnimationFrame(frame);
+			else
+				delete animations[id];
 		}
 	}
 
@@ -1718,11 +1727,22 @@ class Tablance {
 		this.#borderSpacingY=parseInt(window.getComputedStyle(this.#mainTable)['border-spacing'].split(" ")[1]);
 	}
 
+	#createMultiRowEditSection() {
+		this.#multiRowEditSection=this.#container.appendChild(document.createElement("div"));
+		this.#multiRowEditSection.classList.add("multi-row-section");
+		this.#multiRowEditSection.style.height=0;
+		this.#multiRowEditSection.addEventListener("transitionend",()=>delete this.#animations["adjustViewportHeight"]);
+	}
+
+	#updateViewportHeight() {
+		this.#scrollBody.style.height=this.#container.clientHeight-this.#headerTable.offsetHeight
+				-(this.#searchInput?.offsetHeight??0)-this.#multiRowEditSection.offsetHeight+"px";
+	}
+
 	#updateSizesOfViewportAndCols() {
 		let areaWidth=this.#tableSizer.offsetWidth;
 		if (this.#container.offsetHeight!=this.#containerHeight) {
-			this.#scrollBody.style.height=this.#container.offsetHeight-this.#headerTable.offsetHeight
-				-(this.#searchInput?.offsetHeight??0)+"px";
+			this.#updateViewportHeight();
 			if (this.#container.offsetHeight>this.#containerHeight)
 				this.#maybeAddTrs();
 			else
