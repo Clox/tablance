@@ -316,8 +316,10 @@
 		transition: height .15s ease-out;
 		//border:1px solid red;
 		background-color: white;
-		border: 1px solid black;
-		opacity: .5;
+		>div {
+			border-top: 1px solid black;
+			padding:4px
+		}
 	}
 }
 

@@ -23,6 +23,7 @@ class Tablance {
 	#multiRowEditSection;//a div displayed under #scrollBody if rows are selected/checked using select-column
 	#multiRowEditSectionHeight="50px";//the height of #multiRowEditSection when fully open
 	#multiRowEditSectionOpen=false;//whether the section is currently open or not
+	#numberOfRowsSelectedSpan;//resides in #multiRowEditSection. Should be set to the number of rows selected
 	#borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
 	#rowHeight=0;//the height of (non expanded) rows with #borderSpacingY included. Assume 0 first until first row added
@@ -1056,6 +1057,7 @@ class Tablance {
 			}
 			this.#rowMetaSet(i,"s",checked?true:null);
 		}
+		this.#numberOfRowsSelectedSpan.innerText=this.#numRowsSelected;
 		this.#updateNumRowsSelectionState();
 	}
 
@@ -1732,6 +1734,13 @@ class Tablance {
 		this.#multiRowEditSection.classList.add("multi-row-section");
 		this.#multiRowEditSection.style.height=0;
 		this.#multiRowEditSection.addEventListener("transitionend",()=>delete this.#animations["adjustViewportHeight"]);
+
+		//needed for having padding while also being able to animate height all the way to 0
+		const multiRowEditSectionContent=this.#multiRowEditSection.appendChild(document.createElement("div"));
+
+		const numberOfRowsSelectedDiv=multiRowEditSectionContent.appendChild(document.createElement("div"));
+		numberOfRowsSelectedDiv.innerText="Antal markerade rader: ";
+		this.#numberOfRowsSelectedSpan=numberOfRowsSelectedDiv.appendChild(document.createElement("span"));
 	}
 
 	#updateViewportHeight() {
