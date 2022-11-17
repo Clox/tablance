@@ -17,6 +17,9 @@
 	th {
 		cursor:pointer;
 	}
+	.multi-row-section .cell-cursor{
+		position: static;
+	}
 	.cell-cursor {
 
 		//looks good but is distracting when using arrow-keys. Limit it to mouse-clicks?
@@ -311,14 +314,29 @@
 	.multi-row-section {
 		width: 100%;
 		position: absolute;
-		height: 50px;
 		bottom: 0;
 		transition: height .15s ease-out;
 		//border:1px solid red;
 		background-color: white;
 		>div {
 			border-top: 1px solid black;
-			padding:4px
+			padding:4px;
+			.col {
+				display: inline-block;
+				overflow: hidden;//No idea why but going into edit-mode without overflow:hidden 
+								//makes all siblings shift down
+				padding: 1px 5px;
+				h3 {
+					margin: 5px 0;
+					font-weight: bold;
+					font-size: medium;
+				}
+				.cell {
+					height: 25px;
+					border: 1px solid #ddd;
+					cursor: cell;
+				}
+			}
 		}
 	}
 }

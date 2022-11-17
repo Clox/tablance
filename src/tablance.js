@@ -21,8 +21,9 @@ class Tablance {
 	#mainTable;//the actual main-table that contains the actual data. Resides inside #tableSizer
 	#mainTbody;//tbody of #mainTable
 	#multiRowEditSection;//a div displayed under #scrollBody if rows are selected/checked using select-column
-	#multiRowEditSectionHeight="50px";//the height of #multiRowEditSection when fully open
+	#multiRowEditSectionHeight="85px";//the height of #multiRowEditSection when fully open
 	#multiRowEditSectionOpen=false;//whether the section is currently open or not
+	#multiCellSelected=false;//whether or not a cell inside #multiRowEditSection is currently selected
 	#numberOfRowsSelectedSpan;//resides in #multiRowEditSection. Should be set to the number of rows selected
 	#borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
@@ -302,8 +303,7 @@ class Tablance {
 			this.#setupSearchbar();
 		this.#createTableHeader();
 		this.#createTableBody();
-		this.#createMultiRowEditSection();
-		(new ResizeObserver(e=>this.#updateSizesOfViewportAndCols())).observe(container);
+		(new ResizeObserver(this.#updateSizesOfViewportAndCols.bind(this))).observe(container);
 		
 		if (spreadsheet)
 			this.#setupSpreadsheet();
@@ -334,10 +334,10 @@ class Tablance {
 
 	#setupSpreadsheet() {
 		this.#container.classList.add("spreadsheet");
-		this.#cellCursor=this.#scrollingContent.appendChild(document.createElement("div"));
+		this.#cellCursor=document.createElement("div");
 		this.#cellCursor.className="cell-cursor";
 		this.#cellCursor.style.display="none";
-		
+		this.#createMultiRowEditSection();
 		//remove any border-spacing beacuse if the spacing is clicked the target-element will be the table itself and
 		//no cell will be selected which is bad user experience. Set it to 0 for headerTable too in order to match
 		this.#mainTable.style.borderSpacing=this.#headerTable.style.borderSpacing=this.#borderSpacingY=0;
@@ -352,7 +352,7 @@ class Tablance {
 				=this.#cellCursorBorderWidths.bottom+this.#cellCursorBorderWidths.top+this.#cellCursorOutlineWidth+"px";
 		this.#tableSizer.style.paddingRight=this.#cellCursorOutlineWidth+"px";
 
-		this.#container.tabIndex=0;//so the table can be tabbed to
+		this.#container.tabIndex=0;//so that the table can be tabbed to
 		this.#container.addEventListener("keydown",e=>this.#spreadsheetKeyDown(e));
 		this.#container.addEventListener("mousedown",e=>this.#spreadsheetMouseDown(e));
 		this.#container.addEventListener("focus",e=>this.#spreadsheetOnFocus(e));
@@ -395,28 +395,32 @@ class Tablance {
 		this.#highlightOnFocus=true;
 	}
 
-	#moveCellCursor(numCols,numRows) {
+	#moveCellCursor(hSign,vSign) {
 		//const newColIndex=Math.min(this.#cols.length-1,Math.max(0,this.#cellCursorColIndex+numCols));
 		this.#scrollToCursor();
 
-		if (this.#activeExpCell?.parent?.struct.type==="collection")
-			this.#moveInsideCollection(numCols,numRows);
-		else if (numRows) {//moving up or down
+		if (this.#multiCellSelected) {
+			if (hSign)
+				this.#selectMultiCell(this.#selectedCell.parentNode[(hSign>0?"next":"previous")+"Sibling"]
+																							?.querySelector(".cell"));
+		} else if (this.#activeExpCell?.parent?.struct.type==="collection")
+			this.#moveInsideCollection(hSign,vSign);
+		else if (vSign) {//moving up or down
 			let newColIndex=this.#mainColIndex;
 			if (this.#activeExpCell) {//moving from inside expansion.might move to another cell inside,or outside
-					this.#selectAdjacentExpansionCell(this.#activeExpCell,numRows==1?true:false);
-			} else if (numRows===1&&this.#rowMetaGet(this.#mainRowIndex)?.h){//moving down into expansion
+					this.#selectAdjacentExpansionCell(this.#activeExpCell,vSign==1?true:false);
+			} else if (vSign===1&&this.#rowMetaGet(this.#mainRowIndex)?.h){//moving down into expansion
 				this.#selectFirstSelectableExpansionCell(this.#openExpansions[this.#mainRowIndex],true);
-			} else if (numRows===-1&&this.#rowMetaGet(this.#mainRowIndex-1)?.h){//moving up into expansion
+			} else if (vSign===-1&&this.#rowMetaGet(this.#mainRowIndex-1)?.h){//moving up into expansion
 				this.#selectFirstSelectableExpansionCell(this.#openExpansions[this.#mainRowIndex-1],false);
 			} else {//moving from and to maintable-cells
 				this.#selectMainTableCell(
-					this.#selectedCell.parentElement[(numRows>0?"next":"previous")+"Sibling"]?.cells[newColIndex]);
+					this.#selectedCell.parentElement[(vSign>0?"next":"previous")+"Sibling"]?.cells[newColIndex]);
 			}
 			//need to call this a second time. first time is to scroll to old td to make sure the new td is rendered
 			this.#scrollToCursor();//this time it is to actually scroll to the new td
 		} else if (!this.#activeExpCell){
-			this.#selectMainTableCell(this.#selectedCell[(numCols>0?"next":"previous")+"Sibling"]);
+			this.#selectMainTableCell(this.#selectedCell[(hSign>0?"next":"previous")+"Sibling"]);
 		}
 	}
 
@@ -557,7 +561,10 @@ class Tablance {
 		} else {
 			switch (e.key) {
 				case "Enter":
-					this.#moveCellCursor(0,e.shiftKey?-1:1);
+					if (this.#multiCellSelected)
+						this.#exitEditMode(true);
+					else
+						this.#moveCellCursor(0,e.shiftKey?-1:1);
 				break; case "Escape":
 					this.#exitEditMode(false);
 			}
@@ -1013,8 +1020,10 @@ class Tablance {
 			if (td.classList.contains("expand-col")||td.classList.contains("select-col")) {
 				if (e.shiftKey)
 					e.preventDefault();//prevent text-selection when shift-clicking checkboxes
-				if (this.#mainRowIndex==null)
+				if (this.#mainRowIndex==null) {
 					this.#selectMainTableCell(td);
+					this.#container.focus();
+				}
 				if (td.classList.contains("expand-col"))
 					return this.#toggleRowExpanded(td.parentElement);
 				return this.#rowCheckboxChange(td,e.shiftKey);
@@ -1483,19 +1492,27 @@ class Tablance {
 		this.#inEditMode=false;
 		this.#cellCursor.classList.remove("edit-mode");
 		if (save&&this.#inputVal!=this.#selectedCellVal) {
-			this.#activeStruct.edit.onChange?.(this.#inputVal,this.#selectedCellVal,this.#cellCursorDataObj
-																			,this.#activeStruct,this.#activeExpCell);
-			this.#cellCursorDataObj[this.#activeStruct.id]=this.#inputVal;
-			if (this.#activeExpCell){
-				const doHeightUpdate=this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj);
-				if (doHeightUpdate)
-					this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
-				for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)//update closed-group-renders
-					if (cell.struct.closedRender)//found a group with a closed-group-render func
-						cell.updateRenderOnClose=true;
+			if (this.#multiCellSelected) {
+				for (let metaI=-1,meta; meta=this.#rowsMeta.vals[++metaI];)
+					if (meta.s)
+						this.#rowsMeta.keys[metaI][this.#activeStruct.id]=this.#inputVal;
+				for (const selectedTr of this.#mainTbody.querySelectorAll("tr.selected"))
+					this.#updateMainRowCell(selectedTr.cells[this.#mainColIndex],this.#activeStruct);
 			} else {
-				this.#updateMainRowCell(this.#selectedCell,this.#activeStruct);
-				this.#unsortCol(this.#activeStruct.id);
+				this.#activeStruct.edit.onChange?.(this.#inputVal,this.#selectedCellVal,this.#cellCursorDataObj
+																			,this.#activeStruct,this.#activeExpCell);
+				this.#cellCursorDataObj[this.#activeStruct.id]=this.#inputVal;
+				if (this.#activeExpCell){
+					const doHeightUpdate=this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj);
+					if (doHeightUpdate)
+						this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
+					for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)//update closed-group-renders
+						if (cell.struct.closedRender)//found a group with a closed-group-render func
+							cell.updateRenderOnClose=true;
+				} else {
+					this.#updateMainRowCell(this.#selectedCell,this.#activeStruct);
+					this.#unsortCol(this.#activeStruct.id);
+				}
 			}
 		}
 		this.#cellCursor.innerHTML="";
@@ -1509,11 +1526,7 @@ class Tablance {
 		repeatEntry.parent.struct.onCreate?.(repeatEntry.dataObj,repeatEntry)
 	}
 
-	#selectMainTableCell(cell) {
-		if (!cell)//in case trying to move up from top row etc
-			return;
-		this.#exitEditMode(true);
-
+	#closeActiveExpCell() {
 		if (this.#activeExpCell) {
 			for (let oldCellParent=this.#activeExpCell; oldCellParent=oldCellParent.parent;) {
 				if (oldCellParent.struct.type==="group") {
@@ -1526,10 +1539,19 @@ class Tablance {
 			}
 			this.#activeExpCell=null;//should be null when not inside expansion
 		}
+	}
+
+
+	#selectMainTableCell(cell) {
+		if (!cell)//in case trying to move up from top row etc
+			return;
+		this.#multiCellSelected=false;
+		this.#exitEditMode(true);
+
+		this.#closeActiveExpCell();
 		this.#cellCursor.classList.toggle("disabled",cell.classList.contains("disabled"));
-		this.#selectedCell=cell;
-		this.#adjustCursorPosSize(cell);
-		
+		this.#scrollingContent.appendChild(this.#cellCursor);
+		this.#adjustCursorPosSize(this.#selectedCell=cell);
 		this.#mainRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);
 		if (!cell.parentElement.classList.contains("expansion"))
 			this.#mainColIndex=cell.cellIndex;
@@ -1547,6 +1569,7 @@ class Tablance {
 	#selectExpansionCell(cellObject) {
 		if (!cellObject)
 			return;
+		this.#multiCellSelected=false;
 		this.#exitEditMode(true);
 
 		this.#cellCursor.classList.toggle("disabled",(cellObject.selEl??cellObject.el).classList.contains("disabled"));
@@ -1578,6 +1601,7 @@ class Tablance {
 				}
 		this.#activeExpCell=cellObject;
 		this.#selectedCell=cellObject.selEl??cellObject.el;
+		this.#scrollingContent.appendChild(this.#cellCursor);
 		this.#adjustCursorPosSize(this.#selectedCell);
 		this.#cellCursorDataObj=cellObject.dataObj;
 		this.#activeStruct=cellObject.struct;
@@ -1587,7 +1611,7 @@ class Tablance {
 	}
 
 	#adjustCursorPosSize(el,onlyPos=false) {
-		if (!el)
+		if (!el||this.#multiCellSelected)
 			return;
 		const tableSizerPos=this.#tableSizer.getBoundingClientRect();
 		const cellPos=el.getBoundingClientRect();
@@ -1735,12 +1759,42 @@ class Tablance {
 		this.#multiRowEditSection.style.height=0;
 		this.#multiRowEditSection.addEventListener("transitionend",()=>delete this.#animations["adjustViewportHeight"]);
 
-		//needed for having padding while also being able to animate height all the way to 0
+		//extra div needed for having padding while also being able to animate height all the way to 0
 		const multiRowEditSectionContent=this.#multiRowEditSection.appendChild(document.createElement("div"));
 
 		const numberOfRowsSelectedDiv=multiRowEditSectionContent.appendChild(document.createElement("div"));
-		numberOfRowsSelectedDiv.innerText="Antal markerade rader: ";
+		numberOfRowsSelectedDiv.innerText="Number of selected rows: ";
 		this.#numberOfRowsSelectedSpan=numberOfRowsSelectedDiv.appendChild(document.createElement("span"));
+		const cellMouseDown=e=>this.#selectMultiCell(e.target);
+		const dblClick=this.#enterCell.bind(this);
+		const colsDiv=multiRowEditSectionContent.appendChild(document.createElement("div"));
+		for (let colI=-1,colStruct; colStruct=this.#colStructs[++colI];) {
+			if (colStruct.edit) {
+				const colDiv=colsDiv.appendChild(document.createElement("div"));
+				const header=document.createElement("h3");
+				colDiv.appendChild(header).innerText=colStruct.title;
+				colDiv.classList.add("col");
+				colDiv.style.width=(/\d+\%/.test(colStruct.width)?colStruct.width:header.offsetWidth)+"px";
+				const cellDiv=colDiv.appendChild(document.createElement("div"));
+				cellDiv.classList.add("cell");
+				cellDiv.dataset.colIndex=colI;
+				cellDiv.addEventListener("mousedown",cellMouseDown);
+				cellDiv.addEventListener("dblclick",dblClick);
+			}
+		}
+	}
+
+	#selectMultiCell(cell) {
+		if (!cell)
+			return;
+		this.#multiCellSelected=true;
+		this.#selectedCell=cell;
+		this.#activeStruct=this.#colStructs[this.#mainColIndex=cell.dataset.colIndex];
+		this.#closeActiveExpCell();
+		this.#cellCursor.classList.toggle("disabled",cell.classList.contains("disabled"));
+		cell.appendChild(this.#cellCursor);
+		this.#cellCursor.style.height=this.#cellCursor.style.width="100%";
+		this.#cellCursorDataObj={};
 	}
 
 	#updateViewportHeight() {
@@ -1749,7 +1803,6 @@ class Tablance {
 	}
 
 	#updateSizesOfViewportAndCols() {
-		let areaWidth=this.#tableSizer.offsetWidth;
 		if (this.#container.offsetHeight!=this.#containerHeight) {
 			this.#updateViewportHeight();
 			if (this.#container.offsetHeight>this.#containerHeight)
@@ -1758,7 +1811,15 @@ class Tablance {
 				this.#maybeRemoveTrs();
 			this.#containerHeight=this.#container.offsetHeight;
 		}
+		this.#updateColsWidths();
+
+		this.#headerTable.style.width=this.#scrollBody.offsetWidth+"px";
+		this.#adjustCursorPosSize(this.#selectedCell);
+	}
+
+	#updateColsWidths() {
 		if (this.#container.offsetWidth>this.#containerWidth) {
+			let areaWidth=this.#tableSizer.offsetWidth;
 			const percentageWidthRegex=/\d+\%/;
 			let totalFixedWidth=0;
 			let numUndefinedWidths=0;
@@ -1776,10 +1837,10 @@ class Tablance {
 					col.pxWidth=(areaWidth-sumFixedAndFlexibleWidth)/numUndefinedWidths;
 			for (var colI=0; colI<this.#colStructs.length; colI++) 
 				this.#cols[colI].style.width=this.#headerTr.cells[colI].style.width=this.#colStructs[colI].pxWidth+"px";
-		}			
-		this.#headerTr.cells[colI].style.width=this.#scrollBody.offsetWidth-areaWidth+"px";;
-		this.#headerTable.style.width=this.#scrollBody.offsetWidth+"px";
-		this.#adjustCursorPosSize(this.#selectedCell);
+			//last col is empty col with the width of table-scrollbar if its present in order to make the header span
+			//the whole with while not actually using that last bit in the calculations for the normal cols
+			this.#headerTr.cells[colI].style.width=this.#scrollBody.offsetWidth-areaWidth+"px";
+		}
 	}
 
 	#filterData(filterString) {
