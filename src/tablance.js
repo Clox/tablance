@@ -20,10 +20,13 @@ class Tablance {
 				//"true" height of the table so that the scrollbar reflects all the data that can be scrolled through
 	#mainTable;//the actual main-table that contains the actual data. Resides inside #tableSizer
 	#mainTbody;//tbody of #mainTable
-	#multiRowEditSection;//a div displayed under #scrollBody if rows are selected/checked using select-column
+	#multiRowEditSection;//a div displayed under #scrollBody if rows are selected/checked using select-column. This 
+						//section is used to edit multiple rows at once
 	#multiRowEditSectionHeight="85px";//the height of #multiRowEditSection when fully open
 	#multiRowEditSectionOpen=false;//whether the section is currently open or not
 	#multiCellSelected=false;//whether or not a cell inside #multiRowEditSection is currently selected
+	#multiCellIds;//array of ids of columns that are editable and therefore can be edited via multi-cell-section
+	#multiCells;//the multi-edit-cells in multiRowEditSection, in the same order as in #multiCellIds. 
 	#numberOfRowsSelectedSpan;//resides in #multiRowEditSection. Should be set to the number of rows selected
 	#borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
@@ -1068,6 +1071,7 @@ class Tablance {
 		}
 		this.#numberOfRowsSelectedSpan.innerText=this.#numRowsSelected;
 		this.#updateNumRowsSelectionState();
+		this.#updateMultiCellVals();
 	}
 
 	#updateNumRowsSelectionState() {
@@ -1767,6 +1771,8 @@ class Tablance {
 		const cellMouseDown=e=>this.#selectMultiCell(e.target);
 		const dblClick=this.#enterCell.bind(this);
 		const colsDiv=multiRowEditSectionContent.appendChild(document.createElement("div"));
+		this.#multiCellIds=[];
+		this.#multiCells=[];
 		for (let colI=-1,colStruct; colStruct=this.#colStructs[++colI];) {
 			if (colStruct.edit) {
 				const colDiv=colsDiv.appendChild(document.createElement("div"));
@@ -1775,11 +1781,29 @@ class Tablance {
 				colDiv.classList.add("col");
 				colDiv.style.width=(/\d+\%/.test(colStruct.width)?colStruct.width:header.offsetWidth)+"px";
 				const cellDiv=colDiv.appendChild(document.createElement("div"));
+				this.#multiCells[this.#multiCellIds.push(colStruct.id)-1]=cellDiv;
 				cellDiv.classList.add("cell");
 				cellDiv.dataset.colIndex=colI;
 				cellDiv.addEventListener("mousedown",cellMouseDown);
 				cellDiv.addEventListener("dblclick",dblClick);
 			}
+		}
+	}
+
+	/**Updates the displayed values in #multiRowEditSection* */
+	#updateMultiCellVals() {
+		const mixedText="(Mixed)";
+		for (let multiCellI=-1, multiCellId; multiCellId=this.#multiCellIds[++multiCellI];) {
+			let colVal=this.#selectedRows[0]?.[multiCellId];
+			let mixed=false;
+			for (let rowI=0,row; row=this.#selectedRows[++rowI];) {
+				if (row[multiCellId]!=colVal) {
+					mixed=true;
+					break;
+				}
+			}
+			this.#multiCells[multiCellI].innerText=mixed?mixedText:colVal??"";
+			this.#multiCells[multiCellI].classList.toggle("mixed",mixed);
 		}
 	}
 
@@ -2294,9 +2318,6 @@ class Tablance {
 				}
 		}
 	}
-
-
-
 
 	#insertRepeatData(rptCel,data,mainIndex,path) {
 		const nextSiblingObj=findClosestRenderedSibling(rptCel);
