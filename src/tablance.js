@@ -1814,7 +1814,7 @@ class Tablance {
 				}
 			}
 			const cellIndex=this.#multiCellIds.indexOf(multiCellId);
-			this.#multiCells[cellIndex].innerText=mixed?mixedText:colVal??"";
+			this.#multiCells[cellIndex].innerText=mixed?mixedText:colVal?.text??colVal??"";
 			this.#multiCells[cellIndex].classList.toggle("mixed",mixed);
 		}
 	}
@@ -1829,6 +1829,7 @@ class Tablance {
 		this.#cellCursor.classList.toggle("disabled",cell.classList.contains("disabled"));
 		cell.appendChild(this.#cellCursor);
 		this.#cellCursor.style.height=this.#cellCursor.style.width="100%";
+		this.#cellCursor.style.top=this.#cellCursor.style.left=0;
 		this.#cellCursorDataObj={};
 	}
 

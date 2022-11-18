@@ -17,9 +17,6 @@
 	th {
 		cursor:pointer;
 	}
-	.multi-row-section .cell-cursor{
-		position: static;
-	}
 	.cell-cursor {
 
 		//looks good but is distracting when using arrow-keys. Limit it to mouse-clicks?
@@ -335,6 +332,7 @@
 					height: 25px;
 					border: 1px solid #ddd;
 					cursor: cell;
+					position: relative;//for position of cell-cursor to work correctly
 					&.mixed {
 						font-style: italic;
 					}
