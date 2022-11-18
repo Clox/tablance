@@ -1513,6 +1513,7 @@ class Tablance {
 						if (cell.struct.closedRender)//found a group with a closed-group-render func
 							cell.updateRenderOnClose=true;
 				} else {
+					this.#updateMultiCellVals([this.#activeStruct.id]);
 					this.#updateMainRowCell(this.#selectedCell,this.#activeStruct);
 					this.#unsortCol(this.#activeStruct.id);
 				}
@@ -1791,9 +1792,9 @@ class Tablance {
 	}
 
 	/**Updates the displayed values in #multiRowEditSection* */
-	#updateMultiCellVals() {
+	#updateMultiCellVals(idsToUpdate=this.#multiCellIds) {
 		const mixedText="(Mixed)";
-		for (let multiCellI=-1, multiCellId; multiCellId=this.#multiCellIds[++multiCellI];) {
+		for (let multiCellI=-1, multiCellId; multiCellId=idsToUpdate[++multiCellI];) {
 			let colVal=this.#selectedRows[0]?.[multiCellId];
 			let mixed=false;
 			for (let rowI=0,row; row=this.#selectedRows[++rowI];) {
@@ -1802,8 +1803,9 @@ class Tablance {
 					break;
 				}
 			}
-			this.#multiCells[multiCellI].innerText=mixed?mixedText:colVal??"";
-			this.#multiCells[multiCellI].classList.toggle("mixed",mixed);
+			const cellIndex=this.#multiCellIds.indexOf(multiCellId);
+			this.#multiCells[cellIndex].innerText=mixed?mixedText:colVal??"";
+			this.#multiCells[cellIndex].classList.toggle("mixed",mixed);
 		}
 	}
 
