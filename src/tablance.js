@@ -81,7 +81,7 @@ class Tablance {
 			//another object:
 			//	h Integer 	If this is present then the row is expanded, otherwise not. The value is the combined height
 			//				of the main row and its expansion-row.
-			//	s Boolean	If true then the row is selected/checked
+	#selectedRows=[];//array of the actual data-objects of rows that are currently selected/checked using the select-col
 	#scrollY=0;//this keeps track of the "old" scrollTop of the table when a scroll occurs to know 
 	#numRenderedRows=0;//number of tr-elements in the table excluding tr's that are expansions (expansions too are tr's)
 	#openExpansions={};//for any row that is expanded and also in view this will hold navigational data which
@@ -1056,15 +1056,10 @@ class Tablance {
 				tr.querySelector(".select-col input").checked=checked;
 				tr.classList.toggle("selected",checked);
 			}
-			const rowMeta=this.#rowMetaGet(i);
-			if (!rowMeta?.s&&checked) {
-				this.#numRowsSelected++;
-				this.#numRowsInViewSelected++;
-			} else if (rowMeta?.s&&!checked) {
-				this.#numRowsSelected--;
-				this.#numRowsInViewSelected--;
-			}
-			this.#rowMetaSet(i,"s",checked?true:null);
+			if (checked)
+				this.#selectedRows.push(this.#data[i]);
+			else
+				this.#selectedRows.splice(this.#selectedRows.indexOf(this.#data[i]),1);
 		}
 		this.#numberOfRowsSelectedSpan.innerText=this.#numRowsSelected;
 		this.#updateNumRowsSelectionState();
@@ -1493,9 +1488,8 @@ class Tablance {
 		this.#cellCursor.classList.remove("edit-mode");
 		if (save&&this.#inputVal!=this.#selectedCellVal) {
 			if (this.#multiCellSelected) {
-				for (let metaI=-1,meta; meta=this.#rowsMeta.vals[++metaI];)
-					if (meta.s)
-						this.#rowsMeta.keys[metaI][this.#activeStruct.id]=this.#inputVal;
+				for (const selectedRow of this.#selectedRows)
+					selectedRow[this.#activeStruct.id]=this.#inputVal;
 				for (const selectedTr of this.#mainTbody.querySelectorAll("tr.selected"))
 					this.#updateMainRowCell(selectedTr.cells[this.#mainColIndex],this.#activeStruct);
 			} else {
@@ -1710,15 +1704,15 @@ class Tablance {
 		
 		function compare(a,b) {
 			for (let sortCol of sortCols) {
-				if (sortCol.type==="expand"||sortCol.type==="select") {
-					const aMeta=this.#rowMetaGet(this.#data.indexOf(a));
-					const bMeta=this.#rowMetaGet(this.#data.indexOf(b));
-					let aMetaVal,bMetaVal;
-					if ((sortCol.type==="expand"&&(aMetaVal=!!aMeta?.h)!=(bMetaVal=!!bMeta?.h))
-					||(sortCol.type==="select"&&(aMetaVal=!!aMeta?.s)!=(bMetaVal=!!bMeta?.s)))
-						return (aMetaVal<bMetaVal?1:-1)*(sortCol.order=="asc"?1:-1);
-				}
-				if (a[sortCol.id]!=b[sortCol.id])
+				if (sortCol.type==="expand") {
+					let aV;
+					if ((aV=!!this.#rowMetaGet(this.#data.indexOf(a))?.h)!=!!this.#rowMetaGet(this.#data.indexOf(b))?.h)
+						return (aV?-1:1)*(sortCol.order=="asc"?1:-1);
+				} else if (sortCol.type==="select") {
+					let aSel;
+					if ((aSel=this.#selectedRows.indexOf(a)!=-1)!=(this.#selectedRows.indexOf(b)!=-1))
+						return (aSel?-1:1)*(sortCol.order=="asc"?1:-1);
+				} else if (a[sortCol.id]!=b[sortCol.id])
 					return (a[sortCol.id]>b[sortCol.id]?1:-1)*(sortCol.order=="asc"?1:-1);
 			}
 		}
@@ -2112,7 +2106,7 @@ class Tablance {
 	 * @param {HTMLTableRowElement} tr The tr-element whose cells that should be updated*/
 	#updateRowValues(tr,mainIndex) {
 		tr.dataset.dataRowIndex=mainIndex;
-		const selected=this.#rowMetaGet(mainIndex)?.s;
+		const selected=this.#selectedRows.indexOf(this.#data[mainIndex])!=-1;
 		tr.classList.toggle("selected",!!selected);
 		for (let colI=0; colI<this.#colStructs.length; colI++) {
 			let td=tr.cells[colI];
