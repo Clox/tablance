@@ -11,14 +11,15 @@
 			function descFunc(dataRow,col,rowIndex,colIndex) {
 				return `foobar ${rowIndex} - ${dataRow.descLetter}`
 			}
-			const myTablanceCols=[{type:"select"},{type:"expand"}
-				,{id:"desc",title:"Description",edit:{onChange:(...args)=>console.log(args),
-					dataType:"text",maxLength:5,placeholder:"placeholder",enabled:()=>Math.random()>.5},render:descFunc}
-				,{id:"amount",title:"Amount",width:"85px",edit:true},{id:"balance",title:"Balance",width:"85px"}];
-			
 			const foods=[{text:"banana",value:1},{text:"apple",value:2},{text:"cucumber",value:3},
 						{text:"orange",value:4},{text:"grapes",value:5},{text:"melon",value:6},
 						{text:"pineapple",value:7},{text:"carrot",value:8}];
+			const myTablanceCols=[{type:"select"},{type:"expand"}
+				,{id:"desc",title:"Description",edit:{onChange:(...args)=>console.log(args),
+					dataType:"text",maxLength:5,placeholder:"placeholder",enabled:()=>Math.random()>.5},render:descFunc}
+				,{id:"amount",title:"Amount",width:"85px",edit:true},{id:"balance",title:"Balance",width:"85px"}
+				,{id:"food",title:"Food",width:"120px",edit:{dataType:"select",options:foods,minOptsFilter:100
+					,allowCreateNew:true,allowSelectEmpty:true,selectInputPlaceholder:"Sök/Skapa"}}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
 				{type:"field",title:"Select",id:"sel",edit:{dataType:"select",options:foods,minOptsFilter:100
 									,allowCreateNew:true,allowSelectEmpty:true,selectInputPlaceholder:"Sök/Skapa"}},

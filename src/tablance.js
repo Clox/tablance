@@ -1197,6 +1197,11 @@ class Tablance {
 		return parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight/2
 															<this.#scrollBody.scrollTop+this.#scrollBody.clientHeight/2;
 	}
+	/**Looks to see if there's enough space to align the left of the picker with the left of the cell-cursor. 
+	 * Returns true if there is or false if it needs to have its right edge aligned with the right of the cursor.*/
+	#alignPickerRightOfCellCursor(picker) {
+		return this.#scrollBody.clientWidth-parseInt(this.#cellCursor.style.left)>picker.offsetWidth;
+	}
 
 	/**Returns true or false depending on if the cellcursor is "in view". It might not actually be in view but as long
 	 * as it's a row that is present in the DOM then it will return true* */
@@ -1384,7 +1389,12 @@ class Tablance {
 		
 		this.#scrollingContent.appendChild(selectContainer);
 		selectContainer.className="tablance-select-container";
-		selectContainer.style.left=parseInt(this.#cellCursor.style.left)+"px";
+		if (this.#alignPickerRightOfCellCursor(selectContainer))
+			selectContainer.style.left=parseInt(this.#cellCursor.style.left)+"px";
+		else {
+			selectContainer.style.left=parseInt(this.#cellCursor.style.left)
+													-(selectContainer.offsetWidth-this.#cellCursor.offsetWidth)+"px";
+			}
 		if (this.#alignPickerBelowCellCursor()) {
 			selectContainer.style.top=parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight+"px";
 			this.#cellCursor.style.zIndex=0;//prevent that the shadow of the cellcursor falls on the picker
