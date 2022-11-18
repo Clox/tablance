@@ -1056,10 +1056,15 @@ class Tablance {
 				tr.querySelector(".select-col input").checked=checked;
 				tr.classList.toggle("selected",checked);
 			}
-			if (checked)
+			if (checked&&this.#selectedRows.indexOf(this.#data[i])==-1) {
 				this.#selectedRows.push(this.#data[i]);
-			else
+				this.#numRowsSelected++;
+				this.#numRowsInViewSelected++;
+			} else if (!checked&&this.#selectedRows.indexOf(this.#data[i])!=-1) {
 				this.#selectedRows.splice(this.#selectedRows.indexOf(this.#data[i]),1);
+				this.#numRowsSelected--;
+				this.#numRowsInViewSelected--;
+			}
 		}
 		this.#numberOfRowsSelectedSpan.innerText=this.#numRowsSelected;
 		this.#updateNumRowsSelectionState();
