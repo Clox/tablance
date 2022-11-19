@@ -27,6 +27,7 @@ class Tablance {
 	#multiCellSelected=false;//whether or not a cell inside #multiRowEditSection is currently selected
 	#multiCellIds;//array of ids of columns that are editable and therefore can be edited via multi-cell-section
 	#multiCells;//the multi-edit-cells in multiRowEditSection, in the same order as in #multiCellIds. 
+	#multiCellsDataObj;//used to store values of the multi-cells so the inputs can get set correctly initially on edit
 	#numberOfRowsSelectedSpan;//resides in #multiRowEditSection. Should be set to the number of rows selected
 	#borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
@@ -1788,6 +1789,7 @@ class Tablance {
 		const colsDiv=multiRowEditSectionContent.appendChild(document.createElement("div"));
 		this.#multiCellIds=[];
 		this.#multiCells=[];
+		this.#multiCellsDataObj={};
 		for (let colI=-1,colStruct; colStruct=this.#colStructs[++colI];) {
 			if (colStruct.edit) {
 				const colDiv=colsDiv.appendChild(document.createElement("div"));
@@ -1817,6 +1819,7 @@ class Tablance {
 					break;
 				}
 			}
+			this.#multiCellsDataObj[multiCellId]=mixed?"":colVal;
 			const cellIndex=this.#multiCellIds.indexOf(multiCellId);
 			this.#multiCells[cellIndex].innerText=mixed?mixedText:colVal?.text??colVal??"";
 			this.#multiCells[cellIndex].classList.toggle("mixed",mixed);
@@ -1832,6 +1835,7 @@ class Tablance {
 		this.#activeStruct=this.#colStructs[this.#mainColIndex=cell.dataset.colIndex];
 		this.#exitEditMode(true);
 		this.#closeActiveExpCell();
+		this.#cellCursorDataObj=this.#multiCellsDataObj;
 		this.#cellCursor.classList.toggle("disabled",cell.classList.contains("disabled"));
 		this.#multiRowEditSection.firstChild.appendChild(this.#cellCursor);
 		const cellBR=cell.getBoundingClientRect();
@@ -1840,7 +1844,6 @@ class Tablance {
 		this.#cellCursor.style.width=cellBR.width+"px";
 		this.#cellCursor.style.top=cellBR.top-parentBR.top+"px";
 		this.#cellCursor.style.left=cellBR.left-parentBR.left+"px";
-		this.#cellCursorDataObj={};
 	}
 
 	#updateViewportHeight() {
