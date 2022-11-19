@@ -20,7 +20,7 @@ class Tablance {
 				//"true" height of the table so that the scrollbar reflects all the data that can be scrolled through
 	#mainTable;//the actual main-table that contains the actual data. Resides inside #tableSizer
 	#mainTbody;//tbody of #mainTable
-	#multiRowEditSection;//a div displayed under #scrollBody if rows are selected/checked using select-column. This 
+	#multiRowArea;//a div displayed under #scrollBody if rows are selected/checked using select-column. This 
 						//section is used to edit multiple rows at once
 	#multiRowEditSectionHeight="95px";//the height of #multiRowEditSection when fully open
 	#multiRowEditSectionOpen=false;//whether the section is currently open or not
@@ -570,9 +570,9 @@ class Tablance {
 		} else {
 			switch (e.key) {
 				case "Enter":
-					if (this.#multiCellSelected)
-						this.#exitEditMode(true);
-					else
+					// if (this.#multiCellSelected)
+					// 	this.#exitEditMode(true);
+					// else
 						this.#moveCellCursor(0,e.shiftKey?-1:1);
 				break; case "Escape":
 					this.#exitEditMode(false);
@@ -1088,7 +1088,7 @@ class Tablance {
 			checkbox.indeterminate=true;
 		if (this.#numRowsSelected^this.#multiRowEditSectionOpen) {
 			this.#multiRowEditSectionOpen=!!this.#numRowsSelected;
-			this.#multiRowEditSection.style.height=this.#numRowsSelected?this.#multiRowEditSectionHeight:0;
+			this.#multiRowArea.style.height=this.#numRowsSelected?this.#multiRowEditSectionHeight:0;
 			this.#animate(this.#updateViewportHeight.bind(this),Infinity,"adjustViewportHeight");
 		}
 	}
@@ -1220,7 +1220,7 @@ class Tablance {
 		if (this.#activeStruct.edit) {
 			if (this.#activeStruct.edit.dataType==="button")
 				return this.#activeExpCell.el.click();
-			this.#selectedCellVal=this.#cellCursorDataObj[this.#activeStruct.id];
+			this.#inputVal=this.#selectedCellVal;
 			this.#inEditMode=true;
 			this.#cellCursor.classList.add("edit-mode");
 			switch (this.#activeStruct.edit.dataType) {
@@ -1569,37 +1569,21 @@ class Tablance {
 	#selectMainTableCell(cell) {
 		if (!cell)//in case trying to move up from top row etc
 			return;
-		this.#multiCellSelected=false;
-		this.#exitEditMode(true);
-
-		this.#closeActiveExpCell();
-		this.#cellCursor.classList.toggle("disabled",cell.classList.contains("disabled"));
-		this.#scrollingContent.appendChild(this.#cellCursor);
-		this.#adjustCursorPosSize(this.#selectedCell=cell);
+		this.#mainColIndex=cell.cellIndex;
 		this.#mainRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);
-		if (!cell.parentElement.classList.contains("expansion"))
-			this.#mainColIndex=cell.cellIndex;
-		this.#activeStruct=this.#colStructs[this.#mainColIndex];
-		
-		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
-		const noPointerEvent=this.#activeStruct.type==="expand"||this.#activeStruct.type==="select"
-																		||this.#activeStruct.edit?.dataType==="button";
-		this.#cellCursor.style.pointerEvents=noPointerEvent?"none":"auto";
-
 		this.#cellCursorDataObj=this.#data[this.#mainRowIndex];
-		this.#activeStruct=this.#colStructs[this.#mainColIndex];
+		this.#selectCell(false,cell,this.#colStructs[this.#mainColIndex]);
+		this.#closeActiveExpCell();
 	}
 
 	#selectExpansionCell(cellObject) {
 		if (!cellObject)
 			return;
-		this.#multiCellSelected=false;
-		this.#exitEditMode(true);
-
-		this.#cellCursor.classList.toggle("disabled",(cellObject.selEl??cellObject.el).classList.contains("disabled"));
+		this.#cellCursorDataObj=cellObject.dataObj;
+		this.#selectCell(false,cellObject.selEl??cellObject.el,cellObject.struct);
 
 		//remove cellcursor click-through in case an expand-button-cell was previously selected
-		this.#cellCursor.style.pointerEvents="auto";
+		//this.#cellCursor.style.pointerEvents="auto";
 		for (var root=cellObject; root.parent; root=root.parent);
 		this.#mainRowIndex=root.rowIndex;;
 		if (this.#activeExpCell)//changing from an old expansionCell
@@ -1624,23 +1608,52 @@ class Tablance {
 					}
 				}
 		this.#activeExpCell=cellObject;
-		this.#selectedCell=cellObject.selEl??cellObject.el;
-		this.#scrollingContent.appendChild(this.#cellCursor);
-		this.#adjustCursorPosSize(this.#selectedCell);
-		this.#cellCursorDataObj=cellObject.dataObj;
-		this.#activeStruct=cellObject.struct;
+
+		//this.#adjustCursorPosSize(this.#selectedCell);
+		
+		//this.#activeStruct=cellObject.struct;
+		//this.#selectedCellVal=this.#cellCursorDataObj[this.#activeStruct.id];
 
 		//make cellcursor click-through if it's on a button
-		this.#cellCursor.style.pointerEvents=this.#activeStruct.edit?.dataType==="button"?"none":"auto";
+		//this.#cellCursor.style.pointerEvents=this.#activeStruct.edit?.dataType==="button"?"none":"auto";
+	}
+
+	#selectMultiCell(cell) {
+		if (!cell)
+			return;
+		this.#cellCursorDataObj=this.#multiCellsDataObj;
+		this.#selectCell(true,cell,this.#colStructs[this.#mainColIndex=cell.dataset.colIndex]);
+		this.#closeActiveExpCell();
+		
+		const cellPos=cell.getBoundingClientRect();
+		const parentBR=this.#multiRowArea.firstChild.getBoundingClientRect();
+		this.#cellCursor.style.height=cellPos.height+"px";
+		this.#cellCursor.style.width=cellPos.width+"px";
+		this.#cellCursor.style.top=cellPos.top-parentBR.top+"px";
+		this.#cellCursor.style.left=cellPos.left-parentBR.left+"px";
+	}
+
+	#selectCell(isMultiCell,cellEl,struct) {
+		this.#multiCellSelected=isMultiCell;
+		this.#exitEditMode(true);
+		this.#adjustCursorPosSize(cellEl);
+		this.#cellCursor.classList.toggle("disabled",cellEl.classList.contains("disabled"));
+		(isMultiCell?this.#multiRowArea.firstChild:this.#scrollingContent).appendChild(this.#cellCursor);
+		this.#selectedCell=cellEl;
+		this.#activeStruct=struct;
+		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
+		const noPtrEvent=struct.type==="expand"||struct.type==="select"||struct.edit?.dataType==="button";
+		this.#cellCursor.style.pointerEvents=noPtrEvent?"none":"auto";
+		this.#selectedCellVal=this.#cellCursorDataObj[struct.id];
 	}
 
 	#adjustCursorPosSize(el,onlyPos=false) {
-		if (!el||this.#multiCellSelected)
+		if (!el)
 			return;
-		const tableSizerPos=this.#tableSizer.getBoundingClientRect();
 		const cellPos=el.getBoundingClientRect();
-		this.#cellCursor.style.top=cellPos.y-tableSizerPos.y+this.#tableSizer.offsetTop+"px";
-		this.#cellCursor.style.left=cellPos.x-tableSizerPos.x+"px";
+		const contPos=(this.#multiCellSelected?this.#multiRowArea.firstChild:this.#tableSizer).getBoundingClientRect();
+		this.#cellCursor.style.top=cellPos.y-contPos.y+this.#tableSizer.offsetTop+"px";
+		this.#cellCursor.style.left=cellPos.x-contPos.x+"px";
 		this.#cellCursor.style.display="block";//it starts at display none since #setupSpreadsheet, so make visible now
 		if (!onlyPos) {
 			this.#cellCursor.style.height=cellPos.height+"px";
@@ -1778,13 +1791,13 @@ class Tablance {
 	}
 
 	#createMultiRowEditSection() {
-		this.#multiRowEditSection=this.#container.appendChild(document.createElement("div"));
-		this.#multiRowEditSection.classList.add("multi-row-section");
-		this.#multiRowEditSection.style.height=0;
-		this.#multiRowEditSection.addEventListener("transitionend",()=>delete this.#animations["adjustViewportHeight"]);
+		this.#multiRowArea=this.#container.appendChild(document.createElement("div"));
+		this.#multiRowArea.classList.add("multi-row-section");
+		this.#multiRowArea.style.height=0;
+		this.#multiRowArea.addEventListener("transitionend",()=>delete this.#animations["adjustViewportHeight"]);
 
 		//extra div needed for having padding while also being able to animate height all the way to 0
-		const multiRowEditSectionContent=this.#multiRowEditSection.appendChild(document.createElement("div"));
+		const multiRowEditSectionContent=this.#multiRowArea.appendChild(document.createElement("div"));
 
 		const numberOfRowsSelectedDiv=multiRowEditSectionContent.appendChild(document.createElement("div"));
 		numberOfRowsSelectedDiv.innerText="Number of selected rows: ";
@@ -1811,7 +1824,7 @@ class Tablance {
 				cellDiv.classList.add("cell");
 				cellDiv.dataset.colIndex=colI;
 				cellDiv.addEventListener("mousedown",cellMouseDown);
-				cellDiv.addEventListener("dblclick",dblClick);
+				//cellDiv.addEventListener("dblclick",dblClick);
 			}
 		}
 	}
@@ -1835,29 +1848,9 @@ class Tablance {
 		}
 	}
 
-	#selectMultiCell(cell) {
-		if (!cell)
-			return;
-		this.#cellCursor.style.pointerEvents="none";
-		this.#multiCellSelected=true;
-		this.#selectedCell=cell;
-		this.#activeStruct=this.#colStructs[this.#mainColIndex=cell.dataset.colIndex];
-		this.#exitEditMode(true);
-		this.#closeActiveExpCell();
-		this.#cellCursorDataObj=this.#multiCellsDataObj;
-		this.#cellCursor.classList.toggle("disabled",cell.classList.contains("disabled"));
-		this.#multiRowEditSection.firstChild.appendChild(this.#cellCursor);
-		const cellBR=cell.getBoundingClientRect();
-		const parentBR=this.#multiRowEditSection.firstChild.getBoundingClientRect();
-		this.#cellCursor.style.height=cellBR.height+"px";
-		this.#cellCursor.style.width=cellBR.width+"px";
-		this.#cellCursor.style.top=cellBR.top-parentBR.top+"px";
-		this.#cellCursor.style.left=cellBR.left-parentBR.left+"px";
-	}
-
 	#updateViewportHeight() {
 		this.#scrollBody.style.height=this.#container.clientHeight-this.#headerTable.offsetHeight
-				-(this.#searchInput?.offsetHeight??0)-this.#multiRowEditSection.offsetHeight+"px";
+				-(this.#searchInput?.offsetHeight??0)-this.#multiRowArea.offsetHeight+"px";
 	}
 
 	#updateSizesOfViewportAndCols() {
