@@ -1614,6 +1614,7 @@ class Tablance {
 		if (!cell)
 			return;
 		this.#selectCell(true,cell,this.#colStructs[this.#mainColIndex=cell.dataset.colIndex],this.#multiCellsDataObj);
+		this.#mainRowIndex=null;
 		this.#closeActiveExpCell();
 		
 		const cellPos=cell.getBoundingClientRect();
