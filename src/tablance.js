@@ -1215,7 +1215,7 @@ class Tablance {
 	}
 
 	#enterCell(e) {
-		if (this.#inEditMode)
+		if (this.#inEditMode||this.#cellCursor.classList.contains("disabled"))
 			return;
 		if (this.#activeStruct.edit) {
 			if (this.#activeStruct.edit.dataType==="button")
