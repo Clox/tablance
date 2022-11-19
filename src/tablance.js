@@ -1387,15 +1387,16 @@ class Tablance {
 		noResults.innerText=edit.noResultsText??this.#opts.defaultSelectNoResultText??"No results found";
 		noResults.className="no-results";
 		
-		this.#scrollingContent.appendChild(selectContainer);
+		this.#cellCursor.parentElement.appendChild(selectContainer);
 		selectContainer.className="tablance-select-container";
+		selectContainer.style.left=selectContainer.style.top=0;
 		if (this.#alignPickerRightOfCellCursor(selectContainer))
 			selectContainer.style.left=parseInt(this.#cellCursor.style.left)+"px";
 		else {
 			selectContainer.style.left=parseInt(this.#cellCursor.style.left)
 													-(selectContainer.offsetWidth-this.#cellCursor.offsetWidth)+"px";
 			}
-		if (this.#alignPickerBelowCellCursor()) {
+		if (!this.#multiCellSelected&&this.#alignPickerBelowCellCursor()) {
 			selectContainer.style.top=parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight+"px";
 			this.#cellCursor.style.zIndex=0;//prevent that the shadow of the cellcursor falls on the picker
 		} else {
@@ -1779,7 +1780,10 @@ class Tablance {
 		const numberOfRowsSelectedDiv=multiRowEditSectionContent.appendChild(document.createElement("div"));
 		numberOfRowsSelectedDiv.innerText="Number of selected rows: ";
 		this.#numberOfRowsSelectedSpan=numberOfRowsSelectedDiv.appendChild(document.createElement("span"));
-		const cellMouseDown=e=>this.#selectMultiCell(e.target);
+		const cellMouseDown=e=>{
+			e.preventDefault();//prevent selection of the cell-content on dbl-click
+			this.#selectMultiCell(e.target)
+		};
 		const dblClick=this.#enterCell.bind(this);
 		const colsDiv=multiRowEditSectionContent.appendChild(document.createElement("div"));
 		this.#multiCellIds=[];
@@ -1822,14 +1826,20 @@ class Tablance {
 	#selectMultiCell(cell) {
 		if (!cell)
 			return;
+		this.#cellCursor.style.pointerEvents="none";
 		this.#multiCellSelected=true;
 		this.#selectedCell=cell;
 		this.#activeStruct=this.#colStructs[this.#mainColIndex=cell.dataset.colIndex];
+		this.#exitEditMode(true);
 		this.#closeActiveExpCell();
 		this.#cellCursor.classList.toggle("disabled",cell.classList.contains("disabled"));
-		cell.appendChild(this.#cellCursor);
-		this.#cellCursor.style.height=this.#cellCursor.style.width="100%";
-		this.#cellCursor.style.top=this.#cellCursor.style.left=0;
+		this.#multiRowEditSection.firstChild.appendChild(this.#cellCursor);
+		const cellBR=cell.getBoundingClientRect();
+		const parentBR=this.#multiRowEditSection.firstChild.getBoundingClientRect();
+		this.#cellCursor.style.height=cellBR.height+"px";
+		this.#cellCursor.style.width=cellBR.width+"px";
+		this.#cellCursor.style.top=cellBR.top-parentBR.top+"px";
+		this.#cellCursor.style.left=cellBR.left-parentBR.left+"px";
 		this.#cellCursorDataObj={};
 	}
 
