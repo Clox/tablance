@@ -1311,6 +1311,7 @@ class Tablance {
 
 	#openTextEdit() {
 		const input=this.#cellCursor.appendChild(document.createElement("input"));
+		input.addEventListener("blur",()=>setTimeout(this.#exitEditMode.bind(this)));
 		input.addEventListener("change",()=>this.#inputVal=input.value);
 		input.value=this.#selectedCellVal??"";
 		input.focus();
