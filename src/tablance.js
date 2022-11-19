@@ -1572,16 +1572,14 @@ class Tablance {
 			return;
 		this.#mainColIndex=cell.cellIndex;
 		this.#mainRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);
-		this.#cellCursorDataObj=this.#data[this.#mainRowIndex];
-		this.#selectCell(false,cell,this.#colStructs[this.#mainColIndex]);
+		this.#selectCell(false,cell,this.#colStructs[this.#mainColIndex],this.#data[this.#mainRowIndex]);
 		this.#closeActiveExpCell();
 	}
 
 	#selectExpansionCell(cellObject) {
 		if (!cellObject)
 			return;
-		this.#cellCursorDataObj=cellObject.dataObj;
-		this.#selectCell(false,cellObject.selEl??cellObject.el,cellObject.struct);
+		this.#selectCell(false,cellObject.selEl??cellObject.el,cellObject.struct,cellObject.dataObj);
 
 		//remove cellcursor click-through in case an expand-button-cell was previously selected
 		//this.#cellCursor.style.pointerEvents="auto";
@@ -1609,21 +1607,12 @@ class Tablance {
 					}
 				}
 		this.#activeExpCell=cellObject;
-
-		//this.#adjustCursorPosSize(this.#selectedCell);
-		
-		//this.#activeStruct=cellObject.struct;
-		//this.#selectedCellVal=this.#cellCursorDataObj[this.#activeStruct.id];
-
-		//make cellcursor click-through if it's on a button
-		//this.#cellCursor.style.pointerEvents=this.#activeStruct.edit?.dataType==="button"?"none":"auto";
 	}
 
 	#selectMultiCell(cell) {
 		if (!cell)
 			return;
-		this.#cellCursorDataObj=this.#multiCellsDataObj;
-		this.#selectCell(true,cell,this.#colStructs[this.#mainColIndex=cell.dataset.colIndex]);
+		this.#selectCell(true,cell,this.#colStructs[this.#mainColIndex=cell.dataset.colIndex],this.#multiCellsDataObj);
 		this.#closeActiveExpCell();
 		
 		const cellPos=cell.getBoundingClientRect();
@@ -1634,7 +1623,7 @@ class Tablance {
 		this.#cellCursor.style.left=cellPos.left-parentBR.left+"px";
 	}
 
-	#selectCell(isMultiCell,cellEl,struct) {
+	#selectCell(isMultiCell,cellEl,struct,dataObj) {
 		this.#multiCellSelected=isMultiCell;
 		this.#exitEditMode(true);
 		this.#adjustCursorPosSize(cellEl);
@@ -1645,7 +1634,8 @@ class Tablance {
 		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
 		const noPtrEvent=struct.type==="expand"||struct.type==="select"||struct.edit?.dataType==="button";
 		this.#cellCursor.style.pointerEvents=noPtrEvent?"none":"auto";
-		this.#selectedCellVal=this.#cellCursorDataObj[struct.id];
+		this.#cellCursorDataObj=dataObj;
+		this.#selectedCellVal=dataObj[struct.id];
 	}
 
 	#adjustCursorPosSize(el,onlyPos=false) {
