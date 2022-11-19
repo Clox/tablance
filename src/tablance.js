@@ -363,6 +363,7 @@ class Tablance {
 		this.#container.addEventListener("keydown",e=>this.#spreadsheetKeyDown(e));
 		this.#container.addEventListener("mousedown",e=>this.#spreadsheetMouseDown(e));
 		this.#container.addEventListener("focus",e=>this.#spreadsheetOnFocus(e));
+		this.#container.addEventListener("blur",e=>this.#spreadsheetOnBlur(e));
 		this.#mainTable.addEventListener("mousedown",e=>this.#mainTableMouseDown(e));
 		this.#cellCursor.addEventListener("dblclick",e=>this.#enterCell(e));
 	}
@@ -398,8 +399,10 @@ class Tablance {
 			this.#container.style.removeProperty("outline");
 		else
 			this.#container.style.outline="none"
-			
-		this.#highlightOnFocus=true;
+	}
+
+	#spreadsheetOnBlur(e) {
+		setTimeout(()=>this.#highlightOnFocus=!this.#container.contains(document.activeElement));
 	}
 
 	#moveCellCursor(hSign,vSign) {
@@ -986,8 +989,7 @@ class Tablance {
 	}
 
 	#spreadsheetMouseDown(e) {
-		if (document.activeElement!==this.#container)
-			this.#highlightOnFocus=false;//see decleration
+		this.#highlightOnFocus=false;//see decleration
 		this.#container.style.outline="none";//see #spreadsheetOnFocus
 	}
 	
