@@ -332,6 +332,8 @@
 				.cell {
 					height: 25px;
 					border: 1px solid #ddd;
+					padding: 4px;
+					overflow: hidden;
 					cursor: cell;
 					position: relative;//for position of cell-cursor to work correctly
 					&.mixed {

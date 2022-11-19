@@ -22,7 +22,7 @@ class Tablance {
 	#mainTbody;//tbody of #mainTable
 	#multiRowEditSection;//a div displayed under #scrollBody if rows are selected/checked using select-column. This 
 						//section is used to edit multiple rows at once
-	#multiRowEditSectionHeight="85px";//the height of #multiRowEditSection when fully open
+	#multiRowEditSectionHeight="95px";//the height of #multiRowEditSection when fully open
 	#multiRowEditSectionOpen=false;//whether the section is currently open or not
 	#multiCellSelected=false;//whether or not a cell inside #multiRowEditSection is currently selected
 	#multiCellIds;//array of ids of columns that are editable and therefore can be edited via multi-cell-section
@@ -177,6 +177,9 @@ class Tablance {
 	 * 				maxHeight int For textareas, sets the max-height in pixels that it should be able to be resized to
 	 * 				class:String Css-classes to be added to the field
 	 * 				edit: Object {//field is editable if this object is supplied and its disabled-prop is falsey
+	 * 					multiCellWidth Int For inputs that are present in the section that appears when
+	 * 						selecting/checking multiple rows using the select-col, this property can be used to specify
+	 * 						the number of pixels in width of the cell in that section.
 	 * 					onChange: Function Callback fired when the user has changed.
 	 * 						It will get passed arguments: 1:newValue,2:oldValue,3:rowData,4:struct,5:cellObject
 	 * 					onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
@@ -404,9 +407,8 @@ class Tablance {
 		this.#scrollToCursor();
 
 		if (this.#multiCellSelected) {
-			if (hSign)
-				this.#selectMultiCell(this.#selectedCell.parentNode[(hSign>0?"next":"previous")+"Sibling"]
-																							?.querySelector(".cell"));
+			this.#selectMultiCell(hSign?this.#selectedCell.parentNode[(hSign>0?"next":"previous")+"Sibling"]
+																		?.querySelector(".cell"):this.#selectedCell);
 		} else if (this.#activeExpCell?.parent?.struct.type==="collection")
 			this.#moveInsideCollection(hSign,vSign);
 		else if (vSign) {//moving up or down
@@ -1513,6 +1515,10 @@ class Tablance {
 					selectedRow[this.#activeStruct.id]=this.#inputVal;
 				for (const selectedTr of this.#mainTbody.querySelectorAll("tr.selected"))
 					this.#updateMainRowCell(selectedTr.cells[this.#mainColIndex],this.#activeStruct);
+				this.#multiCellsDataObj[this.#activeStruct.id]=this.#inputVal;
+				const multiCell=this.#multiCells[this.#multiCellIds.indexOf(this.#activeStruct.id)];
+				multiCell.innerText=this.#inputVal?.text??this.#inputVal??"";
+				multiCell.classList.remove("mixed");
 			} else {
 				this.#activeStruct.edit.onChange?.(this.#inputVal,this.#selectedCellVal,this.#cellCursorDataObj
 																			,this.#activeStruct,this.#activeExpCell);
@@ -1796,7 +1802,8 @@ class Tablance {
 				const header=document.createElement("h3");
 				colDiv.appendChild(header).innerText=colStruct.title;
 				colDiv.classList.add("col");
-				colDiv.style.width=(/\d+\%/.test(colStruct.width)?colStruct.width:header.offsetWidth)+"px";
+				colDiv.style.width=colStruct.edit.multiCellWidth??
+											(/\d+\%/.test(colStruct.width)?colStruct.width:header.offsetWidth+30)+"px";
 				const cellDiv=colDiv.appendChild(document.createElement("div"));
 				this.#multiCells[this.#multiCellIds.push(colStruct.id)-1]=cellDiv;
 				cellDiv.classList.add("cell");
