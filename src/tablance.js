@@ -1358,7 +1358,7 @@ class Tablance {
 		let opts=[...edit.options];
 		const inputWrapper=selectContainer.appendChild(document.createElement("div"));//used to give the input margins
 		const input=inputWrapper.appendChild(document.createElement("input"));
-		const windowClickBound=windowClick.bind(this);//saving reference to bound func so handler can be removed later
+		const windowMouseDownBound=windowMouseDown.bind(this);//saving ref to bound func so handler can be removed later
 		const allowEmpty=edit.allowSelectEmpty??true;
 		let canCreate=false;//whether the create-button is currently available. This firstly depends on edit.allowCreate
 					//but also the current value of the input and if there already is an option matching that exactly
@@ -1372,6 +1372,7 @@ class Tablance {
 			inputWrapper.classList.add("hide");//container-divs instead of input but for some reason it messed up scroll
 		input.addEventListener("keydown",inputKeyDown.bind(this));
 		input.placeholder=edit.selectInputPlaceholder??"";
+		input.addEventListener("blur",input.focus)
 		const pinnedUl=ulDiv.appendChild(document.createElement("ul"));
 		const mainUl=ulDiv.appendChild(document.createElement("ul"));
 		pinnedUl.classList.add("pinned");
@@ -1409,7 +1410,7 @@ class Tablance {
 			this.#cellCursor.style.zIndex=10000;
 		}
 
-		window.addEventListener("click",windowClickBound);
+		window.addEventListener("mousedown",windowMouseDownBound);
 		input.focus();
 
 		function renderOpts(ul,opts,selectedVal) {
@@ -1450,7 +1451,7 @@ class Tablance {
 			highlightOpt.call(this,parseInt(e.target.closest("ul").dataset.ulIndex)
 																,[...e.target.parentNode.children].indexOf(e.target));
 		}
-		function windowClick(e) {
+		function windowMouseDown(e) {
 			for (var el=e.target; el!=selectContainer&&(el=el.parentElement););//go up until container or root is found
 			if (!el) {//click was outside select-container
 				close();
@@ -1466,7 +1467,7 @@ class Tablance {
 				self.#inputVal=highlightUlIndex?opts[highlightLiIndex]:null;
 			}
 			selectContainer.remove();
-			window.removeEventListener("click",windowClickBound);
+			window.removeEventListener("mousedown",windowMouseDownBound);
 		}
 		function highlightOpt(ulIndex,liIndex) {
 			ulDiv.getElementsByClassName("highlighted")[0]?.classList.remove("highlighted");
