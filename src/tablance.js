@@ -22,13 +22,13 @@ class Tablance {
 	#mainTbody;//tbody of #mainTable
 	#multiRowArea;//a div displayed under #scrollBody if rows are selected/checked using select-column. This 
 						//section is used to edit multiple rows at once
-	#multiRowEditSectionHeight="95px";//the height of #multiRowEditSection when fully open
-	#multiRowEditSectionOpen=false;//whether the section is currently open or not
-	#multiCellSelected=false;//whether or not a cell inside #multiRowEditSection is currently selected
+	#multiRowAreaHeight="95px";//the height of #multiRowArea when fully open
+	#multiRowAreaOpen=false;//whether the section is currently open or not
+	#multiCellSelected=false;//whether or not a cell inside #multiRowArea is currently selected
 	#multiCellIds;//array of ids of columns that are editable and therefore can be edited via multi-cell-section
-	#multiCells;//the multi-edit-cells in multiRowEditSection, in the same order as in #multiCellIds. 
+	#multiCells;//the multi-edit-cells in multiRowArea, in the same order as in #multiCellIds. 
 	#multiCellsDataObj;//used to store values of the multi-cells so the inputs can get set correctly initially on edit
-	#numberOfRowsSelectedSpan;//resides in #multiRowEditSection. Should be set to the number of rows selected
+	#numberOfRowsSelectedSpan;//resides in #multiRowArea. Should be set to the number of rows selected
 	#borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
 	#rowHeight=0;//the height of (non expanded) rows with #borderSpacingY included. Assume 0 first until first row added
@@ -49,7 +49,7 @@ class Tablance {
 	
 	#cellCursor;//The element that for spreadsheets shows which cell is selected
 	#mainRowIndex;//the index of the row that the cellcursor is at
-	#mainColIndex;//the index of the column that the cellcursor is at
+	#mainColIndex;//the index of the column that the cellcursor is at. It is used for both main-table and #multiRowArea
 	#activeStruct;//reference to the struct-object of the selcted cell. For cells in the maintable this would
 							//point to an object in #colStructs, otherwise to the struct-object of expansion-cells
 	#cellCursorDataObj;//reference to the actual object holding the data that the cell-cursor currently is at.
@@ -344,7 +344,7 @@ class Tablance {
 		this.#cellCursor=document.createElement("div");
 		this.#cellCursor.className="cell-cursor";
 		this.#cellCursor.style.display="none";
-		this.#createMultiRowEditSection();
+		this.#createMultiRowArea();
 		//remove any border-spacing beacuse if the spacing is clicked the target-element will be the table itself and
 		//no cell will be selected which is bad user experience. Set it to 0 for headerTable too in order to match
 		this.#mainTable.style.borderSpacing=this.#headerTable.style.borderSpacing=this.#borderSpacingY=0;
@@ -389,7 +389,7 @@ class Tablance {
 	}
 
 	#spreadsheetOnFocus(e) {
-		if (this.#mainRowIndex==null&&this.#data.length)
+		if (!this.#mainColIndex&&this.#data.length)
 			this.#selectMainTableCell(this.#mainTbody.rows[0].cells[0]);
 		//when the table is tabbed to, whatever focus-outline that the css has set for it should show, but then when the
 		//user starts to navigate using the keyboard we want to hide it because it is a bit distracting when both it and
@@ -1086,9 +1086,9 @@ class Tablance {
 			checkbox.checked=this.#numRowsInViewSelected;
 		} else
 			checkbox.indeterminate=true;
-		if (this.#numRowsSelected^this.#multiRowEditSectionOpen) {
-			this.#multiRowEditSectionOpen=!!this.#numRowsSelected;
-			this.#multiRowArea.style.height=this.#numRowsSelected?this.#multiRowEditSectionHeight:0;
+		if (this.#numRowsSelected^this.#multiRowAreaOpen) {
+			this.#multiRowAreaOpen=!!this.#numRowsSelected;
+			this.#multiRowArea.style.height=this.#numRowsSelected?this.#multiRowAreaHeight:0;
 			this.#animate(this.#updateViewportHeight.bind(this),Infinity,"adjustViewportHeight");
 		}
 	}
@@ -1616,7 +1616,6 @@ class Tablance {
 		this.#selectCell(true,cell,this.#colStructs[this.#mainColIndex=cell.dataset.colIndex],this.#multiCellsDataObj);
 		this.#mainRowIndex=null;
 		this.#closeActiveExpCell();
-		
 		const cellPos=cell.getBoundingClientRect();
 		const parentBR=this.#multiRowArea.firstChild.getBoundingClientRect();
 		this.#cellCursor.style.height=cellPos.height+"px";
@@ -1783,16 +1782,16 @@ class Tablance {
 		this.#borderSpacingY=parseInt(window.getComputedStyle(this.#mainTable)['border-spacing'].split(" ")[1]);
 	}
 
-	#createMultiRowEditSection() {
+	#createMultiRowArea() {
 		this.#multiRowArea=this.#container.appendChild(document.createElement("div"));
 		this.#multiRowArea.classList.add("multi-row-section");
 		this.#multiRowArea.style.height=0;
 		this.#multiRowArea.addEventListener("transitionend",()=>delete this.#animations["adjustViewportHeight"]);
 
 		//extra div needed for having padding while also being able to animate height all the way to 0
-		const multiRowEditSectionContent=this.#multiRowArea.appendChild(document.createElement("div"));
+		const multiRowAreaContent=this.#multiRowArea.appendChild(document.createElement("div"));
 
-		const numberOfRowsSelectedDiv=multiRowEditSectionContent.appendChild(document.createElement("div"));
+		const numberOfRowsSelectedDiv=multiRowAreaContent.appendChild(document.createElement("div"));
 		numberOfRowsSelectedDiv.innerText="Number of selected rows: ";
 		this.#numberOfRowsSelectedSpan=numberOfRowsSelectedDiv.appendChild(document.createElement("span"));
 		const cellMouseDown=e=>{
@@ -1800,7 +1799,7 @@ class Tablance {
 			this.#selectMultiCell(e.target)
 		};
 		const dblClick=this.#enterCell.bind(this);
-		const colsDiv=multiRowEditSectionContent.appendChild(document.createElement("div"));
+		const colsDiv=multiRowAreaContent.appendChild(document.createElement("div"));
 		this.#multiCellIds=[];
 		this.#multiCells=[];
 		this.#multiCellsDataObj={};
@@ -1822,7 +1821,7 @@ class Tablance {
 		}
 	}
 
-	/**Updates the displayed values in #multiRowEditSection* */
+	/**Updates the displayed values in #multiRowArea* */
 	#updateMultiCellVals(idsToUpdate=this.#multiCellIds) {
 		const mixedText="(Mixed)";
 		for (let multiCellI=-1, multiCellId; multiCellId=idsToUpdate[++multiCellI];) {
