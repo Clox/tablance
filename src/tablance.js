@@ -417,7 +417,7 @@ class Tablance {
 		else if (vSign) {//moving up or down
 			let newColIndex=this.#mainColIndex;
 			if (this.#activeExpCell) {//moving from inside expansion.might move to another cell inside,or outside
-					this.#selectAdjacentExpansionCell(this.#activeExpCell,vSign==1?true:false);
+					this.#selectAdjacentExpansionCell(this.#activeExpCell,vSign==1);
 			} else if (vSign===1&&this.#rowMetaGet(this.#mainRowIndex)?.h){//moving down into expansion
 				this.#selectFirstSelectableExpansionCell(this.#openExpansions[this.#mainRowIndex],true);
 			} else if (vSign===-1&&this.#rowMetaGet(this.#mainRowIndex-1)?.h){//moving up into expansion
@@ -1636,7 +1636,7 @@ class Tablance {
 		const noPtrEvent=struct.type==="expand"||struct.type==="select"||struct.edit?.dataType==="button";
 		this.#cellCursor.style.pointerEvents=noPtrEvent?"none":"auto";
 		this.#cellCursorDataObj=dataObj;
-		this.#selectedCellVal=dataObj[struct.id];
+		this.#selectedCellVal=dataObj?.[struct.id];
 	}
 
 	#adjustCursorPosSize(el,onlyPos=false) {
