@@ -2140,7 +2140,7 @@ class Tablance {
 	#maybeRemoveTrs() {
 		const scrH=this.#scrollBody.offsetHeight;
 		const trs=this.#mainTbody.rows;
-		while (this.#numRenderedRows>3&&(this.#numRenderedRows-1)*this.#rowHeight>scrH) {
+		while ((this.#numRenderedRows-2)*this.#rowHeight>scrH) {
 			if (this.#rowMetaGet(this.#scrollRowIndex+this.#numRenderedRows-1)?.h) {
 				this.#mainTbody.lastChild.remove();
 				delete this.#openExpansions[this.#scrollRowIndex+this.#numRenderedRows];
