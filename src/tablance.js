@@ -1580,7 +1580,6 @@ class Tablance {
 	#selectExpansionCell(cellObject) {
 		if (!cellObject)
 			return;
-		this.#selectCell(false,cellObject.selEl??cellObject.el,cellObject.struct,cellObject.dataObj);
 
 		//remove cellcursor click-through in case an expand-button-cell was previously selected
 		//this.#cellCursor.style.pointerEvents="auto";
@@ -1607,6 +1606,7 @@ class Tablance {
 							this.#commitRepeatedInsert(oldParnt);
 					}
 				}
+		this.#selectCell(false,cellObject.selEl??cellObject.el,cellObject.struct,cellObject.dataObj);
 		this.#activeExpCell=cellObject;
 	}
 
