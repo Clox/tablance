@@ -1382,13 +1382,24 @@ class Tablance {
 			ul.addEventListener("mouseover",ulMouseOver.bind(this));
 			ul.addEventListener("click",ulClick.bind(this));
 		}
-		renderOpts(pinnedUl,[{text:emptyString}],this.#inputVal);
-		const creationLi=pinnedUl.appendChild(document.createElement("li"));
-		creationLi.style.display="none";
-		renderOpts(mainUl,opts,this.#inputVal);
 		
-		if (!allowEmpty&&this.#inputVal==null)
-			highlightOpt(1,0);//for selects where initial value is null but null cant be selected
+		if (allowEmpty) {
+			const emptyLi=pinnedUl.appendChild(document.createElement("li"));
+			emptyLi.innerText=emptyString;
+			emptyLi.dataset.type="empty";//to identify what the option does if selected
+			if (this.#inputVal==null) {
+				emptyLi.classList.add("selected","highlighted");
+				highlightLiIndex=pinnedUl.children.length-1;
+				highlightUlIndex=0;
+			}
+		}
+		let creationLi;
+		if (edit.allowCreateNew) {
+			creationLi=document.createElement("li");
+			creationLi.dataset.type="create";
+		}
+		
+		renderOpts(mainUl,opts,this.#inputVal);
 		
 		const noResults=selectContainer.appendChild(document.createElement("div"));
 		noResults.innerText=edit.noResultsText??this.#opts.defaultSelectNoResultText??"No results found";
@@ -1420,7 +1431,7 @@ class Tablance {
 			for (const opt of opts) {
 				const li=ul.appendChild(document.createElement("li"));
 				li.innerText=opt.text;
-				if (selectedVal==opt.value||selectedVal==opt) {
+				if ((selectedVal!=null&&selectedVal==opt.value)||selectedVal==opt) {
 					foundSelected=true;
 					li.classList.add("selected","highlighted");
 					highlightLiIndex=ul.children.length-1;
@@ -1431,7 +1442,7 @@ class Tablance {
 		}
 
 		function inputInput(e) {
-			canCreate=true;
+			canCreate=!!input.value;
 			if (!input.value.includes(filterText)||!filterText)//unless text was added to beginning or end
 				opts=[...edit.options];//start off with all options there are
 			for (let i=-1,opt; opt=opts[++i];)
@@ -1439,12 +1450,15 @@ class Tablance {
 					opts.splice(i--,1);//then remove it from view
 				else if (opt.text.toLowerCase()==input.value.toLowerCase())
 					canCreate=false;
-			creationLi.style.display=canCreate?"block":"none";
-			if (!renderOpts(mainUl,opts,this.#inputVal)&&highlightUlIndex)//didnt find selected opt & empty is not selected
+			if (canCreate)
+				pinnedUl.appendChild(creationLi);
+			else
+				pinnedUl.removeChild(creationLi);
+			if (!renderOpts(mainUl,opts,this.#inputVal)&&highlightUlIndex)//didnt find selected opt & empty is not selec
 					if (opts.length)//there are visible opts
 						highlightOpt.call(this,1,0);//select first among the filtered ones
-					else if (allowEmpty)//there are not visible ones after filtering but empty is available
-						highlightOpt.call(this,0,0);//select empty
+					else if (pinnedUl.children.length)
+						highlightOpt.call(this,0,0);
 			noResults.style.display=opts.length?"none":"block";
 			creationLi.innerText=`Create [${filterText=input.value}]`;
 		}
@@ -1460,13 +1474,12 @@ class Tablance {
 			}
 		}
 		function close(e) {
-			if (!highlightUlIndex&&highlightLiIndex) {//if create new option
-				edit.options.push(self.#inputVal={text:filterText});
-				edit.createNewOptionHandler?.(self.#inputVal,e,self.#cellCursorDataObj,self.#mainRowIndex
+			if (!highlightUlIndex&&pinnedUl.children[highlightLiIndex].dataset.type=="create") {
+					edit.options.push(self.#inputVal={text:filterText});
+					edit.createNewOptionHandler?.(self.#inputVal,e,self.#cellCursorDataObj,self.#mainRowIndex
 																			,self.#activeStruct,self.#activeExpCell);
-			} else {
+			} else
 				self.#inputVal=highlightUlIndex?opts[highlightLiIndex]:null;
-			}
 			selectContainer.remove();
 			window.removeEventListener("mousedown",windowMouseDownBound);
 		}
@@ -1477,15 +1490,15 @@ class Tablance {
 		function inputKeyDown(e) {
 			if (["ArrowDown","ArrowUp"].includes(e.key)){
 				e.preventDefault();//prevents moving the textcursor when pressing up or down
-				const newIndex=highlightLiIndex+(e.key==="ArrowDown"?1:-1);
-				if (highlightUlIndex) {//currently somewhere in the main ul
+				const newIndex=highlightLiIndex==null?0:highlightLiIndex+(e.key==="ArrowDown"?1:-1);
+				if (highlightUlIndex??true) {//currently somewhere in the main ul
 					if (opts.length&&newIndex<opts.length&&newIndex>=0)//moving within main
 						highlightOpt(1,newIndex);
-					else if (newIndex==-1&&(allowEmpty||canCreate))//moving into pinned
-						highlightOpt(0,canCreate?1:0);
-				} else if ((!newIndex&&allowEmpty)||(newIndex==1&&canCreate))//moving within pinned
+					else if (newIndex==-1&&pinnedUl.children.length)//moving into pinned
+						highlightOpt(0,pinnedUl.children.length-1);
+				} else if (newIndex>=0&&newIndex<pinnedUl.children.length)//moving within pinned
 					highlightOpt(0,newIndex);
-				else if (((newIndex==1&&!canCreate)||newIndex==2)&&opts.length) //moving from pinned to main
+				else if (newIndex>=pinnedUl.children.length&&opts.length) //moving from pinned to main
 					highlightOpt(1,0);
 			} else if (e.key==="Enter") {
 				close(e);
