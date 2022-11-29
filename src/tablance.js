@@ -552,10 +552,10 @@ class Tablance {
 					this.#groupEscape();
 				break; case "+":
 					this.#scrollToCursor();
-					this.#expandRow(this.#selectedCell.parentElement,this.#mainRowIndex);
+					this.#expandRow(this.#selectedCell.closest(".main-table>tbody>tr"));
 				break; case "-":
 					this.#scrollToCursor();
-					this.#contractRow(this.#mainRowIndex);
+					this.#contractRow(this.#selectedCell.closest(".main-table>tbody>tr"));
 				break; case "Enter": case " ":
 					this.#scrollToCursor();
 					if (this.#activeStruct.type=="expand")
@@ -614,28 +614,37 @@ class Tablance {
 			}
 	}
 
-	#expandRow(tr,dataRowIndex) {
-		if (!this.#expansion||this.#rowMetaGet(dataRowIndex)?.h)
+	#expandRow(tr,animate=true) {
+		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
+		if (!this.#expansion||this.#rowMetaGet(dataRowIndex)?.h>0)
 			return;
-		this.#unsortCol(null,"expand");
-		const expRow=this.#renderExpansion(tr,dataRowIndex,false);
+		const expRow=this.#renderExpansion(tr,dataRowIndex);
 		const expHeight=this.#rowMetaSet(dataRowIndex,"h",this.#rowHeight+expRow.offsetHeight+this.#borderSpacingY);
 		const contentDiv=expRow.querySelector(".content");
 		if (!this.#expBordersHeight)//see declarataion of #expansionTopBottomBorderWidth
 			this.#expBordersHeight=expHeight-contentDiv.offsetHeight;
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)//adjust scroll-height reflect change...
 			+expHeight-this.#rowHeight+"px";//...in height of the table
-		//animate
-		contentDiv.style.height="0px";//start at 0
-		setTimeout(()=>contentDiv.style.height=expHeight-this.#expBordersHeight+"px");
-		this.#animate(()=>this.#adjustCursorPosSize(this.#selectedCell,true),500,"cellCursor");
+		if (animate) {
+			this.#unsortCol(null,"expand");
+			contentDiv.style.transition="";
+			contentDiv.style.height="0px";//start at 0
+			setTimeout(()=>contentDiv.style.height=expHeight-this.#expBordersHeight+"px");
+			this.#animate(()=>this.#adjustCursorPosSize(this.#selectedCell,true),500,"cellCursor");
+		} else {
+			contentDiv.style.transition="none";
+			contentDiv.style.height=expHeight-this.#expBordersHeight+"px";
+		}
+		return expHeight;
 	}
 
-	#contractRow(dataRowIndex) {
+	#contractRow(tr) {
+		if (tr.classList.contains("expansion"))
+			tr=tr.previousSibling;
+		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
 		if (!this.#expansion||!this.#rowMetaGet(dataRowIndex)?.h)
 			return;
 		this.#unsortCol(null,"expand");
-		const tr=this.#mainTbody.querySelector(`[data-data-row-index="${dataRowIndex}"].expanded`);
 		if (this.#mainRowIndex==dataRowIndex&&this.#activeExpCell)//if cell-cursor is inside the expansion
 			this.#selectMainTableCell(tr.cells[this.#mainColIndex]);//then move it out
 		const contentDiv=tr.nextSibling.querySelector(".content");
@@ -654,12 +663,8 @@ class Tablance {
 	 * turn calls this one. When scrolling and already expanded rows are found only this one needs to be called.
 	 * @param {*} tr 
 	 * @param {*} rowIndex 
-	 * @param Bool setHeight Expanded rows, or rather the div inside them needs to have their height set in order to
-	 * 				animate correctly when expanding/contracting. When this method is called on scroll the height of
-	 * 				the div should be set by this method, but if #expandRow is called because the user expanded a row
-	 * 				
 	 * @returns */
-	#renderExpansion(tr,rowIndex,setHeight=true) {
+	#renderExpansion(tr,rowIndex) {
 		tr.classList.add("expanded");
 		const expansionRow=tr.parentElement.insertRow(tr.rowIndex+1);
 		expansionRow.className="expansion";
@@ -1042,9 +1047,9 @@ class Tablance {
 
 	#toggleRowExpanded(tr) {
 		if (tr.classList.contains("expanded"))
-			this.#contractRow(parseInt(tr.dataset.dataRowIndex));
+			this.#contractRow(tr);
 		else
-			this.#expandRow(tr,parseInt(tr.dataset.dataRowIndex));
+			this.#expandRow(tr);
 	}
 
 	#rowCheckboxChange(td,shift) {
@@ -1677,6 +1682,11 @@ class Tablance {
 			if (col.type=="select") {
 				th.appendChild(this.#createCheckbox());
 				th.classList.add("select-col");
+			} else if (col.type=="expand") {
+				const expandDiv=th.appendChild(document.createElement("div"));
+				expandDiv.classList.add("expand-div");//used to identify if expand-button was clicked in click-handler
+				//expandDiv.appendChild(this.#createExpandContractButton());//functionality not fully implemented yet
+				th.classList.add("expand-col");
 			} else
 				th.innerText=col.title??"\xa0";//non breaking space if nothing else or else
 																	//sorting arrows wont be positioned correctly
@@ -1690,10 +1700,10 @@ class Tablance {
 
 	#onThClick(e) {
 		const clickedIndex=e.currentTarget.cellIndex;
-		if (this.#colStructs[clickedIndex].type=="select"&&e.target.tagName.toLowerCase()=="input") {
-			this.#toggleRowsSelected(e.target.checked,0,this.#data.length-1);
-			return;
-		}
+		if (this.#colStructs[clickedIndex].type=="select"&&e.target.tagName.toLowerCase()=="input")
+			return this.#toggleRowsSelected(e.target.checked,0,this.#data.length-1);
+		if (e.target.closest(".expand-div"))
+			return this.#expandOrContractAll(!e.target.closest("tr").classList.contains("expanded"));
 		let sortingColIndex=-1,sortingCol;
 		while (sortingCol=this.#sortingCols[++sortingColIndex]) {
 			if (sortingCol.index===clickedIndex) {
@@ -1718,6 +1728,30 @@ class Tablance {
 		e.preventDefault();//prevent text-selection when shift-clicking and double-clicking
 		this.#sortData();
 		this.#refreshTable();
+	}
+
+	#expandOrContractAll(expand) {
+		this.#scrollBody.scrollTop=0;
+		this.#scrollMethod();
+		let rows;
+		if (expand) {
+			rows=this.#tableSizer.querySelectorAll(".main-table>tbody>tr:not(.expansion):not(.expanded)");
+			for (const row of rows)
+				this.#expandRow(row);
+			for (const dataRow of this.#data) {
+				const index=this.#rowsMeta.keys.indexOf(dataRow);
+				if (index!=-1) {
+					this.#rowsMeta.vals[index].h??=-1;
+				} else {
+					this.#rowsMeta.keys.push(dataRow);
+					this.#rowsMeta.vals.push({h:-1});
+				}
+			}
+
+		}
+		
+
+		//#expandRow(tr,dataRowIndex) {
 	}
 
 	#updateHeaderSortHtml() {
@@ -2051,9 +2085,12 @@ class Tablance {
 
 	/**Used by #onScrollStaticRowHeightExpansion whenever a row is actually added/removed(or rather moved)*/
 	#doRowScrollExp(trToMove,newMainIndex,oldMainIndex,topShift) {
-		if (this.#rowMetaGet(newMainIndex)?.h)
+		const expansionHeight=this.#rowMetaGet(newMainIndex)?.h;
+		if (expansionHeight>0) {
 			this.#renderExpansion(trToMove,newMainIndex);
-		else
+		} else if (expansionHeight==-1) {
+			this.#scrollBody.scrollTop+=this.#expandRow(trToMove,false);
+		} else
 			trToMove.classList.remove("expanded");
 		
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+topShift+"px";
@@ -2096,6 +2133,12 @@ class Tablance {
 		this.#tableSizer.style.height=(this.#data.length-this.#scrollRowIndex)*this.#rowHeight+"px";
 	}
 
+	#createExpandContractButton() {
+		const a=document.createElement("a");
+		a.appendChild(document.createElement("span"));
+		return a;
+	}
+
 	#createCheckbox(preventClickSelect) {
 		const checkbox=document.createElement("input");
 		checkbox.type="checkbox";
@@ -2124,7 +2167,7 @@ class Tablance {
 				const div=cell.appendChild(document.createElement("div"));//used to set height of cells
 				div.style.height=this.#rowInnerHeight||"auto";				
 				if (this.#colStructs[i].type==="expand") {
-					div.appendChild(document.createElement("a")).appendChild(document.createElement("span"));
+					div.appendChild(this.#createExpandContractButton());
 					cell.classList.add("expand-col");
 				} else if (this.#colStructs[i].type==="select") {
 					div.appendChild(this.#createCheckbox(true));
