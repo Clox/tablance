@@ -645,8 +645,10 @@ class Tablance {
 		if (!this.#expansion||!this.#rowMetaGet(dataRowIndex)?.h)
 			return;
 		this.#unsortCol(null,"expand");
-		if (this.#mainRowIndex==dataRowIndex&&this.#activeExpCell)//if cell-cursor is inside the expansion
+		if (this.#mainRowIndex==dataRowIndex&&this.#activeExpCell) {//if cell-cursor is inside the expansion
 			this.#selectMainTableCell(tr.cells[this.#mainColIndex]);//then move it out
+			this.#scrollToCursor();
+		}
 		const contentDiv=tr.nextSibling.querySelector(".content");
 		if (contentDiv.style.height==="auto") {//if fully expanded
 			contentDiv.style.height=this.#rowMetaGet(dataRowIndex).h-this.#expBordersHeight+"px";
