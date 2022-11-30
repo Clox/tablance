@@ -1172,17 +1172,10 @@ class Tablance {
 																					,'Oktober','November','December'],
 					weekdays      : ['Söndag','Måndag','Tisdag','Onsdag','Torsdag','Fredag','Lördag'],
 					weekdaysShort : ['Sön','Mån','Tis','Ons','Tor','Fre','Lör']
-				}
+				},
+				onOpen:()=>this.#alignDropdown(pikaContainer)//have to wait until onOpen or size is 0
 			});
-			if (this.#alignPickerBelowCellCursor()) {
-				pikaContainer.style.top=parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight+"px";
-				this.#cellCursor.style.zIndex=0;//prevent that the shadow of the cellcursor falls on the picker
-			} else {
-			 	requestAnimationFrame(()=>pikaContainer.style.top=parseInt(this.#cellCursor.style.top)
-				 														-pikaContainer.firstChild.offsetHeight+"px");
-				this.#cellCursor.style.zIndex=10000;//prevent that the shadow of the picker falls on the cellcursor
-			}
-			pikaContainer.style.left=this.#cellCursor.style.left;
+			pika.el.style.position="static";//otherwise size of pikaContainer will be 0 and alignDropdown wont work
 			if (e instanceof KeyboardEvent)
 				e.stopPropagation();//otherwise the enter-press is propagated to Pikaday, immediately closing it
 			input.addEventListener("input",onInput.bind(this));
@@ -1203,22 +1196,25 @@ class Tablance {
 		}
 	}
 
-	/**Looks to see if there's more space above or below the cell-cursor in order to determine if a picker should be
-	 * aligned above or below it. Returns true if it should be below or false if above.*/
-	#alignPickerBelowCellCursor() {
-		return parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight/2
-															<this.#scrollBody.scrollTop+this.#scrollBody.clientHeight/2;
-	}
-	/**Looks to see if there's enough space to align the left of the picker with the left of the cell-cursor. 
-	 * Returns true if there is or false if it needs to have its right edge aligned with the right of the cursor.*/
-	#alignPickerRightOfCellCursor(picker) {
-		return this.#scrollBody.clientWidth-parseInt(this.#cellCursor.style.left)>picker.offsetWidth;
-	}
+	/**Aligns dropdowns like select and date-picker correctly by the cellcursor */
+	#alignDropdown(dropdown) {
+		//if cellcursor is below middle of viewport or if in multi-row-area
+		if (parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight/2
+								>this.#scrollBody.scrollTop+this.#scrollBody.clientHeight/2||this.#multiCellSelected)
+			//then place dropdown above cell-cursor
+			dropdown.style.top=parseInt(this.#cellCursor.style.top)-dropdown.offsetHeight+"px";
+		else
+			//else place dropdown below cell-cursor
+			dropdown.style.top=parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight+"px";
 
-	/**Returns true or false depending on if the cellcursor is "in view". It might not actually be in view but as long
-	 * as it's a row that is present in the DOM then it will return true* */
-	#cellCursorIsInDom() {
-		return !!this.#selectedCell.offsetParent;
+		//if there's enough space to the right of cellcursor
+		if (this.#scrollBody.clientWidth-parseInt(this.#cellCursor.style.left)>dropdown.offsetWidth)
+			//then align the left of the dropdown with the left of the cellcursor
+			dropdown.style.left=parseInt(this.#cellCursor.style.left)+"px";
+		else
+			//otherwise align the right of the dropdown with the right of the cellcursor
+			dropdown.style.left=parseInt(this.#cellCursor.style.left)
+													-(dropdown.offsetWidth-this.#cellCursor.offsetWidth)+"px";
 	}
 
 	#enterCell(e) {
@@ -1414,21 +1410,7 @@ class Tablance {
 		
 		this.#cellCursor.parentElement.appendChild(selectContainer);
 		selectContainer.className="tablance-select-container";
-		selectContainer.style.left=selectContainer.style.top=0;
-		if (this.#alignPickerRightOfCellCursor(selectContainer))
-			selectContainer.style.left=parseInt(this.#cellCursor.style.left)+"px";
-		else {
-			selectContainer.style.left=parseInt(this.#cellCursor.style.left)
-													-(selectContainer.offsetWidth-this.#cellCursor.offsetWidth)+"px";
-			}
-		if (!this.#multiCellSelected&&this.#alignPickerBelowCellCursor()) {
-			selectContainer.style.top=parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight+"px";
-			this.#cellCursor.style.zIndex=0;//prevent that the shadow of the cellcursor falls on the picker
-		} else {
-			selectContainer.style.top=parseInt(this.#cellCursor.style.top)-selectContainer.offsetHeight+"px";
-			this.#cellCursor.style.zIndex=10000;
-		}
-
+		this.#alignDropdown(selectContainer);
 		window.addEventListener("mousedown",windowMouseDownBound);
 		input.focus();
 
