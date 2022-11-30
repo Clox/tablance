@@ -1153,7 +1153,7 @@ class Tablance {
 		if (!Pikaday)
 			console.warn("Pikaday-library not found");
 		else {
-			pikaContainer=this.#scrollingContent.appendChild(document.createElement("div"));
+			pikaContainer=this.#cellCursor.parentElement.appendChild(document.createElement("div"));
 			pikaContainer.className="pika-container";
 			pika=new Pikaday({field:input,
 				toString: d=>d.getFullYear()+"-"+('0'+(d.getMonth()+1)).slice(-2)+"-"+('0'+d.getDate()).slice(-2),
