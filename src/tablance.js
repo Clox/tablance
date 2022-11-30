@@ -1132,15 +1132,16 @@ class Tablance {
 		e.target.style.height="100%";
 
 		//need to call this to make the height of the expansion adjust and reflect the change in size of the textarea
-		this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
+		this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"));
 	}
 
 	#updateExpansionHeight(expansionTr) {
 		const contentDiv=expansionTr.querySelector(".content");
+		const mainRowIndex=parseInt(expansionTr.dataset.dataRowIndex);
 		contentDiv.style.height="auto";//set to auto in case of in middle of animation, get correct height
-		const prevRowHeight=this.#rowMetaGet(this.#mainRowIndex).h;
+		const prevRowHeight=this.#rowMetaGet(mainRowIndex).h;
 		const newRowHeight=this.#rowHeight+expansionTr.offsetHeight+this.#borderSpacingY;
-		this.#rowMetaSet(this.#mainRowIndex,"h",newRowHeight);
+		this.#rowMetaSet(mainRowIndex,"h",newRowHeight);
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)//adjust scroll-height reflect change...
 			+newRowHeight-prevRowHeight+"px";//...in height of the table
 	}
@@ -1532,7 +1533,7 @@ class Tablance {
 				if (this.#activeExpCell){
 					const doHeightUpdate=this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj);
 					if (doHeightUpdate)
-						this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"),this.#mainRowIndex);
+						this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"));
 					for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)//update closed-group-renders
 						if (cell.struct.closedRender)//found a group with a closed-group-render func
 							cell.updateRenderOnClose=true;
