@@ -1925,17 +1925,38 @@ class Tablance {
 		 	tr.remove();
 		this.#filter=filterString;
 		const colsToFilterBy=[];
+		const selectsOptsByVal={};//for each col that is of the select type, a entry will be placed in this with the
+			//col-index as key and an object as val. the object holds all the options but they are keyed by teir value
+			//rather than being in an indexed array.This is to simplify and likely improve speed of filtering by the col
+
 		for (let col of this.#colStructs)
-			if (col.type!=="expand"&&col.type!=="select")
+			if (col.type!=="expand"&&col.type!=="select") {
+				if (col.edit?.dataType=="select") {
+					const optsByVal=selectsOptsByVal[colsToFilterBy.length]={};
+					for (const opt of col.edit.options)
+						optsByVal[opt.value]=opt;
+				}
 				colsToFilterBy.push(col);
+			}
 		if (filterString) {
 			this.#data=[];
 			for (let dataRow of this._allData)
-				for (let col of colsToFilterBy)
-					if (dataRow[col.id].includes(filterString)) {
-						this.#data.push(dataRow);
-						break;
+				for (let colI=-1,col; col=colsToFilterBy[++colI];) {
+					if (dataRow[col.id]!=null) {
+						let match=false;
+						if (col.edit?.dataType=="select") {
+							if (typeof dataRow[col.id]=="string")
+								match=selectsOptsByVal[dataRow[col.id]].text.includes(filterString);
+							else
+								match=dataRow[col.id].text.includes(filterString);
+						} else
+							match=dataRow[col.id].includes(filterString);
+						if (match) {
+							this.#data.push(dataRow);
+							break;
+						}
 					}
+				}
 		} else
 			this.#data=this._allData;
 		this.#scrollRowIndex=0;
