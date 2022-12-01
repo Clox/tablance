@@ -197,10 +197,8 @@
 					>tr{
 						>td.value {
 							padding: 5px;
-							height: 1px;// it is weird but this is needed for elements inside to be able to have 100%
-								//height. This is needed for empty groups or else they will be just a few pixels high
 								>.expansion-group {
-									height: 100%;
+									min-height: 1.4em;
 								}
 						}
 						>td.title {
