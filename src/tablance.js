@@ -1631,6 +1631,7 @@ class Tablance {
 		this.#exitEditMode(true);
 		this.#multiCellSelected=isMultiCell;
 		this.#adjustCursorPosSize(cellEl);
+		this.#cellCursor.classList.toggle("expansion",cellEl.closest("tr.expansion"));
 		this.#cellCursor.classList.toggle("disabled",cellEl.classList.contains("disabled"));
 		(isMultiCell?this.#multiRowArea.firstChild:this.#scrollingContent).appendChild(this.#cellCursor);
 		this.#selectedCell=cellEl;

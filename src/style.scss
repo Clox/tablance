@@ -26,8 +26,11 @@
 		position: absolute;
 		cursor:cell;
 		outline:2px solid blue;
+		&:not(.expansion) {
+			outline-offset:-2px;
+		}
 		&.disabled {
-			outline:2px solid red;
+			outline-color: red;
 		}
 		&.edit-mode {
 			box-shadow: 1px 1px 7px #222;
@@ -193,6 +196,7 @@
 			table.expansion-list {
 				border-spacing: 0;
 				width: 100%;
+				padding-right: 2px;//so that the right edge of the cell-cursor is fully visible
 				>tbody {
 					>tr{
 						>td.value {
