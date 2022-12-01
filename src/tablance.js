@@ -16,6 +16,11 @@ class Tablance {
 					//this is needed because putting #cellCursor directly inside #scrollBody will not make it scroll
 					//because it has position absolute and needs that. And putting it inside #tableSizer will cause it
 					//to jump up and down when pos and height of #tableSizer is adjusted to keep correct scroll-height
+	#scrollMarginPx=150;//is used to allow for more rows to be rendered outside of the view so to speak. At least in
+						//firefox when scrolling it is really noticable that the scrolling is done before the rows are
+						//moved which reveals white area before the rows are rendered. Increasing this number will
+						//basically add that many pixels to the height of the viewport on top and bottom. It will not
+						//actually be higher but the scroll-method will see it as if it is higher than it is
 	#tableSizer;//a div inside #scrollingDiv which wraps #mainTable. The purpose of it is to set its height to the 
 				//"true" height of the table so that the scrollbar reflects all the data that can be scrolled through
 	#mainTable;//the actual main-table that contains the actual data. Resides inside #tableSizer
@@ -2017,7 +2022,7 @@ class Tablance {
 	 * will only have to be created or deleted if the table is resized so the same tr-elements are reused.* 
 	 * @returns */
 	#onScrollStaticRowHeightNoExpansion() {
-		const scrY=this.#scrollBody.scrollTop;
+		const scrY=Math.max(this.#scrollBody.scrollTop-this.#scrollMarginPx,0);
 		const newScrollRowIndex=Math.min(parseInt(scrY/this.#rowHeight),this.#data.length-this.#mainTbody.rows.length);
 		
 		if (newScrollRowIndex==this.#scrollRowIndex)
@@ -2043,7 +2048,7 @@ class Tablance {
 	}
 
 	#onScrollStaticRowHeightExpansion(e) {
-		const newScrY=this.#scrollBody.scrollTop;
+		const newScrY=Math.max(this.#scrollBody.scrollTop-this.#scrollMarginPx,0);
 		if (newScrY>parseInt(this.#scrollY)) {//if scrolling down
 			while (newScrY-parseInt(this.#tableSizer.style.top)
 			>(this.#rowMetaGet(this.#scrollRowIndex)?.h??this.#rowHeight)) {//if a whole top row is outside
@@ -2163,7 +2168,7 @@ class Tablance {
 	/**Should be called if tr-elements might need to be created which is when data is added or if table grows*/
 	#maybeAddTrs() {
 		let lastTr=this.#mainTbody.lastChild;
-		const scrH=this.#scrollBody.offsetHeight;
+		const scrH=this.#scrollBody.offsetHeight+this.#scrollMarginPx*2;
 		const dataLen=this.#data.length;
 		//if there are fewer trs than datarows, and if there is empty space below bottom tr
 		while ((this.#numRenderedRows-1)*this.#rowHeight<scrH&&this.#scrollRowIndex+this.#numRenderedRows<dataLen) {
@@ -2201,8 +2206,7 @@ class Tablance {
 
 	/**Should be called if tr-elements might need to be removed which is when table shrinks*/
 	#maybeRemoveTrs() {
-		const scrH=this.#scrollBody.offsetHeight;
-		const trs=this.#mainTbody.rows;
+		const scrH=this.#scrollBody.offsetHeight+this.#scrollMarginPx*2;
 		while ((this.#numRenderedRows-2)*this.#rowHeight>scrH) {
 			if (this.#rowMetaGet(this.#scrollRowIndex+this.#numRenderedRows-1)?.h) {
 				this.#mainTbody.lastChild.remove();
