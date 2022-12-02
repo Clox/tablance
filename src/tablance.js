@@ -220,6 +220,10 @@ class Tablance {
 	 * 						fileMetasToShow Object An object specifying which meta-bits to show. Default of all are true
 	 * 							{filename Bool, lastModified Bool, size Bool, type Bool}
 	 * 							May also be set via opts->defaultFileMetasToShow
+	 * 						openHandler Function callback-function for when the open-button is pressed. It gets the
+	 * 							following arguments passed to it: 
+	 * 							1: Event, 2: The File-object, 3:struct,4:rowData,5:mainIndex,6:cellObject(if in expansion)
+	 * 					-------------------------------------------------
 	 * 					maxLength int Sets max-length for strings if type is "text"
 	 * 					placeholder String adds a placeholder-string to the input-element
 	 * 					options: Array //may be supplied if type is "select". Each element should be an object: {
@@ -2379,7 +2383,8 @@ class Tablance {
 		return bytes.toFixed(dp) + ' ' + units[u];
 	}
 
-	#generateFileCell(cellObj,cellEl,rowData) {
+	#generateFileCell(fileCellObj,cellEl,rowData) {
+		const fileStruct=fileCellObj.struct;//struct of cellObj will get overwritten. Save reference here.
 		//define all the file-meta-props
 		let metaEntries=[{type:"field",title:"Filename",id:"name"},
 			{type:"field",title:"Last Modified",id:"lastModified",render:dataRow=>
@@ -2387,13 +2392,26 @@ class Tablance {
 			{type:"field",title:"Size",id:"size",render:dataRow=>this.#humanFileSize(dataRow.size)},
 			{type:"field",title:"Type",id:"type"}];
 		for (let metaI=-1,metaName; metaName=["filename","lastModified","size","type"][++metaI];)
-			if(!(cellObj.struct.input.fileMetasToShow?.[metaName]??this.#opts.defaultFileMetasToShow?.[metaName]??true))
-				metaEntries.splice(metaI,1);//poptentially remove (some of) them
+			if(!(fileStruct.input.fileMetasToShow?.[metaName]??this.#opts.defaultFileMetasToShow?.[metaName]??true))
+				metaEntries.splice(metaI,1);//potentially remove (some of) them
 		//define the group-structure for the file
-		const fileGroup={type:"group",title:"Hemadress",entries:[{type:"collection",entries:metaEntries}]};
+		const fileGroup={type:"group",entries:[
+			{type:"collection",entries:[
+				{type:"field",input:{type:"button",btnText:"Open",clickHandler:(e,file,mainIndex,struct,btnObj)=>{
+					let rowData;
+					for (let cellObj=fileCellObj.parent; cellObj&&!cellObj.dataObj; cellObj=cellObj.parent)
+						rowData=cellObj.dataObj;
+					rowData??=this.#data[mainIndex];
+					fileStruct.input.openHandler?.(e,file,fileStruct,rowData,mainIndex,btnObj);
+					}},
+				},
+				{type:"field",input:{type:"button",btnText:"Delete"}}]},
+				
+			{type:"collection",entries:metaEntries},
+		]};
 		
-		const fileData=rowData[cellObj.struct.id];
-		this.#generateExpansionGroup(fileGroup,null,cellObj,cellEl,[1],fileData);
+		const fileData=rowData[fileCellObj.struct.id];
+		this.#generateExpansionGroup(fileGroup,null,fileCellObj,cellEl,[1],fileData);
 		const fileMeta=this.#mapGet(this.#filesMeta,fileData);
 		if (fileMeta!=null) {
 			const progressbarOuter=cellEl.appendChild(document.createElement("div"));
