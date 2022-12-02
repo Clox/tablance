@@ -1756,7 +1756,7 @@ class Tablance {
 		this.#selectedCell=cellEl;
 		this.#activeStruct=struct;
 		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
-		const noPtrEvent=struct.type==="expand"||struct.type==="select"||struct.edit?.type==="button";
+		const noPtrEvent=struct.type==="expand"||struct.type==="select"||struct.input?.type==="button";
 		this.#cellCursor.style.pointerEvents=noPtrEvent?"none":"auto";
 		this.#cellCursorDataObj=dataObj;
 		this.#selectedCellVal=dataObj?.[struct.id];
