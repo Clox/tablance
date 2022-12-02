@@ -24,8 +24,10 @@
 				,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"}}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
 				{type:"field",title:"File",id:"file",input:{type:"file",fileUploadHandler:xhr=>{
-					xhr.open("POST", "http://localhost:3000/tests/serve.php", true);
-				}}}
+						xhr.open("POST", "http://localhost:3000/tests/serve.php", true);
+					},
+					fileMetasToShow:{filename:true}
+				}}
 				,{type:"field",title:"Select",id:"sel",input:{type:"select",options:foods,minOptsFilter:100
 									,allowCreateNew:true,allowSelectEmpty:true,selectInputPlaceholder:"Sök/Skapa"}},
 				{type:"repeated",id:"addresses",sortCompare:(a,b)=>a.zip>b.zip?1:-1,entry:{type:"group",title:"Adress"
@@ -81,7 +83,7 @@
 
 
 			const myTablance=new Tablance(document.getElementById("tablanceContainer1"),myTablanceCols,true,true
-				,myExpansion,{defaultDatePlaceholder:"ÅÅÅÅ-MM-DD",defaultSelectNoResultText:"Inga resultat"});
+				,myExpansion,{defaultDatePlaceholder:"ÅÅÅÅ-MM-DD",defaultSelectNoResultText:"Inga resultat",defaultFileMetasToShow:{filename:false}});
 			window.tablance=myTablance;//to play with public methods via console
 
 			for (let i=0; i<3; i++) {

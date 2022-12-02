@@ -213,9 +213,13 @@ class Tablance {
 	 * 									to handle the actual upload.
 	 * 						Depending on which one is selected certain properties
 	 * 							below are (dis)allowed.
-	 * 					fileUploadHandler Function This callback will be triggered when the user does a file-upload.
-	 * 						Arguments: 1:XMLHttpRequest - call open() on this to specify url and such,
+	 * 					---Properties used exclusively by input "file"---
+	 * 						fileUploadHandler Function This callback will be triggered when the user does a file-upload.
+	 * 							Arguments: 1:XMLHttpRequest - call open() on this to specify url and such,
 	 * 							2: The File-object, 3:struct,4:rowData,5:mainIndex,6:cellObject(if in expansion)
+	 * 						fileMetasToShow Object An object specifying which meta-bits to show. Default of all are true
+	 * 							{filename Bool, lastModified Bool, size Bool, type Bool}
+	 * 							May also be set via opts->defaultFileMetasToShow
 	 * 					maxLength int Sets max-length for strings if type is "text"
 	 * 					placeholder String adds a placeholder-string to the input-element
 	 * 					options: Array //may be supplied if type is "select". Each element should be an object: {
@@ -285,25 +289,27 @@ class Tablance {
 	 * 								//it needs to return a string which will replace the group-content when it is closed
   	 * 			}
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
-	 * 							"searchbar" Bool that defaults to true. If true then there will be a searchbar that
+	 * 							searchbar Bool that defaults to true. If true then there will be a searchbar that
 	 * 								can be used to filter the data.
-	 * 							"sortAscHtml" String - html to be added to the end of the th-element when the column
+	 * 							sortAscHtml String - html to be added to the end of the th-element when the column
 	 * 													is sorted in ascending order
-	 * 							"sortDescHtml" String - html to be added to the end of the th-element when the column
+	 * 							sortDescHtml String - html to be added to the end of the th-element when the column
 	 * 													is sorted in descending order
-	 * 							"sortNoneHtml" String - html to be added to the end of the th-element when the column
+	 * 							sortNoneHtml String - html to be added to the end of the th-element when the column
 	 * 													is not sorted
-	 * 							"defaultDatePlaceholder" String - a default placeholder used for date-inputs.
-	 * 							"defaultSelectNoResultText" String - a default string which is displayed when a user
+	 * 							defaultDatePlaceholder String - a default placeholder used for date-inputs.
+	 * 							defaultSelectNoResultText String - a default string which is displayed when a user
 	 * 									filters the options in a select and there are no results
-	 * 							"defaultMinOptsFilter" Integer The minimum number of options required for the
+	 * 							defaultMinOptsFilter Integer The minimum number of options required for the
 	 * 								filter-input of input-type "select" to appear
-	 * 							"defaultEmptyOptString" Specifies the default text of the empty options for
+	 * 							defaultEmptyOptString Specifies the default text of the empty options for
 	 * 								type "select" if allowSelectEmpty is true
-	 * 							"defaultRepeatDeleteText" String default text used in the deletion of repeat-items
-	 * 							"deleteAreYouSureText" String default text used in the deletion of repeat-items
-	 * 							"areYouSureYesText"  String default text used in the deletion of repeat-items
-	 * 							"areYouSureNoText"	 String default text used in the deletion of repeat-items
+	 * 							defaultRepeatDeleteText String default text used in the deletion of repeat-items
+	 * 							deleteAreYouSureText String default text used in the deletion of repeat-items
+	 * 							areYouSureYesText  String default text used in the deletion of repeat-items
+	 * 							areYouSureNoText	 String default text used in the deletion of repeat-items
+	 * 							defaultFileMetasToShow Object Default meta-data for files to show.
+	 * 													See prop fileMetasToShow in param expansion
 	 * */
 	constructor(container,columns,staticRowHeight=false,spreadsheet=false,expansion=null,opts=null) {
 		this.#container=container;
@@ -2374,14 +2380,18 @@ class Tablance {
 	}
 
 	#generateFileCell(cellObj,cellEl,rowData) {
-		const fileGroup={type:"group",title:"Hemadress",entries:
-				[{type:"collection",entries:[
-					{type:"field",title:"Filename",id:"name"},
-					{type:"field",title:"Last Modified",id:"lastModified",render:dataRow=>
-						new Date(dataRow.lastModified).toISOString().slice(0, 16).replace('T', ' ')},
-					{type:"field",title:"Size",id:"size",render:dataRow=>this.#humanFileSize(dataRow.size)},
-					{type:"field",title:"Type",id:"type"},
-				]}]};
+		//define all the file-meta-props
+		let metaEntries=[{type:"field",title:"Filename",id:"name"},
+			{type:"field",title:"Last Modified",id:"lastModified",render:dataRow=>
+			new Date(dataRow.lastModified).toISOString().slice(0, 16).replace('T', ' ')},
+			{type:"field",title:"Size",id:"size",render:dataRow=>this.#humanFileSize(dataRow.size)},
+			{type:"field",title:"Type",id:"type"}];
+		for (let metaI=-1,metaName; metaName=["filename","lastModified","size","type"][++metaI];)
+			if(!(cellObj.struct.input.fileMetasToShow?.[metaName]??this.#opts.defaultFileMetasToShow?.[metaName]??true))
+				metaEntries.splice(metaI,1);//poptentially remove (some of) them
+		//define the group-structure for the file
+		const fileGroup={type:"group",title:"Hemadress",entries:[{type:"collection",entries:metaEntries}]};
+		
 		const fileData=rowData[cellObj.struct.id];
 		this.#generateExpansionGroup(fileGroup,null,cellObj,cellEl,[1],fileData);
 		const fileMeta=this.#mapGet(this.#filesMeta,fileData);
