@@ -22,7 +22,6 @@
 
 		//looks good but is distracting when using arrow-keys. Limit it to mouse-clicks?
 		//transition: left .15s ease-out,top .15s ease-out,height .15s ease-out,width .15s ease-out;
-
 		position: absolute;
 		cursor:cell;
 		outline:2px solid blue;
@@ -33,6 +32,7 @@
 			outline-color: red;
 		}
 		&.edit-mode {
+			background-color: white;
 			box-shadow: 1px 1px 7px #222;
 			cursor:auto;
 		}
@@ -47,6 +47,33 @@
 			font-size: inherit;
 			line-height: inherit;
 			resize: none;//specifically for textarea
+		}
+		>div.file,>div.file>div.drop {
+			//make it expand the whole cell-cursor so all of it is clickable
+			position: absolute;
+			top: 0;
+			bottom: 0;
+			left: 0;
+			right: 0;
+		}
+		>div.file{
+			padding: 5px;
+			cursor: pointer;
+			outline: none;
+
+			>.choose-file {
+				font-weight: bold;
+			}
+			>input {
+				display: none;//hide the actual file-input
+			}
+			>div.drop {
+				font-weight: bold;
+				padding: 8px;
+				text-align: center;
+				display: none;
+				background-color: white;
+			}
 		}
 	}
 	.search {
@@ -160,10 +187,42 @@
 				//vertical borders so they don't reach all the way to the top
 				padding-top: 10px;
 			}
+			.progressbar {
+				height: 1.3em;
+				background-color: #e9ecef;
+				border-radius: .4em;
+				overflow: hidden;
+				&.active>div {
+					animation: progress 10s linear infinite;
+					@keyframes progress {
+						0% {
+							background-position: 0 0;
+						}
+						100% {
+						  background-position: 100% 100%;
+						}
+					}
+				}
+				>div {
+					width: 0;//start at 0
+					height: 100%;
+					background-image: linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);
+					background-size: 1em 1em;
+					overflow: hidden;
+					color: #fff;
+					text-align: center;
+					white-space: nowrap;
+					background-color: #007bff;
+					transition: width .5s linear;
+					padding-top: .1em;
+					font-size: 1em;
+				}
+			}
 			.collection {
 				>span {
 					display: inline-block;
-					padding: 3px;
+					padding: .2em;
+					margin: .25em .2em;
 				}
 				&.delete-controls {
 					&:not(.delete-confirming)>:not(.delete) {
@@ -358,6 +417,8 @@
 		}
 	}
 }
+
+
 
 .pika-container {//added by clox
 	position: absolute;//added by clox

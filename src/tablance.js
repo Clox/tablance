@@ -90,6 +90,10 @@ class Tablance {
 			//another object:
 			//	h Integer 	If this is present then the row is expanded, otherwise not. The value is the combined height
 			//				of the main row and its expansion-row.
+	#filesMeta={keys:[],vals:[]};//Similiar to rowsMeta as it is structured the same but used for files that the user
+								//has uploaded during the current session. This is to keep track of upload-progress.
+								//keys are filled with File-objects while vals is filled with objects containing
+								//metadata: uploadedBytes
 	#selectedRows=[];//array of the actual data-objects of rows that are currently selected/checked using the select-col
 	#scrollY=0;//this keeps track of the "old" scrollTop of the table when a scroll occurs to know 
 	#numRenderedRows=0;//number of tr-elements in the table excluding tr's that are expansions (expansions too are tr's)
@@ -138,7 +142,7 @@ class Tablance {
 	 * 			width String The width of the column. This can be in either px or % units.
 	 * 				In case of % it will be calculated on the remaining space after all the fixed widths
 	 * 				have been accounted for.
-	 * 			edit: See param expansion -> edit. This is the same as that one expect textareas are only valid for
+	 * 			input: See param expansion -> input. This is the same as that one expect textareas are only valid for
 	 * 												expansion-cells and not directly in a maintable-cell
 	 * 			render Function pass in a callback-function here and what it returns will be used as value for the
 	 * 					cells. It will get called with a reference to the data-row as its first argument, column-object
@@ -181,7 +185,7 @@ class Tablance {
   	 * 				id:"foobar",//the key of the property in the data that the row should display
 	 * 				maxHeight int For textareas, sets the max-height in pixels that it should be able to be resized to
 	 * 				class:String Css-classes to be added to the field
-	 * 				edit: Object {//field is editable if this object is supplied and its disabled-prop is falsey
+	 * 				input: Object {//field is editable if this object is supplied and its disabled-prop is falsey
 	 * 					multiCellWidth Int For inputs that are present in the section that appears when
 	 * 						selecting/checking multiple rows using the select-col, this property can be used to specify
 	 * 						the number of pixels in width of the cell in that section.
@@ -195,40 +199,48 @@ class Tablance {
 	 * 											if edit is attempted and enabled is set to false, disabling the field
 	 * 							It gets passed the following arguments - 
 	 * 													1:struct,2:rowData,3:mainIndex,4:cellObject(if in expansion)
-	 * 					dataType String This is mandatory and specifies the type of input. Possible values are:
+	 * 					type String This is mandatory and specifies the type of input. Possible values are:
 	 * 							"text"(single line text),
 	 * 							"textarea"(multi-line text),
 	 * 							"number"(number with stepper),
 	 * 							"date"(a date and possibly time with a calendar),
-	 * 							"select"(selection of multiple items).
+	 * 							"select"(selection from a list of items).
 	 * 							"button"(simple button)
+	 * 							"file"(file-upload) The data for a file entry may be a File-object which it will be if
+	 * 									the file has been uploaded during the current session. Or it may be an object
+	 * 									which basically have the same properties as File:lastModified, name, size, type
+	 * 									altough none of those properties are mandatory. Use property "fileUploadHandler"
+	 * 									to handle the actual upload.
 	 * 						Depending on which one is selected certain properties
 	 * 							below are (dis)allowed.
-	 * 						maxLength int Sets max-length for strings if dataType is text
-	 * 						placeholder String adds a placeholder-string to the input-element
-	 * 					options: Array //may be supplied if dataType is "select". Each element should be an object: {
+	 * 					fileUploadHandler Function This callback will be triggered when the user does a file-upload.
+	 * 						Arguments: 1:XMLHttpRequest - call open() on this to specify url and such,
+	 * 							2: The File-object, 3:struct,4:rowData,5:mainIndex,6:cellObject(if in expansion)
+	 * 					maxLength int Sets max-length for strings if type is "text"
+	 * 					placeholder String adds a placeholder-string to the input-element
+	 * 					options: Array //may be supplied if type is "select". Each element should be an object: {
 	 * 						value:the value of the cell will be mapped to the option with the same value
 	 * 						text:unless a render-method has been specified then this is what will be shown to the user
 	 * 					}
-  	 * 					btnText: String,//If datatype is "button" then this will be the text on it
-	 * 					clickHandler:Function //Used for datatype "button". A callback-function that will get called 
+  	 * 					btnText: String,//If type is "button" then this will be the text on it
+	 * 					clickHandler:Function //Used for type "button". A callback-function that will get called 
 	 * 							//when the button is pressed. It will get passed arguments 1:event, 2:dataObject
 	 * 							//,3:mainDataIndex,4:struct,5:cellObject(if inside expansion)
-	 * 					noResultsText String For dataType "select", a string which is displayed when a user filters the 
+	 * 					noResultsText String For type "select", a string which is displayed when a user filters the 
 	 * 						options in a select and there are no results. 
 	 * 						Can also be set globally via param opts->defaultSelectNoResultText
 	 * 					minOptsFilter Integer - The minimum number of options required for the filter-input to appear
 	 * 						Can also be set via param opts->defaultMinOptsFilter
-	 * 					allowSelectEmpty bool - Used for dataType "select". Default true.Pins an empty-option at the top
-	 * 					allowCreateNew bool - Used for dataType "select". Allows user to create new options.
+	 * 					allowSelectEmpty bool - Used for type "select". Default true.Pins an empty-option at the top
+	 * 					allowCreateNew bool - Used for type "select". Allows user to create new options.
 	 * 								If this is true then minOptsFilter will be ignored, input-field is required anyway.
-	 * 					createNewOptionHandler Function - Used for dataType "select". Callback which is called when
+	 * 					createNewOptionHandler Function - Used for type "select". Callback which is called when
 	 * 						the user creates a new option, which can be done if allowCreateNew is true. It will get 
 	 * 							passed arguments 1:new option-object,2:event, 3:dataObject
 	 * 							//,4:mainDataIndex,5:struct,6:cellObject(if inside expansion)
-	 * 					selectInputPlaceholder String - Used for dataType "select". A placeholder for the input which
+	 * 					selectInputPlaceholder String - Used for type "select". A placeholder for the input which
 	 * 						is visible either if the number of options exceed minOptsFilter or allowCreateNew is true
-	 * 					emptyOptString String - For dataType "select", specifies the text of the empty option if 
+	 * 					emptyOptString String - For type "select", specifies the text of the empty option if 
 	 * 						allowSelectEmpty is true. Can also be set via param opts->defaultEmptyOptString
   	 * 			}}
 	 * 			{
@@ -285,9 +297,9 @@ class Tablance {
 	 * 							"defaultSelectNoResultText" String - a default string which is displayed when a user
 	 * 									filters the options in a select and there are no results
 	 * 							"defaultMinOptsFilter" Integer The minimum number of options required for the
-	 * 								filter-input of edit-dataType "select" to appear
+	 * 								filter-input of input-type "select" to appear
 	 * 							"defaultEmptyOptString" Specifies the default text of the empty options for
-	 * 								dataType "select" if allowSelectEmpty is true
+	 * 								type "select" if allowSelectEmpty is true
 	 * 							"defaultRepeatDeleteText" String default text used in the deletion of repeat-items
 	 * 							"deleteAreYouSureText" String default text used in the deletion of repeat-items
 	 * 							"areYouSureYesText"  String default text used in the deletion of repeat-items
@@ -300,7 +312,7 @@ class Tablance {
 		container.classList.add("tablance");
 		this.#staticRowHeight=staticRowHeight;
 		this.#opts=opts;
-		const allowedColProps=["id","title","width","edit","type","render"];
+		const allowedColProps=["id","title","width","input","type","render"];
 		for (let col of columns) {
 			let processedCol={};
 			if ((col.type=="expand"||col.type=="select")&&!col.width)
@@ -533,7 +545,7 @@ class Tablance {
 	}
 	
 	#spreadsheetKeyDown(e) {
-		if (this.#inEditMode&&this.#activeStruct.edit.dataType==="date") {
+		if (this.#inEditMode&&this.#activeStruct.input.type==="date") {
 			if (e.key.slice(0,5)==="Arrow") {
 				if (e.ctrlKey)
 					e.stopPropagation();//allow moving textcursor if ctrl is held so prevent date-change then
@@ -567,7 +579,7 @@ class Tablance {
 						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
 					if (this.#activeStruct.type=="select")
 						return this.#rowCheckboxChange(this.#selectedCell,e.shiftKey);
-					if (e.key==="Enter"||this.#activeStruct.edit?.dataType==="button") {
+					if (e.key==="Enter"||this.#activeStruct.input?.type==="button") {
 						e.preventDefault();//prevent newline from being entered into textareas
 						return this.#enterCell(e);
 					}
@@ -575,10 +587,7 @@ class Tablance {
 		} else {
 			switch (e.key) {
 				case "Enter":
-					// if (this.#multiCellSelected)
-					// 	this.#exitEditMode(true);
-					// else
-						this.#moveCellCursor(0,e.shiftKey?-1:1);
+					this.#moveCellCursor(0,e.shiftKey?-1:1);
 				break; case "Escape":
 					this.#exitEditMode(false);
 			}
@@ -722,6 +731,7 @@ class Tablance {
 	#generateExpansionContent(struct,dataIndex,cellObject,parentEl,path,rowData) {
 		if (!path.length)
 			cellObject.rowIndex=dataIndex;
+		cellObject.path=path;
 		const args=[struct,dataIndex,cellObject,parentEl,path,rowData];
 		switch (struct.type) {
 			case "list": return this.#generateExpansionList(...args);
@@ -787,14 +797,14 @@ class Tablance {
 		if (struct.create&&struct.entry.type==="group") {//if repeater is group then add delete-controls
 			const deleteControls={type:"collection",class:"delete-controls"
 				,onBlur:cel=>cel.selEl.querySelector(".collection").classList.remove("delete-confirming")
-				,entries:[{type:"field",edit:{dataType:"button",
+				,entries:[{type:"field",input:{type:"button",
 					btnText:struct.deleteText??this.#opts.defaultRepeatDeleteText??"Delete"
 					,clickHandler:this.#beginDeleteRepeated.bind(this)},class:"delete"},
-				{type:"field",edit:{dataType:"button"
+				{type:"field",input:{type:"button"
 					,btnText:struct.areYouSureNoText??this.#opts.deleteAreYouSureNoText??"No",
 					clickHandler:this.#cancelDelete.bind(this)},class:"no"
 					,title:struct.deleteAreYouSureText??this.#opts.deleteAreYouSureText??"Are you sure?"},
-				{type:"field",edit:{dataType:"button"
+				{type:"field",input:{type:"button"
 					,btnText:struct.areYouSureYesText??this.#opts.deleteAreYouSureYesText??"Yes",
 					clickHandler:(e,data,mainIndex,strct,cel)=>this.#deleteCell(cel.parent.parent)},class:"yes"}]};
 			struct={...struct};//make shallow copy so original is not affected
@@ -807,8 +817,8 @@ class Tablance {
 	#generateButton(struct,mainIndex,parentEl,rowData,cellObj=null) {
 		const btn=parentEl.appendChild(document.createElement("button"));
 		btn.tabIndex="-1";//so it can't be tabbed to
-		btn.innerText=struct.edit.btnText;
-		btn.addEventListener("click",e=>struct.edit.clickHandler?.(e,rowData,mainIndex,struct,cellObj));
+		btn.innerText=struct.input.btnText;
+		btn.addEventListener("click",e=>struct.input.clickHandler?.(e,rowData,mainIndex,struct,cellObj));
 
 		//prevent gaining focus upon clicking it whhich would cause problems. It should be "focused" by having the
 		//cellcursor on its cell which triggers it with enter-key anyway
@@ -829,7 +839,7 @@ class Tablance {
 			let tr=groupTable.insertRow();
 			tr.className="empty";//start as empty to hide when closed.updateCell() will remove it if a cell is non-empty
 			let td=tr.insertCell();
-			td.classList.toggle("disabled",struct.type=="field"&&!struct.edit)
+			td.classList.toggle("disabled",struct.type=="field"&&!struct.input)
 			if (entryI>0) {
 				const separator=td.appendChild(document.createElement("div"));
 				separator.className="separator";
@@ -1190,7 +1200,7 @@ class Tablance {
 		new Cleave(input,{date: true,delimiter: '-',datePattern: ['Y', 'm', 'd']});
 		this.#cellCursor.appendChild(input);
 		input.value=this.#selectedCellVal??"";
-		input.placeholder=this.#activeStruct.edit.placeholder??this.#opts.defaultDatePlaceholder??"";
+		input.placeholder=this.#activeStruct.input.placeholder??this.#opts.defaultDatePlaceholder??"";
 		input.focus();
 		
 		function onInput(e) {
@@ -1226,22 +1236,15 @@ class Tablance {
 	#enterCell(e) {
 		if (this.#inEditMode||this.#cellCursor.classList.contains("disabled"))
 			return;
-		if (this.#activeStruct.edit) {
-			if (this.#activeStruct.edit.dataType==="button")
+		if (this.#activeStruct.input) {
+			e.preventDefault();//prevent text selection upon entering editmode
+			if (this.#activeStruct.input.type==="button")
 				return this.#activeExpCell.el.click();
 			this.#inputVal=this.#selectedCellVal;
 			this.#inEditMode=true;
 			this.#cellCursor.classList.add("edit-mode");
-			switch (this.#activeStruct.edit.dataType) {
-				case "textarea":
-					this.#openTextAreaEdit(e);
-				break; case "date":
-					this.#openDateEdit(e);
-				break; case "select":
-					this.#openSelectEdit(e);
-				break; default: case "text": 
-					this.#openTextEdit(e);
-			}
+			({textarea:this.#openTextAreaEdit,date:this.#openDateEdit,select:this.#openSelectEdit
+				,file:this.#openFileEdit}[this.#activeStruct.input.type]??this.#openTextEdit).call(this,e);
 		} else if (this.#activeStruct.type==="group") {
 			this.#activeExpCell.el.classList.add("open");
 			this.#selectExpansionCell(this.#getFirstSelectableExpansionCell(this.#activeExpCell,true,true));
@@ -1324,11 +1327,112 @@ class Tablance {
 		input.addEventListener("change",()=>this.#inputVal=input.value);
 		input.value=this.#selectedCellVal??"";
 		input.focus();
-		if (this.#activeStruct.edit.maxLength)
-			input.maxLength=this.#activeStruct.edit.maxLength;
-		input.placeholder=this.#activeStruct.edit.placeholder??"";
-		if (this.#activeStruct.edit.cleave)
-			new Cleave(input,this.#activeStruct.edit.cleave);
+		if (this.#activeStruct.input.maxLength)
+			input.maxLength=this.#activeStruct.input.maxLength;
+		input.placeholder=this.#activeStruct.input.placeholder??"";
+		if (this.#activeStruct.input.cleave)
+			new Cleave(input,this.#activeStruct.input.cleave);
+	}
+
+	#mapAdd(map,key,val) {
+		map.keys.push(key);
+		map.vals.push(val);
+	}
+
+	#mapGet(map,key) {
+		const index=map.keys.indexOf(key);
+		if (index!=-1)
+			return map.vals[index];
+	}
+
+	#mapRemove(map,key) {
+		const index=map.keys.indexOf(key);
+		map.keys.splice(index,1);
+		map.vals.splice(index,1);
+	}
+
+	#openFileEdit() {
+		const self=this;
+		window.getSelection().empty();
+		const fileDiv=this.#cellCursor.appendChild(document.createElement("div"));
+		fileDiv.classList.add("file");
+		fileDiv.tabIndex="0";
+		fileDiv.focus();
+		const fileInput=fileDiv.appendChild(document.createElement("input"));
+		fileInput.type="file";
+		const chooseFileText=fileDiv.appendChild(document.createElement("span"));
+		chooseFileText.classList.add("choose-file");
+		chooseFileText.innerText="Choose a file ";
+		const orDragItHereText=fileDiv.appendChild(document.createElement("span"));
+		orDragItHereText.classList.add("or-drag-it-here");
+		orDragItHereText.innerText="or drag it here.";
+		const dropDiv=fileDiv.appendChild(document.createElement("div"));
+		dropDiv.innerText="Drop to upload";
+		dropDiv.classList.add("drop");
+		fileDiv.addEventListener("keydown",keydown);
+		fileDiv.addEventListener("click",openFileBrowser);
+		fileDiv.addEventListener("dragenter",e=>dropDiv.style.display="block");
+		dropDiv.addEventListener("dragleave",e=>dropDiv.style.display="none");
+		dropDiv.addEventListener("dragover",dragOver);//needed for drop-event to work
+		fileDiv.addEventListener("drop",fileDrop);
+		fileInput.addEventListener("change",fileChange);
+		function keydown(e) {
+			if (e.key==="Escape")
+				return;//let the main keydown-handler of Tablance handle this instead
+			e.stopPropagation();
+			if (e.key.slice(0,5)=="Arrow")
+				e.preventDefault();//prevent native arrow-scrolling
+			else if (e.key==="Enter"||e.key===" ") {
+				e.preventDefault();//prevent native space-scrolling
+				openFileBrowser();
+			}
+		}
+		function handleFile(file) {
+			self.#inputVal=file;
+			const fileMeta={uploadedBytes:0,bars:[]};
+			self.#mapAdd(self.#filesMeta,file,fileMeta)
+			const xhr = new XMLHttpRequest();
+			xhr.upload.addEventListener("progress",e=>{
+				for (let barI=-1,bar; bar=fileMeta.bars[++barI];) {
+					if (bar.isConnected) {
+						fileMeta.uploadedBytes=e.loaded;
+						bar.style.width=bar.firstChild.innerText=parseInt(e.loaded/e.total*100)+"%";
+					} else
+						fileMeta.bars.splice(barI--,1);
+				}
+			});
+			self.#activeStruct.input.fileUploadHandler?.
+						(xhr,file,self.#activeStruct,self.#cellCursorDataObj,self.#mainRowIndex,self.#activeExpCell);
+			xhr?.addEventListener("load",e=>{
+				self.#mapRemove(self.#filesMeta,file);//can get rid of our metadata now
+				for (const bar of fileMeta.bars) {
+					if (bar.isConnected) {
+						bar.parentElement.classList.remove("active");
+						bar.firstChild.innerText="Done!";
+					}
+						
+				}
+			});
+			const formData = new FormData();
+			formData.append("file", file);
+			xhr.send(formData);
+			self.#exitEditMode(true);
+			self.#selectExpansionCell(self.#activeExpCell);
+		}
+		function openFileBrowser(e) {
+			fileInput.click();
+		}
+		function fileChange(e) {
+			handleFile(e.target.files[0]);
+		}
+		function dragOver(e) {
+			e.preventDefault();//without this the drop-event wont even fire
+		}
+		function fileDrop(e) {
+			e.stopPropagation();
+			e.preventDefault();
+			handleFile(e.dataTransfer.files[0]);
+		}
 	}
 
 	#openTextAreaEdit() {
@@ -1343,9 +1447,9 @@ class Tablance {
 		textarea.addEventListener("keydown",keydown.bind(this));
 		textarea.focus();
 		textarea.addEventListener("change",e=>this.#inputVal=textarea.value);
-		if (this.#activeStruct.edit.maxLength)
-			textarea.maxLength=this.#activeStruct.edit.maxLength;
-		textarea.placeholder=this.#activeStruct.edit.placeholder??"";
+		if (this.#activeStruct.input.maxLength)
+			textarea.maxLength=this.#activeStruct.input.maxLength;
+		textarea.placeholder=this.#activeStruct.input.placeholder??"";
 		function keydown(e) {
 			if (e.key==="Enter"&&e.ctrlKey) {
 				this.#insertAtCursor(textarea,"\r\n");
@@ -1362,26 +1466,26 @@ class Tablance {
 		const self=this;//to have access to this(tablance-instance) inside closures
 		let highlightLiIndex,highlightUlIndex;
 		let filterText="";
-		const edit=this.#activeStruct.edit;
+		const strctInp=this.#activeStruct.input;
 		this.#inputVal=this.#cellCursorDataObj[this.#activeStruct.id];
 		const selectContainer=document.createElement("div");
-		let opts=[...edit.options];
+		let opts=[...strctInp.options];
 		const inputWrapper=selectContainer.appendChild(document.createElement("div"));//used to give the input margins
 		const input=inputWrapper.appendChild(document.createElement("input"));
 		const windowMouseDownBound=windowMouseDown.bind(this);//saving ref to bound func so handler can be removed later
-		const allowEmpty=edit.allowSelectEmpty??true;
-		let canCreate=false;//whether the create-button is currently available. This firstly depends on edit.allowCreate
+		const allowEmpty=strctInp.allowSelectEmpty??true;
+		let canCreate=false;//whether the create-button is currently available.This firstly depends on input.allowCreate
 					//but also the current value of the input and if there already is an option matching that exactly
-		const emptyString=edit.emptyOptString??this.#opts.defaultEmptyOptString??"Empty";
+		const emptyString=strctInp.emptyOptString??this.#opts.defaultEmptyOptString??"Empty";
 		inputWrapper.classList.add("input-wrapper");//input-element a margin. Can't put padding in container because
 							//that would cause the highlight-box of selected options not to go all the way to the sides
 		const ulDiv=selectContainer.appendChild(document.createElement("div"));
-		if (edit.allowCreateNew||opts.length>=(edit.minOptsFilter??this.#opts.defaultMinOptsFilter??5)) {
+		if (strctInp.allowCreateNew||opts.length>=(strctInp.minOptsFilter??this.#opts.defaultMinOptsFilter??5)) {
 			input.addEventListener("input",inputInput.bind(this));//filtering is allowed, add listener to the input
 		} else//else hide the input. still want to keep it to recieve focus and listening to keystrokes. tried focusing
 			inputWrapper.classList.add("hide");//container-divs instead of input but for some reason it messed up scroll
 		input.addEventListener("keydown",inputKeyDown.bind(this));
-		input.placeholder=edit.selectInputPlaceholder??"";
+		input.placeholder=strctInp.selectInputPlaceholder??"";
 		input.addEventListener("blur",input.focus)
 		const pinnedUl=ulDiv.appendChild(document.createElement("ul"));
 		const mainUl=ulDiv.appendChild(document.createElement("ul"));
@@ -1403,7 +1507,7 @@ class Tablance {
 			}
 		}
 		let creationLi;
-		if (edit.allowCreateNew) {
+		if (strctInp.allowCreateNew) {
 			creationLi=document.createElement("li");
 			creationLi.dataset.type="create";
 		}
@@ -1411,7 +1515,7 @@ class Tablance {
 		renderOpts(mainUl,opts,this.#inputVal);
 		
 		const noResults=selectContainer.appendChild(document.createElement("div"));
-		noResults.innerText=edit.noResultsText??this.#opts.defaultSelectNoResultText??"No results found";
+		noResults.innerText=strctInp.noResultsText??this.#opts.defaultSelectNoResultText??"No results found";
 		noResults.className="no-results";
 		
 		this.#cellCursor.parentElement.appendChild(selectContainer);
@@ -1439,7 +1543,7 @@ class Tablance {
 		function inputInput(e) {
 			canCreate=!!input.value;
 			if (!input.value.includes(filterText)||!filterText)//unless text was added to beginning or end
-				opts=[...edit.options];//start off with all options there are
+				opts=[...strctInp.options];//start off with all options there are
 			for (let i=-1,opt; opt=opts[++i];)
 				if (!opt.text.includes(input.value))//if searchstring wasn't found in this opt
 					opts.splice(i--,1);//then remove it from view
@@ -1470,8 +1574,8 @@ class Tablance {
 		}
 		function close(e) {
 			if (!highlightUlIndex&&pinnedUl.children[highlightLiIndex].dataset.type=="create") {
-					edit.options.push(self.#inputVal={text:filterText});
-					edit.createNewOptionHandler?.(self.#inputVal,e,self.#cellCursorDataObj,self.#mainRowIndex
+					strctInp.options.push(self.#inputVal={text:filterText});
+					strctInp.createNewOptionHandler?.(self.#inputVal,e,self.#cellCursorDataObj,self.#mainRowIndex
 																			,self.#activeStruct,self.#activeExpCell);
 			} else
 				self.#inputVal=highlightUlIndex?opts[highlightLiIndex]:null;
@@ -1532,7 +1636,7 @@ class Tablance {
 				multiCell.innerText=this.#inputVal?.text??this.#inputVal??"";
 				multiCell.classList.remove("mixed");
 			} else {
-				this.#activeStruct.edit.onChange?.(this.#inputVal,this.#selectedCellVal,this.#cellCursorDataObj
+				this.#activeStruct.input.onChange?.(this.#inputVal,this.#selectedCellVal,this.#cellCursorDataObj
 																			,this.#activeStruct,this.#activeExpCell);
 				this.#cellCursorDataObj[this.#activeStruct.id]=this.#inputVal;
 				if (this.#activeExpCell){
@@ -1550,8 +1654,8 @@ class Tablance {
 			}
 		}
 		this.#cellCursor.innerHTML="";
-		if (this.#activeStruct.edit.dataType==="textarea")
-			this.#adjustCursorPosSize(this.#selectedCell);
+		//if (this.#activeStruct.input.type==="textarea")//also needed for file..
+		this.#adjustCursorPosSize(this.#selectedCell);
 		this.#highlightOnFocus=false;
 	}
 
@@ -1642,7 +1746,7 @@ class Tablance {
 		this.#selectedCell=cellEl;
 		this.#activeStruct=struct;
 		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
-		const noPtrEvent=struct.type==="expand"||struct.type==="select"||struct.edit?.dataType==="button";
+		const noPtrEvent=struct.type==="expand"||struct.type==="select"||struct.edit?.type==="button";
 		this.#cellCursor.style.pointerEvents=noPtrEvent?"none":"auto";
 		this.#cellCursorDataObj=dataObj;
 		this.#selectedCellVal=dataObj?.[struct.id];
@@ -1836,25 +1940,23 @@ class Tablance {
 			e.preventDefault();//prevent selection of the cell-content on dbl-click
 			this.#selectMultiCell(e.target)
 		};
-		const dblClick=this.#enterCell.bind(this);
 		const colsDiv=multiRowAreaContent.appendChild(document.createElement("div"));
 		this.#multiCellIds=[];
 		this.#multiCells=[];
 		this.#multiCellsDataObj={};
 		for (let colI=-1,colStruct; colStruct=this.#colStructs[++colI];) {
-			if (colStruct.edit) {
+			if (colStruct.input) {
 				const colDiv=colsDiv.appendChild(document.createElement("div"));
 				const header=document.createElement("h3");
 				colDiv.appendChild(header).innerText=colStruct.title;
 				colDiv.classList.add("col");
-				colDiv.style.width=colStruct.edit.multiCellWidth??
+				colDiv.style.width=colStruct.input.multiCellWidth??
 											(/\d+\%/.test(colStruct.width)?colStruct.width:header.offsetWidth+30)+"px";
 				const cellDiv=colDiv.appendChild(document.createElement("div"));
 				this.#multiCells[this.#multiCellIds.push(colStruct.id)-1]=cellDiv;
 				cellDiv.classList.add("cell");
 				cellDiv.dataset.colIndex=colI;
 				cellDiv.addEventListener("mousedown",cellMouseDown);
-				//cellDiv.addEventListener("dblclick",dblClick);
 			}
 		}
 	}
@@ -1937,9 +2039,9 @@ class Tablance {
 
 		for (let col of this.#colStructs)
 			if (col.type!=="expand"&&col.type!=="select") {
-				if (col.edit?.dataType=="select") {
+				if (col.input?.type=="select") {
 					const optsByVal=selectsOptsByVal[colsToFilterBy.length]={};
-					for (const opt of col.edit.options)
+					for (const opt of col.input.options)
 						optsByVal[opt.value]=opt;
 				}
 				colsToFilterBy.push(col);
@@ -1950,7 +2052,7 @@ class Tablance {
 				for (let colI=-1,col; col=colsToFilterBy[++colI];) {
 					if (dataRow[col.id]!=null) {
 						let match=false;
-						if (col.edit?.dataType=="select") {
+						if (col.input?.type=="select") {
 							if (typeof dataRow[col.id]=="string")
 								match=selectsOptsByVal[dataRow[col.id]].text.includes(filterString);
 							else
@@ -2239,52 +2341,113 @@ class Tablance {
 		return tr;
 	}
 
+	/**
+	 * Format bytes as human-readable text.
+	 * 
+	 * @param bytes Number of bytes.
+	 * @param si True to use metric (SI) units, aka powers of 1000. False to use 
+	 *           binary (IEC), aka powers of 1024.
+	 * @param dp Number of decimal places to display.
+	 * 
+	 * @return Formatted string.
+	 */
+	#humanFileSize(bytes, si=false, dp=1) {
+		const thresh = si ? 1000 : 1024;
+	
+		if (Math.abs(bytes) < thresh) {
+		return bytes + ' B';
+		}
+	
+		const units = si 
+		? ['kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'] 
+		: ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
+		let u = -1;
+		const r = 10**dp;
+	
+		do {
+		bytes /= thresh;
+		++u;
+		} while (Math.round(Math.abs(bytes) * r) / r >= thresh && u < units.length - 1);
+	
+	
+		return bytes.toFixed(dp) + ' ' + units[u];
+	}
+
+	#generateFileCell(cellObj,cellEl,rowData) {
+		const fileGroup={type:"group",title:"Hemadress",entries:
+				[{type:"collection",entries:[
+					{type:"field",title:"Filename",id:"name"},
+					{type:"field",title:"Last Modified",id:"lastModified",render:dataRow=>
+						new Date(dataRow.lastModified).toISOString().slice(0, 16).replace('T', ' ')},
+					{type:"field",title:"Size",id:"size",render:dataRow=>this.#humanFileSize(dataRow.size)},
+					{type:"field",title:"Type",id:"type"},
+				]}]};
+		const fileData=rowData[cellObj.struct.id];
+		this.#generateExpansionGroup(fileGroup,null,cellObj,cellEl,[1],fileData);
+		const fileMeta=this.#mapGet(this.#filesMeta,fileData);
+		if (fileMeta!=null) {
+			const progressbarOuter=cellEl.appendChild(document.createElement("div"));
+			progressbarOuter.classList.add("progressbar","active");
+			const progressbarInner=progressbarOuter.appendChild(document.createElement("div"));
+			progressbarInner.style.transition="none";//get to the current pos immediately in case running from before
+			fileMeta.bars.push(progressbarInner);
+			progressbarInner.role="progressbar";
+			const progressSpan=progressbarInner.appendChild(document.createElement("span"));
+			progressbarInner.style.width=progressSpan.innerText=parseInt(fileMeta.uploadedBytes/fileData.size*100)+"%";
+			progressbarInner.style.removeProperty("transition");//enable transitioning again, it was disabled above
+		}
+	}
+
 
 	/**Updates the html-element of a cell inside an expansion. Also updates nonEmptyDescentants of the cell-object of 
 	 * 	group-rows as well as toggling the empty-class of them. Reports back whether visibility has been changed.
-	 * @param {*} cellObject */
-	#updateExpansionCell(cellObject,rowData) {
-		let cellEl=cellObject.el;
-		if (cellObject.struct.maxHeight) {//if there's a maxHeight stated, which is used for textareas
+	 * @param {*} cellObj */
+	#updateExpansionCell(cellObj,rowData) {
+		let cellEl=cellObj.el;
+		if (cellObj.struct.maxHeight) {//if there's a maxHeight stated, which is used for textareas
 			cellEl.innerHTML="";//empty the cell, otherwise multiple calls to this would add more and more content to it
 			cellEl=cellEl.appendChild(document.createElement("div"));//then put a div inside and change cellEl to that
-			cellEl.style.maxHeight=cellObject.struct.maxHeight;//then set its maxHeight
+			cellEl.style.maxHeight=cellObj.struct.maxHeight;//then set its maxHeight
 			cellEl.style.overflow="auto";//and male it scrollable
 			//can't make td directly scrollable which is why the div is needed
 		}
-		for (var rootCell=cellObject;rootCell.parent;rootCell=rootCell.parent);
+		for (var rootCell=cellObj;rootCell.parent;rootCell=rootCell.parent);
 		const oldCellContent=cellEl.innerText;
-		this.#updateCell(cellObject.struct,cellEl,cellObject.selEl,rowData,rootCell.rowIndex,cellObject);
-		if (cellObject.struct.edit?.dataType!=="button") {
-			const newCellContent=cellEl.innerText;
-			if (!newCellContent!=!oldCellContent) {
-				for (let cellI=cellObject; cellI; cellI=cellI.parent)
-					if (cellI.nonEmptyDescentants!=null)
-						cellI.grpTr.classList.toggle("empty",!(cellI.nonEmptyDescentants+=newCellContent?1:-1));
-				return true;
-			}
-		} else
-			cellObject.el=cellObject.selEl=cellObject.el.querySelector("button");
+		if (cellObj.struct.input?.type=="file"&&rowData[cellObj.struct.id]) {
+			this.#generateFileCell(cellObj,cellEl,rowData);
+		} else {
+			this.#updateCell(cellObj.struct,cellEl,cellObj.selEl,rowData,rootCell.rowIndex,cellObj);
+			if (cellObj.struct.input?.type!=="button") {
+				const newCellContent=cellEl.innerText;
+				if (!newCellContent!=!oldCellContent) {
+					for (let cellI=cellObj; cellI; cellI=cellI.parent)
+						if (cellI.nonEmptyDescentants!=null)
+							cellI.grpTr.classList.toggle("empty",!(cellI.nonEmptyDescentants+=newCellContent?1:-1));
+					return true;
+				}
+			} else
+				cellObj.el=cellObj.selEl=cellObj.el.querySelector("button");
+		}
 	}
 
 	#updateCell(struct,el,selEl,rowData,mainIndex,cellObj=null) {
-		if (struct.edit?.dataType==="button") {
+		if (struct.input?.type==="button") {
 			this.#generateButton(struct,mainIndex,el,rowData,cellObj);
 		} else {
 			let newCellContent;
 			if (struct.render)
 				newCellContent=struct.render(rowData,struct,mainIndex);
-			else if (struct.edit?.dataType==="select") {
+			else if (struct.input?.type==="select") {
 				let selOptObj=rowData[struct.id];
 				if (selOptObj&&typeof selOptObj!=="object")
-					selOptObj=struct.edit.options.find(opt=>opt.value==rowData[struct.id]);
+					selOptObj=struct.input.options.find(opt=>opt.value==rowData[struct.id]);
 				newCellContent=selOptObj?.text??"";
 			} else
 				newCellContent=rowData[struct.id]??"";
 			let isDisabled=false;
 			if (this.#spreadsheet&&struct.type!=="expand") {
-				const enabledFuncResult=struct.edit?.enabled?.(struct,rowData,mainIndex,cellObj);
-				if (!struct.edit||enabledFuncResult==false||enabledFuncResult?.enabled==false)
+				const enabledFuncResult=struct.input?.enabled?.(struct,rowData,mainIndex,cellObj);
+				if (!struct.input||enabledFuncResult==false||enabledFuncResult?.enabled==false)
 					isDisabled=true;
 			}
 			(selEl??el).classList.toggle("disabled",isDisabled);

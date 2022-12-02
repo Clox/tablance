@@ -15,36 +15,39 @@
 						{text:"orange",value:4},{text:"grapes",value:5},{text:"melon",value:6},
 						{text:"pineapple",value:7},{text:"carrot",value:8}];
 			const myTablanceCols=[{type:"select"},{type:"expand"}
-				,{id:"desc",title:"Description",edit:{onChange:(...args)=>console.log(args),
-					dataType:"text",maxLength:5,placeholder:"placeholder",enabled:()=>Math.random()>.5},render:descFunc}
-				,{id:"amount",title:"Amount",width:"85px",edit:true},{id:"balance",title:"Balance",width:"85px"}
-				,{id:"food",title:"Food",width:"120px",edit:{multiCellWidth:100,dataType:"select"
+				,{id:"desc",title:"Description",input:{onChange:(...args)=>console.log(args),
+					type:"text",maxLength:5,placeholder:"placeholder",enabled:()=>Math.random()>.5},render:descFunc}
+				,{id:"amount",title:"Amount",width:"85px",input:true},{id:"balance",title:"Balance",width:"85px"}
+				,{id:"food",title:"Food",width:"120px",input:{multiCellWidth:100,type:"select"
 					,options:foods,minOptsFilter:100,allowCreateNew:true,allowSelectEmpty:true
 					,selectInputPlaceholder:"Sök/Skapa"}}
-				,{id:"mainDate",title:"Main Date",width:"120px",edit:{multiCellWidth:100,dataType:"date"}}];
+				,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"}}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
-				{type:"field",title:"Select",id:"sel",edit:{dataType:"select",options:foods,minOptsFilter:100
+				{type:"field",title:"File",id:"file",input:{type:"file",fileUploadHandler:xhr=>{
+					xhr.open("POST", "http://localhost:3000/tests/serve.php", true);
+				}}}
+				,{type:"field",title:"Select",id:"sel",input:{type:"select",options:foods,minOptsFilter:100
 									,allowCreateNew:true,allowSelectEmpty:true,selectInputPlaceholder:"Sök/Skapa"}},
 				{type:"repeated",id:"addresses",sortCompare:(a,b)=>a.zip>b.zip?1:-1,entry:{type:"group",title:"Adress"
 					,entries:
 					[{type:"field",title:"Gata",id:"street"},{type:"field",title:"Postnummer",id:"zip"}
 						,{type:"field",title:"Ort",id:"city"}]}},
 				{type:"group",title:"Hemadress",entries:
-					[{type:"field",title:"Gata",id:"home_street",edit:{dataType:"text"}}
-						,{type:"field",title:"Postnummer",id:"home_zip",edit:{dataType:"text"}}
-						,{type:"field",title:"Ort",id:"home_city",edit:{dataType:"text"}}]},
-				{type:"field",title:"Date",id:"date",edit:{dataType:"date",onChange:(...args)=>console.log(args)}},
+					[{type:"field",title:"Gata",id:"home_street",input:{type:"text"}}
+						,{type:"field",title:"Postnummer",id:"home_zip",input:{type:"text"}}
+						,{type:"field",title:"Ort",id:"home_city",input:{type:"text"}}]},
+				{type:"field",title:"Date",id:"date",input:{type:"date",onChange:(...args)=>console.log(args)}},
 				{type:"repeated",id:"repeatedField",sortCompare:(a,b)=>a.bar>b.bar?1:-1,entry:
 					{type:"field",title:"repeated row",id:"foo"}
 				},
-				{type:"field",edit:{dataType:"button",btnText:"Cool button",clickHandler:btnClickHandler}},
+				{type:"field",input:{type:"button",btnText:"Cool button",clickHandler:btnClickHandler}},
 				{type:"group",title:"förordnande",entries:[
 					{type:"repeated",id:"custodianshipChanges",create:true,onCreate:(...args)=>console.log(args)
 					,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
 					,areYouSureYesText:"Ja",areYouSureNoText:"Nej",entry:
 						{type:"group",closedRender:data=>`${data.type} sedan ${data.date}`,entries:[
-								{type:"field",title:"Datum",id:"date",edit:{dataType:"date"}},
-								{type:"field",title:"Typ av ställföreträdarskap",id:"type",edit:{dataType:"select",
+								{type:"field",title:"Datum",id:"date",input:{type:"date"}},
+								{type:"field",title:"Typ av ställföreträdarskap",id:"type",input:{type:"select",
 									options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"}]
 									,allowSelectEmpty:false
 								}}
@@ -55,24 +58,24 @@
 					{type:"field",title:"First thing",id:"first"},
 					{type:"field",title:"Second thing",id:"second"},
 					{type:"field",title:"Third thing",id:"third"},
-					{type:"field",edit:{dataType:"button",btnText:"My button"}},
+					{type:"field",input:{type:"button",btnText:"My button"}},
 					{type:"field",title:"Fourth thing",id:"fourth"},
 					{type:"field",title:"Fifth thing",id:"fifth"},
 					{type:"field",title:"Sixth thing",id:"sixth"},
 					{type:"field",title:"Seventh thing",id:"seventh"},
 				]},
 				{type:"group",title:"grupp",entries:[
-					{type:"field",title:"Hello",id:"hello",edit:{dataType:"text"}},
-					{type:"field",title:"World",id:"world",edit:{dataType:"text"}},
-					{type:"field",title:"Emptytest",id:"emptykey",edit:{dataType:"text"}}]},
-				{type:"field",title:"Foobar One",id:"foobar1",edit:{dataType:"text",maxLength:5,placeholder:"boo"}},
+					{type:"field",title:"Hello",id:"hello",input:{type:"text"}},
+					{type:"field",title:"World",id:"world",input:{type:"text"}},
+					{type:"field",title:"Emptytest",id:"emptykey",input:{type:"text"}}]},
+				{type:"field",title:"Foobar One",id:"foobar1",input:{type:"text",maxLength:5,placeholder:"boo"}},
 				{type:"field",title:"Foobar Two",id:"foobar2"},
 				{type:"list",title:"Baz entries",titlesColWidth:"6em",entries:[
 					{type:"field",title:"Baz One",id:"baz1"},
 					{type:"field",title:"Baz Two",id:"baz2"},
 					{type:"field",title:"Cleave-datum",id:"cleaveDate",
-						edit:{cleave:{date: true,delimiter: '-',datePattern: ['Y','m','d']},placeholder:"ÅÅÅÅ-MM-DD"}},
-					{type:"field",title:"Anteckningar",id:"notes",maxHeight:150,edit:{dataType:"textarea"}},
+						input:{cleave:{date: true,delimiter: '-',datePattern: ['Y','m','d']},placeholder:"ÅÅÅÅ-MM-DD"}},
+					{type:"field",title:"Anteckningar",id:"notes",maxHeight:150,input:{type:"textarea"}},
 				]},
 			]};
 
