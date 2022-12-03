@@ -1583,7 +1583,10 @@ class Tablance {
 				pinnedUl.appendChild(creationLi);
 			else
 				pinnedUl.removeChild(creationLi);
-			if (!renderOpts(mainUl,opts,this.#inputVal)&&highlightUlIndex)//didnt find selected opt & empty is not selec
+			if (renderOpts(mainUl,opts,this.#inputVal))//found selected opt
+				pinnedUl.querySelector(".highlighted")?.classList.remove("highlighted");
+			else//did not find selected opt
+				if (highlightUlIndex)//...and empty is not selected
 					if (opts.length)//there are visible opts
 						highlightOpt.call(this,1,0);//select first among the filtered ones
 					else if (pinnedUl.children.length)
