@@ -744,8 +744,9 @@ class Tablance {
 	#generateExpansionContent(struct,dataIndex,cellObject,parentEl,path,rowData) {
 		if (!path.length)
 			cellObject.rowIndex=dataIndex;
-		cellObject.path=path;
+		cellObject.path=[...path];
 		cellObject.dataObj=rowData;
+		cellObject.struct=struct;
 		const args=[struct,dataIndex,cellObject,parentEl,path,rowData];
 		switch (struct.type) {
 			case "list": return this.#generateExpansionList(...args);
@@ -767,7 +768,6 @@ class Tablance {
 	 * @param {*} rowData 
 	 * @returns */
 	#generateExpansionRepeated(struct,dataIndex,cellObj,parentEl,path,rowData) {
-		cellObj.struct=struct;
 		cellObj.children=[];
 		let repeatData=cellObj.dataObj=rowData[struct.id];
 		if (repeatData?.length) {
@@ -825,11 +825,12 @@ class Tablance {
 					if (cel.parent.parent.fileInputStruct) {
 						const fileCell=cel.parent.parent;
 						const inputStruct=fileCell.fileInputStruct;
-						delete fileCell.parent.dataObj[inputStruct.id];
+						const dataRow=fileCell.parent.dataObj;
+						delete dataRow[inputStruct.id];
 						const fileTd=fileCell.el.parentElement;
 						fileTd.innerHTML="";
 						fileTd.classList.remove("group-cell");
-						this.#generateField(inputStruct,index,fileCell,fileTd,[],fileCell.parent.dataObj);
+						this.#generateExpansionContent(inputStruct,index,fileCell,fileTd,fileCell.path,dataRow);
 						inputStruct.deleteHandler?.(e,data,inputStruct,fileCell.parent.dataObj,index,fileCell);
 						this.#selectExpansionCell(fileCell);
 					} else
@@ -858,8 +859,7 @@ class Tablance {
 		cellObj.dataObj=rowData;
 		const groupTable=document.createElement("table");
 		parentEl.classList.add("group-cell");
-		cellObj.el=groupTable;//so that the whole group-table can be selected
-		cellObj.struct=groupStructure;
+		cellObj.el=groupTable;//so that the whole group-table can be selectedf
 		groupTable.className="expansion-group";
 		for (let entryI=-1,struct; struct=groupStructure.entries[++entryI];) {
 			let tr=groupTable.insertRow();
@@ -939,7 +939,6 @@ class Tablance {
 
 	#generateExpansionList(listStructure,mainIndex,listCelObj,parentEl,path,rowData) {
 		listCelObj.children=[];
-		listCelObj.struct=listStructure;
 		const listTable=listCelObj.listTable=document.createElement("table");
 		listTable.appendChild(document.createElement("tbody"));
 		listTable.className="expansion-list";
@@ -1003,7 +1002,6 @@ class Tablance {
 	}
 
 	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {	
-		cellObject.struct=fieldStructure;
 		cellObject.el=parentEl;
 		this.#updateExpansionCell(cellObject,rowData);
 		cellObject[cellObject.selEl?"selEl":"el"].dataset.path=path.join("-");
@@ -2400,7 +2398,7 @@ class Tablance {
 		return bytes.toFixed(dp) + ' ' + units[u];
 	}
 
-	#generateFileCell(fileCellObj,cellEl,rowData) {
+	#generateFileCell(fileCellObj,cellEl,rowData,dataIndex) {
 		const fileStruct=fileCellObj.struct;//struct of cellObj will get overwritten. Save reference here.
 		fileCellObj.fileInputStruct=fileStruct;//saving this ref here which is used to revert with if user deletes file
 
@@ -2419,13 +2417,13 @@ class Tablance {
 		fileGroup.entries[0].entries.unshift({type:"field",input:{type:"button",btnText:"Open"
 				,clickHandler:(e,file,mainIndex,struct,btnObj)=>{
 					rowData??=this.#data[mainIndex];
-					fileStruct.input.openHandler?.(e,file,fileStruct,cellObj.dataObj,mainIndex,btnObj);
+					fileStruct.input.openHandler?.(e,file,fileStruct,fileCellObj.dataObj,mainIndex,btnObj);
 			}},
 		});
 		fileGroup.entries.push({type:"collection",entries:metaEntries});
 		
 		const fileData=rowData[fileCellObj.struct.id];
-		this.#generateExpansionGroup(fileGroup,null,fileCellObj,cellEl,[1],fileData);
+		this.#generateExpansionContent(fileGroup,dataIndex,fileCellObj,cellEl,fileCellObj.path,fileData);
 		const fileMeta=this.#mapGet(this.#filesMeta,fileData);
 		if (fileMeta!=null) {
 			const progressbarOuter=cellEl.appendChild(document.createElement("div"));
@@ -2456,7 +2454,7 @@ class Tablance {
 		for (var rootCell=cellObj;rootCell.parent;rootCell=rootCell.parent);
 		const oldCellContent=cellEl.innerText;
 		if (cellObj.struct.input?.type=="file"&&rowData[cellObj.struct.id]) {
-			this.#generateFileCell(cellObj,cellEl,rowData);
+			this.#generateFileCell(cellObj,cellEl,rowData,rootCell.rowIndex);
 		} else {
 			this.#updateCell(cellObj.struct,cellEl,cellObj.selEl,rowData,rootCell.rowIndex,cellObj);
 			if (cellObj.struct.input?.type!=="button") {
