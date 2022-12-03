@@ -225,10 +225,12 @@
 					margin: .25em .2em;
 				}
 				&.delete-controls {
-					&:not(.delete-confirming)>:not(.delete) {
-						display: none;
+					&:not(.delete-confirming)> {
+						.yes,.no {
+							display: none;
+						}
 					}
-					&.delete-confirming>.delete {
+					&.delete-confirming>:not(.yes):not(.no) {
 						display: none;
 					}
 					.no {

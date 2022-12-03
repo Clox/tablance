@@ -222,7 +222,10 @@ class Tablance {
 	 * 							May also be set via opts->defaultFileMetasToShow
 	 * 						openHandler Function callback-function for when the open-button is pressed. It gets the
 	 * 							following arguments passed to it: 
-	 * 							1: Event, 2: The File-object, 3:struct,4:rowData,5:mainIndex,6:cellObject(if in expansion)
+	 * 							1: Event, 2: File-object, 3:struct,4:rowData,5:mainIndex,6:cellObject(if in expansion)
+	 * 						deleteHandler Function callback-function for when the user deletes a file. It gets the 
+	 * 							following arguments passed to it:
+	 * 							1: Event, 2: File-object, 3:struct,4:rowData,5:mainIndex,6:cellObject(if in expansion)
 	 * 					-------------------------------------------------
 	 * 					maxLength int Sets max-length for strings if type is "text"
 	 * 					placeholder String adds a placeholder-string to the input-element
@@ -742,6 +745,7 @@ class Tablance {
 		if (!path.length)
 			cellObject.rowIndex=dataIndex;
 		cellObject.path=path;
+		cellObject.dataObj=rowData;
 		const args=[struct,dataIndex,cellObject,parentEl,path,rowData];
 		switch (struct.type) {
 			case "list": return this.#generateExpansionList(...args);
@@ -767,7 +771,9 @@ class Tablance {
 		cellObj.children=[];
 		let repeatData=cellObj.dataObj=rowData[struct.id];
 		if (repeatData?.length) {
-			struct=this.#getStructCopyWithDeleteControlsMaybe(struct);
+			if (struct.create&&struct.entry.type==="group")
+				(struct={...struct}).entry=this.#getGroupStructCopyWithDeleteControls(struct.entry);//copy repeat-struct
+					//not to edit the original. Then add delete-controls to its inner group which also gets copied.
 			if (struct.sortCompare)
 				(repeatData=[...repeatData]).sort(struct.sortCompare);
 			for (let childI=0; childI<repeatData.length; childI++) {
@@ -803,24 +809,34 @@ class Tablance {
 			this.#selectExpansionCell(cell.parent.children[0]);
 	}
 
-	#getStructCopyWithDeleteControlsMaybe(struct) {
-		if (struct.create&&struct.entry.type==="group") {//if repeater is group then add delete-controls
-			const deleteControls={type:"collection",class:"delete-controls"
-				,onBlur:cel=>cel.selEl.querySelector(".collection").classList.remove("delete-confirming")
-				,entries:[{type:"field",input:{type:"button",
-					btnText:struct.deleteText??this.#opts.defaultRepeatDeleteText??"Delete"
-					,clickHandler:this.#beginDeleteRepeated.bind(this)},class:"delete"},
-				{type:"field",input:{type:"button"
-					,btnText:struct.areYouSureNoText??this.#opts.deleteAreYouSureNoText??"No",
-					clickHandler:this.#cancelDelete.bind(this)},class:"no"
-					,title:struct.deleteAreYouSureText??this.#opts.deleteAreYouSureText??"Are you sure?"},
-				{type:"field",input:{type:"button"
-					,btnText:struct.areYouSureYesText??this.#opts.deleteAreYouSureYesText??"Yes",
-					clickHandler:(e,data,mainIndex,strct,cel)=>this.#deleteCell(cel.parent.parent)},class:"yes"}]};
-			struct={...struct};//make shallow copy so original is not affected
-			struct.entry={...struct.entry};
-			struct.entry.entries=[...struct.entry.entries,deleteControls];
-		}
+	#getGroupStructCopyWithDeleteControls(struct) {
+		const deleteControls={type:"collection",class:"delete-controls"
+			,onBlur:cel=>cel.selEl.querySelector(".collection").classList.remove("delete-confirming")
+			,entries:[{type:"field",input:{type:"button",
+				btnText:struct.deleteText??this.#opts.defaultRepeatDeleteText??"Delete"
+				,clickHandler:this.#beginDeleteRepeated.bind(this)},class:"delete"},
+			{type:"field",input:{type:"button"
+				,btnText:struct.areYouSureNoText??this.#opts.deleteAreYouSureNoText??"No",
+				clickHandler:this.#cancelDelete.bind(this)},class:"no"
+				,title:struct.deleteAreYouSureText??this.#opts.deleteAreYouSureText??"Are you sure?"},
+			{type:"field",input:{type:"button"
+				,btnText:struct.areYouSureYesText??this.#opts.deleteAreYouSureYesText??"Yes",
+				clickHandler:(e,data,index,strct,cel)=>{
+					if (cel.parent.parent.fileInputStruct) {
+						const fileCell=cel.parent.parent;
+						const inputStruct=fileCell.fileInputStruct;
+						delete fileCell.parent.dataObj[inputStruct.id];
+						const fileTd=fileCell.el.parentElement;
+						fileTd.innerHTML="";
+						fileTd.classList.remove("group-cell");
+						this.#generateField(inputStruct,index,fileCell,fileTd,[],fileCell.parent.dataObj);
+						inputStruct.deleteHandler?.(e,data,inputStruct,fileCell.parent.dataObj,index,fileCell);
+						this.#selectExpansionCell(fileCell);
+					} else
+						this.#deleteCell(cel.parent.parent);
+				}},class:"yes"}]};
+		struct={...struct};//make shallow copy so original is not affected
+		struct.entries=[...struct.entries,deleteControls];
 		return struct;
 	}
 
@@ -936,7 +952,6 @@ class Tablance {
 				let repeatData=rowData[struct.id];
 				let rptCelObj=listCelObj.children[entryI]={parent:listCelObj,index:entryI,children:[],struct:struct};
 				if (rowData[struct.id]?.length){
-					rptCelObj.dataObj=repeatData;
 					if (struct.sortCompare)
 						(repeatData=[...repeatData]).sort(struct.sortCompare);
 					for (const itemData of repeatData) {
@@ -988,7 +1003,6 @@ class Tablance {
 	}
 
 	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {	
-		cellObject.dataObj=rowData;
 		cellObject.struct=fieldStructure;
 		cellObject.el=parentEl;
 		this.#updateExpansionCell(cellObject,rowData);
@@ -1283,7 +1297,10 @@ class Tablance {
 		reptPar.children.splice(indexOfNew,0,childObj);
 		const path=repeatCreater.el.dataset.path.split("-") ;
 		const data=reptPar.dataObj[indexOfNew]={};		
-		const struct=this.#getStructCopyWithDeleteControlsMaybe(reptPar.struct);
+		let struct=reptPar.struct;
+		if (struct.create&&struct.entry.type==="group")
+			(struct={...struct}).entry=this.#getGroupStructCopyWithDeleteControls(struct.entry);//copy repeat-struct not
+			//to edit the original. Then add delete-controls to its inner group which also gets copied.
 		this.#generateExpansionContent(struct.entry,indexOfNew,childObj,repeatCreater.el.parentNode,path,data);
 		for (var cellPar=childObj,cellI=0,cell=childObj;cell.struct.type!="field";cell=cellPar.children[cellI++]){
 			if (cell.struct.type==="group")
@@ -2385,6 +2402,8 @@ class Tablance {
 
 	#generateFileCell(fileCellObj,cellEl,rowData) {
 		const fileStruct=fileCellObj.struct;//struct of cellObj will get overwritten. Save reference here.
+		fileCellObj.fileInputStruct=fileStruct;//saving this ref here which is used to revert with if user deletes file
+
 		//define all the file-meta-props
 		let metaEntries=[{type:"field",title:"Filename",id:"name"},
 			{type:"field",title:"Last Modified",id:"lastModified",render:dataRow=>
@@ -2395,20 +2414,15 @@ class Tablance {
 			if(!(fileStruct.input.fileMetasToShow?.[metaName]??this.#opts.defaultFileMetasToShow?.[metaName]??true))
 				metaEntries.splice(metaI,1);//potentially remove (some of) them
 		//define the group-structure for the file
-		const fileGroup={type:"group",entries:[
-			{type:"collection",entries:[
-				{type:"field",input:{type:"button",btnText:"Open",clickHandler:(e,file,mainIndex,struct,btnObj)=>{
-					let rowData;
-					for (let cellObj=fileCellObj.parent; cellObj&&!cellObj.dataObj; cellObj=cellObj.parent)
-						rowData=cellObj.dataObj;
+		
+		const fileGroup=this.#getGroupStructCopyWithDeleteControls({type:"group",entries:[]});
+		fileGroup.entries[0].entries.unshift({type:"field",input:{type:"button",btnText:"Open"
+				,clickHandler:(e,file,mainIndex,struct,btnObj)=>{
 					rowData??=this.#data[mainIndex];
-					fileStruct.input.openHandler?.(e,file,fileStruct,rowData,mainIndex,btnObj);
-					}},
-				},
-				{type:"field",input:{type:"button",btnText:"Delete"}}]},
-				
-			{type:"collection",entries:metaEntries},
-		]};
+					fileStruct.input.openHandler?.(e,file,fileStruct,cellObj.dataObj,mainIndex,btnObj);
+			}},
+		});
+		fileGroup.entries.push({type:"collection",entries:metaEntries});
 		
 		const fileData=rowData[fileCellObj.struct.id];
 		this.#generateExpansionGroup(fileGroup,null,fileCellObj,cellEl,[1],fileData);
