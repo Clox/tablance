@@ -67,8 +67,6 @@ class Tablance {
 	//and values are px as ints. This is used to offset the position and adjust position of #cellCursor in order to
 	//center it around the cell. It is also used in conjunction with cellCursorOutlineWidth to adjust margins of the
 	//main-table in order to reveal the outermost line when an outermost cell is selected
-	#cellCursorOutlineWidth;//px-width as int, used in conjunction with #cellCursorBorderWidths to adjust margins of the
-	//main-table in order to reveal the outermost line when an outermost cell is selected
 	#inputVal;//the current val of the input when in edit-mode. Will be read and commited if cell is exited correctly
 	#highlightOnFocus=true;//when the spreadsheet is focused  we want focus-outline to appear but only if focused by
 				//keyboard-tabbing, and not when clicking or exiting out of edit-mode which again focuses the table.
@@ -131,6 +129,7 @@ class Tablance {
 	#numRowsInViewSelected=0;//number of rows in the current view/filter that are selected/checked using select-column
 	#animations={};//keeps tracks of animations. Key is a unique id-string, identifying the animation so multiple
 					//instances of the same animation can't run. Value is the end-time in ms since epoch.
+	#onlyExpansion;//See constructor-param onlyExpansion
 							
 
 	/**
@@ -326,51 +325,56 @@ class Tablance {
 	 * 								datePlaceholder "YYYY-MM-DD"
 	 * 								selectNoResultsFound "No results found"
 	 * 							}
+	 * 	@param {Bool} onlyExpansion If this is set to true then the table will not have any actual rows and will instead
+	 * 								only have an expansion specified in param expansion. It will also not have a
+	 * 								scrollpane and the expansion will always be expanded. Method addData is still used
+	 * 								to add the actual data but it will only use the last row sent. So adding multiple
+	 * 								ones will cause it to discard all but the last.
 	 * */
-	constructor(container,columns,staticRowHeight=false,spreadsheet=false,expansion=null,opts=null) {
+	constructor(container,columns,staticRowHeight=false,spreadsheet=false,expansion=null,opts=null,onlyExpansion=false){
 		this.#container=container;
 		this.#spreadsheet=spreadsheet;
 		this.#expansion=expansion;
-		container.classList.add("tablance");
 		this.#staticRowHeight=staticRowHeight;
 		this.#opts=opts;
+		this.#onlyExpansion=onlyExpansion;
+		container.classList.add("tablance");
 		const allowedColProps=["id","title","width","input","type","render"];
-		for (let col of columns) {
-			let processedCol={};
-			if ((col.type=="expand"||col.type=="select")&&!col.width)
-				processedCol.width=50;
-			for (let [colKey,colVal] of Object.entries(col)) {
-				if (allowedColProps.includes(colKey))
-					processedCol[colKey]=colVal;
+		if (!onlyExpansion){
+			for (let col of columns) {
+				let processedCol={};
+				if ((col.type=="expand"||col.type=="select")&&!col.width)
+					processedCol.width=50;
+				for (let [colKey,colVal] of Object.entries(col))
+					if (allowedColProps.includes(colKey))
+						processedCol[colKey]=colVal;
+				this.#colStructs.push(processedCol);
 			}
-			this.#colStructs.push(processedCol);
-		}
-		if (opts?.searchbar!=false)
-			this.#setupSearchbar();
-		this.#createTableHeader();
-		this.#createTableBody();
-		(new ResizeObserver(this.#updateSizesOfViewportAndCols.bind(this))).observe(container);
-		
-		if (spreadsheet)
-			this.#setupSpreadsheet();
-		this.#updateSizesOfViewportAndCols();
-		if (opts.sortAscHtml==null)
-			opts.sortAscHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
+			if (opts?.searchbar!=false)
+				this.#setupSearchbar();
+			this.#createTableHeader();
+			this.#createTableBody();
+			(new ResizeObserver(this.#updateSizesOfViewportAndCols.bind(this))).observe(container);
+			this.#setupSpreadsheet(false);
+			this.#updateSizesOfViewportAndCols();
+			if (opts.sortAscHtml==null)
+				opts.sortAscHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#000" points="4,10,0,6,8,6"/></svg>';
-		if (opts.sortDescHtml==null)
-			opts.sortDescHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#000" '
+			if (opts.sortDescHtml==null)
+				opts.sortDescHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#000" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
-		if (opts.sortNoneHtml==null)
-			opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
+			if (opts.sortNoneHtml==null)
+				opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
-		this.#updateHeaderSortHtml();
+			this.#updateHeaderSortHtml();
+		} else
+			this.#setupSpreadsheet(true);
 	}
 
 	#setupSearchbar() {
 		this.#searchInput=this.#container.appendChild(document.createElement("input"));
 		this.#searchInput.type=this.#searchInput.className="search";
 		this.#searchInput.placeholder=this.#opts.lang?.filterPlaceholder??"Search";
-		const clearSearchCross=document.createElement("button");
 		this.#searchInput.addEventListener("input",e=>this.#onSearchInput(e));
 	}
 
@@ -378,32 +382,22 @@ class Tablance {
 		this.#filterData(this.#searchInput.value);
 	}
 
-	#setupSpreadsheet() {
+	#setupSpreadsheet(onlyExpansion) {
 		this.#container.classList.add("spreadsheet");
 		this.#cellCursor=document.createElement("div");
 		this.#cellCursor.className="cell-cursor";
 		this.#cellCursor.style.display="none";
-		this.#createMultiRowArea();
-		//remove any border-spacing beacuse if the spacing is clicked the target-element will be the table itself and
-		//no cell will be selected which is bad user experience. Set it to 0 for headerTable too in order to match
-		this.#mainTable.style.borderSpacing=this.#headerTable.style.borderSpacing=this.#borderSpacingY=0;
-		
-		const cellCursorComputedStyle=window.getComputedStyle(this.#cellCursor);
-		for (let dir of ['top','right','bottom','left'])
-			this.#cellCursorBorderWidths[dir]=parseInt(cellCursorComputedStyle[`border-${dir}-width`]);
-		this.#cellCursorOutlineWidth=parseInt(cellCursorComputedStyle.outlineWidth);
-		this.#scrollingContent.style.marginTop=this.#cellCursorBorderWidths.top+this.#cellCursorOutlineWidth+"px";
-		this.#scrollingContent.style.marginLeft=this.#cellCursorBorderWidths.left+this.#cellCursorOutlineWidth+"px";
-		this.#tableSizer.style.paddingBottom
-				=this.#cellCursorBorderWidths.bottom+this.#cellCursorBorderWidths.top+this.#cellCursorOutlineWidth+"px";
-		this.#tableSizer.style.paddingRight=this.#cellCursorOutlineWidth+"px";
-
+		if (!onlyExpansion) {
+			this.#createMultiRowArea();
+			//remove any border-spacing beacuse if spacing is clicked the target-element will be the table itself and
+			//no cell will be selected which is bad user experience. Set it to 0 for headerTable too in order to match
+			this.#mainTable.style.borderSpacing=this.#headerTable.style.borderSpacing=this.#borderSpacingY=0;
+			this.#container.addEventListener("focus",e=>this.#spreadsheetOnFocus(e));
+			this.#container.addEventListener("blur",e=>this.#spreadsheetOnBlur(e));
+		}
 		this.#container.tabIndex=0;//so that the table can be tabbed to
 		this.#container.addEventListener("keydown",e=>this.#spreadsheetKeyDown(e));
 		this.#container.addEventListener("mousedown",e=>this.#spreadsheetMouseDown(e));
-		this.#container.addEventListener("focus",e=>this.#spreadsheetOnFocus(e));
-		this.#container.addEventListener("blur",e=>this.#spreadsheetOnBlur(e));
-		this.#mainTable.addEventListener("mousedown",e=>this.#mainTableMouseDown(e));
 		this.#cellCursor.addEventListener("dblclick",e=>this.#enterCell(e));
 	}
 
@@ -444,7 +438,9 @@ class Tablance {
 		setTimeout(()=>this.#highlightOnFocus=!this.#container.contains(document.activeElement));
 	}
 
-	#moveCellCursor(hSign,vSign) {
+	#moveCellCursor(hSign,vSign,e) {
+		e.preventDefault();//to prevent native scrolling when pressing arrow-keys. Needed if #onlyExpansion==true but
+							//not otherwise. Seems the native scrolling is only done on the body and not scrollpane..?
 		//const newColIndex=Math.min(this.#cols.length-1,Math.max(0,this.#cellCursorColIndex+numCols));
 		this.#scrollToCursor();
 
@@ -512,7 +508,8 @@ class Tablance {
 		let cell=this.#getAdjacentExpansionCell(cellObj,isGoingDown);
 		if (cell)
 			return this.#selectExpansionCell(cell);
-		this.#selectMainTableCell(this.#mainTbody.querySelector
+		if (!this.#onlyExpansion)
+			this.#selectMainTableCell(this.#mainTbody.querySelector
 				(`[data-data-row-index="${this.#mainRowIndex+isGoingDown}"]`)?.cells[this.#mainColIndex]);
 	}
 	
@@ -580,13 +577,13 @@ class Tablance {
 		if (!this.#inEditMode) {
 			switch (e.key) {
 				case "ArrowUp":
-					this.#moveCellCursor(0,-1);
+					this.#moveCellCursor(0,-1,e);
 				break; case "ArrowDown":
-					this.#moveCellCursor(0,1);
+					this.#moveCellCursor(0,1,e);
 				break; case "ArrowLeft":
-					this.#moveCellCursor(-1,0);
+					this.#moveCellCursor(-1,0,e);
 				break; case "ArrowRight":
-					this.#moveCellCursor(1,0);
+					this.#moveCellCursor(1,0,e);
 				break; case "Escape":
 					this.#groupEscape();
 				break; case "+":
@@ -1018,6 +1015,8 @@ class Tablance {
 	}
 
 	#scrollToCursor() {
+		if (this.#onlyExpansion)
+			return this.#cellCursor.scrollIntoView({block: "center"});
 		const distanceRatioDeadzone=.5;//when moving the cellcursor within this distance from center of view no 
 										//scrolling will be done. 0.5 is half of view, 1 is entire height of view
 		const distanceRatioCenteringTollerance=1;//if moving the cellcursor within this ratio, but outside of 
@@ -1040,23 +1039,20 @@ class Tablance {
 		//This will cause it to run it twice but it's not a big deal.
 		this.#scrollMethod();
 	}
-
+	
 	#spreadsheetMouseDown(e) {
 		this.#highlightOnFocus=false;//see decleration
 		this.#container.style.outline="none";//see #spreadsheetOnFocus
-	}
-	
-	#mainTableMouseDown(e) {
 		if (Date.now()<this.#ignoreClicksUntil)//see decleration of #ignoreClicksUntil
 			return;
 		if (e.which===3)//if right click
 			return;
 		const mainTr=e.target.closest(".main-table>tbody>tr");
-		if (mainTr.classList.contains("expansion")) {//in expansion
+		if (this.#onlyExpansion||mainTr?.classList.contains("expansion")) {//in expansion
 			const interactiveEl=e.target.closest('[data-path]');
 			if (!interactiveEl)
 				return;
-			let cellObject=this.#openExpansions[mainTr.dataset.dataRowIndex];
+			let cellObject=this.#openExpansions[mainTr?.dataset.dataRowIndex??0];
 			for (let step of interactiveEl.dataset.path.split("-")) {
 				cellObject=cellObject.children[step];
 				if (cellObject.struct.type==="group"&&!cellObject.el.classList.contains("open"))
@@ -1078,12 +1074,12 @@ class Tablance {
 			this.#selectExpansionCell(cellObject);
 		} else {//not in expansion
 			const td=e.target.closest(".main-table>tbody>tr>td");
-			if (td.classList.contains("expand-col")||td.classList.contains("select-col")) {
+			if (td?.classList.contains("expand-col")||td?.classList.contains("select-col")) {
 				if (e.shiftKey)
 					e.preventDefault();//prevent text-selection when shift-clicking checkboxes
 				if (this.#mainRowIndex==null) {
 					this.#selectMainTableCell(td);
-					this.#container.focus();
+					this.#container.focus({preventScroll:true});
 				}
 				if (td.classList.contains("expand-col"))
 					return this.#toggleRowExpanded(td.parentElement);
@@ -1651,11 +1647,9 @@ class Tablance {
 
 	#exitEditMode(save) {
 		if (!this.#inEditMode)
-			return;
-			
+			return;	
 		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
-		this.#container.focus();//so that #inputVal gets updated
-
+		this.#container.focus({preventScroll:true});//so that #inputVal gets updated
 		this.#inEditMode=false;
 		this.#cellCursor.classList.remove("edit-mode");
 		if (save&&this.#inputVal!=this.#selectedCellVal) {
@@ -1773,9 +1767,10 @@ class Tablance {
 		this.#exitEditMode(true);
 		this.#multiCellSelected=isMultiCell;
 		this.#adjustCursorPosSize(cellEl);
-		this.#cellCursor.classList.toggle("expansion",cellEl.closest("tr.expansion"));
+		this.#cellCursor.classList.toggle("expansion",cellEl.closest(".expansion"));
 		this.#cellCursor.classList.toggle("disabled",cellEl.classList.contains("disabled"));
-		(isMultiCell?this.#multiRowArea.firstChild:this.#scrollingContent).appendChild(this.#cellCursor);
+		(isMultiCell?this.#multiRowArea.firstChild:this.#scrollingContent??this.#container)
+																						.appendChild(this.#cellCursor);
 		this.#selectedCell=cellEl;
 		this.#activeStruct=struct;
 		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
@@ -1789,8 +1784,10 @@ class Tablance {
 		if (!el)
 			return;
 		const cellPos=el.getBoundingClientRect();
-		const contPos=(this.#multiCellSelected?this.#multiRowArea.firstChild:this.#tableSizer).getBoundingClientRect();
-		this.#cellCursor.style.top=cellPos.y-contPos.y+this.#tableSizer.offsetTop+"px";
+		const contPos=(this.#multiCellSelected?this.#multiRowArea.firstChild:this.#tableSizer??this.#container)
+																							.getBoundingClientRect();
+		
+		this.#cellCursor.style.top=cellPos.y-contPos.y+(this.#tableSizer?.offsetTop??0)+"px";
 		this.#cellCursor.style.left=cellPos.x-contPos.x+"px";
 		this.#cellCursor.style.display="block";//it starts at display none since #setupSpreadsheet, so make visible now
 		if (!onlyPos) {
@@ -2105,7 +2102,17 @@ class Tablance {
 		this.#refreshTableSizerNoExpansions();
 	}
 
+	#setDataForOnlyExpansion(data) {
+		this._allData=this.#data=[data[data.length-1]];
+		this.#container.innerHTML="";
+		const expansionDiv=this.#container.appendChild(document.createElement("div"));
+		expansionDiv.classList.add("expansion");
+		this.#generateExpansionContent(this.#expansion,0,this.#openExpansions[0]={},expansionDiv,[],this.#data[0]);
+	}
+
 	addData(data, highlight=false) {
+		if (this.#onlyExpansion)
+			return this.#setDataForOnlyExpansion(data)
 		const oldLen=this.#data.length;
 		if (highlight)
 			this.#searchInput.value=this.#filter="";//remove any filter

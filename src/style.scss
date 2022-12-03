@@ -2,9 +2,6 @@
 	position: relative;//needed for position of .multi-row-section to work correctly
 	font-family: arial;
 	font-size: 16px;
-	border: 2px solid;
-	  height: 400px;
-	width: 600px;
 	&:focus {
 		outline: 3px solid blue;
 	}
@@ -154,134 +151,136 @@
 			}
 		}
 	}
-	tr.expansion>td{
-		padding: 0;
-		border-left: 15px solid #D8D8E7;
-		border-bottom: 2px solid #D8D8E7;
-		>div {
-			overflow: hidden;//hide overflowing content when expanding/contracting-animating
-			transition: height .15s ease-out;
-			.disabled {
-				background-color: #f2f2f2;
+	.expansion {
+		>td {
+			padding: 0;
+			border-left: 15px solid #D8D8E7;
+			border-bottom: 2px solid #D8D8E7;
+			>div {
+				overflow: hidden;//hide overflowing content when expanding/contracting-animating
+				transition: height .15s ease-out;
+				>div.expansion-shadow {
+					margin-top: -6px;
+					left: 0;
+					right: 0;
+					position: absolute;
+					box-shadow: 0px 5px 6px #ccc;
+					height: 5px;
+				}
+				>table.expansion-list > tbody > tr:first-child > td {
+					//if the top row of the expansion is a list then give its top row a little more padding-top in order
+					//to distance the content a little bit from the shadow above. we don't want the whole list-table
+					//to move down because that puts its top border in the middle of the shadow and/or cut offs the
+					//vertical borders so they don't reach all the way to the top
+					padding-top: 10px;
+				}
 			}
-			.value:empty::after {
-				content: "\00A0";//add non-breaking space to empty cells so they are still rendered at uniform height
+		}
+		.disabled {
+			background-color: #f2f2f2;
+		}
+		.value:empty::after {
+			content: "\00A0";//add non-breaking space to empty cells so they are still rendered at uniform height
+		}
+		.progressbar {
+			height: 1.3em;
+			background-color: #e9ecef;
+			border-radius: .4em;
+			overflow: hidden;
+			&.active>div {
+				animation: progress 10s linear infinite;
+				@keyframes progress {
+					0% {
+						background-position: 0 0;
+					}
+					100% {
+					background-position: 100% 100%;
+					}
+				}
 			}
-			>div.expansion-shadow {
-				margin-top: -6px;
-				left: 0;
-				right: 0;
-				position: absolute;
-				box-shadow: 0px 5px 6px #ccc;
-				height: 5px;
-			}
-			>table.expansion-list > tbody > tr:first-child > td {
-				//if the top row of the expansion is a list hen give its top row a little more padding-top in order
-				//to distance the content a little bit from the shadow above. we don't want the whole list-table
-				//to move down because that puts its top border in the middle of the shadow and/or cut offs the
-				//vertical borders so they don't reach all the way to the top
-				padding-top: 10px;
-			}
-			.progressbar {
-				height: 1.3em;
-				background-color: #e9ecef;
-				border-radius: .4em;
+			>div {
+				width: 0;//start at 0
+				height: 100%;
+				background-image: linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);
+				background-size: 1em 1em;
 				overflow: hidden;
-				&.active>div {
-					animation: progress 10s linear infinite;
-					@keyframes progress {
-						0% {
-							background-position: 0 0;
-						}
-						100% {
-						  background-position: 100% 100%;
-						}
-					}
-				}
-				>div {
-					width: 0;//start at 0
-					height: 100%;
-					background-image: linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);
-					background-size: 1em 1em;
-					overflow: hidden;
-					color: #fff;
-					text-align: center;
-					white-space: nowrap;
-					background-color: #007bff;
-					transition: width .5s linear;
-					padding-top: .1em;
-					font-size: 1em;
-				}
+				color: #fff;
+				text-align: center;
+				white-space: nowrap;
+				background-color: #007bff;
+				transition: width .5s linear;
+				padding-top: .1em;
+				font-size: 1em;
 			}
-			.collection {
-				>span {
-					display: inline-block;
-					padding: .2em;
-					margin: .25em .2em;
-				}
-				&.delete-controls {
-					&:not(.delete-confirming)> {
-						.yes,.no {
-							display: none;
-						}
-					}
-					&.delete-confirming>:not(.yes):not(.no) {
+		}
+		.collection {
+			>span {
+				display: inline-block;
+				padding: .2em;
+				margin: .25em .2em;
+			}
+			&.delete-controls {
+				&:not(.delete-confirming)> {
+					.yes,.no {
 						display: none;
 					}
-					.no {
-						margin-right: -2em;
-						h4{
-							color: red;
-						}
+				}
+				&.delete-confirming>:not(.yes):not(.no) {
+					display: none;
+				}
+				.no {
+					margin-right: -2em;
+					h4{
+						color: red;
 					}
 				}
 			}
-			table.expansion-group>tbody>tr>td {
-				padding: 0;
-				&:first-child>h4 {
-					margin-top: 5px;
-				}
-				>div {
-					padding: 0;
-				}
-			}
-			.repeat-insertion td{
-				padding: 0;
-				color: gray;
-			}
-			table.expansion-list {
-				border-spacing: 0;
-				width: 100%;
-				padding-right: 2px;//so that the right edge of the cell-cursor is fully visible
-				>tbody {
-					>tr{
-						>td.value {
-							padding: 5px;
-								>.expansion-group {
-									min-height: 1.4em;
-								}
-						}
-						>td.title {
-							// width: 8em;
-							// min-width: 8em;
-							border-top: none;
-							font-weight: bold;
-							text-align: right;
-						}
-					}
-					>tr:last-child>td.value {
-						border-bottom: 1px solid #ddd;
-					}
-				}
-			}
-			h4 {
+		}
+		table.expansion-group>tbody>tr>td {
+			padding: 0;
+			&:first-child>h4 {
 				margin-top: 5px;
-				color: #787878;
-				line-height: 2px;
-				font-size: 13px;
-				margin-bottom: 5px;
-				font-weight: 500;
 			}
+			>div {
+				padding: 0;
+			}
+		}
+		.repeat-insertion td{
+			padding: 0;
+			color: gray;
+		}
+		table.expansion-list {
+			border-spacing: 0;
+			width: 100%;
+			padding-right: 2px;//so that the right edge of the cell-cursor is fully visible
+			>tbody {
+				>tr{
+					>td.value {
+						padding: 5px;
+							>.expansion-group {
+								min-height: 1.4em;
+							}
+					}
+					>td.title {
+						// width: 8em;
+						// min-width: 8em;
+						border-top: none;
+						font-weight: bold;
+						text-align: right;
+					}
+				}
+				>tr:last-child>td.value {
+					border-bottom: 1px solid #ddd;
+				}
+			}
+		}
+		h4 {
+			margin-top: 5px;
+			color: #787878;
+			line-height: 2px;
+			font-size: 13px;
+			margin-bottom: 5px;
+			font-weight: 500;
 		}
 	}
 	.group-cell{
