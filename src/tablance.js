@@ -488,7 +488,7 @@ class Tablance {
 			let closestCell,closestCellX;
 			const siblings=this.#activeExpCell.parent.children;
 			for (let i=this.#activeExpCell.index,otherCell;otherCell=siblings[i+=numRows];) {
-				const skipCell=Math.max(otherCell.el.offsetTop,currentCellTop) <= 					 //cells are on the
+				const skipCell=Math.max(otherCell.el.offsetTop,currentCellTop) <= 					 //cell is on the
 								Math.min(otherCell.el.offsetTop+otherCell.el.offsetHeight,currentCellBottom)//same line
 								||otherCell.el.offsetParent == null;//cell is hidden
 				if (skipCell)
@@ -553,12 +553,12 @@ class Tablance {
 		let startI=isGoingDown?0:children.length-1;
 		if (cellObj.struct.type==="collection"&&!isGoingDown) {
 			let chosenCell;
-			for (let i=startI,otherCell;otherCell=children[i--];) {
-				if (!chosenCell||otherCell.el.offsetLeft<chosenCell.el.offsetLeft)
-					chosenCell=otherCell;
-				else
-					break;
-			}
+			for (let i=startI,otherCell;otherCell=children[i--];)
+				if (otherCell.el.offsetParent)
+					if (!chosenCell||otherCell.el.offsetLeft<chosenCell.el.offsetLeft)
+						chosenCell=otherCell;
+					else
+						break;
 			startI=chosenCell.index;
 		}
 		for (let childI=startI;childI>=0&&childI<children.length; childI+=isGoingDown||-1)
