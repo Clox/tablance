@@ -239,7 +239,7 @@ class Tablance {
 	 * 							//,3:mainDataIndex,4:struct,5:cellObject(if inside expansion)
 	 * 					noResultsText String For type "select", a string which is displayed when a user filters the 
 	 * 						options in a select and there are no results. 
-	 * 						Can also be set globally via param opts->defaultSelectNoResultText
+	 * 						Can also be set globally via param opts->lang
 	 * 					minOptsFilter Integer - The minimum number of options required for the filter-input to appear
 	 * 						Can also be set via param opts->defaultMinOptsFilter
 	 * 					allowSelectEmpty bool - Used for type "select". Default true.Pins an empty-option at the top
@@ -252,7 +252,7 @@ class Tablance {
 	 * 					selectInputPlaceholder String - Used for type "select". A placeholder for the input which
 	 * 						is visible either if the number of options exceed minOptsFilter or allowCreateNew is true
 	 * 					emptyOptString String - For type "select", specifies the text of the empty option if 
-	 * 						allowSelectEmpty is true. Can also be set via param opts->defaultEmptyOptString
+	 * 						allowSelectEmpty is true. Can also be set via param opts->lang
   	 * 			}}
 	 * 			{
   	 * 				type:"repeated",//used when the number of rows is undefined and where more may be able to be added, 
@@ -278,13 +278,13 @@ class Tablance {
 	 * 						Return >0 to sort A after B, <0 to sort B after A, or ===0 to keep original order of A and B
 	 * 				creationText: //used if "create" is true. the text of the creation-cell. default is "Create new"
 	 * 				deleteText: //used if "create" is true. the text of the deletion-button. default is "Delete"
-	 * 							//can also be set via param opts->defaultRepeatDeleteText
+	 * 							//can also be set via param opts->lang
 	 * 				deleteAreYouSureText: //used if "create" is true. text above yes/no-btns. default is "Are you sure?"
-	 * 							//can also be set via param opts->defaultrepeatDeleteAreYouSureText
+	 * 							//can also be set via param opts->lang
 	 * 				areYouSureYesText: //used if "create" is true. text of confirm-button for delete. Default is "Yes"
-	 * 							//can also be set via param opts->defaultrepeatDeleteAreYouSureYesText
+	 * 							//can also be set via param opts->lang
 	 * 				areYouSureNoText: //used if "create" is true. text of cancel-button for delete. Default is "No"
-	 * 							//can also be set via param opts->defaultrepeatDeleteAreYouSureNoText
+	 * 							//can also be set via param opts->lang
   	 * 			}
   	 * 			{
   	 * 				type:"group",//used when a set of data should be grouped, like for instance having an address and
@@ -304,19 +304,28 @@ class Tablance {
 	 * 													is sorted in descending order
 	 * 							sortNoneHtml String - html to be added to the end of the th-element when the column
 	 * 													is not sorted
-	 * 							defaultDatePlaceholder String - a default placeholder used for date-inputs.
-	 * 							defaultSelectNoResultText String - a default string which is displayed when a user
-	 * 									filters the options in a select and there are no results
 	 * 							defaultMinOptsFilter Integer The minimum number of options required for the
 	 * 								filter-input of input-type "select" to appear
-	 * 							defaultEmptyOptString Specifies the default text of the empty options for
-	 * 								type "select" if allowSelectEmpty is true
-	 * 							defaultRepeatDeleteText String default text used in the deletion of repeat-items
-	 * 							deleteAreYouSureText String default text used in the deletion of repeat-items
-	 * 							areYouSureYesText  String default text used in the deletion of repeat-items
-	 * 							areYouSureNoText	 String default text used in the deletion of repeat-items
 	 * 							defaultFileMetasToShow Object Default meta-data for files to show.
 	 * 													See prop fileMetasToShow in param expansion
+	 * 							lang Object {  Object to replace language-specific text. The strings may be html-code
+	 * 										except for ones used as placeholders. Below are the keys and defaults.
+	 * 								fileName "Filename"
+	 * 								fileLastModified "Last Modified"
+	 * 								fileSize "Size"
+	 * 								fileType "Type"
+	 * 								fileUploadDone "Done!"
+	 * 								fileChooseOrDrag "<b>Press tp choose a file</b> or drag it here"
+	 * 								fileDropToUpload "<b>Drop to upload</b>"
+	 *								filterPlaceholder "Search"
+	 * 								delete "Delete" (used in the deletion of repeat-items or files)
+	 * 								deleteAreYouSure "Are you sure?" (Used in the deletion of repeat-items or files)
+	 * 								deleteAreYouSureYes "Yes"  (Used in the deletion of repeat-items or files)
+	 * 								deleteAreYouSureNo	"No" (Used in the deletion of repeat-items)
+	 * 								selectEmptyOpt "Empty" Text of the empty/null-option for type "select"
+	 * 								datePlaceholder "YYYY-MM-DD"
+	 * 								selectNoResultsFound "No results found"
+	 * 							}
 	 * */
 	constructor(container,columns,staticRowHeight=false,spreadsheet=false,expansion=null,opts=null) {
 		this.#container=container;
@@ -360,7 +369,7 @@ class Tablance {
 	#setupSearchbar() {
 		this.#searchInput=this.#container.appendChild(document.createElement("input"));
 		this.#searchInput.type=this.#searchInput.className="search";
-		this.#searchInput.placeholder="Search";
+		this.#searchInput.placeholder=this.#opts.lang?.filterPlaceholder??"Search";
 		const clearSearchCross=document.createElement("button");
 		this.#searchInput.addEventListener("input",e=>this.#onSearchInput(e));
 	}
@@ -813,14 +822,14 @@ class Tablance {
 		const deleteControls={type:"collection",class:"delete-controls"
 			,onBlur:cel=>cel.selEl.querySelector(".collection").classList.remove("delete-confirming")
 			,entries:[{type:"field",input:{type:"button",
-				btnText:struct.deleteText??this.#opts.defaultRepeatDeleteText??"Delete"
+				btnText:struct.deleteText??this.#opts.lang?.delete??"Delete"
 				,clickHandler:this.#beginDeleteRepeated.bind(this)},class:"delete"},
 			{type:"field",input:{type:"button"
-				,btnText:struct.areYouSureNoText??this.#opts.deleteAreYouSureNoText??"No",
+				,btnText:struct.areYouSureNoText??this.#opts.lang.deleteAreYouSureNo??"No",
 				clickHandler:this.#cancelDelete.bind(this)},class:"no"
-				,title:struct.deleteAreYouSureText??this.#opts.deleteAreYouSureText??"Are you sure?"},
+				,title:struct.deleteAreYouSureText??this.#opts.lang?.deleteAreYouSure??"Are you sure?"},
 			{type:"field",input:{type:"button"
-				,btnText:struct.areYouSureYesText??this.#opts.deleteAreYouSureYesText??"Yes",
+				,btnText:struct.areYouSureYesText??this.#opts.lang?.deleteAreYouSureYes??"Yes",
 				clickHandler:(e,data,index,strct,cel)=>{
 					if (cel.parent.parent.fileInputStruct) {
 						const fileCell=cel.parent.parent;
@@ -844,7 +853,7 @@ class Tablance {
 	#generateButton(struct,mainIndex,parentEl,rowData,cellObj=null) {
 		const btn=parentEl.appendChild(document.createElement("button"));
 		btn.tabIndex="-1";//so it can't be tabbed to
-		btn.innerText=struct.input.btnText;
+		btn.innerHTML=struct.input.btnText;
 		btn.addEventListener("click",e=>struct.input.clickHandler?.(e,rowData,mainIndex,struct,cellObj));
 
 		//prevent gaining focus upon clicking it whhich would cause problems. It should be "focused" by having the
@@ -927,7 +936,7 @@ class Tablance {
 		const containerSpan=cellObj.selEl=document.createElement("span");
 		if (struct.title) {
 			const header=containerSpan.appendChild(document.createElement("h4"));
-			header.innerText=struct.title;
+			header.innerHTML=struct.title;
 		}
 		let contentDiv=containerSpan.appendChild(document.createElement("div"));
 		contentDiv.className="value";
@@ -1222,7 +1231,7 @@ class Tablance {
 		new Cleave(input,{date: true,delimiter: '-',datePattern: ['Y', 'm', 'd']});
 		this.#cellCursor.appendChild(input);
 		input.value=this.#selectedCellVal??"";
-		input.placeholder=this.#activeStruct.input.placeholder??this.#opts.defaultDatePlaceholder??"";
+		input.placeholder=this.#activeStruct.input.placeholder??this.#opts.lang?.datePlaceholder??"YYYY-MM-DD";
 		input.focus();
 		
 		function onInput(e) {
@@ -1385,14 +1394,10 @@ class Tablance {
 		fileDiv.focus();
 		const fileInput=fileDiv.appendChild(document.createElement("input"));
 		fileInput.type="file";
-		const chooseFileText=fileDiv.appendChild(document.createElement("span"));
-		chooseFileText.classList.add("choose-file");
-		chooseFileText.innerText="Choose a file ";
-		const orDragItHereText=fileDiv.appendChild(document.createElement("span"));
-		orDragItHereText.classList.add("or-drag-it-here");
-		orDragItHereText.innerText="or drag it here.";
+
+		fileDiv.innerHTML=this.#opts.lang?.fileChooseOrDrag??"<b>Press to choose a file</b> or drag it here";
 		const dropDiv=fileDiv.appendChild(document.createElement("div"));
-		dropDiv.innerText="Drop to upload";
+		dropDiv.innerHTML=this.#opts.lang?.fileDropToUpload??"Drop to upload";
 		dropDiv.classList.add("drop");
 		fileDiv.addEventListener("keydown",keydown);
 		fileDiv.addEventListener("click",openFileBrowser);
@@ -1433,7 +1438,7 @@ class Tablance {
 				for (const bar of fileMeta.bars) {
 					if (bar.isConnected) {
 						bar.parentElement.classList.remove("active");
-						bar.firstChild.innerText="Done!";
+						bar.firstChild.innerText=self.#opts.lang?.fileUploadDone??"Done!";
 					}
 						
 				}
@@ -1501,7 +1506,7 @@ class Tablance {
 		const allowEmpty=strctInp.allowSelectEmpty??true;
 		let canCreate=false;//whether the create-button is currently available.This firstly depends on input.allowCreate
 					//but also the current value of the input and if there already is an option matching that exactly
-		const emptyString=strctInp.emptyOptString??this.#opts.defaultEmptyOptString??"Empty";
+		const emptyString=strctInp.emptyOptString??this.#opts.lang.selectEmptyOpt??"Empty";
 		inputWrapper.classList.add("input-wrapper");//input-element a margin. Can't put padding in container because
 							//that would cause the highlight-box of selected options not to go all the way to the sides
 		const ulDiv=selectContainer.appendChild(document.createElement("div"));
@@ -1523,7 +1528,7 @@ class Tablance {
 		
 		if (allowEmpty) {
 			const emptyLi=pinnedUl.appendChild(document.createElement("li"));
-			emptyLi.innerText=emptyString;
+			emptyLi.innerHTML=emptyString;
 			emptyLi.dataset.type="empty";//to identify what the option does if selected
 			if (this.#inputVal==null) {
 				emptyLi.classList.add("selected","highlighted");
@@ -1540,7 +1545,7 @@ class Tablance {
 		renderOpts(mainUl,opts,this.#inputVal);
 		
 		const noResults=selectContainer.appendChild(document.createElement("div"));
-		noResults.innerText=strctInp.noResultsText??this.#opts.defaultSelectNoResultText??"No results found";
+		noResults.innerHTML=strctInp.noResultsText??this.#opts.lang?.selectNoResultFound??"No results found";
 		noResults.className="no-results";
 		
 		this.#cellCursor.parentElement.appendChild(selectContainer);
@@ -2403,11 +2408,12 @@ class Tablance {
 		fileCellObj.fileInputStruct=fileStruct;//saving this ref here which is used to revert with if user deletes file
 
 		//define all the file-meta-props
-		let metaEntries=[{type:"field",title:"Filename",id:"name"},
-			{type:"field",title:"Last Modified",id:"lastModified",render:dataRow=>
+		const lang=this.#opts.lang??{};
+		let metaEntries=[{type:"field",title:lang.fileName??"Filename",id:"name"},
+			{type:"field",title:lang.fileLastModified??"Last Modified",id:"lastModified",render:dataRow=>
 			new Date(dataRow.lastModified).toISOString().slice(0, 16).replace('T', ' ')},
-			{type:"field",title:"Size",id:"size",render:dataRow=>this.#humanFileSize(dataRow.size)},
-			{type:"field",title:"Type",id:"type"}];
+			{type:"field",title:lang.fileSize??"Size",id:"size",render:dataRow=>this.#humanFileSize(dataRow.size)},
+			{type:"field",title:lang.fileType??"Type",id:"type"}];
 		for (let metaI=-1,metaName; metaName=["filename","lastModified","size","type"][++metaI];)
 			if(!(fileStruct.input.fileMetasToShow?.[metaName]??this.#opts.defaultFileMetasToShow?.[metaName]??true))
 				metaEntries.splice(metaI,1);//potentially remove (some of) them

@@ -60,15 +60,10 @@
 			padding: 5px;
 			cursor: pointer;
 			outline: none;
-
-			>.choose-file {
-				font-weight: bold;
-			}
 			>input {
 				display: none;//hide the actual file-input
 			}
 			>div.drop {
-				font-weight: bold;
 				padding: 8px;
 				text-align: center;
 				display: none;

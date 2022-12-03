@@ -86,7 +86,16 @@
 
 
 			const myTablance=new Tablance(document.getElementById("tablanceContainer1"),myTablanceCols,true,true
-				,myExpansion,{defaultDatePlaceholder:"ÅÅÅÅ-MM-DD",defaultSelectNoResultText:"Inga resultat",defaultFileMetasToShow:{filename:false}});
+				,myExpansion,{defaultDatePlaceholder:"ÅÅÅÅ-MM-DD",
+							defaultSelectNoResultText:"Inga resultat",
+							defaultFileMetasToShow:{filename:false},
+							lang:{fileName:"Filnamn",fileLastModified:"Senast ändrad", fileSize:"Filstorlek"
+								,fileUploadDone:"Färdig!",fileType:"Filtyp"
+								,fileChooseOrDrag:"<b>Tryck för att välja en fil</b> eller dra den hit"
+								,fileDropToUpload:"<b>Släpp för att ladda upp<b>"
+								,filterPlaceholder:"Sök"
+							}
+						});
 			window.tablance=myTablance;//to play with public methods via console
 
 			for (let i=0; i<3; i++) {
