@@ -517,6 +517,7 @@ class Tablance {
 
 	selectTopBottomCellOnlyExpansion(top) {
 		this.#selectFirstSelectableExpansionCell(this.#openExpansions[0],top);
+		this.container.style.outline="none";
 	}
 	
 	#setupSearchbar() {
@@ -540,9 +541,9 @@ class Tablance {
 			//remove any border-spacing beacuse if spacing is clicked the target-element will be the table itself and
 			//no cell will be selected which is bad user experience. Set it to 0 for headerTable too in order to match
 			this.#mainTable.style.borderSpacing=this.#headerTable.style.borderSpacing=this.#borderSpacingY=0;
-			this.container.addEventListener("focus",e=>this.#spreadsheetOnFocus(e));
-			this.container.addEventListener("blur",e=>this.#spreadsheetOnBlur(e));
 		}
+		this.container.addEventListener("focus",e=>this.#spreadsheetOnFocus(e));
+		this.container.addEventListener("blur",e=>this.#spreadsheetOnBlur(e));
 		this.container.tabIndex=0;//so that the table can be tabbed to
 		this.container.addEventListener("keydown",e=>this.#spreadsheetKeyDown(e));
 		this.container.addEventListener("mousedown",e=>this.#spreadsheetMouseDown(e));
@@ -571,7 +572,10 @@ class Tablance {
 
 	#spreadsheetOnFocus(e) {
 		if (!this.#mainColIndex&&this.#data.length)
-			this.#selectMainTableCell(this.#mainTbody.rows[0].cells[0]);
+			if (this.#onlyExpansion)
+				this.selectTopBottomCellOnlyExpansion(true);
+			else
+				this.#selectMainTableCell(this.#mainTbody.rows[0].cells[0]);
 		//when the table is tabbed to, whatever focus-outline that the css has set for it should show, but then when the
 		//user starts to navigate using the keyboard we want to hide it because it is a bit distracting when both it and
 		//a cell is highlighted. Thats why #spreadsheetKeyDown sets outline to none, and this line undos that
@@ -583,7 +587,13 @@ class Tablance {
 	}
 
 	#spreadsheetOnBlur(e) {
-		setTimeout(()=>this.#highlightOnFocus=!this.container.contains(document.activeElement));
+		setTimeout(()=>{
+			if (!this.container.contains(document.activeElement)) {
+				this.#highlightOnFocus=true;
+				if (this.neighbourTables&&Object.values(this.neighbourTables).filter(Boolean).length)
+					this.#cellCursor.style.display="none";
+			}
+		});
 	}
 
 	#moveCellCursor(hSign,vSign,e) {
