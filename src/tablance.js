@@ -1676,7 +1676,7 @@ class Tablance {
 		const allowEmpty=strctInp.allowSelectEmpty??true;
 		let canCreate=false;//whether the create-button is currently available.This firstly depends on input.allowCreate
 					//but also the current value of the input and if there already is an option matching that exactly
-		const emptyString=strctInp.emptyOptString??this.#opts.lang.selectEmptyOpt??"Empty";
+		const emptyString=strctInp.emptyOptString??this.#opts.lang?.selectEmptyOpt??"Empty";
 		inputWrapper.classList.add("input-wrapper");//input-element a margin. Can't put padding in container because
 							//that would cause the highlight-box of selected options not to go all the way to the sides
 		const ulDiv=selectContainer.appendChild(document.createElement("div"));
