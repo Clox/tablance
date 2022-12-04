@@ -1241,9 +1241,10 @@ class Tablance {
 
 	/**Aligns dropdowns like select and date-picker correctly by the cellcursor */
 	#alignDropdown(dropdown) {
+		const container=this.#onlyExpansion?this.#container:this.#scrollBody;
 		//if cellcursor is below middle of viewport or if in multi-row-area
 		if (parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight/2
-								>this.#scrollBody.scrollTop+this.#scrollBody.clientHeight/2||this.#multiCellSelected)
+								>container.scrollTop+container.clientHeight/2||this.#multiCellSelected)
 			//then place dropdown above cell-cursor
 			dropdown.style.top=parseInt(this.#cellCursor.style.top)-dropdown.offsetHeight+"px";
 		else
@@ -1251,7 +1252,7 @@ class Tablance {
 			dropdown.style.top=parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight+"px";
 
 		//if there's enough space to the right of cellcursor
-		if (this.#scrollBody.clientWidth-parseInt(this.#cellCursor.style.left)>dropdown.offsetWidth)
+		if (container.clientWidth-parseInt(this.#cellCursor.style.left)>dropdown.offsetWidth)
 			//then align the left of the dropdown with the left of the cellcursor
 			dropdown.style.left=parseInt(this.#cellCursor.style.left)+"px";
 		else
