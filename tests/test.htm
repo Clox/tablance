@@ -83,25 +83,23 @@
 					{type:"field",title:"Anteckningar",id:"notes",maxHeight:150,input:{type:"textarea"}},
 				]},
 			]};
+			const lang={fileName:"Filnamn",fileLastModified:"Senast ändrad", fileSize:"Filstorlek"
+								,fileUploadDone:"Färdig!",fileType:"Filtyp"
+								,fileChooseOrDrag:"<b>Tryck för att välja en fil</b> eller dra den hit"
+								,fileDropToUpload:"<b>Släpp för att ladda upp<b>"
+								,filterPlaceholder:"Sök"
+							};
 
 			const onlyExpansion=true;
 			const tablanceContainer=document.getElementById("tablanceContainer1");
 			tablanceContainer.classList.toggle("only-expansion",onlyExpansion);
 			const myTablance=new Tablance(tablanceContainer,myTablanceCols,true,true
-				,myExpansion,{defaultDatePlaceholder:"ÅÅÅÅ-MM-DD",
-							defaultSelectNoResultText:"Inga resultat",
-							defaultFileMetasToShow:{filename:false},
-							lang:{fileName:"Filnamn",fileLastModified:"Senast ändrad", fileSize:"Filstorlek"
-								,fileUploadDone:"Färdig!",fileType:"Filtyp"
-								,fileChooseOrDrag:"<b>Tryck för att välja en fil</b> eller dra den hit"
-								,fileDropToUpload:"<b>Släpp för att ladda upp<b>"
-								,filterPlaceholder:"Sök"
-							}
-						},onlyExpansion);
+				,myExpansion,{defaultFileMetasToShow:{filename:false},lang:lang},onlyExpansion);
 			window.tablance=myTablance;//to play with public methods via console
 
+			let data;
 			for (let i=0; i<3; i++) {
-				let data=[];
+				data=[];
 				for (let ii=0; ii<1000; ii++) {
 					data.push({desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,descLetter:String.fromCharCode(ii)
 						,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
@@ -119,6 +117,16 @@
 				myTablance.addData(data);
 			}
 			myTablance._allData[0].file={lastModified:1669981639918,name:"foo.txt",size:1337,type: "text"};
+
+			if (onlyExpansion) {
+				const myTablance2=new Tablance(document.getElementById("tablanceContainer2"),null,true,true
+				,myExpansion,null,true);
+				myTablance2.addData(data);
+				const myTablance3=new Tablance(document.getElementById("tablanceContainer3"),null,true,true
+				,myExpansion,null,true);
+				myTablance3.addData(data);
+				myTablance.chainTables(myTablance2,myTablance3);
+			}
 		});
 
 		function btnClickHandler(e,dataObject,mainIndex,struct,cellObject) {
@@ -143,6 +151,8 @@
 <body>
 	<input value="input for testing tab-focusing"/>
 	<div id="tablanceContainer1"></div>
-	<br />
-	<div id="tablanceContainer2" style="overflow:hidden; resize: both;"></div>
+	<br><br><br><br><br>
+	<div id="tablanceContainer2"></div>
+	<br><br><br><br><br>
+	<div id="tablanceContainer3"></div>
 </body>

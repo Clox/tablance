@@ -1,5 +1,8 @@
 class Tablance {
-	#container;//container-element for table
+	container;//Readonly, container-element for table
+	neighbourTables;//Object of other Tablance-instances. Possible keys are "up" and "down". If any of these are set
+				//then if one keeps pressing up/down until there are no more cells then one will get o the next table.
+				//Except for manually this can also be set via chainTables()
 	#containerHeight=0;//height of #container. Used to keep track of if height shrinks or grows
 	#containerWidth=0;//height of #container. Used to keep track of if width shrinks or grows
 	#colStructs=[];//column-objects. See columns-param in constructor for structure.
@@ -63,7 +66,6 @@ class Tablance {
 	#selectedCellVal;//the value of the cell that the cellCursor is at
 	#selectedCell;//the HTML-element of the cell-cursor. probably TD's most of the time.
 	#inEditMode;//whether the user is currently in edit-mode
-	#cellCursorBorderWidths={};//This object holds the border-widths of the cell-cursor. keys are left,right,top,bottom
 	//and values are px as ints. This is used to offset the position and adjust position of #cellCursor in order to
 	//center it around the cell. It is also used in conjunction with cellCursorOutlineWidth to adjust margins of the
 	//main-table in order to reveal the outermost line when an outermost cell is selected
@@ -332,11 +334,11 @@ class Tablance {
 	 * 								ones will cause it to discard all but the last.
 	 * */
 	constructor(container,columns,staticRowHeight=false,spreadsheet=false,expansion=null,opts=null,onlyExpansion=false){
-		this.#container=container;
+		Object.defineProperty(this, 'container', {value: container,writable: false});
 		this.#spreadsheet=spreadsheet;
 		this.#expansion=expansion;
 		this.#staticRowHeight=staticRowHeight;
-		this.#opts=opts;
+		this.#opts=opts??{};
 		this.#onlyExpansion=onlyExpansion;
 		container.classList.add("tablance");
 		const allowedColProps=["id","title","width","input","type","render"];
@@ -371,8 +373,154 @@ class Tablance {
 			this.#setupSpreadsheet(true);
 	}
 
+	addData(data, highlight=false) {
+		if (this.#onlyExpansion)
+			return this.#setDataForOnlyExpansion(data)
+		const oldLen=this.#data.length;
+		if (highlight)
+			this.#searchInput.value=this.#filter="";//remove any filter
+		this.#data=this._allData=this._allData.concat(data);
+		//this.#data.push(...data);//much faster than above but causes "Maximum call stack size exceeded" for large data
+		let sortingOccured=this.#sortData();
+		if (this.#filter)
+			this.#filterData(this.#filter);
+		else {
+			if (sortingOccured)
+				this.#refreshTable();
+			else
+				this.#maybeAddTrs();
+			const numNewInData=this.#data.length-oldLen;
+			this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+numNewInData*this.#rowHeight+"px";
+		}
+		if (highlight) {
+			for (let dataRow of data)
+				this.#highlightRowIndex(this.#data.indexOf(dataRow));
+			this.scrollToDataRow(data[0],false);//false for not highlighting, above line does the highlight anyway
+		}
+	}
+
+	/**Change or add any data in the table
+	 * @param {int|object} dataRow_or_mainIndex Either the actual data-object that should be updated, or its index in
+	 * 											the current view
+	 * @param {string|string[]} dataPath The path to the data-value that should be updated or added to. For a value in
+	 * 				the base which is not nested within repeated-containers it should simplt be the key of the property.
+	 * 				It can either be a string of keys separated by dots(.) or a array where each element is a key.
+	 * 				For repeated-arrays which data should be added to "[]" can be used similiar to how it's done in PHP.
+	 * 				For instance the path could be "foo[]" or "foo[].bar". Objects/arrays will be created recursively
+	 * 				if they don't yet exist.
+	 * @param {*} data The actual data to be replaced with or added
+	 * @param {bool} scrollTo Whether the modified/added data should be scrolled to and highlighted.
+	 * @returns The tablance-object, for chaining*/
+	updateData(dataRow_or_mainIndex,dataPath,data,scrollTo) {
+		let dataRow,mainIndx,updatedEl,path=[];
+		if (typeof dataRow_or_mainIndex=="number")
+			dataRow=this.#data[mainIndx=dataRow_or_mainIndex];
+		else //if (typeof dataRow_or_mainIndex=="object")
+			mainIndx=this.#data.indexOf(dataRow=dataRow_or_mainIndex);
+		const pathArr=typeof dataPath=="string"?dataPath.split(/\.|(?=\[\])/):dataPath;
+		let celObj=this.#openExpansions[mainIndx],celData=dataRow;
+		for (let i=-1,dataStep,dataPortion=dataRow; dataStep=pathArr[++i];) {
+			if (i<pathArr.length-1) {//if not at last step yet meaning this is a container
+				if (!dataPortion[dataStep])//the container doesn't exist
+					dataPortion=dataPortion[dataStep=="[]"?dataPortion.length:dataStep]
+											=(isNaN(pathArr[i+1])&&pathArr[i+1]!=="[]")?{}:[];//then create it
+				else
+					dataPortion=dataPortion[dataStep];
+			} else//at last step
+				dataPortion[dataStep=="[]"?dataPortion.length:dataStep]=data;
+			if (celObj) {
+				const childCel=findCelRecursive(celObj,dataPortion,dataStep,path);
+				if (childCel) {
+					celData=dataPortion;
+					celObj=childCel;
+				}
+			}
+		}
+		if (celObj) {
+			switch (celObj.struct.type) {
+				case "field":
+					this.#updateExpansionCell(celObj,celData);
+				break; case "repeated":
+					updatedEl=this.#insertRepeatData(celObj,celData[celData.length-1],mainIndx,path);
+			}
+			if (scrollTo) {
+				newEl.scrollIntoView({behavior:'smooth',block:"center"});
+				this.#highlightElements([updatedEl,...updatedEl.getElementsByTagName('*')]);
+			}
+			this.#adjustCursorPosSize(this.#selectedCell,true);
+		} else {
+			if (mainIndx>=this.#scrollRowIndex&&mainIndx<this.#scrollRowIndex+this.#numRenderedRows) {
+				const tr=this.#mainTbody.querySelector(`[data-data-row-index="${mainIndx}"]:not(.expansion)`);
+				for (let i=-1,colStruct;colStruct=this.#colStructs[++i];)
+					if (colStruct.id==dataPath)
+						return this.#updateMainRowCell(tr.cells[i],colStruct);
+				if (!celObj)
+					return;
+			}
+			if (scrollTo)
+				scrollToDataRow(dataRow,true);
+		}
+		return this;
+
+		function findCelRecursive(celObj,dataPortion,dataStep,path) {
+			if (celObj.children)
+				for (let child,childI=-1; child=celObj.children[++childI];) {
+					path.push(childI);
+					if (child.struct.id==dataStep)
+						return child;
+					if (child.struct.type=="repeated"&&child.dataObj==dataPortion) {
+						path.push(child.index);
+						return child;
+					}
+					if (child.struct.type=="group"||child.struct.type=="list") {
+						const cel=findCelRecursive(child,dataPortion,dataStep,path);
+						if (cel)
+							return cel;
+					}
+					path.pop();
+				}
+		}
+	}
+
+	scrollToDataRow(dataRow,highlight=true) {
+		let scrollY=0;
+		for (let i=-1,otherDataRow;otherDataRow=this.#data[++i];) {
+			if (otherDataRow==dataRow) {
+				scrollY=scrollY-this.#scrollBody.offsetHeight/2+this.#rowHeight;
+				this.#scrollBody.scrollTo({top:scrollY,behavior:'smooth'});
+				if (highlight)
+					this.#highlightRowIndex(i);
+				return;
+			}
+			scrollY+=this.#rowMetaGet(i)?.h??this.#rowHeight;
+		}
+	}
+
+	/**Use this method to set neighbourTables automatically by just supplying all the other tables. It will figure out
+	 * in which order they appear in the html and set neighbourTables accordingly.
+	 * @param  {...Tablance} otherTablances */
+	chainTables(...otherTablances) {
+		const tablances=[this,...otherTablances];
+		tablances.sort(sort);
+		for (let i=-1,tablance;tablance=tablances[++i];)
+			tablance.neighbourTables={up:tablances[i-1],down:tablances[i+1]};
+		function sort(a,b) {
+			let elA=a.container, elB=b.container;
+			//set elA to its (grand)parent which is the closest element where the parent also holds elB in its hiearchy
+			for (;!elA.parentElement.contains(elB);elA=elA.parentElement);
+			const commonCont=elA.parentElement;//the closest element that holds both elA and elB
+			//set elB to the closest element that is a direct child of commonCont
+			for (;elA.parentElement!=elB.parentElement;elB=elB.parentElement);
+			return Array.from(commonCont.children).indexOf(elA)>Array.from(commonCont.children).indexOf(elB)?1:-1;
+		}
+	}
+
+	selectTopBottomCellOnlyExpansion(top) {
+		this.#selectFirstSelectableExpansionCell(this.#openExpansions[0],top);
+	}
+	
 	#setupSearchbar() {
-		this.#searchInput=this.#container.appendChild(document.createElement("input"));
+		this.#searchInput=this.container.appendChild(document.createElement("input"));
 		this.#searchInput.type=this.#searchInput.className="search";
 		this.#searchInput.placeholder=this.#opts.lang?.filterPlaceholder??"Search";
 		this.#searchInput.addEventListener("input",e=>this.#onSearchInput(e));
@@ -383,7 +531,7 @@ class Tablance {
 	}
 
 	#setupSpreadsheet(onlyExpansion) {
-		this.#container.classList.add("spreadsheet");
+		this.container.classList.add("spreadsheet");
 		this.#cellCursor=document.createElement("div");
 		this.#cellCursor.className="cell-cursor";
 		this.#cellCursor.style.display="none";
@@ -392,12 +540,12 @@ class Tablance {
 			//remove any border-spacing beacuse if spacing is clicked the target-element will be the table itself and
 			//no cell will be selected which is bad user experience. Set it to 0 for headerTable too in order to match
 			this.#mainTable.style.borderSpacing=this.#headerTable.style.borderSpacing=this.#borderSpacingY=0;
-			this.#container.addEventListener("focus",e=>this.#spreadsheetOnFocus(e));
-			this.#container.addEventListener("blur",e=>this.#spreadsheetOnBlur(e));
+			this.container.addEventListener("focus",e=>this.#spreadsheetOnFocus(e));
+			this.container.addEventListener("blur",e=>this.#spreadsheetOnBlur(e));
 		}
-		this.#container.tabIndex=0;//so that the table can be tabbed to
-		this.#container.addEventListener("keydown",e=>this.#spreadsheetKeyDown(e));
-		this.#container.addEventListener("mousedown",e=>this.#spreadsheetMouseDown(e));
+		this.container.tabIndex=0;//so that the table can be tabbed to
+		this.container.addEventListener("keydown",e=>this.#spreadsheetKeyDown(e));
+		this.container.addEventListener("mousedown",e=>this.#spreadsheetMouseDown(e));
 		this.#cellCursor.addEventListener("dblclick",e=>this.#enterCell(e));
 	}
 
@@ -429,13 +577,13 @@ class Tablance {
 		//a cell is highlighted. Thats why #spreadsheetKeyDown sets outline to none, and this line undos that
 		//also, we dont want it to show when focusing by mouse so we use #focusMethod (see its declaration)
 		if (this.#highlightOnFocus)
-			this.#container.style.removeProperty("outline");
+			this.container.style.removeProperty("outline");
 		else
-			this.#container.style.outline="none"
+			this.container.style.outline="none"
 	}
 
 	#spreadsheetOnBlur(e) {
-		setTimeout(()=>this.#highlightOnFocus=!this.#container.contains(document.activeElement));
+		setTimeout(()=>this.#highlightOnFocus=!this.container.contains(document.activeElement));
 	}
 
 	#moveCellCursor(hSign,vSign,e) {
@@ -511,6 +659,14 @@ class Tablance {
 		if (!this.#onlyExpansion)
 			this.#selectMainTableCell(this.#mainTbody.querySelector
 				(`[data-data-row-index="${this.#mainRowIndex+isGoingDown}"]`)?.cells[this.#mainColIndex]);
+		else {
+			const nextTable=this.neighbourTables[isGoingDown?"down":"up"];
+			if (nextTable) {
+				this.#mainColIndex=this.#mainRowIndex=this.#activeExpCell=null;
+				nextTable.container.style.outline=this.#cellCursor.style.display="none";
+				nextTable.selectTopBottomCellOnlyExpansion(isGoingDown);
+			}
+		}
 	}
 	
 	#getAdjacentExpansionCell (cellObj,isGoingDown) {
@@ -573,7 +729,7 @@ class Tablance {
 			} else if (e.key==="Backspace")
 				e.stopPropagation();
 		}
-		this.#container.style.outline="none";//see #spreadsheetOnFocus
+		this.container.style.outline="none";//see #spreadsheetOnFocus
 		if (!this.#inEditMode) {
 			switch (e.key) {
 				case "ArrowUp":
@@ -822,7 +978,7 @@ class Tablance {
 				btnText:struct.deleteText??this.#opts.lang?.delete??"Delete"
 				,clickHandler:this.#beginDeleteRepeated.bind(this)},class:"delete"},
 			{type:"field",input:{type:"button"
-				,btnText:struct.areYouSureNoText??this.#opts.lang.deleteAreYouSureNo??"No",
+				,btnText:struct.areYouSureNoText??this.#opts.lang?.deleteAreYouSureNo??"No",
 				clickHandler:this.#cancelDelete.bind(this)},class:"no"
 				,title:struct.deleteAreYouSureText??this.#opts.lang?.deleteAreYouSure??"Are you sure?"},
 			{type:"field",input:{type:"button"
@@ -1042,7 +1198,7 @@ class Tablance {
 	
 	#spreadsheetMouseDown(e) {
 		this.#highlightOnFocus=false;//see decleration
-		this.#container.style.outline="none";//see #spreadsheetOnFocus
+		this.container.style.outline="none";//see #spreadsheetOnFocus
 		if (Date.now()<this.#ignoreClicksUntil)//see decleration of #ignoreClicksUntil
 			return;
 		if (e.which===3)//if right click
@@ -1079,7 +1235,7 @@ class Tablance {
 					e.preventDefault();//prevent text-selection when shift-clicking checkboxes
 				if (this.#mainRowIndex==null) {
 					this.#selectMainTableCell(td);
-					this.#container.focus({preventScroll:true});
+					this.container.focus({preventScroll:true});
 				}
 				if (td.classList.contains("expand-col"))
 					return this.#toggleRowExpanded(td.parentElement);
@@ -1241,7 +1397,7 @@ class Tablance {
 
 	/**Aligns dropdowns like select and date-picker correctly by the cellcursor */
 	#alignDropdown(dropdown) {
-		const container=this.#onlyExpansion?this.#container:this.#scrollBody;
+		const container=this.#onlyExpansion?this.container:this.#scrollBody;
 		//if cellcursor is below middle of viewport or if in multi-row-area
 		if (parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight/2
 								>container.scrollTop+container.clientHeight/2||this.#multiCellSelected)
@@ -1650,7 +1806,7 @@ class Tablance {
 		if (!this.#inEditMode)
 			return;	
 		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
-		this.#container.focus({preventScroll:true});//so that #inputVal gets updated
+		this.container.focus({preventScroll:true});//so that #inputVal gets updated
 		this.#inEditMode=false;
 		this.#cellCursor.classList.remove("edit-mode");
 		if (save&&this.#inputVal!=this.#selectedCellVal) {
@@ -1766,11 +1922,12 @@ class Tablance {
 
 	#selectCell(isMultiCell,cellEl,struct,dataObj) {
 		this.#exitEditMode(true);
+		this.container.focus({preventScroll:true});
 		this.#multiCellSelected=isMultiCell;
 		this.#adjustCursorPosSize(cellEl);
 		this.#cellCursor.classList.toggle("expansion",cellEl.closest(".expansion"));
 		this.#cellCursor.classList.toggle("disabled",cellEl.classList.contains("disabled"));
-		(isMultiCell?this.#multiRowArea.firstChild:this.#scrollingContent??this.#container)
+		(isMultiCell?this.#multiRowArea.firstChild:this.#scrollingContent??this.container)
 																						.appendChild(this.#cellCursor);
 		this.#selectedCell=cellEl;
 		this.#activeStruct=struct;
@@ -1785,7 +1942,7 @@ class Tablance {
 		if (!el)
 			return;
 		const cellPos=el.getBoundingClientRect();
-		const contPos=(this.#multiCellSelected?this.#multiRowArea.firstChild:this.#tableSizer??this.#container)
+		const contPos=(this.#multiCellSelected?this.#multiRowArea.firstChild:this.#tableSizer??this.container)
 																							.getBoundingClientRect();
 		
 		this.#cellCursor.style.top=cellPos.y-contPos.y+(this.#tableSizer?.offsetTop??0)+"px";
@@ -1798,7 +1955,7 @@ class Tablance {
 	}
 
 	#createTableHeader() {
-		this.#headerTable=this.#container.appendChild(document.createElement("table"));
+		this.#headerTable=this.container.appendChild(document.createElement("table"));
 		this.#headerTable.classList.add("header-table");
 		const thead=this.#headerTable.appendChild(document.createElement("thead"));
 		this.#headerTr=thead.insertRow();
@@ -1927,7 +2084,7 @@ class Tablance {
 	}
 
 	#createTableBody() {
-		this.#scrollBody=this.#container.appendChild(document.createElement("div"));
+		this.#scrollBody=this.container.appendChild(document.createElement("div"));
 
 		if (this.#staticRowHeight&&!this.#expansion)
 			this.#scrollMethod=this.#onScrollStaticRowHeightNoExpansion;
@@ -1956,7 +2113,7 @@ class Tablance {
 	}
 
 	#createMultiRowArea() {
-		this.#multiRowArea=this.#container.appendChild(document.createElement("div"));
+		this.#multiRowArea=this.container.appendChild(document.createElement("div"));
 		this.#multiRowArea.classList.add("multi-row-section");
 		this.#multiRowArea.style.height=0;
 		this.#multiRowArea.addEventListener("transitionend",()=>delete this.#animations["adjustViewportHeight"]);
@@ -2012,18 +2169,18 @@ class Tablance {
 	}
 
 	#updateViewportHeight() {
-		this.#scrollBody.style.height=this.#container.clientHeight-this.#headerTable.offsetHeight
+		this.#scrollBody.style.height=this.container.clientHeight-this.#headerTable.offsetHeight
 				-(this.#searchInput?.offsetHeight??0)-this.#multiRowArea.offsetHeight+"px";
 	}
 
 	#updateSizesOfViewportAndCols() {
-		if (this.#container.offsetHeight!=this.#containerHeight) {
+		if (this.container.offsetHeight!=this.#containerHeight) {
 			this.#updateViewportHeight();
-			if (this.#container.offsetHeight>this.#containerHeight)
+			if (this.container.offsetHeight>this.#containerHeight)
 				this.#maybeAddTrs();
 			else
 				this.#maybeRemoveTrs();
-			this.#containerHeight=this.#container.offsetHeight;
+			this.#containerHeight=this.container.offsetHeight;
 		}
 		this.#updateColsWidths();
 
@@ -2032,7 +2189,7 @@ class Tablance {
 	}
 
 	#updateColsWidths() {
-		if (this.#container.offsetWidth>this.#containerWidth) {
+		if (this.container.offsetWidth>this.#containerWidth) {
 			let areaWidth=this.#tableSizer.offsetWidth;
 			const percentageWidthRegex=/\d+\%/;
 			let totalFixedWidth=0;
@@ -2105,36 +2262,10 @@ class Tablance {
 
 	#setDataForOnlyExpansion(data) {
 		this._allData=this.#data=[data[data.length-1]];
-		this.#container.innerHTML="";
-		const expansionDiv=this.#container.appendChild(document.createElement("div"));
+		this.container.innerHTML="";
+		const expansionDiv=this.container.appendChild(document.createElement("div"));
 		expansionDiv.classList.add("expansion");
 		this.#generateExpansionContent(this.#expansion,0,this.#openExpansions[0]={},expansionDiv,[],this.#data[0]);
-	}
-
-	addData(data, highlight=false) {
-		if (this.#onlyExpansion)
-			return this.#setDataForOnlyExpansion(data)
-		const oldLen=this.#data.length;
-		if (highlight)
-			this.#searchInput.value=this.#filter="";//remove any filter
-		this.#data=this._allData=this._allData.concat(data);
-		//this.#data.push(...data);//much faster than above but causes "Maximum call stack size exceeded" for large data
-		let sortingOccured=this.#sortData();
-		if (this.#filter)
-			this.#filterData(this.#filter);
-		else {
-			if (sortingOccured)
-				this.#refreshTable();
-			else
-				this.#maybeAddTrs();
-			const numNewInData=this.#data.length-oldLen;
-			this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height||0)+numNewInData*this.#rowHeight+"px";
-		}
-		if (highlight) {
-			for (let dataRow of data)
-				this.#highlightRowIndex(this.#data.indexOf(dataRow));
-			this.scrollToDataRow(data[0],false);//false for not highlighting, above line does the highlight anyway
-		}
 	}
 
 	/**Refreshes the table-rows. Should be used after sorting or filtering or such.*/
@@ -2521,109 +2652,12 @@ class Tablance {
 		this.#updateCell(colStruct,cellEl.firstChild,cellEl,this.#data[mainIndex],mainIndex);
 	}
 
-	scrollToDataRow(dataRow,highlight=true) {
-		let scrollY=0;
-		for (let i=-1,otherDataRow;otherDataRow=this.#data[++i];) {
-			if (otherDataRow==dataRow) {
-				scrollY=scrollY-this.#scrollBody.offsetHeight/2+this.#rowHeight;
-				this.#scrollBody.scrollTo({top:scrollY,behavior:'smooth'});
-				if (highlight)
-					this.#highlightRowIndex(i);
-				return;
-			}
-			scrollY+=this.#rowMetaGet(i)?.h??this.#rowHeight;
-		}
-	}
-
 	#highlightRowIndex(index) {
 		const tr=this.#mainTbody.querySelector(`[data-data-row-index="${index}"]`);
 		if (tr)
 			this.#highlightElements(tr.children);
 		else
 			this.#highlightRowsOnView[index]=true;
-	}
-
-	/**Change or add any data in the table
-	 * @param {int|object} dataRow_or_mainIndex Either the actual data-object that should be updated, or its index in
-	 * 											the current view
-	 * @param {string|string[]} dataPath The path to the data-value that should be updated or added to. For a value in
-	 * 				the base which is not nested within repeated-containers it should simplt be the key of the property.
-	 * 				It can either be a string of keys separated by dots(.) or a array where each element is a key.
-	 * 				For repeated-arrays which data should be added to "[]" can be used similiar to how it's done in PHP.
-	 * 				For instance the path could be "foo[]" or "foo[].bar". Objects/arrays will be created recursively
-	 * 				if they don't yet exist.
-	 * @param {*} data The actual data to be replaced with or added
-	 * @param {bool} scrollTo Whether the modified/added data should be scrolled to and highlighted.
-	 * @returns The tablance-object, for chaining*/
-	updateData(dataRow_or_mainIndex,dataPath,data,scrollTo) {
-		let dataRow,mainIndx,updatedEl,path=[];
-		if (typeof dataRow_or_mainIndex=="number")
-			dataRow=this.#data[mainIndx=dataRow_or_mainIndex];
-		else //if (typeof dataRow_or_mainIndex=="object")
-			mainIndx=this.#data.indexOf(dataRow=dataRow_or_mainIndex);
-		const pathArr=typeof dataPath=="string"?dataPath.split(/\.|(?=\[\])/):dataPath;
-		let celObj=this.#openExpansions[mainIndx],celData=dataRow;
-		for (let i=-1,dataStep,dataPortion=dataRow; dataStep=pathArr[++i];) {
-			if (i<pathArr.length-1) {//if not at last step yet meaning this is a container
-				if (!dataPortion[dataStep])//the container doesn't exist
-					dataPortion=dataPortion[dataStep=="[]"?dataPortion.length:dataStep]
-											=(isNaN(pathArr[i+1])&&pathArr[i+1]!=="[]")?{}:[];//then create it
-				else
-					dataPortion=dataPortion[dataStep];
-			} else//at last step
-				dataPortion[dataStep=="[]"?dataPortion.length:dataStep]=data;
-			if (celObj) {
-				const childCel=findCelRecursive(celObj,dataPortion,dataStep,path);
-				if (childCel) {
-					celData=dataPortion;
-					celObj=childCel;
-				}
-			}
-		}
-		if (celObj) {
-			switch (celObj.struct.type) {
-				case "field":
-					this.#updateExpansionCell(celObj,celData);
-				break; case "repeated":
-					updatedEl=this.#insertRepeatData(celObj,celData[celData.length-1],mainIndx,path);
-			}
-			if (scrollTo) {
-				newEl.scrollIntoView({behavior:'smooth',block:"center"});
-				this.#highlightElements([updatedEl,...updatedEl.getElementsByTagName('*')]);
-			}
-			this.#adjustCursorPosSize(this.#selectedCell,true);
-		} else {
-			if (mainIndx>=this.#scrollRowIndex&&mainIndx<this.#scrollRowIndex+this.#numRenderedRows) {
-				const tr=this.#mainTbody.querySelector(`[data-data-row-index="${mainIndx}"]:not(.expansion)`);
-				for (let i=-1,colStruct;colStruct=this.#colStructs[++i];)
-					if (colStruct.id==dataPath)
-						return this.#updateMainRowCell(tr.cells[i],colStruct);
-				if (!celObj)
-					return;
-			}
-			if (scrollTo)
-				scrollToDataRow(dataRow,true);
-		}
-		return this;
-
-		function findCelRecursive(celObj,dataPortion,dataStep,path) {
-			if (celObj.children)
-				for (let child,childI=-1; child=celObj.children[++childI];) {
-					path.push(childI);
-					if (child.struct.id==dataStep)
-						return child;
-					if (child.struct.type=="repeated"&&child.dataObj==dataPortion) {
-						path.push(child.index);
-						return child;
-					}
-					if (child.struct.type=="group"||child.struct.type=="list") {
-						const cel=findCelRecursive(child,dataPortion,dataStep,path);
-						if (cel)
-							return cel;
-					}
-					path.pop();
-				}
-		}
 	}
 
 	#insertRepeatData(rptCel,data,mainIndex,path) {
