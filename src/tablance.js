@@ -590,7 +590,8 @@ class Tablance {
 		e.preventDefault();//to prevent native scrolling when pressing arrow-keys. Needed if #onlyExpansion==true but
 							//not otherwise. Seems the native scrolling is only done on the body and not scrollpane..?
 		//const newColIndex=Math.min(this.#cols.length-1,Math.max(0,this.#cellCursorColIndex+numCols));
-		this.#scrollToCursor();
+		if (!this.#onlyExpansion)
+			this.#scrollToCursor();//need this first to make sure adjacent cell is even rendered
 
 		if (this.#multiCellSelected) {
 			this.#selectMultiCell(hSign?this.#selectedCell.parentNode[(hSign>0?"next":"previous")+"Sibling"]
@@ -609,11 +610,11 @@ class Tablance {
 				this.#selectMainTableCell(
 					this.#selectedCell.parentElement[(vSign>0?"next":"previous")+"Sibling"]?.cells[newColIndex]);
 			}
-			//need to call this a second time. first time is to scroll to old td to make sure the new td is rendered
-			this.#scrollToCursor();//this time it is to actually scroll to the new td
 		} else if (!this.#activeExpCell){
 			this.#selectMainTableCell(this.#selectedCell[(hSign>0?"next":"previous")+"Sibling"]);
 		}
+		if (this.#onlyExpansion&&this.#mainRowIndex!=null)
+			this.#scrollToCursor();
 	}
 
 	#moveInsideCollection(numCols,numRows) {
@@ -1171,7 +1172,7 @@ class Tablance {
 	}
 
 	#scrollToCursor() {
-		if (this.#onlyExpansion)
+		if (this.#onlyExpansion) 
 			return this.#cellCursor.scrollIntoView({block: "center"});
 		const distanceRatioDeadzone=.5;//when moving the cellcursor within this distance from center of view no 
 										//scrolling will be done. 0.5 is half of view, 1 is entire height of view
