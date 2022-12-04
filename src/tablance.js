@@ -516,8 +516,8 @@ class Tablance {
 	}
 
 	selectTopBottomCellOnlyExpansion(top) {
+		this.#highlightOnFocus=false;
 		this.#selectFirstSelectableExpansionCell(this.#openExpansions[0],top);
-		this.container.style.outline="none";
 	}
 	
 	#setupSearchbar() {
@@ -571,19 +571,23 @@ class Tablance {
 	}
 
 	#spreadsheetOnFocus(e) {
-		if (!this.#mainColIndex&&this.#data.length)
-			if (this.#onlyExpansion)
-				this.selectTopBottomCellOnlyExpansion(true);
-			else
-				this.#selectMainTableCell(this.#mainTbody.rows[0].cells[0]);
+		const tabbedTo=this.#highlightOnFocus;
+		if (this.#mainRowIndex==null&&this.#mainColIndex==null&&this.#data.length&&tabbedTo)
+				if (this.#onlyExpansion)
+					this.selectTopBottomCellOnlyExpansion(true);
+				else
+					this.#selectMainTableCell(this.#mainTbody.rows[0].cells[0]);
 		//when the table is tabbed to, whatever focus-outline that the css has set for it should show, but then when the
 		//user starts to navigate using the keyboard we want to hide it because it is a bit distracting when both it and
 		//a cell is highlighted. Thats why #spreadsheetKeyDown sets outline to none, and this line undos that
 		//also, we dont want it to show when focusing by mouse so we use #focusMethod (see its declaration)
-		if (this.#highlightOnFocus)
+		if (!this.#onlyExpansion&&this.#highlightOnFocus)
 			this.container.style.removeProperty("outline");
 		else
-			this.container.style.outline="none"
+			this.container.style.outline="none";
+		this.#cellCursor.style.display="block";
+		if (tabbedTo)
+			this.#scrollToCursor();
 	}
 
 	#spreadsheetOnBlur(e) {
@@ -597,6 +601,8 @@ class Tablance {
 	}
 
 	#moveCellCursor(hSign,vSign,e) {
+		if (this.#mainRowIndex==null&&this.#mainColIndex==null)//if table has focus but no cell is selected.
+			return;//can happen if table is clicked but not on a cell
 		e.preventDefault();//to prevent native scrolling when pressing arrow-keys. Needed if #onlyExpansion==true but
 							//not otherwise. Seems the native scrolling is only done on the body and not scrollpane..?
 		//const newColIndex=Math.min(this.#cols.length-1,Math.max(0,this.#cellCursorColIndex+numCols));
