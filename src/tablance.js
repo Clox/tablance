@@ -176,7 +176,7 @@ class Tablance {
 	 *									//in a horizontal line and will also wrap to multiple lines if needed
 	 *				title:"Foobar",//displayed title if placed in a container which displays the title
 	 * 				entries:[]//each element should be another entry
-	 * 				class:String Css-classes to be added to the collection-div
+	 * 				cssClass:String Css-classes to be added to the collection-div
 	 * 				onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
 	 *	 		}
@@ -185,7 +185,7 @@ class Tablance {
   	 * 				title:"Foobar",//displayed title if placed in list
   	 * 				id:"foobar",//the key of the property in the data that the row should display
 	 * 				maxHeight int For textareas, sets the max-height in pixels that it should be able to be resized to
-	 * 				class:String Css-classes to be added to the field
+	 * 				cssClass:String Css-classes to be added to the field
 	 * 				input: Object {//field is editable if this object is supplied and its disabled-prop is falsey
 	 * 					multiCellWidth Int For inputs that are present in the section that appears when
 	 * 						selecting/checking multiple rows using the select-col, this property can be used to specify
@@ -205,13 +205,13 @@ class Tablance {
 	 * 							"textarea"(multi-line text),
 	 * 							"number"(number with stepper),
 	 * 							"date"(a date and possibly time with a calendar),
-	 * 							"select"(selection from a list of items).
+	 * 							"select"(selection from a list of items). 
 	 * 							"button"(simple button)
-	 * 							"file"(file-upload) The data for a file entry may be a File-object which it will be if
-	 * 									the file has been uploaded during the current session. Or it may be an object
-	 * 									which basically have the same properties as File:lastModified, name, size, type
-	 * 									altough none of those properties are mandatory. Use property "fileUploadHandler"
-	 * 									to handle the actual upload.
+	 * 							"file"(file-upload) An input for uploading files. The data for a file entry may be a 
+	 * 								File-object which it will be if the file has been uploaded during the current
+	 * 								session. Or it may be an object which basically have the same properties
+	 * 								as File:lastModified, name, size, type altough none of those properties are
+	 * 								mandatory. Use property "fileUploadHandler" to handle the actual upload.
 	 * 						Depending on which one is selected certain properties
 	 * 							below are (dis)allowed.
 	 * 					---Properties used exclusively by input "file"---
@@ -989,14 +989,14 @@ class Tablance {
 	}
 
 	#getGroupStructCopyWithDeleteControls(struct) {
-		const deleteControls={type:"collection",class:"delete-controls"
+		const deleteControls={type:"collection",cssClass:"delete-controls"
 			,onBlur:cel=>cel.selEl.querySelector(".collection").classList.remove("delete-confirming")
 			,entries:[{type:"field",input:{type:"button",
 				btnText:struct.deleteText??this.#opts.lang?.delete??"Delete"
-				,clickHandler:this.#beginDeleteRepeated.bind(this)},class:"delete"},
+				,clickHandler:this.#beginDeleteRepeated.bind(this)},cssClass:"delete"},
 			{type:"field",input:{type:"button"
 				,btnText:struct.areYouSureNoText??this.#opts.lang?.deleteAreYouSureNo??"No",
-				clickHandler:this.#cancelDelete.bind(this)},class:"no"
+				clickHandler:this.#cancelDelete.bind(this)},cssClass:"no"
 				,title:struct.deleteAreYouSureText??this.#opts.lang?.deleteAreYouSure??"Are you sure?"},
 			{type:"field",input:{type:"button"
 				,btnText:struct.areYouSureYesText??this.#opts.lang?.deleteAreYouSureYes??"Yes",
@@ -1014,7 +1014,7 @@ class Tablance {
 						this.#selectExpansionCell(fileCell);
 					} else
 						this.#deleteCell(cel.parent.parent);
-				}},class:"yes"}]};
+				}},cssClass:"yes"}]};
 		struct={...struct};//make shallow copy so original is not affected
 		struct.entries=[...struct.entries,deleteControls];
 		return struct;
@@ -1084,7 +1084,7 @@ class Tablance {
 	#generateExpansionCollection(collectionStructure,mainIndex,collObj,parentEl,path,rowData) {
 		Object.assign(collObj,{children:[],struct:collectionStructure,rowData:rowData});
 		const container=collObj.containerEl=parentEl.appendChild(document.createElement("div"));
-		container.classList.add("collection",...collectionStructure.class?.split(" ")??[]);
+		container.classList.add("collection",...collectionStructure.cssClass?.split(" ")??[]);
 		for (let entryI=-1,struct; struct=collectionStructure.entries[++entryI];) {
 			path.push(entryI);
 			const celObj=collObj.children[entryI]={parent:collObj,index:entryI,struct:struct};
@@ -1112,8 +1112,8 @@ class Tablance {
 		contentDiv.className="value";
 		if (this.#generateExpansionContent(struct,mainIndex,cellObj,contentDiv,path,data))
 			parentEl.appendChild(containerSpan);
-		if (struct.class)
-			containerSpan.className+=" "+struct.class;
+		if (struct.cssClass)
+			containerSpan.className+=" "+struct.cssClass;
 	}
 
 	#generateExpansionList(listStructure,mainIndex,listCelObj,parentEl,path,rowData) {
