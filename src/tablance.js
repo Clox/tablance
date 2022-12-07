@@ -205,16 +205,17 @@ class Tablance {
 	 * 							"textarea"(multi-line text),
 	 * 							"number"(number with stepper),
 	 * 							"date"(a date and possibly time with a calendar),
-	 * 							"select"(selection from a list of items). 
+	 * 							"select" selection from a list of items
 	 * 							"button"(simple button)
-	 * 							"file"(file-upload) An input for uploading files. The data for a file entry may be a 
+	 * 							"file" An input for uploading files. The data for a file entry may be a 
 	 * 								File-object which it will be if the file has been uploaded during the current
 	 * 								session. Or it may be an object which basically have the same properties
 	 * 								as File:lastModified, name, size, type altough none of those properties are
 	 * 								mandatory. Use property "fileUploadHandler" to handle the actual upload.
 	 * 						Depending on which one is selected certain properties
 	 * 							below are (dis)allowed.
-	 * 					---Properties used exclusively by input "file"---
+	 * 
+	 * 					----Properties used exclusively by input "file"----
 	 * 						fileUploadHandler Function This callback will be triggered when the user does a file-upload.
 	 * 							Arguments: 1:XMLHttpRequest - call open() on this to specify url and such,
 	 * 							2: The File-object, 3:struct,4:rowData,5:mainIndex,6:cellObject(if in expansion)
@@ -227,33 +228,35 @@ class Tablance {
 	 * 						deleteHandler Function callback-function for when the user deletes a file. It gets the 
 	 * 							following arguments passed to it:
 	 * 							1: Event, 2: File-object, 3:struct,4:rowData,5:mainIndex,6:cellObject(if in expansion)
+	 * 
+	 * 					----Properties used exclusively by input "select"----
+	 * 						noResultsText String A string which is displayed when a user filters the 
+	 * 							options in a select and there are no results. 
+	 * 							Can also be set globally via param opts->lang->selectNoResultsFound
+	 * 						options: Array Each element should be an object: {
+	 * 							value * The value of the cell will be mapped to the option with the same value
+	 * 							text String Unless a render-method has been set then this string will be shown
+	 * 							pinned Bool If true then this option will be pinned at the top. Default is false
+	 * 							cssClass: Css-classes to be added to the opt which actually is a li-element
+	 * 						}
+	 * 						allowCreateNew bool - Allows user to create new options.
+	 * 								If this is true then minOptsFilter will be ignored, input-field is required anyway.
+	 * 						createNewOptionHandler Function - Callback which is called when the user creates a new 
+	 * 							option, which can be done if allowCreateNew is true. It will get passed arguments 
+	 * 							1:new option-object,2:event, 3:dataObject,4:mainDataIndex,
+	 * 							5:struct,6:cellObject(if inside expansion)
+	 * 						selectInputPlaceholder String - A placeholder for the input which
+	 * 							is visible either if the number of options exceed minOptsFilter or allowCreateNew is true
+	 * 					}
 	 * 					-------------------------------------------------
 	 * 					maxLength int Sets max-length for strings if type is "text"
 	 * 					placeholder String adds a placeholder-string to the input-element
-	 * 					options: Array //may be supplied if type is "select". Each element should be an object: {
-	 * 						value:the value of the cell will be mapped to the option with the same value
-	 * 						text:unless a render-method has been specified then this is what will be shown to the user
-	 * 					}
   	 * 					btnText: String,//If type is "button" then this will be the text on it
 	 * 					clickHandler:Function //Used for type "button". A callback-function that will get called 
 	 * 							//when the button is pressed. It will get passed arguments 1:event, 2:dataObject
 	 * 							//,3:mainDataIndex,4:struct,5:cellObject(if inside expansion)
-	 * 					noResultsText String For type "select", a string which is displayed when a user filters the 
-	 * 						options in a select and there are no results. 
-	 * 						Can also be set globally via param opts->lang
 	 * 					minOptsFilter Integer - The minimum number of options required for the filter-input to appear
 	 * 						Can also be set via param opts->defaultMinOptsFilter
-	 * 					allowSelectEmpty bool - Used for type "select". Default true.Pins an empty-option at the top
-	 * 					allowCreateNew bool - Used for type "select". Allows user to create new options.
-	 * 								If this is true then minOptsFilter will be ignored, input-field is required anyway.
-	 * 					createNewOptionHandler Function - Used for type "select". Callback which is called when
-	 * 						the user creates a new option, which can be done if allowCreateNew is true. It will get 
-	 * 							passed arguments 1:new option-object,2:event, 3:dataObject
-	 * 							//,4:mainDataIndex,5:struct,6:cellObject(if inside expansion)
-	 * 					selectInputPlaceholder String - Used for type "select". A placeholder for the input which
-	 * 						is visible either if the number of options exceed minOptsFilter or allowCreateNew is true
-	 * 					emptyOptString String - For type "select", specifies the text of the empty option if 
-	 * 						allowSelectEmpty is true. Can also be set via param opts->lang
   	 * 			}}
 	 * 			{
   	 * 				type:"repeated",//used when the number of rows is undefined and where more may be able to be added, 
@@ -323,7 +326,6 @@ class Tablance {
 	 * 								deleteAreYouSure "Are you sure?" (Used in the deletion of repeat-items or files)
 	 * 								deleteAreYouSureYes "Yes"  (Used in the deletion of repeat-items or files)
 	 * 								deleteAreYouSureNo	"No" (Used in the deletion of repeat-items)
-	 * 								selectEmptyOpt "Empty" Text of the empty/null-option for type "select"
 	 * 								datePlaceholder "YYYY-MM-DD"
 	 * 								selectNoResultsFound "No results found"
 	 * 							}
@@ -603,7 +605,7 @@ class Tablance {
 	#moveCellCursor(hSign,vSign,e) {
 		if (this.#mainRowIndex==null&&this.#mainColIndex==null)//if table has focus but no cell is selected.
 			return;//can happen if table is clicked but not on a cell
-		e.preventDefault();//to prevent native scrolling when pressing arrow-keys. Needed if #onlyExpansion==true but
+		e?.preventDefault();//to prevent native scrolling when pressing arrow-keys. Needed if #onlyExpansion==true but
 							//not otherwise. Seems the native scrolling is only done on the body and not scrollpane..?
 		//const newColIndex=Math.min(this.#cols.length-1,Math.max(0,this.#cellCursorColIndex+numCols));
 		if (!this.#onlyExpansion)
@@ -779,7 +781,7 @@ class Tablance {
 		} else {
 			switch (e.key) {
 				case "Enter":
-					this.#moveCellCursor(0,e.shiftKey?-1:1);
+					this.#moveCellCursor(0,e.shiftKey?-1:1,e);
 				break; case "Escape":
 					this.#exitEditMode(false);
 			}
@@ -1669,18 +1671,19 @@ class Tablance {
 		const strctInp=this.#activeStruct.input;
 		this.#inputVal=this.#cellCursorDataObj[this.#activeStruct.id];
 		const selectContainer=document.createElement("div");
-		let opts=[...strctInp.options];
+		const pinnedOpts=[];//all the opts that have pinned=true and also the creation-option
+		const looseOpts=[];//all opts that have pinned=false
 		const inputWrapper=selectContainer.appendChild(document.createElement("div"));//used to give the input margins
 		const input=inputWrapper.appendChild(document.createElement("input"));
 		const windowMouseDownBound=windowMouseDown.bind(this);//saving ref to bound func so handler can be removed later
-		const allowEmpty=strctInp.allowSelectEmpty??true;
 		let canCreate=false;//whether the create-button is currently available.This firstly depends on input.allowCreate
 					//but also the current value of the input and if there already is an option matching that exactly
-		const emptyString=strctInp.emptyOptString??this.#opts.lang?.selectEmptyOpt??"Empty";
 		inputWrapper.classList.add("input-wrapper");//input-element a margin. Can't put padding in container because
 							//that would cause the highlight-box of selected options not to go all the way to the sides
 		const ulDiv=selectContainer.appendChild(document.createElement("div"));
-		if (strctInp.allowCreateNew||opts.length>=(strctInp.minOptsFilter??this.#opts.defaultMinOptsFilter??5)) {
+		for (const opt of strctInp.options)
+			(opt.pinned?pinnedOpts:looseOpts).push(opt);
+		if (strctInp.allowCreateNew||looseOpts.length>=(strctInp.minOptsFilter??this.#opts.defaultMinOptsFilter??5)) {
 			input.addEventListener("input",inputInput.bind(this));//filtering is allowed, add listener to the input
 		} else//else hide the input. still want to keep it to recieve focus and listening to keystrokes. tried focusing
 			inputWrapper.classList.add("hide");//container-divs instead of input but for some reason it messed up scroll
@@ -1695,25 +1698,13 @@ class Tablance {
 			ul.addEventListener("mouseover",ulMouseOver.bind(this));
 			ul.addEventListener("click",ulClick.bind(this));
 		}
-		
-		if (allowEmpty) {
-			const emptyLi=pinnedUl.appendChild(document.createElement("li"));
-			emptyLi.innerHTML=emptyString;
-			emptyLi.dataset.type="empty";//to identify what the option does if selected
-			if (this.#inputVal==null) {
-				emptyLi.classList.add("selected","highlighted");
-				highlightLiIndex=pinnedUl.children.length-1;
-				highlightUlIndex=0;
-			}
-		}
 		let creationLi;
 		if (strctInp.allowCreateNew) {
 			creationLi=document.createElement("li");
 			creationLi.dataset.type="create";
 		}
-		
-		renderOpts(mainUl,opts,this.#inputVal);
-		
+		renderOpts(pinnedUl,pinnedOpts,this.#inputVal);
+		renderOpts(mainUl,looseOpts,this.#inputVal);
 		const noResults=selectContainer.appendChild(document.createElement("div"));
 		noResults.innerHTML=strctInp.noResultsText??this.#opts.lang?.selectNoResultFound??"No results found";
 		noResults.className="no-results";
@@ -1729,6 +1720,7 @@ class Tablance {
 			ul.innerHTML="";
 			for (const opt of opts) {
 				const li=ul.appendChild(document.createElement("li"));
+				li.className=opt.cssClass;
 				li.innerText=opt.text;
 				if ((selectedVal!=null&&selectedVal==opt.value)||selectedVal==opt) {
 					foundSelected=true;
@@ -1743,25 +1735,25 @@ class Tablance {
 		function inputInput(e) {
 			canCreate=!!input.value;
 			if (!input.value.includes(filterText)||!filterText)//unless text was added to beginning or end
-				opts=[...strctInp.options];//start off with all options there are
-			for (let i=-1,opt; opt=opts[++i];)
-				if (!opt.text.includes(input.value))//if searchstring wasn't found in this opt
-					opts.splice(i--,1);//then remove it from view
+				looseOpts.splice(0,Infinity,...strctInp.options);//start off with all options there are
+			for (let i=-1,opt; opt=looseOpts[++i];)
+				if (!opt.text.includes(input.value)||opt.pinned)//if searchstring not found in this opt or it's pinned
+				looseOpts.splice(i--,1);//then remove it from view
 				else if (opt.text.toLowerCase()==input.value.toLowerCase())
 					canCreate=false;
 			if (canCreate)
 				pinnedUl.appendChild(creationLi);
 			else
 				pinnedUl.removeChild(creationLi);
-			if (renderOpts(mainUl,opts,this.#inputVal))//found selected opt
+			if (renderOpts(mainUl,looseOpts,this.#inputVal))//found selected opt
 				pinnedUl.querySelector(".highlighted")?.classList.remove("highlighted");
 			else//did not find selected opt
 				if (highlightUlIndex)//...and empty is not selected
-					if (opts.length)//there are visible opts
+					if (looseOpts.length)//there are visible opts
 						highlightOpt.call(this,1,0);//select first among the filtered ones
 					else if (pinnedUl.children.length)
 						highlightOpt.call(this,0,0);
-			noResults.style.display=opts.length?"none":"block";
+			noResults.style.display=looseOpts.length?"none":"block";
 			creationLi.innerText=`Create [${filterText=input.value}]`;
 		}
 		function ulMouseOver(e) {
@@ -1781,7 +1773,7 @@ class Tablance {
 					strctInp.createNewOptionHandler?.(self.#inputVal,e,self.#cellCursorDataObj,self.#mainRowIndex
 																			,self.#activeStruct,self.#activeExpCell);
 			} else
-				self.#inputVal=highlightUlIndex?opts[highlightLiIndex]:null;
+				self.#inputVal=(highlightUlIndex?looseOpts:pinnedOpts)[highlightLiIndex];
 			selectContainer.remove();
 			window.removeEventListener("mousedown",windowMouseDownBound);
 		}
@@ -1794,13 +1786,13 @@ class Tablance {
 				e.preventDefault();//prevents moving the textcursor when pressing up or down
 				const newIndex=highlightLiIndex==null?0:highlightLiIndex+(e.key==="ArrowDown"?1:-1);
 				if (highlightUlIndex??true) {//currently somewhere in the main ul
-					if (opts.length&&newIndex<opts.length&&newIndex>=0)//moving within main
+					if (looseOpts.length&&newIndex<looseOpts.length&&newIndex>=0)//moving within main
 						highlightOpt(1,newIndex);
 					else if (newIndex==-1&&pinnedUl.children.length)//moving into pinned
 						highlightOpt(0,pinnedUl.children.length-1);
 				} else if (newIndex>=0&&newIndex<pinnedUl.children.length)//moving within pinned
 					highlightOpt(0,newIndex);
-				else if (newIndex>=pinnedUl.children.length&&opts.length) //moving from pinned to main
+				else if (newIndex>=pinnedUl.children.length&&looseOpts.length) //moving from pinned to main
 					highlightOpt(1,0);
 			} else if (e.key==="Enter") {
 				close(e);
@@ -1811,7 +1803,7 @@ class Tablance {
 		}
 		function ulClick(e) {
 			if (e.target.tagName.toLowerCase()=="li") {//not sure if ul could be the target? check here to make sure
-				highlightUlIndex=e.currentTarget.dataset.ulIndex;
+				highlightUlIndex=parseInt(e.currentTarget.dataset.ulIndex);
 				highlightLiIndex=Array.prototype.indexOf.call(e.currentTarget.children, e.target);
 				close();
 				this.#exitEditMode(true);
@@ -1853,6 +1845,7 @@ class Tablance {
 					this.#unsortCol(this.#activeStruct.id);
 				}
 			}
+			this.#selectedCellVal=this.#inputVal;
 		}
 		this.#cellCursor.innerHTML="";
 		//if (this.#activeStruct.input.type==="textarea")//also needed for file..
