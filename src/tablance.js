@@ -1691,8 +1691,9 @@ class Tablance {
 		input.placeholder=strctInp.selectInputPlaceholder??"";
 		input.addEventListener("blur",input.focus)
 		const pinnedUl=ulDiv.appendChild(document.createElement("ul"));
-		const mainUl=ulDiv.appendChild(document.createElement("ul"));
 		pinnedUl.classList.add("pinned");
+		const mainUl=ulDiv.appendChild(document.createElement("ul"));
+		mainUl.classList.add("main");
 		for (let i=-1,ul;ul=[pinnedUl,mainUl][++i];) {
 			ul.dataset.ulIndex=i;
 			ul.addEventListener("mouseover",ulMouseOver.bind(this));
@@ -1720,7 +1721,8 @@ class Tablance {
 			ul.innerHTML="";
 			for (const opt of opts) {
 				const li=ul.appendChild(document.createElement("li"));
-				li.className=opt.cssClass;
+				if (opt.cssClass)
+					li.className=opt.cssClass;
 				li.innerText=opt.text;
 				if ((selectedVal!=null&&selectedVal==opt.value)||selectedVal==opt) {
 					foundSelected=true;
@@ -1779,7 +1781,11 @@ class Tablance {
 		}
 		function highlightOpt(ulIndex,liIndex) {
 			ulDiv.getElementsByClassName("highlighted")[0]?.classList.remove("highlighted");
-			ulDiv.children[highlightUlIndex=ulIndex].children[highlightLiIndex=liIndex].classList.add("highlighted");
+			const ul=ulDiv.children[highlightUlIndex=ulIndex];
+			const li=ul.children[highlightLiIndex=liIndex];
+			li.classList.add("highlighted");
+			if (ulIndex) //if main-section (not pinned section)
+				ul.scrollTop=li.offsetTop-ul.offsetTop+li.offsetHeight/2-ul.offsetHeight/2;
 		}
 		function inputKeyDown(e) {
 			if (["ArrowDown","ArrowUp"].includes(e.key)){

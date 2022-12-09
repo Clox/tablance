@@ -13,7 +13,11 @@
 			}
 			const foods=[{text:"Nothing",pinned:true},{text:"banana",value:1},{text:"apple",value:2},
 						{text:"cucumber",value:3},{text:"orange",value:4},{text:"grapes",value:5},
-						{text:"melon",value:6},{text:"pineapple",value:7},{text:"carrot",value:8}];
+						{text:"melon",value:6},{text:"pineapple",value:7},{text:"carrot",value:8},
+						{text:"another banana",value:9},{text:"another apple",value:10},
+						{text:"another cucumber",value:11},{text:"another orange",value:12},
+						{text:"another set of grapes",value:13},{text:"another melon",value:14},
+						{text:"another pineapple",value:15},{text:"another carrot",value:13}];
 			const myTablanceCols=[{type:"select"},{type:"expand"}
 				,{id:"desc",title:"Description",input:{onChange:(...args)=>console.log(args),
 					type:"text",maxLength:5,placeholder:"placeholder",enabled:()=>Math.random()>.5},render:descFunc}

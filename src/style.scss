@@ -380,6 +380,10 @@
 					border-bottom: 3px solid #ccc;
 				}
 			}
+			&.main {
+				max-height: 300px;
+				overflow-y: auto;
+			}
 		}
 	}
 	.multi-row-section {
