@@ -190,8 +190,10 @@ class Tablance {
 	 * 					multiCellWidth Int For inputs that are present in the section that appears when
 	 * 						selecting/checking multiple rows using the select-col, this property can be used to specify
 	 * 						the number of pixels in width of the cell in that section.
-	 * 					onChange: Function Callback fired when the user has changed.
-	 * 						It will get passed arguments: 1:newValue,2:oldValue,3:rowData,4:struct,5:cellObject
+	 * 					onChange: Function Callback fired when the user has changed. It will get passed arguments:
+	 * 						1:TablanceEvent,2:newValue,3:oldValue,4:rowData,5:struct,6:cellObject
+	 * 						The TablanceEvent has a method with key "preventDefault" which if called prevents the
+	 * 						data/cell from actually being changed.
 	 * 					onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 							It will get passed arguments 1:cellObject, 2:mainIndex
 	 * 					enabled Function - If present then this function will be run and if it returns falsey then the
@@ -1835,21 +1837,25 @@ class Tablance {
 				multiCell.innerText=this.#inputVal?.text??this.#inputVal??"";
 				multiCell.classList.remove("mixed");
 			} else {
-				this.#activeStruct.input.onChange?.(this.#inputVal,this.#selectedCellVal,this.#cellCursorDataObj
-																			,this.#activeStruct,this.#activeExpCell);
-				this.#cellCursorDataObj[this.#activeStruct.id]=this.#inputVal;
-				if (this.#activeExpCell){
-					const doHeightUpdate=this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj);
-					if (doHeightUpdate)
-						this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"));
-					for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)//update closed-group-renders
-						if (cell.struct.closedRender)//found a group with a closed-group-render func
-							cell.updateRenderOnClose=true;
-				} else {
-					this.#updateMultiCellVals([this.#activeStruct.id]);
-					this.#updateMainRowCell(this.#selectedCell,this.#activeStruct);
-					this.#unsortCol(this.#activeStruct.id);
-				}
+				let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
+				this.#activeStruct.input.onChange?.({preventDefault:()=>doUpdate=false},this.#inputVal
+								,this.#selectedCellVal,this.#cellCursorDataObj,this.#activeStruct,this.#activeExpCell);
+				if (doUpdate) {
+					this.#cellCursorDataObj[this.#activeStruct.id]=this.#inputVal;
+					if (this.#activeExpCell){
+						const doHeightUpdate=this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj);
+						if (doHeightUpdate)
+							this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"));
+						for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)//update closed-group-renders
+							if (cell.struct.closedRender)//found a group with a closed-group-render func
+								cell.updateRenderOnClose=true;
+					} else {
+						this.#updateMultiCellVals([this.#activeStruct.id]);
+						this.#updateMainRowCell(this.#selectedCell,this.#activeStruct);
+						this.#unsortCol(this.#activeStruct.id);
+					}
+				} else
+					this.#inputVal=this.#selectedCellVal;
 			}
 			this.#selectedCellVal=this.#inputVal;
 		}

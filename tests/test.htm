@@ -19,8 +19,10 @@
 						{text:"another set of grapes",value:13},{text:"another melon",value:14},
 						{text:"another pineapple",value:15},{text:"another carrot",value:13}];
 			const myTablanceCols=[{type:"select"},{type:"expand"}
-				,{id:"desc",title:"Description",input:{onChange:(...args)=>console.log(args),
-					type:"text",maxLength:5,placeholder:"placeholder",enabled:()=>Math.random()>.5},render:descFunc}
+				,{id:"desc",title:"Description",input:{onChange:(e,...args)=>{
+					e.preventDefault();
+					console.log(args)
+				},type:"text",maxLength:5,placeholder:"placeholder",enabled:()=>Math.random()>.5},render:descFunc}
 				,{id:"amount",title:"Amount",width:"85px",input:true},{id:"balance",title:"Balance",width:"85px"}
 				,{id:"food",title:"Food",width:"120px",input:{multiCellWidth:100,type:"select"
 					,options:foods,minOptsFilter:100,allowCreateNew:true,allowSelectEmpty:true
