@@ -486,12 +486,26 @@ class Tablance {
 		}
 	}
 
-	scrollToDataRow(dataRow,highlight=true) {
+	/**Expands a row and returns the expansion-object.
+	 * @param int mainIndex
+	 * @returns Object Expansion-object (outer-most cell-object)*/
+	expandRow(mainIndex) {
+		let tr=this.#mainTbody.querySelector(`[data-data-row-index="${mainIndex}"]`);
+		if (!tr) {
+			this.scrollToDataRow(this.#data[mainIndex],false,false);
+			this.#scrollMethod();//needed to get everythig to render before having to wait for next frame
+			tr=this.#mainTbody.querySelector(`[data-data-row-index="${mainIndex}"]`);
+		}
+		this.#expandRow(tr);
+		return this.#openExpansions[mainIndex];
+	}
+
+	scrollToDataRow(dataRow,highlight=true,smooth=true) {
 		let scrollY=0;
 		for (let i=-1,otherDataRow;otherDataRow=this.#data[++i];) {
 			if (otherDataRow==dataRow) {
 				scrollY=scrollY-this.#scrollBody.offsetHeight/2+this.#rowHeight;
-				this.#scrollBody.scrollTo({top:scrollY,behavior:'smooth'});
+				this.#scrollBody.scrollTo({top:scrollY,behavior:smooth?"smooth":"auto"});
 				if (highlight)
 					this.#highlightRowIndex(i);
 				return;
