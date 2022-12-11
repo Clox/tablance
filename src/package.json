@@ -1,0 +1,29 @@
+{
+  "name": "tablance",
+  "version": "1.0.1",
+  "description": "(TABLe advANCE) Component for creating tables similar to datatables.net but it does not rely on jquery. It is noticeably faster, especially when filtering/sorting large tables. One are where it really shines is the ability for having expandable rows with a complex data-structure inside. It also has an option for making it function like a spreadsheet when it comes to navigation and editing.",
+  "main": "tablance.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Clox/tablance.git"
+  },
+  "keywords": [
+    "table",
+    "expandable",
+    "spreadsheet",
+    "data"
+  ],
+  "author": "Oscar Jonsson",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Clox/tablance/issues"
+  },
+  "homepage": "https://github.com/Clox/tablance#readme",
+  "optionalDependencies": {
+    "pikaday": "^1.8.2",
+    "cleave": "^1.6.0"
+  }
+}
