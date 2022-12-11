@@ -985,8 +985,9 @@ class Tablance {
 			const creationCell=creationTable.insertRow().insertCell();
 			creationCell.innerText=struct.creationText??"Insert new";
 			creationTable.classList.add("repeat-insertion","empty");//empty for hiding it when group is closed if group
-			cellObj.children.push(
-								{parent:cellObj,el:creationTable,index:repeatData.length,struct:{type:"repeatCreate"}});
+			const creationObj=cellObj.children[cellObj.children.length]=
+								{parent:cellObj,el:creationTable,index:repeatData.length,struct:{type:"repeatCreate"}};
+			creationObj.select=()=>this.#selectExpansionCell(creationObj);
 			creationTable.dataset.path=path.join("-")+"-"+repeatData.length;
 		}
 		
@@ -1052,6 +1053,7 @@ class Tablance {
 
 	#generateExpansionGroup(groupStructure,dataIndex,cellObj,parentEl,path,rowData) {
 		parentEl.dataset.path=path.join("-");
+		cellObj.select=()=>this.#selectExpansionCell(cellObj);
 		cellObj.children=[];
 		cellObj.dataObj=rowData;
 		const groupTable=document.createElement("table");
@@ -1199,6 +1201,7 @@ class Tablance {
 	}
 
 	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {	
+		cellObject.select=()=>this.#selectExpansionCell(cellObject);
 		cellObject.el=parentEl;
 		this.#updateExpansionCell(cellObject,rowData);
 		cellObject[cellObject.selEl?"selEl":"el"].dataset.path=path.join("-");
@@ -1938,8 +1941,15 @@ class Tablance {
 							this.#commitRepeatedInsert(oldParnt);
 					}
 				}
+
+		//in case this was called through cellObject.select() it might be necessary to make sure parent-groups are open
+		for (let parentCell=cellObject; parentCell=parentCell.parent;)
+			if (parentCell.struct.type=="group")
+				parentCell.el.classList.add("open");
+
 		this.#selectCell(false,cellObject.selEl??cellObject.el,cellObject.struct,cellObject.dataObj);
 		this.#activeExpCell=cellObject;
+		return cellObject;
 	}
 
 	#selectMultiCell(cell) {
