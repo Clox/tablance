@@ -1798,12 +1798,12 @@ class Tablance {
 			selectContainer.remove();
 			window.removeEventListener("mousedown",windowMouseDownBound);
 		}
-		function highlightOpt(ulIndex,liIndex) {
+		function highlightOpt(ulIndex,liIndex,keyboardNavigating) {
 			ulDiv.getElementsByClassName("highlighted")[0]?.classList.remove("highlighted");
 			const ul=ulDiv.children[highlightUlIndex=ulIndex];
 			const li=ul.children[highlightLiIndex=liIndex];
 			li.classList.add("highlighted");
-			if (ulIndex) //if main-section (not pinned section)
+			if (ulIndex&&keyboardNavigating)//if main-section (not pinned section) and selection was done by up/down-key
 				ul.scrollTop=li.offsetTop-ul.offsetTop+li.offsetHeight/2-ul.offsetHeight/2;
 		}
 		function inputKeyDown(e) {
@@ -1812,13 +1812,13 @@ class Tablance {
 				const newIndex=highlightLiIndex==null?0:highlightLiIndex+(e.key==="ArrowDown"?1:-1);
 				if (highlightUlIndex??true) {//currently somewhere in the main ul
 					if (looseOpts.length&&newIndex<looseOpts.length&&newIndex>=0)//moving within main
-						highlightOpt(1,newIndex);
+						highlightOpt(1,newIndex,true);
 					else if (newIndex==-1&&pinnedUl.children.length)//moving into pinned
-						highlightOpt(0,pinnedUl.children.length-1);
+						highlightOpt(0,pinnedUl.children.length-1,true);
 				} else if (newIndex>=0&&newIndex<pinnedUl.children.length)//moving within pinned
-					highlightOpt(0,newIndex);
+					highlightOpt(0,newIndex,true);
 				else if (newIndex>=pinnedUl.children.length&&looseOpts.length) //moving from pinned to main
-					highlightOpt(1,0);
+					highlightOpt(1,0,true);
 			} else if (e.key==="Enter") {
 				close(e);
 				this.#moveCellCursor(0,e.shiftKey?-1:1);
