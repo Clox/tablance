@@ -326,6 +326,44 @@
 			}
 		}
 	}
+	.tooltip {
+		pointer-events: none;
+		visibility: hidden;
+		position: absolute;
+		padding: 5px 10px;
+		background-color: black;
+		border-radius: 6px;
+		min-width: 100px;
+		min-height: 30px;
+		>span {
+			color: #fff;
+			text-align: center;
+			&::after {
+				content: "";
+				position: absolute;
+				left: 50%;
+				margin-left: -5px;
+				border-width: 5px;
+				border-style: solid;
+				border-color: transparent transparent transparent transparent;
+			}
+		}
+		&.below {
+			margin-top: 5px;
+			>span::after {
+				margin-top: -15px;
+				border-bottom-color: black;
+			}
+		}
+		&.above {
+			margin-top: -5px;
+			>span::after {
+				top: 100%;
+				border-top-color: black;
+				
+			}
+		}
+	}
 	.tablance-select-container {
 		position: absolute;
 		box-shadow: 0 5px 15px -5px rgba(0,0,0,.5);

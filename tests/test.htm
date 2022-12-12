@@ -61,8 +61,14 @@
 								{type:"field",title:"Typ av ställföreträdarskap",id:"type",input:{type:"select",
 									options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"}]
 									,allowSelectEmpty:false
-								}}
-						]}
+								}}],
+							creationValidation:(message,struct,data,index,cellObj)=>{
+								console.log(data);
+								console.log(data.date&&data.type)
+								message("Both fields are mandatory. Enter the data or delete to cancel.");
+								return data.date&&data.type;
+							}
+						}
 					}
 				]},
 				{type:"collection",title:"Bunch ",entries:[

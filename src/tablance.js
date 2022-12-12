@@ -132,6 +132,7 @@ class Tablance {
 	#animations={};//keeps tracks of animations. Key is a unique id-string, identifying the animation so multiple
 					//instances of the same animation can't run. Value is the end-time in ms since epoch.
 	#onlyExpansion;//See constructor-param onlyExpansion
+	#tooltip;//reference to html-element used as tooltip
 							
 
 	/**
@@ -294,12 +295,20 @@ class Tablance {
   	 * 			}
   	 * 			{
   	 * 				type:"group",//used when a set of data should be grouped, like for instance having an address and
-	 * 							//all the rows in it belongs together. the group also has to be entered
+	 * 							//all the rows in it belongs together. the group also has to be entered/opened
 	 * 							//with enter/doubleclick
   	 * 				title:"Foobar",//displayed title if placed in list
   	 * 				entries: Array any entries. fields, lists, etc.. 
 	 * 				closedRender: Function //pass a method here that will get the data for the group as first arg.
 	 * 								//it needs to return a string which will replace the group-content when it is closed
+	 * 				creationValidation Function If this group is placed within a repeated-container with create set to
+	 * 								true then this function will be executed upon commiting the creation. If the
+	 * 								function returns true then the validation succeeded and the group will be created.
+	 * 								It will get passed the following arguments:
+	 * 								1: message-function - A function that that takes a message-string as its first
+	 * 									argument. If it the validation didn't go through then this string will be
+	 * 									displayed to the user.
+	 * 								2:struct, 3:rowData(all the entered data of the group), 4:mainIndex, 5:cellObject
   	 * 			}
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							searchbar Bool that defaults to true. If true then there will be a searchbar that
@@ -566,6 +575,10 @@ class Tablance {
 		this.container.addEventListener("keydown",e=>this.#spreadsheetKeyDown(e));
 		this.container.addEventListener("mousedown",e=>this.#spreadsheetMouseDown(e));
 		this.#cellCursor.addEventListener("dblclick",e=>this.#enterCell(e));
+
+		this.#tooltip=document.createElement("div");
+		this.#tooltip.classList.add("tooltip");
+		this.#tooltip.appendChild(document.createElement("span"));
 	}
 
 	#rowMetaGet(dataIndex) {
@@ -755,6 +768,7 @@ class Tablance {
 	}
 	
 	#spreadsheetKeyDown(e) {
+		this.#tooltip.style.visibility="hidden";
 		if (this.#inEditMode&&this.#activeStruct.input.type==="date") {
 			if (e.key.slice(0,5)==="Arrow") {
 				if (e.ctrlKey)
@@ -1238,6 +1252,7 @@ class Tablance {
 	#spreadsheetMouseDown(e) {
 		this.#highlightOnFocus=false;//see decleration
 		this.container.style.outline="none";//see #spreadsheetOnFocus
+		this.#tooltip.style.visibility="hidden";
 		if (Date.now()<this.#ignoreClicksUntil)//see decleration of #ignoreClicksUntil
 			return;
 		if (e.which===3)//if right click
@@ -1434,26 +1449,32 @@ class Tablance {
 		}
 	}
 
-	/**Aligns dropdowns like select and date-picker correctly by the cellcursor */
-	#alignDropdown(dropdown) {
+	/**Aligns dropdowns like select and date-picker correctly by the cellcursor or any other target-element specified */
+	#alignDropdown(dropdown,target=this.#cellCursor) {
 		const container=this.#onlyExpansion?this.container:this.#scrollBody;
-		//if cellcursor is below middle of viewport or if in multi-row-area
-		if (parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight/2
-								>container.scrollTop+container.clientHeight/2||this.#multiCellSelected)
-			//then place dropdown above cell-cursor
-			dropdown.style.top=parseInt(this.#cellCursor.style.top)-dropdown.offsetHeight+"px";
-		else
-			//else place dropdown below cell-cursor
-			dropdown.style.top=parseInt(this.#cellCursor.style.top)+this.#cellCursor.clientHeight+"px";
+		const targetPos=this.#getElPos(target);
+		//if target-element is below middle of viewport or if in multi-row-area
+		dropdown.classList.remove("above","below","left","right")
+		if (targetPos.y+target.clientHeight/2>container.scrollTop+container.clientHeight/2||this.#multiCellSelected) {
+			//then place dropdown above target-element
+			dropdown.style.top=targetPos.y-dropdown.offsetHeight+"px";
+			dropdown.classList.add("above");
+		} else {
+			//else place dropdown below target-element
+			dropdown.style.top=targetPos.y+target.clientHeight+"px";
+			dropdown.classList.add("below");
+		}
 
-		//if there's enough space to the right of cellcursor
-		if (container.clientWidth-parseInt(this.#cellCursor.style.left)>dropdown.offsetWidth)
-			//then align the left of the dropdown with the left of the cellcursor
-			dropdown.style.left=parseInt(this.#cellCursor.style.left)+"px";
-		else
-			//otherwise align the right of the dropdown with the right of the cellcursor
-			dropdown.style.left=parseInt(this.#cellCursor.style.left)
-													-(dropdown.offsetWidth-this.#cellCursor.offsetWidth)+"px";
+		//if there's enough space to the right of target-element
+		if (container.clientWidth-targetPos.x>dropdown.offsetWidth) {
+			//then align the left of the dropdown with the left of the target-element
+			dropdown.style.left=targetPos.x+"px";
+			dropdown.classList.add("left");
+		} else {
+			//otherwise align the right of the dropdown with the right of the target-element
+			dropdown.style.left=targetPos.x-(dropdown.offsetWidth-target.offsetWidth)+"px";
+			dropdown.classList.add("right");
+		}
 	}
 
 	#enterCell(e) {
@@ -1884,38 +1905,63 @@ class Tablance {
 		this.#highlightOnFocus=false;
 	}
 
+	#showTooltip(message,target=this.#cellCursor) {
+		this.#cellCursor.parentElement.appendChild(this.#tooltip);
+		this.#tooltip.style.visibility="visible";
+		this.#tooltip.firstChild.innerText=message;
+		this.#alignDropdown(this.#tooltip,target);
+		this.#tooltip.scrollIntoView({behavior:'smooth',block:"center"});
+	}
+
 	#closeRepeatedInsertion(repeatEntry) {
-		repeatEntry.creating=false;
+		repeatEntry.creating=false;//needs to be set to false before potentially calling #deleteCall or stack overflows
 		if (Object.values(repeatEntry.dataObj).filter(x=>x!=null).length) {
+			let message;//message to show to the user if creation was unsucessful
+			for (var root=repeatEntry; root.parent; root=root.parent);//get root-object in order to retrieve rowIndex
+			let doCreate=true;
+			if (repeatEntry.struct.creationValidation)
+				doCreate=repeatEntry.struct.creationValidation(m=>message=m,repeatEntry.struct,repeatEntry.dataObj
+																						,root.rowIndex,repeatEntry);
+			if (!doCreate) {
+				repeatEntry.creating=true;//needs to stay at creating true but it was set to false at start of this func
+				if (message)
+					this.#showTooltip(message,repeatEntry.el);
+				return false;//prevent commiting/closing the group
+			}
 			repeatEntry.parent.struct.onCreate?.(repeatEntry.dataObj,repeatEntry);
-		} else {
+		} else
 			this.#deleteCell(repeatEntry);
-		}
+		return true;
 	}
 
 	#closeActiveExpCell() {
 		if (this.#activeExpCell) {
 			for (let oldCellParent=this.#activeExpCell; oldCellParent=oldCellParent.parent;) {
 				if (oldCellParent.struct.type==="group") {
+					if (oldCellParent.creating) {
+						const allowCreation=this.#closeRepeatedInsertion(oldCellParent);
+						if (!allowCreation)
+							return false;
+					}
 					this.#closeGroup(oldCellParent);//close any open group above old cell
 					this.#ignoreClicksUntil=Date.now()+500;
 				}
-				if (oldCellParent.creating)
-					this.#closeRepeatedInsertion(oldCellParent);
+				
 				oldCellParent.struct.onBlur?.(oldCellParent,this.#mainRowIndex);
 			}
 			this.#activeExpCell=null;//should be null when not inside expansion
 		}
+		return true;
 	}
 
 
 	#selectMainTableCell(cell) {
-		if (!cell)//in case trying to move up from top row etc
-			return;
+		if (!cell||!this.#closeActiveExpCell())	//in case of trying to move up from top row etc,
+			return;								//...or creating group but didnt validate
 		this.#mainColIndex=cell.cellIndex;
 		this.#mainRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);
 		this.#selectCell(false,cell,this.#colStructs[this.#mainColIndex],this.#data[this.#mainRowIndex]);
-		this.#closeActiveExpCell();
+		
 	}
 
 	#selectExpansionCell(cellObject) {
@@ -1925,7 +1971,7 @@ class Tablance {
 		//remove cellcursor click-through in case an expand-button-cell was previously selected
 		//this.#cellCursor.style.pointerEvents="auto";
 		for (var root=cellObject; root.parent; root=root.parent);
-		this.#mainRowIndex=root.rowIndex;;
+		this.#mainRowIndex=root.rowIndex;
 		if (this.#activeExpCell)//changing from an old expansionCell
 			for (let oldParnt=this.#activeExpCell; oldParnt=oldParnt?.parent;)//traverse parents of old cell
 				if(oldParnt.struct.type==="group"||oldParnt.struct.onBlur||oldParnt.creating){//found a group or cell
@@ -1937,14 +1983,17 @@ class Tablance {
 							break;
 						}
 					if (oldParnt) {
+						if (oldParnt.creating) {
+							const allowCreation=this.#closeRepeatedInsertion(oldParnt);
+							if (!allowCreation)
+								return false;
+						}
 						if (oldParnt.struct.type==="group") {
 							this.#closeGroup(oldParnt)//if old parent-group is not part of new then close it
 							this.#ignoreClicksUntil=Date.now()+500;
 						}
 						if (oldParnt.struct.onBlur)
 							oldParnt.struct.onBlur?.(oldParnt,this.#mainRowIndex);
-						if (oldParnt.creating)
-							this.#closeRepeatedInsertion(oldParnt);
 					}
 				}
 
@@ -1959,11 +2008,11 @@ class Tablance {
 	}
 
 	#selectMultiCell(cell) {
-		if (!cell)
+		if (!cell||!this.#closeActiveExpCell())
 			return;
 		this.#selectCell(true,cell,this.#colStructs[this.#mainColIndex=cell.dataset.colIndex],this.#multiCellsDataObj);
 		this.#mainRowIndex=null;
-		this.#closeActiveExpCell();
+		
 		const cellPos=cell.getBoundingClientRect();
 		const parentBR=this.#multiRowArea.firstChild.getBoundingClientRect();
 		this.#cellCursor.style.height=cellPos.height+"px";
@@ -1990,19 +2039,23 @@ class Tablance {
 		this.#selectedCellVal=dataObj?.[struct.id];
 	}
 
-	#adjustCursorPosSize(el,onlyPos=false) {
-		if (!el)
-			return;
+	#getElPos(el) {
 		const cellPos=el.getBoundingClientRect();
 		const contPos=(this.#multiCellSelected?this.#multiRowArea.firstChild:this.#tableSizer??this.container)
 																							.getBoundingClientRect();
-		
-		this.#cellCursor.style.top=cellPos.y-contPos.y+(this.#tableSizer?.offsetTop??0)+"px";
-		this.#cellCursor.style.left=cellPos.x-contPos.x+"px";
+		return {x:cellPos.x-contPos.x, y:cellPos.y-contPos.y+(this.#tableSizer?.offsetTop??0)}
+	}
+
+	#adjustCursorPosSize(el,onlyPos=false) {
+		if (!el)
+			return;
+		const elPos=this.#getElPos(el);
+		this.#cellCursor.style.top=elPos.y+"px";
+		this.#cellCursor.style.left=elPos.x+"px";
 		this.#cellCursor.style.display="block";//it starts at display none since #setupSpreadsheet, so make visible now
 		if (!onlyPos) {
-			this.#cellCursor.style.height=cellPos.height+"px";
-			this.#cellCursor.style.width=cellPos.width+"px";
+			this.#cellCursor.style.height=el.offsetHeight+"px";
+			this.#cellCursor.style.width=el.offsetWidth+"px";
 		}
 	}
 
