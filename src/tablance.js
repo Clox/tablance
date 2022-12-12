@@ -1512,7 +1512,7 @@ class Tablance {
 		repeatCreater.index++;
 		repeatCreater.el.parentElement.appendChild(repeatCreater.el);
 		this.#selectExpansionCell(cell);
-		setTimeout(()=>repeatCreater.el.scrollIntoView({block:"center"});
+		repeatCreater.el.scrollIntoView({behavior:'smooth',block:"center"});
 	}
 
 	#deleteCell(cellObj) {
@@ -1884,9 +1884,13 @@ class Tablance {
 		this.#highlightOnFocus=false;
 	}
 
-	#commitRepeatedInsert(repeatEntry) {
+	#closeRepeatedInsertion(repeatEntry) {
 		repeatEntry.creating=false;
-		repeatEntry.parent.struct.onCreate?.(repeatEntry.dataObj,repeatEntry)
+		if (Object.values(repeatEntry.dataObj).filter(x=>x!=null).length) {
+			repeatEntry.parent.struct.onCreate?.(repeatEntry.dataObj,repeatEntry);
+		} else {
+			this.#deleteCell(repeatEntry);
+		}
 	}
 
 	#closeActiveExpCell() {
@@ -1897,7 +1901,7 @@ class Tablance {
 					this.#ignoreClicksUntil=Date.now()+500;
 				}
 				if (oldCellParent.creating)
-					this.#commitRepeatedInsert(oldCellParent);
+					this.#closeRepeatedInsertion(oldCellParent);
 				oldCellParent.struct.onBlur?.(oldCellParent,this.#mainRowIndex);
 			}
 			this.#activeExpCell=null;//should be null when not inside expansion
@@ -1940,7 +1944,7 @@ class Tablance {
 						if (oldParnt.struct.onBlur)
 							oldParnt.struct.onBlur?.(oldParnt,this.#mainRowIndex);
 						if (oldParnt.creating)
-							this.#commitRepeatedInsert(oldParnt);
+							this.#closeRepeatedInsertion(oldParnt);
 					}
 				}
 
