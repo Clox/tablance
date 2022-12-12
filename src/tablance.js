@@ -988,6 +988,7 @@ class Tablance {
 			const creationObj=cellObj.children[cellObj.children.length]=
 								{parent:cellObj,el:creationTable,index:repeatData.length,struct:{type:"repeatCreate"}};
 			creationObj.select=()=>this.#selectExpansionCell(creationObj);
+			cellObj.insert=()=>this.#repeatInsertNew(creationObj);
 			creationTable.dataset.path=path.join("-")+"-"+repeatData.length;
 		}
 		
@@ -1511,6 +1512,7 @@ class Tablance {
 		repeatCreater.index++;
 		repeatCreater.el.parentElement.appendChild(repeatCreater.el);
 		this.#selectExpansionCell(cell);
+		setTimeout(()=>repeatCreater.el.scrollIntoView({block:"center"});
 	}
 
 	#deleteCell(cellObj) {
