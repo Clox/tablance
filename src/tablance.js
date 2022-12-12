@@ -185,6 +185,11 @@ class Tablance {
   	 * 				type:"field",//this is what will display data and which also can be editable
   	 * 				title:"Foobar",//displayed title if placed in list
   	 * 				id:"foobar",//the key of the property in the data that the row should display
+	 * 				validation Function A callback function which can be used to validate the data upon comitting it.
+	 * 					Return true if validation was successfull. It gets passed the following arhuments:
+	 * 					1:newValue, 2: message-function - A function that that takes a message-string as its first
+	 * 					argument. If it the validation didn't go through then this string will be displayed to the user.
+	 * 					3:struct, 4:rowData, 5:mainIndex, 6:cellObject(if expansion-cell)
 	 * 				maxHeight int For textareas, sets the max-height in pixels that it should be able to be resized to
 	 * 				cssClass:String Css-classes to be added to the field
 	 * 				input: Object {//field is editable if this object is supplied and its disabled-prop is falsey
@@ -1861,7 +1866,19 @@ class Tablance {
 
 	#exitEditMode(save) {
 		if (!this.#inEditMode)
-			return;	
+			return true;	
+		if (this.#activeStruct.validation) {
+			let message;
+			const input=this.#cellCursor.querySelector("input");
+			const doCommit=this.#activeStruct.validation(input.value,m=>message=m,this.#activeStruct
+													,this.#cellCursorDataObj,this.#mainRowIndex,this.#activeExpCell);
+			if (!doCommit) {
+				input.focus();
+				if (message)
+					this.#showTooltip(message);
+				return false;
+			}
+		}
 		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
 		this.container.focus({preventScroll:true});//so that #inputVal gets updated
 		this.#inEditMode=false;
@@ -1903,6 +1920,7 @@ class Tablance {
 		//if (this.#activeStruct.input.type==="textarea")//also needed for file..
 		this.#adjustCursorPosSize(this.#selectedCell);
 		this.#highlightOnFocus=false;
+		return true;
 	}
 
 	#showTooltip(message,target=this.#cellCursor) {
@@ -1964,20 +1982,28 @@ class Tablance {
 		
 	}
 
-	#selectExpansionCell(cellObject) {
-		if (!cellObject)
+	#selectExpansionCell(cellObj) {
+		if (!cellObj)
 			return;
+
+		const oldExpCell=this.#activeExpCell;//need to know the current/old expansion-cell if any for closing groups
+					//etc but we can't just use this.#activeExpCell because #selectCell changes it and we do want
+					//to call #selectCell first in order to know if changing cell is being prevented by validation()
+
+		const allowChange=this.#selectCell(false,cellObj.selEl??cellObj.el,cellObj.struct,cellObj.dataObj,false);
+		if (!allowChange)
+			return false;
 
 		//remove cellcursor click-through in case an expand-button-cell was previously selected
 		//this.#cellCursor.style.pointerEvents="auto";
-		for (var root=cellObject; root.parent; root=root.parent);
+		for (var root=cellObj; root.parent; root=root.parent);
 		this.#mainRowIndex=root.rowIndex;
-		if (this.#activeExpCell)//changing from an old expansionCell
-			for (let oldParnt=this.#activeExpCell; oldParnt=oldParnt?.parent;)//traverse parents of old cell
+		if (oldExpCell)//changing from an old expansionCell
+			for (let oldParnt=oldExpCell; oldParnt=oldParnt?.parent;)//traverse parents of old cell
 				if(oldParnt.struct.type==="group"||oldParnt.struct.onBlur||oldParnt.creating){//found a group or cell
 					//...with onBlur or cell that is being created. For any of these we want to observe the cell being
 					//left so that appropriate action can be taken
-					for (let newParent=cellObject; newParent=newParent.parent;)//traverse parents of new cell
+					for (let newParent=cellObj; newParent=newParent.parent;)//traverse parents of new cell
 						if (newParent===oldParnt) {//if this new parent-group is also part of old parents
 							oldParnt=null;//break out of outer loop
 							break;
@@ -1998,13 +2024,13 @@ class Tablance {
 				}
 
 		//in case this was called through cellObject.select() it might be necessary to make sure parent-groups are open
-		for (let parentCell=cellObject; parentCell=parentCell.parent;)
+		for (let parentCell=cellObj; parentCell=parentCell.parent;)
 			if (parentCell.struct.type=="group")
 				parentCell.el.classList.add("open");
 
-		this.#selectCell(false,cellObject.selEl??cellObject.el,cellObject.struct,cellObject.dataObj);
-		this.#activeExpCell=cellObject;
-		return cellObject;
+		this.#adjustCursorPosSize(cellObj.selEl??cellObj.el);
+		this.#activeExpCell=cellObj;
+		return cellObj;
 	}
 
 	#selectMultiCell(cell) {
@@ -2021,11 +2047,14 @@ class Tablance {
 		this.#cellCursor.style.left=cellPos.left-parentBR.left+"px";
 	}
 
-	#selectCell(isMultiCell,cellEl,struct,dataObj) {
-		this.#exitEditMode(true);
+	#selectCell(isMultiCell,cellEl,struct,dataObj,adjustCursorPosSize=true) {
+		const allowExitEditMode=this.#exitEditMode(true);
+		if (!allowExitEditMode)
+			return false;
 		this.container.focus({preventScroll:true});
 		this.#multiCellSelected=isMultiCell;
-		this.#adjustCursorPosSize(cellEl);
+		if (adjustCursorPosSize)
+			this.#adjustCursorPosSize(cellEl);
 		this.#cellCursor.classList.toggle("expansion",cellEl.closest(".expansion"));
 		this.#cellCursor.classList.toggle("disabled",cellEl.classList.contains("disabled"));
 		(isMultiCell?this.#multiRowArea.firstChild:this.#scrollingContent??this.container)
@@ -2037,6 +2066,7 @@ class Tablance {
 		this.#cellCursor.style.pointerEvents=noPtrEvent?"none":"auto";
 		this.#cellCursorDataObj=dataObj;
 		this.#selectedCellVal=dataObj?.[struct.id];
+		return true;
 	}
 
 	#getElPos(el) {
