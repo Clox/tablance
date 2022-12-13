@@ -885,6 +885,8 @@ class Tablance {
 		if (tr.classList.contains("expansion"))
 			tr=tr.previousSibling;
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
+		if (dataRowIndex==this.#mainRowIndex&&this.#activeExpCell)
+			this.#exitEditMode(false);//cancel out of edit-mode so field-validation doesn't cause problems
 		if (!this.#expansion||!this.#rowMetaGet(dataRowIndex)?.h)
 			return;
 		this.#unsortCol(null,"expand");
