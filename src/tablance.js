@@ -1867,7 +1867,7 @@ class Tablance {
 	#exitEditMode(save) {
 		if (!this.#inEditMode)
 			return true;	
-		if (this.#activeStruct.validation) {
+		if (this.#activeStruct.validation&&save) {
 			let message;
 			const input=this.#cellCursor.querySelector("input");
 			const doCommit=this.#activeStruct.validation(input.value,m=>message=m,this.#activeStruct
