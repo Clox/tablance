@@ -1930,7 +1930,18 @@ class Tablance {
 		this.#tooltip.style.visibility="visible";
 		this.#tooltip.firstChild.innerText=message;
 		this.#alignDropdown(this.#tooltip,target);
-		this.#tooltip.scrollIntoView({behavior:'smooth',block:"center"});
+		this.#scrollElementIntoView(this.#tooltip);
+		return true;
+	}
+
+	#scrollElementIntoView(element) {
+		if (!this.#onlyExpansion) {
+			const pos=this.#getElPos(element);
+			this.#scrollBody.scrollTop=pos.y+element.offsetHeight/2-this.#scrollBody.offsetHeight/2;
+			this.#scrollMethod();
+		} else
+			this.#tooltip.scrollIntoView({behavior:'smooth',block:"center"});
+		
 	}
 
 	#closeRepeatedInsertion(repeatEntry) {
