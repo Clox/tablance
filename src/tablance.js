@@ -196,10 +196,12 @@ class Tablance {
 	 * 					multiCellWidth Int For inputs that are present in the section that appears when
 	 * 						selecting/checking multiple rows using the select-col, this property can be used to specify
 	 * 						the number of pixels in width of the cell in that section.
-	 * 					onChange: Function Callback fired when the user has changed. It will get passed arguments:
-	 * 						1:TablanceEvent,2:newValue,3:oldValue,4:rowData,5:struct,6:cellObject
-	 * 						The TablanceEvent has a method with key "preventDefault" which if called prevents the
+	 * 					onChange: Function Callback fired when the user has changed the value of the input.
+	 * 						It will get passed arguments:
+	 * 						1:TablanceEvent. It has a method with key "preventDefault" which if called prevents the
 	 * 						data/cell from actually being changed.
+	 * 						,2:newValue,3:oldValue,4:rowData or rowData[] if multi-row-cell was edited,5:struct
+	 * 						,6:cellObject of the input if in expansion,null if multi-row-cell or cell of main was edited
 	 * 					onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 							It will get passed arguments 1:cellObject, 2:mainIndex
 	 * 					enabled Function - If present then this function will be run and if it returns falsey then the
@@ -253,8 +255,8 @@ class Tablance {
 	 * 							option, which can be done if allowCreateNew is true. It will get passed arguments 
 	 * 							1:new option-object,2:event, 3:dataObject,4:mainDataIndex,
 	 * 							5:struct,6:cellObject(if inside expansion)
-	 * 						selectInputPlaceholder String - A placeholder for the input which
-	 * 							is visible either if the number of options exceed minOptsFilter or allowCreateNew is true
+	 * 						selectInputPlaceholder String - A placeholder for the input which is
+	 * 							visible either if the number of options exceed minOptsFilter or allowCreateNew is true
 	 * 					}
 	 * 					-------------------------------------------------
 	 * 					maxLength int Sets max-length for strings if type is "text"
@@ -1878,6 +1880,17 @@ class Tablance {
 			this.#showTooltip(message);
 	}
 
+	#multiRowCellEdited() {
+		for (const selectedRow of this.#selectedRows)
+			selectedRow[this.#activeStruct.id]=this.#inputVal;
+		for (const selectedTr of this.#mainTbody.querySelectorAll("tr.selected"))
+			this.#updateMainRowCell(selectedTr.cells[this.#mainColIndex],this.#activeStruct);
+		this.#multiCellsDataObj[this.#activeStruct.id]=this.#inputVal;
+		const multiCell=this.#multiCells[this.#multiCellIds.indexOf(this.#activeStruct.id)];
+		multiCell.innerText=this.#inputVal?.text??this.#inputVal??"";
+		multiCell.classList.remove("mixed");
+	}
+
 	#exitEditMode(save) {
 		if (!this.#inEditMode)
 			return true;	
@@ -1888,20 +1901,14 @@ class Tablance {
 		this.#inEditMode=false;
 		this.#cellCursor.classList.remove("edit-mode");
 		if (save&&this.#inputVal!=this.#selectedCellVal) {
-			if (this.#multiCellSelected) {
-				for (const selectedRow of this.#selectedRows)
-					selectedRow[this.#activeStruct.id]=this.#inputVal;
-				for (const selectedTr of this.#mainTbody.querySelectorAll("tr.selected"))
-					this.#updateMainRowCell(selectedTr.cells[this.#mainColIndex],this.#activeStruct);
-				this.#multiCellsDataObj[this.#activeStruct.id]=this.#inputVal;
-				const multiCell=this.#multiCells[this.#multiCellIds.indexOf(this.#activeStruct.id)];
-				multiCell.innerText=this.#inputVal?.text??this.#inputVal??"";
-				multiCell.classList.remove("mixed");
-			} else {
-				let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
+			let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
 				this.#activeStruct.input.onChange?.({preventDefault:()=>doUpdate=false},this.#inputVal
-								,this.#selectedCellVal,this.#cellCursorDataObj,this.#activeStruct,this.#activeExpCell);
-				if (doUpdate) {
+						,this.#selectedCellVal,this.#multiCellSelected?this.#selectedRows:this.#cellCursorDataObj
+						,this.#activeStruct,this.#activeExpCell);
+			if (doUpdate) {
+				if (this.#multiCellSelected) {
+					this.#multiRowCellEdited();
+				} else {		
 					this.#cellCursorDataObj[this.#activeStruct.id]=this.#inputVal;
 					if (this.#activeExpCell){
 						const doHeightUpdate=this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj);
@@ -1915,9 +1922,9 @@ class Tablance {
 						this.#updateMainRowCell(this.#selectedCell,this.#activeStruct);
 						this.#unsortCol(this.#activeStruct.id);
 					}
-				} else
-					this.#inputVal=this.#selectedCellVal;
-			}
+				}
+			} else
+				this.#inputVal=this.#selectedCellVal;
 			this.#selectedCellVal=this.#inputVal;
 		}
 		this.#cellCursor.innerHTML="";
