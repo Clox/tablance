@@ -1927,7 +1927,8 @@ class Tablance {
 
 	#showTooltip(message,target=this.#cellCursor) {
 		this.#cellCursor.parentElement.appendChild(this.#tooltip);
-		this.#tooltip.style.visibility="visible";
+		setTimeout(()=>this.#tooltip.style.visibility="visible");//set it on a delay because mouseDownHandler might
+						//otherwise immediately set it back to hidden when bubbling up depending on where the click was
 		this.#tooltip.firstChild.innerText=message;
 		this.#alignDropdown(this.#tooltip,target);
 		this.#scrollElementIntoView(this.#tooltip);
@@ -1987,12 +1988,15 @@ class Tablance {
 
 
 	#selectMainTableCell(cell) {
-		if (!cell||!this.#closeActiveExpCell())	//in case of trying to move up from top row etc,
-			return;								//...or creating group but didnt validate
+		if (!cell)	//in case of trying to move up from top row etc,
+			return;
 		this.#mainColIndex=cell.cellIndex;
-		this.#mainRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);
-		this.#selectCell(false,cell,this.#colStructs[this.#mainColIndex],this.#data[this.#mainRowIndex]);
-		
+		const mainRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);//save it here rather than setting it 
+					//directly because we do not want it to change if #selectCell returns false, preventing the select
+		if (this.#exitEditMode(true)&&this.#closeActiveExpCell()) {
+			this.#selectCell(false,cell,this.#colStructs[this.#mainColIndex],this.#data[mainRowIndex]);
+			this.#mainRowIndex=mainRowIndex;
+		}
 	}
 
 	#selectExpansionCell(cellObj) {
@@ -2003,14 +2007,11 @@ class Tablance {
 					//etc but we can't just use this.#activeExpCell because #selectCell changes it and we do want
 					//to call #selectCell first in order to know if changing cell is being prevented by validation()
 
-		const allowChange=this.#selectCell(false,cellObj.selEl??cellObj.el,cellObj.struct,cellObj.dataObj,false);
-		if (!allowChange)
+		if (!this.#exitEditMode(true))
 			return false;
 
-		//remove cellcursor click-through in case an expand-button-cell was previously selected
-		//this.#cellCursor.style.pointerEvents="auto";
 		for (var root=cellObj; root.parent; root=root.parent);
-		this.#mainRowIndex=root.rowIndex;
+		const mainRowIndex=root.rowIndex;
 		if (oldExpCell)//changing from an old expansionCell
 			for (let oldParnt=oldExpCell; oldParnt=oldParnt?.parent;)//traverse parents of old cell
 				if(oldParnt.struct.type==="group"||oldParnt.struct.onBlur||oldParnt.creating){//found a group or cell
@@ -2032,9 +2033,11 @@ class Tablance {
 							this.#ignoreClicksUntil=Date.now()+500;
 						}
 						if (oldParnt.struct.onBlur)
-							oldParnt.struct.onBlur?.(oldParnt,this.#mainRowIndex);
+							oldParnt.struct.onBlur?.(oldParnt,mainRowIndex);
 					}
 				}
+		this.#selectCell(false,cellObj.selEl??cellObj.el,cellObj.struct,cellObj.dataObj,false);
+		this.#mainRowIndex=mainRowIndex;
 
 		//in case this was called through cellObject.select() it might be necessary to make sure parent-groups are open
 		for (let parentCell=cellObj; parentCell=parentCell.parent;)
@@ -2047,7 +2050,7 @@ class Tablance {
 	}
 
 	#selectMultiCell(cell) {
-		if (!cell||!this.#closeActiveExpCell())
+		if (!cell||!this.#exitEditMode(true)||!this.#closeActiveExpCell())
 			return;
 		this.#selectCell(true,cell,this.#colStructs[this.#mainColIndex=cell.dataset.colIndex],this.#multiCellsDataObj);
 		this.#mainRowIndex=null;
@@ -2061,9 +2064,6 @@ class Tablance {
 	}
 
 	#selectCell(isMultiCell,cellEl,struct,dataObj,adjustCursorPosSize=true) {
-		const allowExitEditMode=this.#exitEditMode(true);
-		if (!allowExitEditMode)
-			return false;
 		this.container.focus({preventScroll:true});
 		this.#multiCellSelected=isMultiCell;
 		if (adjustCursorPosSize)
@@ -2079,7 +2079,6 @@ class Tablance {
 		this.#cellCursor.style.pointerEvents=noPtrEvent?"none":"auto";
 		this.#cellCursorDataObj=dataObj;
 		this.#selectedCellVal=dataObj?.[struct.id];
-		return true;
 	}
 
 	#getElPos(el) {
@@ -2485,7 +2484,6 @@ class Tablance {
 				} else
 					topShift=this.#rowHeight;
 				const dataIndex=this.#numRenderedRows+this.#scrollRowIndex;//the data-index of the new row
-				this.#scrollRowIndex++;
 
 				//move the top row to bottom and update its values
 				const trToMove=this.#updateRowValues(this.#mainTbody.appendChild(this.#mainTbody.firstChild),dataIndex);
@@ -2493,6 +2491,7 @@ class Tablance {
 				//move the table down by the height of the removed row to compensate,else the whole table would shift up
 
 				this.#doRowScrollExp(trToMove,dataIndex,this.#scrollRowIndex,-topShift);
+				this.#scrollRowIndex++;
 			}
 		} else if (newScrY<parseInt(this.#scrollY)) {//if scrolling up
 			while (newScrY<parseInt(this.#tableSizer.style.top)) {//while top row is below top of viewport
@@ -2530,8 +2529,20 @@ class Tablance {
 		this.#tableSizer.style.height=parseInt(this.#tableSizer.style.height)+topShift+"px";
 		this.#tableSizer.style.top=parseInt(this.#tableSizer.style.top)-topShift+"px";
 
-		if (oldMainIndex===this.#mainRowIndex)//cell-cursor is on moved row
+		if (oldMainIndex===this.#mainRowIndex) {//cell-cursor is on moved row
 			this.#selectedCell=null;
+			for (let cell=this.#activeExpCell; cell&&(cell=cell.parent);)
+				if (cell.creating) {
+					cell.creating=false;//otherwise cell.select() below will not work
+					this.#exitEditMode(false);//in case field is validated. Could prevent cell.select() too otherwise
+					cell.parent.dataObj.splice(cell.parent.dataObj.indexOf(cell.dataObj),1);
+					while (cell&&(cell=cell.parent))
+						if (cell.select) {
+							cell.select();
+							break;
+						}
+				}
+		}
 
 		this.#lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row. This is needed
 		//in order to reassign the dom-element and such and also adjust the pos of the cellcursor in case
