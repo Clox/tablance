@@ -1576,7 +1576,7 @@ class Tablance {
 
 	#openTextEdit() {
 		const input=this.#cellCursor.appendChild(document.createElement("input"));
-		input.addEventListener("blur",()=>setTimeout(this.#exitEditMode.bind(this)));
+		input.addEventListener("blur",()=>setTimeout(this.#exitEditMode.bind(this,true)));
 		input.addEventListener("change",()=>this.#inputVal=input.value);
 		input.value=this.#selectedCellVal??"";
 		input.focus();
@@ -1864,21 +1864,23 @@ class Tablance {
 		}
 	}
 
+	#validateInput() {
+		let message;
+		const input=this.#cellCursor.querySelector("input");
+		const doCommit=this.#activeStruct.validation(input.value,m=>message=m,this.#activeStruct
+												,this.#cellCursorDataObj,this.#mainRowIndex,this.#activeExpCell);
+		if (doCommit)
+			return true;
+		input.focus();
+		if (message)
+			this.#showTooltip(message);
+	}
+
 	#exitEditMode(save) {
 		if (!this.#inEditMode)
 			return true;	
-		if (this.#activeStruct.validation&&save) {
-			let message;
-			const input=this.#cellCursor.querySelector("input");
-			const doCommit=this.#activeStruct.validation(input.value,m=>message=m,this.#activeStruct
-													,this.#cellCursorDataObj,this.#mainRowIndex,this.#activeExpCell);
-			if (!doCommit) {
-				input.focus();
-				if (message)
-					this.#showTooltip(message);
-				return false;
-			}
-		}
+		if (this.#activeStruct.validation&&save&&!this.#validateInput())
+			return false;
 		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
 		this.container.focus({preventScroll:true});//so that #inputVal gets updated
 		this.#inEditMode=false;
