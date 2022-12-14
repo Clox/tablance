@@ -86,11 +86,11 @@
 					{type:"field",title:"World",id:"world",input:{type:"text"}},
 					{type:"field",title:"Emptytest",id:"emptykey",input:{type:"text"}}]},
 				{type:"field",title:"Foobar One",id:"foobar1"
-					,input:{type:"text",maxLength:5,placeholder:"boo",multiEdit:true},
+					,input:{type:"text",maxLength:5,placeholder:"boo",multiEdit:true,
 					validation:(newVal,message)=>{
 						message("Must be \"Foo\"");
 						return newVal=="Foo";
-					}},
+					}}},
 				{type:"field",title:"Foobar Two",id:"foobar2"},
 				{type:"list",title:"Baz entries",titlesColWidth:"6em",entries:[
 					{type:"field",title:"Baz One",id:"baz1"},

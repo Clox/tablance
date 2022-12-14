@@ -186,11 +186,6 @@ class Tablance {
   	 * 				type "field" this is what will display data and which also can be editable by specifying "input"
   	 * 				title String String displayed title if placed in a container which displays the title
   	 * 				id String the key of the property in the data that the row should display
-	 * 				validation Function A callback function which can be used to validate the data upon comitting it.
-	 * 					Return true if validation was successfull. It gets passed the following arhuments:
-	 * 					1:newValue, 2: message-function - A function that that takes a message-string as its first
-	 * 					argument. If it the validation didn't go through then this string will be displayed to the user.
-	 * 					3:struct, 4:rowData, 5:mainIndex, 6:cellObject(if expansion-cell)
 	 * 				maxHeight int For textareas, sets the max-height in pixels that it should be able to be resized to
 	 * 				cssClass String Css-classes to be added to the field
 	 * 				input Object field is editable if this object is supplied and its "disabled"-prop is not true
@@ -212,6 +207,12 @@ class Tablance {
 	 * 								mandatory. Use property "fileUploadHandler" to handle the actual upload.)
 	 * 					----Properties valid for ALL types of inputs----
 	 * 						placeholder String adds a placeholder-string to the input-element
+	 * 						validation Function A callback function which can be used to validate the data upon
+	 * 							comitting it. Return true if validation was successfull.
+	 * 							It gets passed the following arhuments:
+	 * 							1:newValue, 2: message-function - A function that that takes a message-string as its
+	 * 							first argument. If it the validation didn't go through then this string will be
+	 * 							displayed to the user. 3:struct, 4:rowData, 5:mainIndex, 6:cellObject(if expansion-cell)
 	 * 						title String String displayed title if placed in a container which displays the title
 	 * 						multiEdit Bool Whether this input should be editable via multi-row-area, the section that 
 	 * 							appears when selecting/checking multiple rows using the select-col. Default is true if
@@ -1882,7 +1883,7 @@ class Tablance {
 	#validateInput() {
 		let message;
 		const input=this.#cellCursor.querySelector("input");
-		const doCommit=this.#activeStruct.validation(input.value,m=>message=m,this.#activeStruct
+		const doCommit=this.#activeStruct.input.validation(input.value,m=>message=m,this.#activeStruct
 												,this.#cellCursorDataObj,this.#mainRowIndex,this.#activeExpCell);
 		if (doCommit)
 			return true;
@@ -1905,7 +1906,7 @@ class Tablance {
 	#exitEditMode(save) {
 		if (!this.#inEditMode)
 			return true;	
-		if (this.#activeStruct.validation&&save&&!this.#validateInput())
+		if (this.#activeStruct.input.validation&&save&&!this.#validateInput())
 			return false;
 		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
 		this.container.focus({preventScroll:true});//so that #inputVal gets updated
