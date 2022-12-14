@@ -162,70 +162,76 @@ class Tablance {
 	 * 	@param	{Object} expansion This allows for having rows that can be expanded to show more data. An "entry"-object
 	 * 			is expected and some of them can hold other entry-objects so that they can be nested.
 	 * 			Types of entries:
-	 * 			{//this is an entry that holds multiple rows laid out vertically, each item in the list can have a 
-	 * 			 //title on the left side by specifying "title" in each item within the list
-  	 *				type:"list",
-	 *				title:"Foobar",//displayed title if placed in a container which displays the title
-	 * 				entries:[]//each element should be another entry
+	 * 			{
+  	 *				type "list" this is an entry that holds multiple rows laid out vertically, each item in the list 
+	 *							can have a title on the left side by specifying "title" in each item within the list
+	 *				title String displayed title if placed in a container which displays the title
+	 * 				entries Array each element should be another entry
 	 * 				titlesColWidth:String Width of the column with the titles. Don't forget adding the unit.
 	 * 					Default is null which enables setting the width via css.
 	 * 				onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
 	 *			}
 	 *			{	
-	 *				type: "collection" //basically like a list but each item is inlined, meaning they will be lined up
-	 *									//in a horizontal line and will also wrap to multiple lines if needed
-	 *				title:"Foobar",//displayed title if placed in a container which displays the title
-	 * 				entries:[]//each element should be another entry
-	 * 				cssClass:String Css-classes to be added to the collection-div
-	 * 				onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
+	 *				type "collection" basically like a list but each item is inlined, meaning they will be lined up
+	 *									in a horizontal line and will also wrap to multiple lines if needed
+	 *				title String displayed title if placed in a container which displays the title
+	 * 				entries Array each element should be another entry
+	 * 				cssClass String Css-classes to be added to the collection-div
+	 * 				onBlur Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
 	 *	 		}
 	 *			{
-  	 * 				type:"field",//this is what will display data and which also can be editable
-  	 * 				title:"Foobar",//displayed title if placed in list
-  	 * 				id:"foobar",//the key of the property in the data that the row should display
+  	 * 				type "field" this is what will display data and which also can be editable by specifying "input"
+  	 * 				title String String displayed title if placed in a container which displays the title
+  	 * 				id String the key of the property in the data that the row should display
 	 * 				validation Function A callback function which can be used to validate the data upon comitting it.
 	 * 					Return true if validation was successfull. It gets passed the following arhuments:
 	 * 					1:newValue, 2: message-function - A function that that takes a message-string as its first
 	 * 					argument. If it the validation didn't go through then this string will be displayed to the user.
 	 * 					3:struct, 4:rowData, 5:mainIndex, 6:cellObject(if expansion-cell)
 	 * 				maxHeight int For textareas, sets the max-height in pixels that it should be able to be resized to
-	 * 				cssClass:String Css-classes to be added to the field
-	 * 				input: Object {//field is editable if this object is supplied and its disabled-prop is falsey
-	 * 					multiCellWidth Int For inputs that are present in the section that appears when
-	 * 						selecting/checking multiple rows using the select-col, this property can be used to specify
-	 * 						the number of pixels in width of the cell in that section.
-	 * 					onChange: Function Callback fired when the user has changed the value of the input.
-	 * 						It will get passed arguments:
-	 * 						1:TablanceEvent. It has a method with key "preventDefault" which if called prevents the
-	 * 						data/cell from actually being changed.
-	 * 						,2:newValue,3:oldValue,4:rowData or rowData[] if multi-row-cell was edited,5:struct
-	 * 						,6:cellObject of the input if in expansion,null if multi-row-cell or cell of main was edited
-	 * 					onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
-	 * 							It will get passed arguments 1:cellObject, 2:mainIndex
-	 * 					enabled Function - If present then this function will be run and if it returns falsey then the
-	 * 										cell will not be editable. It may also return an object structured as:
-	 * 										{enabled:Bool, message:String}. The message will be displayed to the user 
-	 * 											if edit is attempted and enabled is set to false, disabling the field
-	 * 							It gets passed the following arguments - 
-	 * 													1:struct,2:rowData,3:mainIndex,4:cellObject(if in expansion)
-	 * 					type String This is mandatory and specifies the type of input. Possible values are:
+	 * 				cssClass String Css-classes to be added to the field
+	 * 				input Object field is editable if this object is supplied and its "disabled"-prop is not true
+	 * 					{
+	 * 					type String This is mandatory and specifies the type of input. Se further down for properties 
+	 * 						specific to each type of input. The possible types are:
 	 * 							"text"(single line text),
 	 * 							"textarea"(multi-line text),
 	 * 							"number"(number with stepper),
 	 * 							"date"(a date and possibly time with a calendar),
-	 * 							"select" selection from a list of items
+	 * 							"select"(selection from a list of items. The values for cells may either be the "value" 
+	 * 										specified in one the the options in "options", or it can be an actual 
+	 * 										reference to the option)
 	 * 							"button"(simple button)
-	 * 							"file" An input for uploading files. The data for a file entry may be a 
+	 * 							"file" (An input for uploading files. The data for a file entry may be a 
 	 * 								File-object which it will be if the file has been uploaded during the current
 	 * 								session. Or it may be an object which basically have the same properties
 	 * 								as File:lastModified, name, size, type altough none of those properties are
-	 * 								mandatory. Use property "fileUploadHandler" to handle the actual upload.
-	 * 						Depending on which one is selected certain properties
-	 * 							below are (dis)allowed.
-	 * 
-	 * 					----Properties used exclusively by input "file"----
+	 * 								mandatory. Use property "fileUploadHandler" to handle the actual upload.)
+	 * 					----Properties valid for ALL types of inputs----
+	 * 						placeholder String adds a placeholder-string to the input-element
+	 * 						title String String displayed title if placed in a container which displays the title
+	 * 						multiCellWidth Int For inputs that are present in the section that appears when
+	 * 							selecting/checking multiple rows using the select-col, this property can be used to
+	 * 							specify the number of pixels in width of the cell in that section.
+	 * 						onChange Function Callback fired when the user has changed the value of the input.
+	 * 							It will get passed arguments:
+	 * 							1:TablanceEvent. It has a method with key "preventDefault" which if called prevents the
+	 * 							data/cell from actually being changed. ,2:newValue,3:oldValue
+	 * 							,4:rowData or rowData[] if multi-row-cell was edited,5:struct
+	 * 							,6:cellObject of the input if in expansion,null if not inside expansion
+	 * 						onBlur Function Callback fired when cellcursor goes from being inside the container
+	 * 							to outside. It will get passed arguments 1:cellObject, 2:mainIndex
+	 * 						enabled Function - If present then this function will be run and if it returns falsey then
+	 * 							the cell will not be editable. It may also return an object structured as:
+	 * 							{enabled:Bool, message:String}. The message will be displayed to the user 
+	 * 							if edit is attempted and enabled is set to false, disabling the field
+	 * 							It gets passed the following arguments - 
+	 * 							1:struct,2:rowData,3:mainIndex,4:cellObject(if in expansion)
+	 * 					----Properties specific to input "text"----
+	 * 							maxLength int Sets max-length for the string
+	 * 					----Properties specific to input "file"----
 	 * 						fileUploadHandler Function This callback will be triggered when the user does a file-upload.
 	 * 							Arguments: 1:XMLHttpRequest - call open() on this to specify url and such,
 	 * 							2: The File-object, 3:struct,4:rowData,5:mainIndex,6:cellObject(if in expansion)
@@ -238,8 +244,9 @@ class Tablance {
 	 * 						deleteHandler Function callback-function for when the user deletes a file. It gets the 
 	 * 							following arguments passed to it:
 	 * 							1: Event, 2: File-object, 3:struct,4:rowData,5:mainIndex,6:cellObject(if in expansion)
-	 * 
-	 * 					----Properties used exclusively by input "select"----
+	 * 					----Properties specific to input "select"----
+	 * 						minOptsFilter Integer - The minimum number of options required for the filter-input to
+	 * 							appear. Can also be set via param opts->defaultMinOptsFilter
 	 * 						noResultsText String A string which is displayed when a user filters the 
 	 * 							options in a select and there are no results. 
 	 * 							Can also be set globally via param opts->lang->selectNoResultsFound
@@ -258,56 +265,53 @@ class Tablance {
 	 * 						selectInputPlaceholder String - A placeholder for the input which is
 	 * 							visible either if the number of options exceed minOptsFilter or allowCreateNew is true
 	 * 					}
-	 * 					-------------------------------------------------
-	 * 					maxLength int Sets max-length for strings if type is "text"
-	 * 					placeholder String adds a placeholder-string to the input-element
-  	 * 					btnText: String,//If type is "button" then this will be the text on it
-	 * 					clickHandler:Function //Used for type "button". A callback-function that will get called 
-	 * 							//when the button is pressed. It will get passed arguments 1:event, 2:dataObject
-	 * 							//,3:mainDataIndex,4:struct,5:cellObject(if inside expansion)
-	 * 					minOptsFilter Integer - The minimum number of options required for the filter-input to appear
-	 * 						Can also be set via param opts->defaultMinOptsFilter
-  	 * 			}}
+	 * 					----Properties specific to input "button"----
+	 * 						btnText String If type is "button" then this will be the text on it
+	 * 						clickHandler Function A callback-function that will get called  when the button is pressed. 
+	 * 							It will get passed arguments 1:event, 2:dataObject
+	 * 							,3:mainDataIndex,4:struct,5:cellObject(if inside expansion)
+  	 * 				}
+	 * 			}
 	 * 			{
-  	 * 				type:"repeated",//used when the number of rows is undefined and where more may be able to be added, 
-	 * 								//perhaps by the user. Having a list with a repeated->field basically works the same
-	 * 								//as having a list with multiple fields. A list can also mix repeated/dynamic and
-	 * 								//static fields. The structure could look something like:
-	 * 								//list
-	 * 								//	repeated
-	 * 								//		field
-	 * 								//	field1
-	 * 								//	field2
-  	 * 				id:"foobar",//this should be the key of an array in the data where each object corresponds to each
-	 * 							//element in this repeated rows.
-  	 * 				entry: any entry //may be item or list for instance. the data retrieved for these will be 1
-	 * 								//level deeper so the path from the base would be idOfRepeatedRows->arrayIndex->*
-	 * 				create: Bool //if true then a row is added which can be interacted with to insert more entries
-	 * 				onCreate: Function Callback fired when the user has committed a new row. It is counted as committed
+  	 * 				type:"repeated" used when the number of rows is undefined and where more may be able to be added, 
+	 * 								perhaps by the user. Having a list with a repeated->field basically works the same
+	 * 								as having a list with multiple fields. A list can also mix repeated/dynamic and
+	 * 								static fields. The structure could look something like:
+	 * 								list
+	 * 									repeated
+	 * 										field
+	 * 									field1
+	 * 									field2
+  	 * 				id String this should be the key of an array in the data where each object corresponds to each
+	 * 							element in this repeated rows.
+  	 * 				entry Object Any entry. May be item or list for instance. The data retrieved for these will be 1
+	 * 								level deeper so the path from the base would be idOfRepeatedRows->arrayIndex->*
+	 * 				create: Bool If true then a row is added which can be interacted with to insert more entries
+	 * 				onCreate Function Callback fired when the user has committed a new row. It is counted as committed
 	 * 					when the cell-cursor has left the repeat-row after having created it.
 	 * 					It will get passed arguments: 1:rowData,2:cellObject
-	 * 				sortCompare: Function Passing in a function allows for sorting the entries. As expected this
+	 * 				sortCompare Function Passing in a function allows for sorting the entries. As expected this
 	 * 						function will get called multiple times to compare the entries to one another.
 	 * 						It gets 4 arguments: 1: object A, 2: object B, 3: rowData, 4: cellObject
 	 * 						Return >0 to sort A after B, <0 to sort B after A, or ===0 to keep original order of A and B
-	 * 				creationText: //used if "create" is true. the text of the creation-cell. default is "Create new"
-	 * 				deleteText: //used if "create" is true. the text of the deletion-button. default is "Delete"
-	 * 							//can also be set via param opts->lang
-	 * 				deleteAreYouSureText: //used if "create" is true. text above yes/no-btns. default is "Are you sure?"
-	 * 							//can also be set via param opts->lang
-	 * 				areYouSureYesText: //used if "create" is true. text of confirm-button for delete. Default is "Yes"
-	 * 							//can also be set via param opts->lang
-	 * 				areYouSureNoText: //used if "create" is true. text of cancel-button for delete. Default is "No"
-	 * 							//can also be set via param opts->lang
+	 * 				creationText String Used if "create" is true. the text of the creation-cell. Default is "Insert new"
+	 * 							May also be set via opts->lang->insertNew
+	 * 				deleteText String used if "create" is true. the text of the deletion-button. Default is "Delete"
+	 * 							can also be set via param opts->lang->delete
+	 * 				deleteAreYouSureText String Used if "create" is true. Text above yes/no-btns.
+	 * 							Default is "Are you sure?". Can also be set via param opts->lang->deleteAreYouSure
+	 * 				areYouSureYesText String Used if "create" is true. Text of confirm-button for delete.
+	 * 							Default is "Yes". Can also be set via param opts->lang->deleteAreYouSureYes
+	 * 				areYouSureNoText String Used if "create" is true. Text of cancel-button for delete. Default is "No"
+	 * 							Can also be set via param opts->lang->deleteAreYouSureNo
   	 * 			}
   	 * 			{
-  	 * 				type:"group",//used when a set of data should be grouped, like for instance having an address and
-	 * 							//all the rows in it belongs together. the group also has to be entered/opened
-	 * 							//with enter/doubleclick
-  	 * 				title:"Foobar",//displayed title if placed in list
-  	 * 				entries: Array any entries. fields, lists, etc.. 
-	 * 				closedRender: Function //pass a method here that will get the data for the group as first arg.
-	 * 								//it needs to return a string which will replace the group-content when it is closed
+  	 * 				type "group" Used when a set of data should be grouped. An example is when having an address and
+	 * 					all the rows in it belongs together. The group also has to be entered/opened with enter/dblclick
+  	 * 				title String String displayed title if placed in a container which displays the title
+  	 * 				entries Array Array of entries. fields, lists, etc.. 
+	 * 				closedRender Function pass a method here that will get the data for the group as first arg.
+	 * 								it needs to return a string which will replace the group-content when it is closed
 	 * 				creationValidation Function If this group is placed within a repeated-container with create set to
 	 * 								true then this function will be executed upon commiting the creation. If the
 	 * 								function returns true then the validation succeeded and the group will be created.
@@ -346,6 +350,7 @@ class Tablance {
 	 * 								deleteAreYouSureNo	"No" (Used in the deletion of repeat-items)
 	 * 								datePlaceholder "YYYY-MM-DD"
 	 * 								selectNoResultsFound "No results found"
+	 * 								insertNew "Insert New" (Used in repeat-struct if create is set to true)
 	 * 							}
 	 * 	@param {Bool} onlyExpansion If this is set to true then the table will not have any actual rows and will instead
 	 * 								only have an expansion specified in param expansion. It will also not have a
@@ -1006,7 +1011,7 @@ class Tablance {
 		if (struct.create) {
 			const creationTable=parentEl.appendChild(document.createElement("table"));
 			const creationCell=creationTable.insertRow().insertCell();
-			creationCell.innerText=struct.creationText??"Insert new";
+			creationCell.innerText=struct.creationText??this.#opts.lang?.insertNew??"Insert new";
 			creationTable.classList.add("repeat-insertion","empty");//empty for hiding it when group is closed if group
 			const creationObj=cellObj.children[cellObj.children.length]=
 								{parent:cellObj,el:creationTable,index:repeatData.length,struct:{type:"repeatCreate"}};
