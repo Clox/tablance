@@ -186,7 +186,6 @@ class Tablance {
   	 * 				type "field" this is what will display data and which also can be editable by specifying "input"
   	 * 				title String String displayed title if placed in a container which displays the title
   	 * 				id String the key of the property in the data that the row should display
-	 * 				maxHeight int For textareas, sets the max-height in pixels that it should be able to be resized to
 	 * 				cssClass String Css-classes to be added to the field
 	 * 				input Object field is editable if this object is supplied and its "disabled"-prop is not true
 	 * 					{
@@ -236,6 +235,8 @@ class Tablance {
 	 * 							1:struct,2:rowData,3:mainIndex,4:cellObject(if in expansion)
 	 * 					----Properties specific to input "text"----
 	 * 							maxLength int Sets max-length for the string
+	 * 					----Properties specific to input "textarea"----
+	 * 						maxHeight int Sets the max-height in pixels that it should be able to be resized to
 	 * 					----Properties specific to input "file"----
 	 * 						fileUploadHandler Function This callback will be triggered when the user does a file-upload.
 	 * 							Arguments: 1:XMLHttpRequest - call open() on this to specify url and such,
