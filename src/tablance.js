@@ -212,9 +212,12 @@ class Tablance {
 	 * 					----Properties valid for ALL types of inputs----
 	 * 						placeholder String adds a placeholder-string to the input-element
 	 * 						title String String displayed title if placed in a container which displays the title
-	 * 						multiCellWidth Int For inputs that are present in the section that appears when
-	 * 							selecting/checking multiple rows using the select-col, this property can be used to
-	 * 							specify the number of pixels in width of the cell in that section.
+	 * 						multiEdit Bool Whether this input should be editable via multi-row-area, the section that 
+	 * 							appears when selecting/checking multiple rows using the select-col. Default is true if
+	 * 							not in expansion, or false if in expansion.
+	 * 							Can't be used for inputs nested inside repeated-container.
+	 * 						multiCellWidth Int For inputs that are present in the multi-row-area. This property can be 
+	 * 							used to specify the number of pixels in width of the cell in that section.
 	 * 						onChange Function Callback fired when the user has changed the value of the input.
 	 * 							It will get passed arguments:
 	 * 							1:TablanceEvent. It has a method with key "preventDefault" which if called prevents the
@@ -2294,7 +2297,7 @@ class Tablance {
 		this.#multiCells=[];
 		this.#multiCellsDataObj={};
 		for (let colI=-1,colStruct; colStruct=this.#colStructs[++colI];) {
-			if (colStruct.input) {
+			if (colStruct.input&&colStruct.input.multiEdit!=false) {
 				const colDiv=colsDiv.appendChild(document.createElement("div"));
 				const header=document.createElement("h3");
 				colDiv.appendChild(header).innerText=colStruct.title;
