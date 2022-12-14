@@ -85,7 +85,8 @@
 					{type:"field",title:"Hello",id:"hello",input:{type:"text"}},
 					{type:"field",title:"World",id:"world",input:{type:"text"}},
 					{type:"field",title:"Emptytest",id:"emptykey",input:{type:"text"}}]},
-				{type:"field",title:"Foobar One",id:"foobar1",input:{type:"text",maxLength:5,placeholder:"boo"},
+				{type:"field",title:"Foobar One",id:"foobar1"
+					,input:{type:"text",maxLength:5,placeholder:"boo",multiEdit:true},
 					validation:(newVal,message)=>{
 						message("Must be \"Foo\"");
 						return newVal=="Foo";

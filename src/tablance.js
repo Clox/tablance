@@ -32,6 +32,7 @@ class Tablance {
 						//section is used to edit multiple rows at once
 	#multiRowAreaHeight="95px";//the height of #multiRowArea when fully open
 	#multiRowAreaOpen=false;//whether the section is currently open or not
+	#multiRowStructs;//Array of structs with inputs that are present in the multi-row-area
 	#multiCellSelected=false;//whether or not a cell inside #multiRowArea is currently selected
 	#multiCellIds;//array of ids of columns that are editable and therefore can be edited via multi-cell-section
 	#multiCells;//the multi-edit-cells in multiRowArea, in the same order as in #multiCellIds. 
@@ -431,17 +432,19 @@ class Tablance {
 	 * @param {int|object} dataRow_or_mainIndex Either the actual data-object that should be updated, or its index in
 	 * 											the current view
 	 * @param {string|string[]} dataPath The path to the data-value that should be updated or added to. For a value in
-	 * 				the base which is not nested within repeated-containers it should simplt be the key of the property.
+	 * 				the base which is not nested within repeated-containers it should simply be the id of the property.
 	 * 				It can either be a string of keys separated by dots(.) or a array where each element is a key.
 	 * 				For repeated-arrays which data should be added to "[]" can be used similiar to how it's done in PHP.
 	 * 				For instance the path could be "foo[]" or "foo[].bar". Objects/arrays will be created recursively
 	 * 				if they don't yet exist.
 	 * @param {*} data The actual data to be replaced with or added
 	 * @param {bool} scrollTo Whether the modified/added data should be scrolled to and highlighted.
+	 * @param {bool} onlyRefresh If true then no new data will be written and argument "data" will be ignored.
+	 * 							The cell will only be refreshed with the value already present in the data.
 	 * @returns The tablance-object, for chaining*/
-	updateData(dataRow_or_mainIndex,dataPath,data,scrollTo) {
+	updateData(dataRow_or_mainIndex,dataPath,data,scrollTo=false,onlyRefresh=false) {
 		let dataRow,mainIndx,updatedEl,path=[];
-		if (typeof dataRow_or_mainIndex=="number")
+		if (!isNaN(dataRow_or_mainIndex))
 			dataRow=this.#data[mainIndx=dataRow_or_mainIndex];
 		else //if (typeof dataRow_or_mainIndex=="object")
 			mainIndx=this.#data.indexOf(dataRow=dataRow_or_mainIndex);
@@ -454,7 +457,7 @@ class Tablance {
 											=(isNaN(pathArr[i+1])&&pathArr[i+1]!=="[]")?{}:[];//then create it
 				else
 					dataPortion=dataPortion[dataStep];
-			} else//at last step
+			} else if (!onlyRefresh)//at last step
 				dataPortion[dataStep=="[]"?dataPortion.length:dataStep]=data;
 			if (celObj) {
 				const childCel=findCelRecursive(celObj,dataPortion,dataStep,path);
@@ -1892,7 +1895,7 @@ class Tablance {
 		for (const selectedRow of this.#selectedRows)
 			selectedRow[this.#activeStruct.id]=this.#inputVal;
 		for (const selectedTr of this.#mainTbody.querySelectorAll("tr.selected"))
-			this.#updateMainRowCell(selectedTr.cells[this.#mainColIndex],this.#activeStruct);
+			this.updateData(selectedTr.dataset.dataRowIndex,this.#activeStruct.id,this.#inputVal,false,true);
 		this.#multiCellsDataObj[this.#activeStruct.id]=this.#inputVal;
 		const multiCell=this.#multiCells[this.#multiCellIds.indexOf(this.#activeStruct.id)];
 		multiCell.innerText=this.#inputVal?.text??this.#inputVal??"";
@@ -2069,7 +2072,8 @@ class Tablance {
 	#selectMultiCell(cell) {
 		if (!cell||!this.#exitEditMode(true)||!this.#closeActiveExpCell())
 			return;
-		this.#selectCell(true,cell,this.#colStructs[this.#mainColIndex=cell.dataset.colIndex],this.#multiCellsDataObj);
+		this.#selectCell(true,cell,this.#multiRowStructs[this.#mainColIndex=cell.dataset.inputIndex]
+																							,this.#multiCellsDataObj);
 		this.#mainRowIndex=null;
 		
 		const cellPos=cell.getBoundingClientRect();
@@ -2292,25 +2296,38 @@ class Tablance {
 			e.preventDefault();//prevent selection of the cell-content on dbl-click
 			this.#selectMultiCell(e.target)
 		};
-		const colsDiv=multiRowAreaContent.appendChild(document.createElement("div"));
+		const inputsDiv=multiRowAreaContent.appendChild(document.createElement("div"));
 		this.#multiCellIds=[];
 		this.#multiCells=[];
 		this.#multiCellsDataObj={};
-		for (let colI=-1,colStruct; colStruct=this.#colStructs[++colI];) {
-			if (colStruct.input&&colStruct.input.multiEdit!=false) {
-				const colDiv=colsDiv.appendChild(document.createElement("div"));
-				const header=document.createElement("h3");
-				colDiv.appendChild(header).innerText=colStruct.title;
-				colDiv.classList.add("col");
-				colDiv.style.width=colStruct.input.multiCellWidth??
-											(/\d+\%/.test(colStruct.width)?colStruct.width:header.offsetWidth+30)+"px";
-				const cellDiv=colDiv.appendChild(document.createElement("div"));
-				this.#multiCells[this.#multiCellIds.push(colStruct.id)-1]=cellDiv;
-				cellDiv.classList.add("cell");
-				cellDiv.dataset.colIndex=colI;
-				cellDiv.addEventListener("mousedown",cellMouseDown);
-			}
+		this.#multiRowStructs=[];
+		for (let colI=-1,colStruct; colStruct=this.#colStructs[++colI];)
+			addInputsFromEntry.call(this,colStruct)
+		if (this.#expansion)
+			addInputsFromEntry.call(this,this.#expansion,true);
+		function addInputsFromEntry(struct,isExpa) {
+			if (struct.type=="repeated")
+				return;
+			if (struct.entries)
+				for (const entryStruct of struct.entries)
+					addInputsFromEntry.call(this,entryStruct,true);
+			else if (struct.input&&((!isExpa&&struct.input.multiEdit!=false)||(isExpa&&struct.input.multiEdit)))
+				this.#addInputToMultiRowArea(struct,inputsDiv,cellMouseDown);
 		}
+	}
+
+	#addInputToMultiRowArea(struct,inputsDiv,cellMouseDown) {
+		const inputDiv=inputsDiv.appendChild(document.createElement("div"));
+		const header=document.createElement("h3");
+		inputDiv.appendChild(header).innerText=struct.title;
+		inputDiv.classList.add("col");
+		inputDiv.style.width=struct.input.multiCellWidth??
+									(/\d+\%/.test(struct.width)?struct.width:header.offsetWidth+30)+"px";
+		const cellDiv=inputDiv.appendChild(document.createElement("div"));
+		this.#multiCells[this.#multiCellIds.push(struct.id)-1]=cellDiv;
+		cellDiv.classList.add("cell");
+		cellDiv.dataset.inputIndex=this.#multiRowStructs.push(struct)-1;
+		cellDiv.addEventListener("mousedown",cellMouseDown);
 	}
 
 	/**Updates the displayed values in #multiRowArea* */
