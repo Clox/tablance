@@ -30,13 +30,13 @@ class Tablance {
 	#mainTbody;//tbody of #mainTable
 	#multiRowArea;//a div displayed under #scrollBody if rows are selected/checked using select-column. This 
 						//section is used to edit multiple rows at once
-	#multiRowAreaHeight="95px";//the height of #multiRowArea when fully open
 	#multiRowAreaOpen=false;//whether the section is currently open or not
 	#multiRowStructs;//Array of structs with inputs that are present in the multi-row-area
 	#multiCellSelected=false;//whether or not a cell inside #multiRowArea is currently selected
 	#multiCellIds;//array of ids of columns that are editable and therefore can be edited via multi-cell-section
 	#multiCells;//the multi-edit-cells in multiRowArea, in the same order as in #multiCellIds. 
 	#multiCellsDataObj;//used to store values of the multi-cells so the inputs can get set correctly initially on edit
+	#multiCellInputIndex;//the index of the currently active input-element in the multi-row-area
 	#numberOfRowsSelectedSpan;//resides in #multiRowArea. Should be set to the number of rows selected
 	#borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
@@ -58,7 +58,7 @@ class Tablance {
 	
 	#cellCursor;//The element that for spreadsheets shows which cell is selected
 	#mainRowIndex;//the index of the row that the cellcursor is at
-	#mainColIndex;//the index of the column that the cellcursor is at. It is used for both main-table and #multiRowArea
+	#mainColIndex;//the index of the column that the cellcursor is at.
 	#activeStruct;//reference to the struct-object of the selcted cell. For cells in the maintable this would
 							//point to an object in #colStructs, otherwise to the struct-object of expansion-cells
 	#cellCursorDataObj;//reference to the actual object holding the data that the cell-cursor currently is at.
@@ -172,6 +172,14 @@ class Tablance {
 	 * 					Default is null which enables setting the width via css.
 	 * 				onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
+	 * 				multiEdit Bool Besides setting multiEdit on input of fields it can also be set on containers which
+	 * 							will add the container to the multi-row-area. Any input-fields in the container that
+	 * 							have multiEdit true will appear in the container there. Remember that both the container
+	 * 							and input of fields have to have true multiEdit for this to work. These can also be
+	 * 							nested so if there's another group in the group where both have true multiEdit and the
+	 * 							inner group has inputs with true multiEdit as well then multi-level groups will be 
+	 * 							added to the multi-row-area. Containers in the multi-row-area appear as a normal cell
+	 * 							at first but by entering it a page dedicated to that container is changed to.
 	 *			}
 	 *			{	
 	 *				type "collection" basically like a list but each item is inlined, meaning they will be lined up
@@ -181,6 +189,14 @@ class Tablance {
 	 * 				cssClass String Css-classes to be added to the collection-div
 	 * 				onBlur Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
+	 * 				multiEdit Bool Besides setting multiEdit on input of fields it can also be set on containers which
+	 * 							will add the container to the multi-row-area. Any input-fields in the container that
+	 * 							have multiEdit true will appear in the container there. Remember that both the container
+	 * 							and input of fields have to have true multiEdit for this to work. These can also be
+	 * 							nested so if there's another group in the group where both have true multiEdit and the
+	 * 							inner group has inputs with true multiEdit as well then multi-level groups will be 
+	 * 							added to the multi-row-area. Containers in the multi-row-area appear as a normal cell
+	 * 							at first but by entering it a page dedicated to that container is changed to.
 	 *	 		}
 	 *			{
   	 * 				type "field" this is what will display data and which also can be editable by specifying "input"
@@ -217,6 +233,7 @@ class Tablance {
 	 * 							appears when selecting/checking multiple rows using the select-col. Default is true if
 	 * 							not in expansion, or false if in expansion.
 	 * 							Can't be used for inputs nested inside repeated-container.
+	 * 							Containers can too be added to the multi-row-area by setting multiEdit on the container.
 	 * 						multiCellWidth Int For inputs that are present in the multi-row-area. This property can be 
 	 * 							used to specify the number of pixels in width of the cell in that section.
 	 * 						onChange Function Callback fired when the user has changed the value of the input.
@@ -326,6 +343,14 @@ class Tablance {
 	 * 									argument. If it the validation didn't go through then this string will be
 	 * 									displayed to the user.
 	 * 								2:struct, 3:rowData(all the entered data of the group), 4:mainIndex, 5:cellObject
+	 * 				multiEdit Bool Besides setting multiEdit on input of fields it can also be set on containers which
+	 * 							will add the container to the multi-row-area. Any input-fields in the container that
+	 * 							have multiEdit true will appear in the container there. Remember that both the container
+	 * 							and input of fields have to have true multiEdit for this to work. These can also be
+	 * 							nested so if there's another group in the group where both have true multiEdit and the
+	 * 							inner group has inputs with true multiEdit as well then multi-level groups will be 
+	 * 							added to the multi-row-area. Containers in the multi-row-area appear as a normal cell
+	 * 							at first but by entering it a page dedicated to that container is changed to.
   	 * 			}
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							searchbar Bool that defaults to true. If true then there will be a searchbar that
@@ -519,6 +544,8 @@ class Tablance {
 	 * @param int mainIndex
 	 * @returns Object Expansion-object (outer-most cell-object)*/
 	expandRow(mainIndex) {
+		if (this.#onlyExpansion)
+			return this.#openExpansions[0];
 		let tr=this.#mainTbody.querySelector(`[data-data-row-index="${mainIndex}"]`);
 		if (!tr) {
 			this.scrollToDataRow(this.#data[mainIndex],false,false);
@@ -728,7 +755,7 @@ class Tablance {
 			this.#selectMainTableCell(this.#mainTbody.querySelector
 				(`[data-data-row-index="${this.#mainRowIndex+isGoingDown}"]`)?.cells[this.#mainColIndex]);
 		else {
-			const nextTable=this.neighbourTables[isGoingDown?"down":"up"];
+			const nextTable=this.neighbourTables?.[isGoingDown?"down":"up"];
 			if (nextTable) {
 				this.#mainColIndex=this.#mainRowIndex=this.#activeExpCell=null;
 				nextTable.container.style.outline=this.#cellCursor.style.display="none";
@@ -788,6 +815,9 @@ class Tablance {
 	}
 	
 	#spreadsheetKeyDown(e) {
+		e.stopPropagation();//need this or else when navigating in inner Tablance i.e. a container-struct inside the
+							//multi-row-area, this will bubble out to outer Tablance and will focus it, so inner gets
+							//blurred and can't receive more input-events
 		this.#tooltip.style.visibility="hidden";
 		if (this.#inEditMode&&this.#activeStruct.input.type==="date") {
 			if (e.key.slice(0,5)==="Arrow") {
@@ -839,7 +869,7 @@ class Tablance {
 	}
 
 	#groupEscape() {
-		for (let cellObj=this.#activeExpCell; cellObj=cellObj.parent;)
+		for (let cellObj=this.#activeExpCell; cellObj=cellObj?.parent;)
 			if (cellObj.struct.type==="group")
 				return this.#selectExpansionCell(cellObj);
 	}
@@ -1180,7 +1210,7 @@ class Tablance {
 		listTable.className="expansion-list";
 		let titlesCol=document.createElement("col");
 		listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
-		if (listStructure.titlesColWidth)
+		if (listStructure.titlesColWidth!=null)
 			titlesCol.style.width=listStructure.titlesColWidth;
 		for (let entryI=-1,struct; struct=listStructure.entries[++entryI];) {
 			if (struct.type==="repeated") {
@@ -1369,7 +1399,7 @@ class Tablance {
 			checkbox.indeterminate=true;
 		if (this.#numRowsSelected^this.#multiRowAreaOpen) {
 			this.#multiRowAreaOpen=!!this.#numRowsSelected;
-			this.#multiRowArea.style.height=this.#numRowsSelected?this.#multiRowAreaHeight:0;
+			this.#setMultiRowAreaPage(this.#multiRowAreaOpen);
 			this.#animate(this.#updateViewportHeight.bind(this),Infinity,"adjustViewportHeight");
 		}
 	}
@@ -1511,12 +1541,35 @@ class Tablance {
 			this.#cellCursor.classList.add("edit-mode");
 			({textarea:this.#openTextAreaEdit,date:this.#openDateEdit,select:this.#openSelectEdit
 				,file:this.#openFileEdit}[this.#activeStruct.input.type]??this.#openTextEdit).call(this,e);
+		} else if (this.#multiCellSelected) {
+			this.#openMultiRowAreaContainer(this.#activeStruct);
 		} else if (this.#activeStruct.type==="group") {
 			this.#activeExpCell.el.classList.add("open");
 			this.#selectExpansionCell(this.#getFirstSelectableExpansionCell(this.#activeExpCell,true,true));
-		} else if (this.#activeStruct.type==="repeatCreate") {
+		} else if (this.#activeStruct.type==="repeatCreate")
 			this.#repeatInsertNew(this.#activeExpCell);
+	}
+
+	/**Input-fields in the multi-row-area may be container-structs in which case if they are entered, the multi-row-area
+	 * changes page to one that represents that container. This function populates the requested page and changes to it.
+	 * @param {*} containerStruct The struct-object of the container-entry*/
+	#openMultiRowAreaContainer(containerStruct) {
+		this.#cellCursor.style.display="none";
+		this.#multiRowArea.querySelector(".main").style.display="none";
+		if (!containerStruct.page) {
+			containerStruct.page=this.#multiRowArea.querySelector(".pages").appendChild(document.createElement("div"));
+			if (containerStruct.type=="group") {
+				containerStruct.type="list";//make it into a list so it doesn't have to be opened
+				containerStruct.titlesColWidth="25%";//auto(default) renders it at almost 70% for some reason
+			}
+			containerStruct.tablance=new Tablance(containerStruct.page,null,null,true,containerStruct,null,true);
+			containerStruct.tablance.addData([containerStruct.vals]);//containerStruct.vals are all keys with null vals
+				//Needed so fields that haven't been changed and therefore are null too are applied to selected rows.
+
+			this.#getFirstSelectableExpansionCell(containerStruct.tablance.expandRow(0),true).select();
 		}
+		this.#multiRowArea.querySelector(".container-controllers").style.display="block";
+		this.#setMultiRowAreaPage(true,this.#multiCellInputIndex);
 	}
 
 	#closeGroup(groupObject) {
@@ -1925,7 +1978,7 @@ class Tablance {
 					this.#cellCursorDataObj[this.#activeStruct.id]=this.#inputVal;
 					if (this.#activeExpCell){
 						const doHeightUpdate=this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj);
-						if (doHeightUpdate)
+						if (doHeightUpdate&&!this.#onlyExpansion)
 							this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"));
 						for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)//update closed-group-renders
 							if (cell.struct.closedRender)//found a group with a closed-group-render func
@@ -2074,7 +2127,7 @@ class Tablance {
 	#selectMultiCell(cell) {
 		if (!cell||!this.#exitEditMode(true)||!this.#closeActiveExpCell())
 			return;
-		this.#selectCell(true,cell,this.#multiRowStructs[this.#mainColIndex=cell.dataset.inputIndex]
+		this.#selectCell(true,cell,this.#multiRowStructs[this.#multiCellInputIndex=cell.dataset.inputIndex]
 																							,this.#multiCellsDataObj);
 		this.#mainRowIndex=null;
 		
@@ -2284,9 +2337,14 @@ class Tablance {
 
 	#createMultiRowArea() {
 		this.#multiRowArea=this.container.appendChild(document.createElement("div"));
-		this.#multiRowArea.classList.add("multi-row-section");
+		this.#multiRowArea.classList.add("multi-row-area");
 		this.#multiRowArea.style.height=0;
-		this.#multiRowArea.addEventListener("transitionend",()=>delete this.#animations["adjustViewportHeight"]);
+		this.#multiRowArea.addEventListener("transitionend",()=>{
+			delete this.#animations["adjustViewportHeight"];
+			if (this.#multiRowArea.style.height!="0px")
+			this.#multiRowArea.style.overflow="visible";//hade to shift between hidden/visible because hidden is needed
+									//for animation but visible is needed for dropdowns to be able to go outside of area
+		});
 
 		//extra div needed for having padding while also being able to animate height all the way to 0
 		const multiRowAreaContent=this.#multiRowArea.appendChild(document.createElement("div"));
@@ -2298,37 +2356,100 @@ class Tablance {
 			e.preventDefault();//prevent selection of the cell-content on dbl-click
 			this.#selectMultiCell(e.target)
 		};
-		const inputsDiv=multiRowAreaContent.appendChild(document.createElement("div"));
+		const containerControllers=multiRowAreaContent.appendChild(document.createElement("div"));
+		containerControllers.classList.add("container-controllers");
+		const containerCancelBtn=containerControllers.appendChild(document.createElement("button"));
+		containerCancelBtn.innerText="Cancel";
+		containerCancelBtn.addEventListener("click",containerCancel.bind(this))
+		const containerApplyBtn=containerControllers.appendChild(document.createElement("button"));
+		containerApplyBtn.innerText="Apply";
+		containerApplyBtn.addEventListener("click",containerApply.bind(this))
+
+		const pagesDiv=multiRowAreaContent.appendChild(document.createElement("div"));//for having multiple pages
+		pagesDiv.classList.add("pages");										//which is needed if having groups in it
+		
+		const mainPage=pagesDiv.appendChild(document.createElement("div"));
+		mainPage.classList.add("main");
+		mainPage.style.display="block";
 		this.#multiCellIds=[];
 		this.#multiCells=[];
 		this.#multiCellsDataObj={};
 		this.#multiRowStructs=[];
 		for (let colI=-1,colStruct; colStruct=this.#colStructs[++colI];)
-			addInputsFromEntry.call(this,colStruct)
+			addInputsFromEntryStruct.call(this,colStruct)
 		if (this.#expansion)
-			addInputsFromEntry.call(this,this.#expansion,true);
-		function addInputsFromEntry(struct,isExpa) {
+			addInputsFromEntryStruct.call(this,this.#expansion,true);
+		for (let i=-1,struct; struct=this.#multiRowStructs[++i];)
+			this.#addStructToMultiRowArea(i,struct,mainPage,cellMouseDown);
+
+		/**Given a struct like expansion or column, will add inputs to this.#multiRowStructs which later is iterated
+		 * and the contents added to the multi-row-area. 
+		 * @param {*} struct Should be expansion or column when called from outside, but it calls itself recursively
+		 * 						when hitting upon containers which then are passed to this param
+		 * @param {*} isExpa Whether the struct is in expansion or not.
+		 * 							Used to determine default for adding input or not to multi-row-area
+		 * @param {*} containerStruct Used when the function calls itself reursively and it has found a container with
+		 * 						multiEdit which means the container-struct should be maintained in the multi-row-area.
+		 * @returns */
+		function addInputsFromEntryStruct(struct,isExpa,containerStruct) {
 			if (struct.type=="repeated")
 				return;
-			if (struct.entries)
+			if (struct.entries?.length) {
+				let newContainerStrct;
+				if (struct.multiEdit)
+					 (newContainerStrct??this.#multiRowStructs).push(newContainerStrct={...struct,entries:[],vals:{}});
 				for (const entryStruct of struct.entries)
-					addInputsFromEntry.call(this,entryStruct,true);
-			else if (struct.input&&((!isExpa&&struct.input.multiEdit!=false)||(isExpa&&struct.input.multiEdit)))
-				this.#addInputToMultiRowArea(struct,inputsDiv,cellMouseDown);
+					addInputsFromEntryStruct.call(this,entryStruct,true,newContainerStrct);
+				if (containerStruct&&newContainerStrct)
+					Object.assign(containerStruct.vals,newContainerStrct.vals);
+			} else if (struct.input&&((!isExpa&&struct.input.multiEdit!=false)||(isExpa&&struct.input.multiEdit))) {
+				(containerStruct?.entries??this.#multiRowStructs).push(struct);
+				if (containerStruct)
+					containerStruct.vals[struct.id]=null;//properties are added to the base-structs of 
+						//this.#multiRowStructs if they are containers and are used later when assigning the
+						//container-vals to selected rows so that also unchanged fields with null values are assigned.
+			}
+		}
+		function containerCancel() {
+			this.#setMultiRowAreaPage(true,-1);
+		}
+		function containerApply() {
+			const data=this.#multiRowStructs[this.#multiCellInputIndex].tablance._allData[0];
+			for (const selectedRow of this.#selectedRows)
+				Object.assign(selectedRow,data);
+			for (const selectedTr of this.#mainTbody.querySelectorAll("tr.selected.expanded"))
+				for (const id of Object.keys(data))
+					this.updateData(selectedTr.dataset.dataRowIndex,id,null,false,true);
 		}
 	}
 
-	#addInputToMultiRowArea(struct,inputsDiv,cellMouseDown) {
+	#setMultiRowAreaPage(open,index=null) {
+		if (index!=null) {//changing page
+			if (this.#multiCellInputIndex)
+				this.#multiRowStructs[this.#multiCellInputIndex].page.style.display="none";
+			if (index==-1)
+				this.#multiRowArea.querySelector(".main").style.display="block";
+			else
+				this.#multiRowStructs[this.#multiCellInputIndex].page.style.display="block";
+			this.#multiRowArea.querySelector(".container-controllers").style.display=index==-1?"none":"block";
+		}
+		this.#multiRowArea.style.overflow="hidden";//hade to shift between hidden/visible because hidden is needed for 
+			//animation but visible is needed for dropdowns to be able to go outside of area
+		this.#multiRowArea.style.height=open?this.#multiRowArea.firstChild.offsetHeight+"px":0;
+		this.#animate(this.#updateViewportHeight.bind(this),Infinity,"adjustViewportHeight");
+	}
+
+	#addStructToMultiRowArea(index,struct,inputsDiv,cellMouseDown) {
 		const inputDiv=inputsDiv.appendChild(document.createElement("div"));
 		const header=document.createElement("h3");
 		inputDiv.appendChild(header).innerText=struct.title;
 		inputDiv.classList.add("col");
-		inputDiv.style.width=struct.input.multiCellWidth??
+		inputDiv.style.width=struct.input?.multiCellWidth??
 									(/\d+\%/.test(struct.width)?struct.width:header.offsetWidth+30)+"px";
 		const cellDiv=inputDiv.appendChild(document.createElement("div"));
 		this.#multiCells[this.#multiCellIds.push(struct.id)-1]=cellDiv;
 		cellDiv.classList.add("cell");
-		cellDiv.dataset.inputIndex=this.#multiRowStructs.push(struct)-1;
+		cellDiv.dataset.inputIndex=index;
 		cellDiv.addEventListener("mousedown",cellMouseDown);
 	}
 

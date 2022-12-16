@@ -1,5 +1,5 @@
 .tablance {
-	position: relative;//needed for position of .multi-row-section to work correctly
+	position: relative;//needed for position of .multi-row-area to work correctly
 	font-family: arial;
 	font-size: 16px;
 	&:focus {
@@ -424,8 +424,9 @@
 			}
 		}
 	}
-	.multi-row-section {
-		overflow: visible;//for picker-containers to be able to reach out of the container
+	.multi-row-area {
+		//overflow: visible;//for picker-containers to be able to reach out of the container
+		//overflow: hidden;
 		width: 100%;
 		position: absolute;
 		bottom: 0;
@@ -435,25 +436,42 @@
 		>div {
 			border-top: 1px solid black;
 			padding:4px;
-			.col {
-				display: inline-block;
-				overflow: hidden;//No idea why but going into edit-mode without overflow:hidden 
-								//makes all siblings shift down
-				padding: 1px 5px;
-				h3 {
-					margin: 5px 0;
-					font-weight: bold;
-					font-size: medium;
+			>.container-controllers {
+				display: none;
+				position: absolute;
+				right: 5px;
+				top: 5px;
+				>button {
+					margin-left: 5px;
 				}
-				.cell {
-					height: 25px;
-					border: 1px solid #ddd;
-					padding: 4px;
-					overflow: hidden;
-					cursor: cell;
-					position: relative;//for position of cell-cursor to work correctly
-					&.mixed {
-						font-style: italic;
+			}
+			>.pages {
+				.tablance {
+					margin-top: 10px;
+				}
+				>.main {
+					display: none;
+					.col {
+						display: inline-block;
+						overflow: hidden;//No idea why but going into edit-mode without overflow:hidden 
+										//makes all siblings shift down
+						padding: 1px 5px;
+						h3 {
+							margin: 5px 0;
+							font-weight: bold;
+							font-size: medium;
+						}
+						.cell {
+							height: 25px;
+							border: 1px solid #ddd;
+							padding: 4px;
+							overflow: hidden;
+							cursor: cell;
+							position: relative;//for position of cell-cursor to work correctly
+							&.mixed {
+								font-style: italic;
+							}
+						}
 					}
 				}
 			}
