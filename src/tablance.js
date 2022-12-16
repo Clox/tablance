@@ -1797,6 +1797,7 @@ class Tablance {
 		inputWrapper.classList.add("input-wrapper");//input-element a margin. Can't put padding in container because
 							//that would cause the highlight-box of selected options not to go all the way to the sides
 		const ulDiv=selectContainer.appendChild(document.createElement("div"));
+		this.#cellCursor.style.backgroundColor="transparent";//make current value visible and not coered by bg
 		for (const opt of strctInp.options)
 			(opt.pinned?pinnedOpts:looseOpts).push(opt);
 		if (strctInp.allowCreateNew||looseOpts.length>=(strctInp.minOptsFilter??this.#opts.defaultMinOptsFilter??5)) {
@@ -2154,6 +2155,7 @@ class Tablance {
 		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
 		const noPtrEvent=struct.type==="expand"||struct.type==="select"||struct.input?.type==="button";
 		this.#cellCursor.style.pointerEvents=noPtrEvent?"none":"auto";
+		this.#cellCursor.style.removeProperty("background-color");//select-input sets it to transparent, revert here
 		this.#cellCursorDataObj=dataObj;
 		this.#selectedCellVal=dataObj?.[struct.id];
 	}
