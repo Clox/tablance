@@ -122,7 +122,8 @@
 						,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
 						,hello:"Hallå",world:"Världen"
 						,addresses:[{street:"kaplan",zip:9999,city:"skara"},{street:"kaplan",zip:8999,city:"skara"}]
-						,sel:foods[0]//Math.round(Math.random()*(foods.length-1))+1
+						//,sel:Math.random()<.5?null:foods[Math.round(Math.random()*(foods.length-1))]
+						,sel:Math.random()<.5?null:foods[Math.round(Math.random()*(foods.length-1))].value
 						,repeatedField:[{foo:"row one in repeated",bar:5},{foo:"row two in repeated",bar:1}
 										,{foo:"row three in repeated",bar:3},{foo:"row four in repeated",bar:30}]
 						,repeatedGroup:[{foo1:"blahblah",foo2:"lalala"},{foo1:"bloj",foo2:"kapapa"}]

@@ -1841,7 +1841,7 @@ class Tablance {
 				if (opt.cssClass)
 					li.className=opt.cssClass;
 				li.innerText=opt.text;
-				if ((selectedVal!=null&&selectedVal==opt.value)||selectedVal==opt) {
+				if ((selectedVal==opt.value)||selectedVal==opt) {
 					foundSelected=true;
 					li.classList.add("selected","highlighted");
 					highlightLiIndex=ul.children.length-1;
