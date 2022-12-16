@@ -1792,7 +1792,6 @@ class Tablance {
 		const looseOpts=[];//all opts that have pinned=false
 		const inputWrapper=selectContainer.appendChild(document.createElement("div"));//used to give the input margins
 		const input=inputWrapper.appendChild(document.createElement("input"));
-		const windowMouseDownBound=windowMouseDown.bind(this);//saving ref to bound func so handler can be removed later
 		let canCreate=false;//whether the create-button is currently available.This firstly depends on input.allowCreate
 					//but also the current value of the input and if there already is an option matching that exactly
 		inputWrapper.classList.add("input-wrapper");//input-element a margin. Can't put padding in container because
@@ -1801,10 +1800,10 @@ class Tablance {
 		for (const opt of strctInp.options)
 			(opt.pinned?pinnedOpts:looseOpts).push(opt);
 		if (strctInp.allowCreateNew||looseOpts.length>=(strctInp.minOptsFilter??this.#opts.defaultMinOptsFilter??5)) {
-			input.addEventListener("input",inputInput.bind(this));//filtering is allowed, add listener to the input
+			input.addEventListener("input",inputInput);//filtering is allowed, add listener to the input
 		} else//else hide the input. still want to keep it to recieve focus and listening to keystrokes. tried focusing
 			inputWrapper.classList.add("hide");//container-divs instead of input but for some reason it messed up scroll
-		input.addEventListener("keydown",inputKeyDown.bind(this));
+		input.addEventListener("keydown",inputKeyDown);
 		input.placeholder=strctInp.selectInputPlaceholder??"";
 		input.addEventListener("blur",input.focus)
 		const pinnedUl=ulDiv.appendChild(document.createElement("ul"));
@@ -1813,8 +1812,9 @@ class Tablance {
 		mainUl.classList.add("main");
 		for (let i=-1,ul;ul=[pinnedUl,mainUl][++i];) {
 			ul.dataset.ulIndex=i;
-			ul.addEventListener("mouseover",ulMouseOver.bind(this));
-			ul.addEventListener("click",ulClick.bind(this));
+			ul.addEventListener("mousemove",ulMouseMove);//using mousemove rather than mouseover because mouseover
+				//triggers when mouse is over ul while scrolling which is a problem if keyboard-navigating
+			ul.addEventListener("click",ulClick);
 		}
 		let creationLi;
 		if (strctInp.allowCreateNew) {
@@ -1830,7 +1830,7 @@ class Tablance {
 		this.#cellCursor.parentElement.appendChild(selectContainer);
 		selectContainer.className="tablance-select-container";
 		this.#alignDropdown(selectContainer);
-		window.addEventListener("mousedown",windowMouseDownBound);
+		window.addEventListener("mousedown",windowMouseDown);
 		input.focus();
 
 		function renderOpts(ul,opts,selectedVal) {
@@ -1864,26 +1864,27 @@ class Tablance {
 				pinnedUl.appendChild(creationLi);
 			else
 				pinnedUl.removeChild(creationLi);
-			if (renderOpts(mainUl,looseOpts,this.#inputVal))//found selected opt
+			if (renderOpts(mainUl,looseOpts,self.#inputVal))//found selected opt
 				pinnedUl.querySelector(".highlighted")?.classList.remove("highlighted");
 			else//did not find selected opt
 				if (highlightUlIndex)//...and empty is not selected
 					if (looseOpts.length)//there are visible opts
-						highlightOpt.call(this,1,0);//select first among the filtered ones
+						highlightOpt(1,0);//select first among the filtered ones
 					else if (pinnedUl.children.length)
-						highlightOpt.call(this,0,0);
+						highlightOpt(0,0);
 			noResults.style.display=looseOpts.length?"none":"block";
 			creationLi.innerText=`Create [${filterText=input.value}]`;
 		}
-		function ulMouseOver(e) {
-			highlightOpt.call(this,parseInt(e.target.closest("ul").dataset.ulIndex)
-																,[...e.target.parentNode.children].indexOf(e.target));
+		function ulMouseMove(e) {
+			const ulIndex=parseInt(e.target.closest("ul").dataset.ulIndex);
+			const liIndex=[...e.target.parentNode.children].indexOf(e.target)
+			highlightOpt(ulIndex,liIndex);
 		}
 		function windowMouseDown(e) {
 			for (var el=e.target; el!=selectContainer&&(el=el.parentElement););//go up until container or root is found
 			if (!el) {//click was outside select-container
 				close();
-				this.#exitEditMode(false);
+				self.#exitEditMode(false);
 			}
 		}
 		function close(e) {
@@ -1894,7 +1895,7 @@ class Tablance {
 			} else
 				self.#inputVal=(highlightUlIndex?looseOpts:pinnedOpts)[highlightLiIndex];
 			selectContainer.remove();
-			window.removeEventListener("mousedown",windowMouseDownBound);
+			window.removeEventListener("mousedown",windowMouseDown);
 		}
 		function highlightOpt(ulIndex,liIndex,keyboardNavigating) {
 			ulDiv.getElementsByClassName("highlighted")[0]?.classList.remove("highlighted");
@@ -1919,7 +1920,7 @@ class Tablance {
 					highlightOpt(1,0,true);
 			} else if (e.key==="Enter") {
 				close(e);
-				this.#moveCellCursor(0,e.shiftKey?-1:1);
+				self.#moveCellCursor(0,e.shiftKey?-1:1);
 				e.stopPropagation();
 			} else if (e.key==="Escape")
 				close(e);
@@ -1929,7 +1930,7 @@ class Tablance {
 				highlightUlIndex=parseInt(e.currentTarget.dataset.ulIndex);
 				highlightLiIndex=Array.prototype.indexOf.call(e.currentTarget.children, e.target);
 				close();
-				this.#exitEditMode(true);
+				self.#exitEditMode(true);
 			}
 		}
 	}
