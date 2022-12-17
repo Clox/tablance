@@ -1973,6 +1973,7 @@ class Tablance {
 						,this.#selectedCellVal,this.#multiCellSelected?this.#selectedRows:this.#cellCursorDataObj
 						,this.#activeStruct,this.#activeExpCell);
 			if (doUpdate) {
+				const checked=this.#selectedRows.indexOf(this.#cellCursorDataObj)!=-1;
 				if (this.#multiCellSelected) {
 					this.#multiRowCellEdited();
 				} else {	
@@ -1981,11 +1982,25 @@ class Tablance {
 						const doHeightUpdate=this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj);
 						if (doHeightUpdate&&!this.#onlyExpansion)
 							this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"));
-						for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)//update closed-group-renders
+						for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)
 							if (cell.struct.closedRender)//found a group with a closed-group-render func
-								cell.updateRenderOnClose=true;
+								cell.updateRenderOnClose=true;//update closed-group-render
+						if (checked) {
+							for (const multiStruct of this.#multiRowStructs) {
+								if (multiStruct.entries) {
+									for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)
+										if (cell.struct==multiStruct.origStruct) {
+											this.#updateMultiCellVals([multiStruct]);
+											break;
+										}
+								} else
+									if (this.#activeStruct==multiStruct)
+										this.#updateMultiCellVals([multiStruct]);
+							}
+						}
 					} else {
-						this.#updateMultiCellVals([this.#activeStruct]);
+						if (checked)
+							this.#updateMultiCellVals([this.#activeStruct]);
 						this.#updateMainRowCell(this.#selectedCell,this.#activeStruct);
 						this.#unsortCol(this.#activeStruct.id);
 					}
@@ -2398,7 +2413,8 @@ class Tablance {
 			if (struct.entries?.length) {
 				let newContainerStrct;
 				if (struct.multiEdit)
-					 (newContainerStrct??this.#multiRowStructs).push(newContainerStrct={...struct,entries:[],vals:{}});
+					 (newContainerStrct??this.#multiRowStructs)
+					 						.push(newContainerStrct={...struct,entries:[],vals:{},origStruct:struct});
 				for (const entryStruct of struct.entries)
 					addInputsFromEntryStruct.call(this,entryStruct,true,newContainerStrct);
 				if (containerStruct&&newContainerStrct)
