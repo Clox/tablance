@@ -33,7 +33,6 @@ class Tablance {
 	#multiRowAreaOpen=false;//whether the section is currently open or not
 	#multiRowStructs;//Array of structs with inputs that are present in the multi-row-area
 	#multiCellSelected=false;//whether or not a cell inside #multiRowArea is currently selected
-	#multiCellIds;//array of ids of columns that are editable and therefore can be edited via multi-cell-section
 	#multiCells;//the multi-edit-cells in multiRowArea, in the same order as in #multiCellIds. 
 	#multiCellsDataObj;//used to store values of the multi-cells so the inputs can get set correctly initially on edit
 	#multiCellInputIndex;//the index of the currently active input-element in the multi-row-area
@@ -1954,7 +1953,7 @@ class Tablance {
 		for (const selectedTr of this.#mainTbody.querySelectorAll("tr.selected"))
 			this.updateData(selectedTr.dataset.dataRowIndex,this.#activeStruct.id,this.#inputVal,false,true);
 		this.#multiCellsDataObj[this.#activeStruct.id]=this.#inputVal;
-		const multiCell=this.#multiCells[this.#multiCellIds.indexOf(this.#activeStruct.id)];
+		const multiCell=this.#multiCells[this.#multiRowStructs.indexOf(this.#activeStruct)];
 		multiCell.innerText=this.#inputVal?.text??this.#inputVal??"";
 		multiCell.classList.remove("mixed");
 	}
@@ -1976,7 +1975,7 @@ class Tablance {
 			if (doUpdate) {
 				if (this.#multiCellSelected) {
 					this.#multiRowCellEdited();
-				} else {		
+				} else {	
 					this.#cellCursorDataObj[this.#activeStruct.id]=this.#inputVal;
 					if (this.#activeExpCell){
 						const doHeightUpdate=this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj);
@@ -1986,7 +1985,7 @@ class Tablance {
 							if (cell.struct.closedRender)//found a group with a closed-group-render func
 								cell.updateRenderOnClose=true;
 					} else {
-						this.#updateMultiCellVals([this.#activeStruct.id]);
+						this.#updateMultiCellVals([this.#activeStruct]);
 						this.#updateMainRowCell(this.#selectedCell,this.#activeStruct);
 						this.#unsortCol(this.#activeStruct.id);
 					}
@@ -2374,7 +2373,6 @@ class Tablance {
 		const mainPage=pagesDiv.appendChild(document.createElement("div"));
 		mainPage.classList.add("main");
 		mainPage.style.display="block";
-		this.#multiCellIds=[];
 		this.#multiCells=[];
 		this.#multiCellsDataObj={};
 		this.#multiRowStructs=[];
@@ -2423,6 +2421,7 @@ class Tablance {
 			for (const selectedTr of this.#mainTbody.querySelectorAll("tr.selected.expanded"))
 				for (const id of Object.keys(data))
 					this.updateData(selectedTr.dataset.dataRowIndex,id,null,false,true);
+			this.#multiCells[this.#multiCellInputIndex].innerText="(Same)";
 		}
 	}
 
@@ -2450,27 +2449,42 @@ class Tablance {
 		inputDiv.style.width=struct.input?.multiCellWidth??
 									(/\d+\%/.test(struct.width)?struct.width:header.offsetWidth+30)+"px";
 		const cellDiv=inputDiv.appendChild(document.createElement("div"));
-		this.#multiCells[this.#multiCellIds.push(struct.id)-1]=cellDiv;
+		this.#multiCells.push(cellDiv);
 		cellDiv.classList.add("cell");
 		cellDiv.dataset.inputIndex=index;
 		cellDiv.addEventListener("mousedown",cellMouseDown);
 	}
 
 	/**Updates the displayed values in #multiRowArea* */
-	#updateMultiCellVals(idsToUpdate=this.#multiCellIds) {
+	#updateMultiCellVals(structsToUpdateCellsFor=this.#multiRowStructs) {
 		const mixedText="(Mixed)";
-		for (let multiCellI=-1, multiCellId; multiCellId=idsToUpdate[++multiCellI];) {
-			let colVal=this.#selectedRows[0]?.[multiCellId];
+		for (let multiCellI=-1, multiCellStruct; multiCellStruct=structsToUpdateCellsFor[++multiCellI];) {
+			const cellIndex=this.#multiRowStructs.indexOf(multiCellStruct);
 			let mixed=false;
-			for (let rowI=0,row; row=this.#selectedRows[++rowI];) {
-				if (row[multiCellId]!=colVal) {
-					mixed=true;
-					break;
+			if (!multiCellStruct.entries) {
+				let val,lastVal;
+				for (let rowI=-1,row; row=this.#selectedRows[++rowI];) {
+					val=row[multiCellStruct.id];
+					if (rowI&&val!=lastVal) {
+						mixed=true;
+						break;
+					}
+					lastVal=val;
 				}
+				this.#multiCellsDataObj[multiCellStruct]=mixed?"":val;
+				this.#multiCells[cellIndex].innerText=mixed?mixedText:val?.text??val??"";
+			} else {
+				const fieldKeys=Object.keys(multiCellStruct.vals);
+				for (let field,fieldI=0;!mixed&&(field=fieldKeys[fieldI]);fieldI++) {
+					for (let rowI=0,row; row=this.#selectedRows[++rowI];) {
+						if (row[field]!=this.#selectedRows[0][field]) {
+							mixed=true;
+							break;
+						}
+					}
+				}
+				this.#multiCells[cellIndex].innerText=mixed?mixedText:"(Same)";
 			}
-			this.#multiCellsDataObj[multiCellId]=mixed?"":colVal;
-			const cellIndex=this.#multiCellIds.indexOf(multiCellId);
-			this.#multiCells[cellIndex].innerText=mixed?mixedText:colVal?.text??colVal??"";
 			this.#multiCells[cellIndex].classList.toggle("mixed",mixed);
 		}
 	}
