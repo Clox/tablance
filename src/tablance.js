@@ -2429,6 +2429,8 @@ class Tablance {
 		}
 		function containerCancel() {
 			this.#setMultiRowAreaPage(true,-1);
+			this.container.focus();
+			this.#cellCursor.style.display="block";
 		}
 		function containerApply() {
 			const data=this.#multiRowStructs[this.#multiCellInputIndex].tablance._allData[0];
