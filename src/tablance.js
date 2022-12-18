@@ -231,7 +231,6 @@ class Tablance {
 	 * 						multiEdit Bool Whether this input should be editable via multi-row-area, the section that 
 	 * 							appears when selecting/checking multiple rows using the select-col. Default is true if
 	 * 							not in expansion, or false if in expansion.
-	 * 							Can't be used for inputs nested inside repeated-container.
 	 * 							Containers can too be added to the multi-row-area by setting multiEdit on the container.
 	 * 						multiCellWidth Int For inputs that are present in the multi-row-area. This property can be 
 	 * 							used to specify the number of pixels in width of the cell in that section.
@@ -295,10 +294,12 @@ class Tablance {
   	 * 				}
 	 * 			}
 	 * 			{
-  	 * 				type:"repeated" used when the number of rows is undefined and where more may be able to be added, 
-	 * 								perhaps by the user. Having a list with a repeated->field basically works the same
-	 * 								as having a list with multiple fields. A list can also mix repeated/dynamic and
-	 * 								static fields. The structure could look something like:
+  	 * 				type:"repeated" Used for "repeated" sets of data. The same data-structure is repeated as many times 
+	 * 					as there are data for it. This also allows adding/removing data on the fly and besides doing it 
+	 * 					programatically there's a built in interface for the user to do that.
+	 * 					Having a list-structure with a repeated->field basically works the same as having a list with
+	 * 					multiple field-structures. List-structures can mix repeated(dynamic) and static fields.
+	 * 					The structure could look something like:
 	 * 								list
 	 * 									repeated
 	 * 										field
@@ -308,24 +309,30 @@ class Tablance {
 	 * 							element in this repeated rows.
   	 * 				entry Object Any entry. May be item or list for instance. The data retrieved for these will be 1
 	 * 								level deeper so the path from the base would be idOfRepeatedRows->arrayIndex->*
-	 * 				create: Bool If true then a row is added which can be interacted with to insert more entries
-	 * 				onCreate Function Callback fired when the user has committed a new row. It is counted as committed
-	 * 					when the cell-cursor has left the repeat-row after having created it.
-	 * 					It will get passed arguments: 1:rowData,2:cellObject
+	 * 				create: Bool If true then there will be a user-interface for creating and deleting entries
+	 * 				onCreate Function Callback fired when the user has deleted an entry via the interface available if
+	 * 					"create" is true. It is counted as committed when the cell-cursor has left the repeat-row after
+	 * 					having created it. It will get passed arguments: 1:rowData,2:cellObject
+	 * 				onDelete Function Callback fired when the user has deleted an entry via the interface available if
+	 * 					"create" is true. It is counted as committed when the cell-cursor has left the repeat-row after
+	 * 					having created it. It will get passed arguments: 1:rowData,2:cellObject
 	 * 				sortCompare Function Passing in a function allows for sorting the entries. As expected this
-	 * 						function will get called multiple times to compare the entries to one another.
-	 * 						It gets 4 arguments: 1: object A, 2: object B, 3: rowData, 4: cellObject
-	 * 						Return >0 to sort A after B, <0 to sort B after A, or ===0 to keep original order of A and B
+	 * 					function will get called multiple times to compare the entries to one another.
+	 * 					It gets 4 arguments: 1: object A, 2: object B, 3: rowData, 4: cellObject
+	 * 					Return >0 to sort A after B, <0 to sort B after A, or ===0 to keep original order of A and B
 	 * 				creationText String Used if "create" is true. the text of the creation-cell. Default is "Insert new"
-	 * 							May also be set via opts->lang->insertNew
+	 * 					May also be set via opts->lang->insertNew
 	 * 				deleteText String used if "create" is true. the text of the deletion-button. Default is "Delete"
-	 * 							can also be set via param opts->lang->delete
+	 * 					can also be set via param opts->lang->delete
 	 * 				deleteAreYouSureText String Used if "create" is true. Text above yes/no-btns.
-	 * 							Default is "Are you sure?". Can also be set via param opts->lang->deleteAreYouSure
+	 * 					Default is "Are you sure?". Can also be set via param opts->lang->deleteAreYouSure
 	 * 				areYouSureYesText String Used if "create" is true. Text of confirm-button for delete.
-	 * 							Default is "Yes". Can also be set via param opts->lang->deleteAreYouSureYes
+	 * 					Default is "Yes". Can also be set via param opts->lang->deleteAreYouSureYes
 	 * 				areYouSureNoText String Used if "create" is true. Text of cancel-button for delete. Default is "No"
-	 * 							Can also be set via param opts->lang->deleteAreYouSureNo
+	 * 					Can also be set via param opts->lang->deleteAreYouSureNo
+	 * 				multiEdit Bool If set to true then this will appear in the multi-row-area which allows editing
+	 * 					repeated data for multiple data-rows at once. Applying the data does not append the data but it
+	 * 					replaces it meaning the repeated rows already present in the selected rows are removed.
   	 * 			}
   	 * 			{
   	 * 				type "group" Used when a set of data should be grouped. An example is when having an address and
@@ -1019,6 +1026,25 @@ class Tablance {
 		}
 	}
 
+	#repeatedOnDelete=(e,data,index,struct,cel)=>{
+		this.#deleteCell(cel.parent.parent);
+		cel.parent.parent.parent.struct.onDelete?.(cel.parent.parent.dataObj,cel.parent.parent);
+	}
+
+	#fileOnDelete=(e,data,index,strct,cel)=>{
+		const fileCell=cel.parent.parent;
+		const inputStruct=fileCell.fileInputStruct;
+		const dataRow=fileCell.parent.dataObj;
+		delete dataRow[inputStruct.id];
+		const fileTd=fileCell.el.parentElement;
+		fileTd.innerHTML="";
+		fileTd.classList.remove("group-cell");
+		this.#generateExpansionContent(inputStruct,index,fileCell,fileTd,fileCell.path,dataRow);
+		inputStruct.deleteHandler?.(e,data,inputStruct,fileCell.parent.dataObj,index,fileCell);
+		this.#selectExpansionCell(fileCell);
+	}
+
+
 	/**This is supposed to get called when a repeated-struct is found however in #generateExpansionList,
 	 * repeated-structs are looked for and handled by that method instead so that titles can be added to the list
 	 * which isn't handled by #generateExpansionContent but by the list-method itself
@@ -1034,8 +1060,8 @@ class Tablance {
 		let repeatData=cellObj.dataObj=rowData[struct.id];
 		if (repeatData?.length) {
 			if (struct.create&&struct.entry.type==="group")
-				(struct={...struct}).entry=this.#getGroupStructCopyWithDeleteControls(struct.entry);//copy repeat-struct
-					//not to edit the original. Then add delete-controls to its inner group which also gets copied.
+				//copy repeat-struct not to edit orig,then add delete-controls to its inner group which too gets copied.
+				(struct={...struct}).entry=this.#structCopyWithDeleteControls(struct.entry,this.#repeatedOnDelete);
 			if (struct.sortCompare)
 				(repeatData=[...repeatData]).sort(struct.sortCompare);
 			for (let childI=0; childI<repeatData.length; childI++) {
@@ -1073,7 +1099,7 @@ class Tablance {
 			this.#selectExpansionCell(cell.parent.children[0]);
 	}
 
-	#getGroupStructCopyWithDeleteControls(struct) {
+	#structCopyWithDeleteControls(struct,deleteHandler) {
 		const deleteControls={type:"collection",cssClass:"delete-controls"
 			,onBlur:cel=>cel.selEl.querySelector(".collection").classList.remove("delete-confirming")
 			,entries:[{type:"field",input:{type:"button",
@@ -1085,21 +1111,7 @@ class Tablance {
 				,title:struct.deleteAreYouSureText??this.#opts.lang?.deleteAreYouSure??"Are you sure?"},
 			{type:"field",input:{type:"button"
 				,btnText:struct.areYouSureYesText??this.#opts.lang?.deleteAreYouSureYes??"Yes",
-				clickHandler:(e,data,index,strct,cel)=>{
-					if (cel.parent.parent.fileInputStruct) {
-						const fileCell=cel.parent.parent;
-						const inputStruct=fileCell.fileInputStruct;
-						const dataRow=fileCell.parent.dataObj;
-						delete dataRow[inputStruct.id];
-						const fileTd=fileCell.el.parentElement;
-						fileTd.innerHTML="";
-						fileTd.classList.remove("group-cell");
-						this.#generateExpansionContent(inputStruct,index,fileCell,fileTd,fileCell.path,dataRow);
-						inputStruct.deleteHandler?.(e,data,inputStruct,fileCell.parent.dataObj,index,fileCell);
-						this.#selectExpansionCell(fileCell);
-					} else
-						this.#deleteCell(cel.parent.parent);
-				}},cssClass:"yes"}]};
+				clickHandler:deleteHandler},cssClass:"yes"}]};
 		struct={...struct};//make shallow copy so original is not affected
 		struct.entries=[...struct.entries,deleteControls];
 		return struct;
@@ -1593,8 +1605,8 @@ class Tablance {
 		const data=reptPar.dataObj[indexOfNew]={};		
 		let struct=reptPar.struct;
 		if (struct.create&&struct.entry.type==="group")
-			(struct={...struct}).entry=this.#getGroupStructCopyWithDeleteControls(struct.entry);//copy repeat-struct not
-			//to edit the original. Then add delete-controls to its inner group which also gets copied.
+			(struct={...struct}).entry=this.#structCopyWithDeleteControls(struct.entry,this.#repeatedOnDelete);
+			//copy repeat-struct not to edit orig. Then add delete-controls to its inner group which also gets copied.
 		this.#generateExpansionContent(struct.entry,indexOfNew,childObj,repeatCreater.el.parentNode,path,data);
 		for (var cellPar=childObj,cellI=0,cell=childObj;cell.struct.type!="field";cell=cellPar.children[cellI++]){
 			if (cell.struct.type==="group")
@@ -2912,7 +2924,7 @@ class Tablance {
 				metaEntries.splice(metaI,1);//potentially remove (some of) them
 		//define the group-structure for the file
 		
-		const fileGroup=this.#getGroupStructCopyWithDeleteControls({type:"group",entries:[]});
+		const fileGroup=this.#structCopyWithDeleteControls({type:"group",entries:[]},this.#fileOnDelete);
 		fileGroup.entries[0].entries.unshift({type:"field",input:{type:"button",btnText:"Open"
 				,clickHandler:(e,file,mainIndex,struct,btnObj)=>{
 					rowData??=this.#data[mainIndex];

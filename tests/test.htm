@@ -54,6 +54,7 @@
 				{type:"field",input:{type:"button",btnText:"Cool button",clickHandler:btnClickHandler}},
 				{type:"group",title:"förordnande",entries:[
 					{type:"repeated",id:"custodianshipChanges",create:true,onCreate:(...args)=>console.log(args)
+					,onDelete:(...args)=>console.log(args)
 					,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
 					,areYouSureYesText:"Ja",areYouSureNoText:"Nej",entry:
 						{type:"group",closedRender:data=>`${data.type} sedan ${data.date}`,entries:[
@@ -63,8 +64,6 @@
 									,allowSelectEmpty:false
 								}}],
 							creationValidation:(message,struct,data,index,cellObj)=>{
-								console.log(data);
-								console.log(data.date&&data.type)
 								message("Both fields are mandatory. Enter the data or delete to cancel.");
 								return data.date&&data.type;
 							}
