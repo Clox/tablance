@@ -1145,14 +1145,14 @@ class Tablance {
 	}
 
 	#generateExpansionGroup(groupStructure,dataIndex,cellObj,parentEl,path,rowData) {
-		parentEl.dataset.path=path.join("-");
 		cellObj.select=()=>this.#selectExpansionCell(cellObj);
 		cellObj.children=[];
 		cellObj.dataObj=rowData;
 		const groupTable=document.createElement("table");
+		groupTable.dataset.path=path.join("-");
 		parentEl.classList.add("group-cell");
 		cellObj.el=groupTable;//so that the whole group-table can be selectedf
-		groupTable.classList.add("expansion-group",groupStructure.cssClass);
+		groupTable.className="expansion-group "+groupStructure.cssClass??"";
 		for (let entryI=-1,struct; struct=groupStructure.entries[++entryI];) {
 			let tr=groupTable.insertRow();
 			tr.className="empty";//start as empty to hide when closed.updateCell() will remove it if a cell is non-empty
@@ -1619,17 +1619,22 @@ class Tablance {
 	}
 
 	#repeatInsertNew(repeatCreater) {
+		const pathOfNew=[...repeatCreater.path];
+		repeatCreater.path[repeatCreater.path.length-1]++;
+		repeatCreater.el.parentElement.dataset.path=repeatCreater.path.join("-");
 		const reptPar=repeatCreater.parent;
 		const indexOfNew=reptPar.children.length-1;
 		const childObj={parent:reptPar,index:indexOfNew,creating:true};//creating means it hasn't been commited yet
 		reptPar.children.splice(indexOfNew,0,childObj);
-		const path=repeatCreater.el.parentElement.dataset.path.split("-") ;
+		
 		const data=reptPar.dataObj[indexOfNew]={};		
 		let struct=reptPar.struct;
 		if (struct.create&&struct.entry.type==="group")
 			(struct={...struct}).entry=this.#structCopyWithDeleteControls(struct.entry,this.#repeatedOnDelete);
 			//copy repeat-struct not to edit orig. Then add delete-controls to its inner group which also gets copied.
-		this.#generateExpansionContent(struct.entry,indexOfNew,childObj,repeatCreater.el.parentNode,path,data);
+		const newDiv=document.createElement("div");
+		repeatCreater.el.parentElement.parentElement.insertBefore(newDiv,repeatCreater.el.parentElement)
+		this.#generateExpansionContent(struct.entry,indexOfNew,childObj,newDiv,pathOfNew,data);
 		for (var cellPar=childObj,cellI=0,cell=childObj;cell.struct.type!="field";cell=cellPar.children[cellI++]){
 			if (cell.struct.type==="group")
 				cell.el.classList.add("open");
@@ -1644,37 +1649,33 @@ class Tablance {
 		repeatCreater.el.scrollIntoView({behavior:'smooth',block:"center"});
 	}
 
+	#changeCellObjIndex(cellObj,change) {
+		cellObj.index+=change;
+		const pathIndex=cellObj.path.length-1;
+		fixPath(cellObj,change);
+		function fixPath(cellObj,change) {
+			if (cellObj.path) {
+				cellObj.path[pathIndex]+=change;
+				(cellObj.selEl??cellObj.el).dataset.path=cellObj.path.join("-");
+			}
+			if (cellObj.children)
+				for (const child of cellObj.children)
+					fixPath(child,change)
+		}
+	}
+
 	#deleteCell(cellObj) {
 		let newSelectedCell;
 		for (let i=cellObj.index,otherCell; otherCell=cellObj.parent.children[++i];)
-			otherCell.index--;
-		
+			this.#changeCellObjIndex(otherCell,-1)
 		if (cellObj.parent.children.length>=cellObj.index+1)
 			newSelectedCell=cellObj.parent.children[cellObj.index+1];
 		else if (cellObj.parent.children.length>1)
 			newSelectedCell=cellObj.parent.children[cellObj.index-1];
 		cellObj.parent.children.splice(cellObj.index,1);
 		cellObj.parent.dataObj.splice(cellObj.index,1);
-		cellObj.el.remove();
+		cellObj.el.parentElement.remove();
 		this.#selectExpansionCell(newSelectedCell??cellObj.parent.parent);
-
-
-		//correct the dataset.path of clickable elements so they can still be clicked
-		const path=[];//get the current path
-		let rootEl;
-		for (let pathCell=cellObj;pathCell;pathCell=pathCell.parent) {
-			if (pathCell.index!=null)
-				path.unshift(pathCell.index);
-			rootEl=pathCell.el??pathCell.selEl??rootEl;
-		}
-		for (const pathEl of rootEl.closest(".expansion").querySelectorAll('[data-path]')) {
-			const otherPath=pathEl.dataset.path.split("-");
-			for (var i=0; i<path.length-1&&path[i]==otherPath[i]; i++);
-			if (i==path.length-1&&otherPath[i]>path[i]) {
-				otherPath[i]--;
-				pathEl.dataset.path=otherPath.join("-");
-			}
-		}
 	}
 
 	#openTextEdit() {
@@ -2088,6 +2089,7 @@ class Tablance {
 			repeatEntry.parent.struct.onCreate?.(repeatEntry.dataObj,repeatEntry);
 		} else {
 			this.#deleteCell(repeatEntry);
+			return false;
 		}
 		return true;
 	}
@@ -2150,8 +2152,8 @@ class Tablance {
 						}
 					if (oldParnt) {
 						if (oldParnt.creating) {
-							const allowCreation=this.#closeRepeatedInsertion(oldParnt);
-							if (!allowCreation)
+							const allow=this.#closeRepeatedInsertion(oldParnt);
+							if (!allow)
 								return false;
 						}
 						if (oldParnt.struct.type==="group") {
