@@ -830,7 +830,8 @@ class Tablance {
 	}
 	
 	#spreadsheetKeyDown(e) {
-		e.stopPropagation();//need this or else when navigating in inner Tablance i.e. a container-struct inside the
+		if (!(this.#inEditMode&&this.#activeStruct.input.type=="date"))//don't prevent date-picker from being controlled
+			e.stopPropagation();//need this or else when navigating in inner Tablance i.e. a container-struct inside the
 							//multi-row-area, this will bubble out to outer Tablance and will focus it, so inner gets
 							//blurred and can't receive more input-events
 		this.#tooltip.style.visibility="hidden";
