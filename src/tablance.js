@@ -343,6 +343,7 @@ class Tablance {
   	 * 				type "group" Used when a set of data should be grouped. An example is when having an address and
 	 * 					all the rows in it belongs together. The group also has to be entered/opened with enter/dblclick
   	 * 				title String String displayed title if placed in a container which displays the title
+	 * 				cssClass String Css-classes to be added to the group
   	 * 				entries Array Array of entries. fields, lists, etc.. 
 	 * 				closedRender Function pass a method here that will get the data for the group as first arg.
 	 * 								it needs to return a string which will replace the group-content when it is closed
@@ -362,6 +363,9 @@ class Tablance {
 	 * 							inner group has inputs with true multiEdit as well then multi-level groups will be 
 	 * 							added to the multi-row-area. Containers in the multi-row-area appear as a normal cell
 	 * 							at first but by entering it a page dedicated to that container is changed to.
+	 * 				onOpen Function Function that fires when the group is opened. Gets passed the following arguments:
+	 * 					1: tablanceEvent-object. It has a preventDefault-function that can be called in order to
+	 * 					prevent the group frm actually opening. 2: group-object
   	 * 			}
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							searchbar Bool that defaults to true. If true then there will be a searchbar that
@@ -1049,6 +1053,11 @@ class Tablance {
 		this.#selectExpansionCell(fileCell);
 	}
 
+	#onOpenCreationGroup=(e,groupObject)=>{
+		e.preventDefault();
+		this.#repeatInsertNew(groupObject);
+	}
+
 
 	/**This is supposed to get called when a repeated-struct is found however in #generateExpansionList,
 	 * repeated-structs are looked for and handled by that method instead so that titles can be added to the list
@@ -1078,15 +1087,15 @@ class Tablance {
 			}
 		}
 		if (struct.create) {
-			const creationTable=parentEl.appendChild(document.createElement("table"));
-			const creationCell=creationTable.insertRow().insertCell();
-			creationCell.innerText=struct.creationText??this.#opts.lang?.insertNew??"Insert new";
-			creationTable.classList.add("repeat-insertion","empty");//empty for hiding it when group is closed if group
-			const creationObj=cellObj.children[cellObj.children.length]=
-								{parent:cellObj,el:creationTable,index:repeatData.length,struct:{type:"repeatCreate"}};
-			creationObj.select=()=>this.#selectExpansionCell(creationObj);
-			cellObj.insert=()=>this.#repeatInsertNew(creationObj);
-			creationTable.dataset.path=path.join("-")+"-"+repeatData.length;
+			const creationTxt=struct.creationText??this.#opts.lang?.insertNew??"Insert new";
+			const creationStrct={type:"group",closedRender:()=>creationTxt,entries:[]
+														,onOpen:this.#onOpenCreationGroup,cssClass:"repeat-insertion"};
+			const creationDiv=parentEl.appendChild(document.createElement("div"));
+			const creationObj=cellObj.children[repeatData.length]=
+															{parent:cellObj,el:creationDiv,index:repeatData.length};
+			path.push(repeatData.length);
+			this.#generateExpansionContent(creationStrct,dataIndex,creationObj,creationDiv,path,{});
+			path.pop();
 		}
 		
 		return !!repeatData?.length||struct.create;
@@ -1143,7 +1152,7 @@ class Tablance {
 		const groupTable=document.createElement("table");
 		parentEl.classList.add("group-cell");
 		cellObj.el=groupTable;//so that the whole group-table can be selectedf
-		groupTable.className="expansion-group";
+		groupTable.classList.add("expansion-group",groupStructure.cssClass);
 		for (let entryI=-1,struct; struct=groupStructure.entries[++entryI];) {
 			let tr=groupTable.insertRow();
 			tr.className="empty";//start as empty to hide when closed.updateCell() will remove it if a cell is non-empty
@@ -1561,10 +1570,17 @@ class Tablance {
 		} else if (this.#multiCellSelected) {
 			this.#openMultiRowAreaContainer(this.#activeStruct);
 		} else if (this.#activeStruct.type==="group") {
-			this.#activeExpCell.el.classList.add("open");
-			this.#selectExpansionCell(this.#getFirstSelectableExpansionCell(this.#activeExpCell,true,true));
-		} else if (this.#activeStruct.type==="repeatCreate")
-			this.#repeatInsertNew(this.#activeExpCell);
+			this.#openGroup(this.#activeExpCell);
+		}
+	}
+
+	#openGroup(groupObj) {
+		let doOpen=true;
+		groupObj.struct.onOpen?.({preventDefault:()=>doOpen=false},groupObj);
+		if (doOpen) {
+			groupObj.el.classList.add("open");
+			this.#selectExpansionCell(this.#getFirstSelectableExpansionCell(groupObj,true,true));
+		}
 	}
 
 	/**Input-fields in the multi-row-area may be container-structs in which case if they are entered, the multi-row-area
@@ -1607,7 +1623,7 @@ class Tablance {
 		const indexOfNew=reptPar.children.length-1;
 		const childObj={parent:reptPar,index:indexOfNew,creating:true};//creating means it hasn't been commited yet
 		reptPar.children.splice(indexOfNew,0,childObj);
-		const path=repeatCreater.el.dataset.path.split("-") ;
+		const path=repeatCreater.el.parentElement.dataset.path.split("-") ;
 		const data=reptPar.dataObj[indexOfNew]={};		
 		let struct=reptPar.struct;
 		if (struct.create&&struct.entry.type==="group")
@@ -2070,8 +2086,9 @@ class Tablance {
 				return false;//prevent commiting/closing the group
 			}
 			repeatEntry.parent.struct.onCreate?.(repeatEntry.dataObj,repeatEntry);
-		} else
+		} else {
 			this.#deleteCell(repeatEntry);
+		}
 		return true;
 	}
 
