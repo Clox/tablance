@@ -138,8 +138,8 @@ class Tablance {
 	/**
 	 * @param {HTMLElement} container An element which the table is going to be added to
 	 * @param {{}[]} columns An array of objects where each object has the following structure: {
-	 * 			id String A unique identifier for the column. Unless "render" is set a prop of this name from the
-	 * 						data-rows will be used as value for the cells
+	 * 			id String A unique identifier for the column. The value in the data that has this key will be used as
+	 * 				the value in the cell.
 	 * 			title String The header-string of the column
 	 * 			width String The width of the column. This can be in either px or % units.
 	 * 				In case of % it will be calculated on the remaining space after all the fixed widths
@@ -147,8 +147,9 @@ class Tablance {
 	 * 			input: See param expansion -> input. This is the same as that one expect textareas are only valid for
 	 * 												expansion-cells and not directly in a maintable-cell
 	 * 			render Function pass in a callback-function here and what it returns will be used as value for the
-	 * 					cells. It will get called with a reference to the data-row as its first argument, column-object
-	 * 					as second, data-row-index as third and column-index and fourth.
+	 * 				cells. It gets passed the following arguments:
+	 * 				1: The value from data pointed to by "id", 2:data-row, 3:column-struct, 4:main-index, 
+	 * 1: The value from data pointed to by "id", 2: data-row, 3: struct,4: main-index, 5: Cell-object
 	 * 			type String The default is "data". Possible values are:
 	 * 				"data" - As it it implies, simply to display data but also input-elements such as fields or buttons
 	 * 				"expand" - The column will be buttons used for expanding/contracting the rows. See param expansion
@@ -202,6 +203,10 @@ class Tablance {
   	 * 				title String String displayed title if placed in a container which displays the title
   	 * 				id String the key of the property in the data that the row should display
 	 * 				cssClass String Css-classes to be added to the field
+	 * 				render Function Function that can be set to render the content of the cell. The return-value is what
+	 * 					will be written to the cell instead of getting the value with the key specified in "id", from
+	 * 					the data-row. Similiarly to columns->render it gets passed the following arguments:
+	 * 					1: The value from data pointed to by "id", 2: data-row, 3: struct,4: main-index, 5: Cell-object
 	 * 				input Object field is editable if this object is supplied and its "disabled"-prop is not true
 	 * 					{
 	 * 					type String This is mandatory and specifies the type of input. Se further down for properties 
@@ -2986,15 +2991,16 @@ class Tablance {
 			this.#generateButton(struct,mainIndex,el,rowData,cellObj);
 		} else {
 			let newCellContent;
-			if (struct.render)
-				newCellContent=struct.render(rowData,struct,mainIndex);
-			else if (struct.input?.type==="select") {
+			if (struct.render||struct.input?.type!="select") {
+				newCellContent=rowData[struct.id]??"";
+				if (struct.render)
+					newCellContent=struct.render(newCellContent,rowData,struct,mainIndex,cellObj);
+			} else { //if (struct.input?.type==="select") {
 				let selOptObj=rowData[struct.id];
 				if (selOptObj&&typeof selOptObj!=="object")
 					selOptObj=struct.input.options.find(opt=>opt.value==rowData[struct.id]);
 				newCellContent=selOptObj?.text??"";
-			} else
-				newCellContent=rowData[struct.id]??"";
+			}
 			let isDisabled=false;
 			if (this.#spreadsheet&&struct.type!=="expand") {
 				const enabledFuncResult=struct.input?.enabled?.(struct,rowData,mainIndex,cellObj);

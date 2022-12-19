@@ -8,7 +8,7 @@
 
 	<script>
 		document.addEventListener("DOMContentLoaded", ()=>{
-			function descFunc(dataRow,col,rowIndex,colIndex) {
+			function descFunc(value, dataRow,col,rowIndex) {
 				return `foobar ${rowIndex} - ${dataRow.descLetter}`
 			}
 			const foods=[{text:"Nothing",pinned:true},{text:"banana",value:1},{text:"apple",value:2},
@@ -29,6 +29,8 @@
 					,selectInputPlaceholder:"Sök/Skapa"}}
 				,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"}}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
+				{type:"field",title:"Dynamic Value",id:"dynamicField"
+				,render:(value, dataRow,col,rowIndex,cellObj)=>"test"},
 				{type:"field",title:"File",id:"file",input:{type:"file",fileUploadHandler:xhr=>{
 						xhr.open("POST", "http://localhost:3000/tests/serve.php", true);
 					},
