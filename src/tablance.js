@@ -1675,6 +1675,7 @@ class Tablance {
 		cellObj.parent.children.splice(cellObj.index,1);
 		cellObj.parent.dataObj.splice(cellObj.index,1);
 		cellObj.el.parentElement.remove();
+		this.#activeExpCell=null;//causes problem otherwise when #selectExpansionCell checks old cell
 		this.#selectExpansionCell(newSelectedCell??cellObj.parent.parent);
 	}
 
