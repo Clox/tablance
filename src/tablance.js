@@ -169,7 +169,7 @@ class Tablance {
 	 *				title String displayed title if placed in a container which displays the title
 	 * 				entries Array each element should be another entry
 	 * 				titlesColWidth:String Width of the column with the titles. Don't forget adding the unit.
-	 * 					Default is null which enables setting the width via css.
+	 * 					Default is null which enables setting the width via css.Setting 0/false turns it off completely.
 	 * 				onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
 	 * 				multiEdit Bool Besides setting multiEdit on input of fields it can also be set on containers which
@@ -1235,10 +1235,12 @@ class Tablance {
 		const listTable=listCelObj.listTable=document.createElement("table");
 		listTable.appendChild(document.createElement("tbody"));
 		listTable.className="expansion-list";
-		let titlesCol=document.createElement("col");
-		listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
-		if (listStructure.titlesColWidth!=null)
-			titlesCol.style.width=listStructure.titlesColWidth;
+		if (listStructure.titlesColWidth!=false) {
+			let titlesCol=document.createElement("col");
+			listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
+			if (listStructure.titlesColWidth!=null)
+				titlesCol.style.width=listStructure.titlesColWidth;
+		}
 		for (let entryI=-1,struct; struct=listStructure.entries[++entryI];) {
 			if (struct.type==="repeated") {
 				let repeatData=rowData[struct.id];
@@ -1282,7 +1284,7 @@ class Tablance {
 			for (var containerObj=parentObj; containerObj.struct.type=="repeated"; containerObj=containerObj.parent);
 			let listTr=document.createElement("tr");
 			container.insertBefore(listTr,insertBeforeEl);
-			if (containerObj.struct.type=="list") {
+			if (containerObj.struct.type=="list"&&containerObj.struct.titlesColWidth!=false) {
 				let titleTd=listTr.insertCell();
 				titleTd.className="title";
 				titleTd.innerText=struct.title??"";
