@@ -1072,7 +1072,8 @@ class Tablance {
 			for (let childI=0; childI<repeatData.length; childI++) {
 				let childObj=cellObj.children[childI]={parent:cellObj,index:childI};
 				path.push(childI);
-				this.#generateExpansionContent(struct.entry,dataIndex,childObj,parentEl,path,repeatData[childI]);
+				const contentDiv=parentEl.appendChild(document.createElement("div"));
+				this.#generateExpansionContent(struct.entry,dataIndex,childObj,contentDiv,path,repeatData[childI]);
 				path.pop();
 			}
 		}
