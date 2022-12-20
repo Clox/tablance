@@ -2944,9 +2944,9 @@ class Tablance {
 		//define all the file-meta-props
 		const lang=this.#opts.lang??{};
 		let metaEntries=[{type:"field",title:lang.fileName??"Filename",id:"name"},
-			{type:"field",title:lang.fileLastModified??"Last Modified",id:"lastModified",render:dataRow=>
-			new Date(dataRow.lastModified).toISOString().slice(0, 16).replace('T', ' ')},
-			{type:"field",title:lang.fileSize??"Size",id:"size",render:dataRow=>this.#humanFileSize(dataRow.size)},
+			{type:"field",title:lang.fileLastModified??"Last Modified",id:"lastModified",render:date=>
+			new Date(date).toISOString().slice(0, 16).replace('T', ' ')},
+			{type:"field",title:lang.fileSize??"Size",id:"size",render:size=>this.#humanFileSize(size)},
 			{type:"field",title:lang.fileType??"Type",id:"type"}];
 		for (let metaI=-1,metaName; metaName=["filename","lastModified","size","type"][++metaI];)
 			if(!(fileStruct.input.fileMetasToShow?.[metaName]??this.#opts.defaultFileMetasToShow?.[metaName]??true))
@@ -3016,7 +3016,7 @@ class Tablance {
 		} else {
 			let newCellContent;
 			if (struct.render||struct.input?.type!="select") {
-				newCellContent=rowData[struct.id]??"";
+				newCellContent=rowData[struct.id];
 				if (struct.render)
 					newCellContent=struct.render(newCellContent,rowData,struct,mainIndex,cellObj);
 			} else { //if (struct.input?.type==="select") {
@@ -3032,7 +3032,7 @@ class Tablance {
 					isDisabled=true;
 			}
 			(selEl??el).classList.toggle("disabled",isDisabled);
-			el.innerText=newCellContent;
+			el.innerText=newCellContent??"";
 		}
 	}
 
