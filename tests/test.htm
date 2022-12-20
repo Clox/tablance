@@ -70,6 +70,24 @@
 						}
 					}
 				]},
+				{type:"list",title:"förordnande-lista",titlesColWidth:0,entries:[
+					{type:"repeated",id:"custodianshipChanges",create:true,onCreate:(...args)=>console.log(args)
+					,onDelete:(...args)=>console.log(args)
+					,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
+					,areYouSureYesText:"Ja",areYouSureNoText:"Nej",entry:
+						{type:"group",closedRender:data=>`${data.type} sedan ${data.date}`,entries:[
+								{type:"field",title:"Datum",id:"date",input:{type:"date"}},
+								{type:"field",title:"Typ av ställföreträdarskap",id:"type",input:{type:"select",
+									options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"}]
+									,allowSelectEmpty:false
+								}}],
+							creationValidation:(message,struct,data,index,cellObj)=>{
+								message("Both fields are mandatory. Enter the data or delete to cancel.");
+								return data.date&&data.type;
+							}
+						}
+					}
+				]},
 				{type:"collection",title:"Bunch ",entries:[
 					{type:"field",title:"First thing",id:"first"},
 					{type:"field",title:"Second thing",id:"second"},
@@ -173,3 +191,6 @@
 	<br><br><br><br><br>
 	<div id="tablanceContainer3"></div>
 </body>
+<!-- 
+tablance.updateData(0,"addresses[]",{street:"paradisäppelvägen",zip:0,city:"ankeborg"}) 
+-->

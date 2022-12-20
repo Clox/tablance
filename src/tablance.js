@@ -1244,8 +1244,9 @@ class Tablance {
 		for (let entryI=-1,struct; struct=listStructure.entries[++entryI];) {
 			if (struct.type==="repeated") {
 				let repeatData=rowData[struct.id];
-				let rptCelObj=listCelObj.children[entryI]={parent:listCelObj,index:entryI,children:[],struct:struct};
-				if (rowData[struct.id]?.length){
+				const rptCelObj=listCelObj.children[entryI]=
+										{parent:listCelObj,index:entryI,children:[],struct:struct,dataObj:repeatData};
+				if (repeatData?.length){
 					if (struct.sortCompare)
 						(repeatData=[...repeatData]).sort(struct.sortCompare);
 					for (const itemData of repeatData) {
@@ -1266,17 +1267,9 @@ class Tablance {
 		contentTd.className="value";
 		let cellChild={parent:parentObj,index:index??parentObj.children.length};
 		
-		if (index!=null) {
-			for (const pathEl of container.querySelectorAll('[data-path]')) {
-				const elPath=pathEl.dataset.path.split("-");
-				if (elPath[path.length-1]==path[path.length-1]&&elPath[path.length]>=index) {
-					elPath[path.length]++;
-					pathEl.dataset.path=elPath.join("-");
-				}
-			}
-			//increment index of all the items after the inserted one
-			for (let i=parentObj.children.length; i>index; parentObj.children[--i].index++);
-		}
+		if (index!=null)
+			for (let siblingI=index-1,sibling; sibling=parentObj.children[++siblingI];)
+				this.#changeCellObjIndex(sibling,siblingI+1);
 		path.push(index??parentObj.children.length);
 		if (this.#generateExpansionContent(struct,mainIndex,cellChild,contentTd,path,data)) {//generate content
 			//and add it to dom if condition falls true, e.g. content was actually created. it might not be if it is
@@ -1652,25 +1645,25 @@ class Tablance {
 		repeatCreater.el.scrollIntoView({behavior:'smooth',block:"center"});
 	}
 
-	#changeCellObjIndex(cellObj,change) {
-		cellObj.index+=change;
-		const pathIndex=cellObj.path.length-1;
-		fixPath(cellObj,change);
-		function fixPath(cellObj,change) {
+	#changeCellObjIndex(cellObj,newIndex) {
+		cellObj.index=newIndex;
+		const level=cellObj.path.length-1;
+		fixPath(cellObj,newIndex);
+		function fixPath(cellObj) {
 			if (cellObj.path) {
-				cellObj.path[pathIndex]+=change;
+				cellObj.path[level]=newIndex;
 				(cellObj.selEl??cellObj.el).dataset.path=cellObj.path.join("-");
 			}
 			if (cellObj.children)
 				for (const child of cellObj.children)
-					fixPath(child,change)
+					fixPath(child)
 		}
 	}
 
 	#deleteCell(cellObj) {
 		let newSelectedCell;
 		for (let i=cellObj.index,otherCell; otherCell=cellObj.parent.children[++i];)
-			this.#changeCellObjIndex(otherCell,-1)
+			this.#changeCellObjIndex(otherCell,i-1)
 		if (cellObj.parent.children.length>=cellObj.index+1)
 			newSelectedCell=cellObj.parent.children[cellObj.index+1];
 		else if (cellObj.parent.children.length>1)
