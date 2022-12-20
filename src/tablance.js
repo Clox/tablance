@@ -825,7 +825,7 @@ class Tablance {
 			startI=chosenCell.index;
 		}
 		for (let childI=startI;childI>=0&&childI<children.length; childI+=isGoingDown||-1)
-			if (children[childI].struct.type==="list"||(children[childI].el??children[childI].selEl)?.offsetParent)
+			if (children[childI].children||children[childI].select)
 				 return this.#getFirstSelectableExpansionCell(children[childI],isGoingDown);
 	}
 	
