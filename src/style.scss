@@ -256,6 +256,10 @@
 			>tbody {
 				>tr{
 					>td.value {
+						&:first-child {
+							//for lists with no title-col
+							border-left: 1px solid #ccc;
+						}
 						padding: 5px;
 							>.expansion-group {
 								min-height: 1.4em;
