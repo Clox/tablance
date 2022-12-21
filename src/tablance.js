@@ -514,7 +514,7 @@ class Tablance {
 				case "field":
 					this.#updateExpansionCell(celObj,celData);
 				break; case "repeated":
-					updatedEl=this.#insertRepeatData(celObj,celData[celData.length-1],mainIndx,path);
+					updatedEl=this.#insertRepeatData(celObj,celData[celData.length-1],mainIndx,path).el.parentElement;
 			}
 			if (scrollTo) {
 				newEl.scrollIntoView({behavior:'smooth',block:"center"});
@@ -795,8 +795,8 @@ class Tablance {
 			return this.#getAdjacentExpansionCell(cellObj.parent,isGoingDown);
 	}
 
-	#selectFirstSelectableExpansionCell(cellObj,isGoingDown) {
-		const newCellObj=this.#getFirstSelectableExpansionCell(cellObj,isGoingDown);
+	#selectFirstSelectableExpansionCell(cellObj,isGoingDown,onlyGetChild=false) {
+		const newCellObj=this.#getFirstSelectableExpansionCell(cellObj,isGoingDown,onlyGetChild);
 		if (newCellObj)
 			return this.#selectExpansionCell(newCellObj);
 		this.#selectMainTableCell(this.#mainTbody.querySelector
@@ -1269,31 +1269,31 @@ class Tablance {
 		return true;
 	}
 
-	#generateListItem(container,struct,mainIndex,parentObj,path,data,insertBeforeEl=null,index=null) {
+	#generateListItem(tbody,struct,mainIndex,listObj,path,data,insertBeforeEl=null,index=null) {
 		let contentTd=document.createElement("td");
 		contentTd.className="value";
-		let cellChild={parent:parentObj,index:index??parentObj.children.length};
+		let cellChild={parent:listObj,index:index??listObj.children.length};
 		
 		if (index!=null)
-			for (let siblingI=index-1,sibling; sibling=parentObj.children[++siblingI];)
+			for (let siblingI=index-1,sibling; sibling=listObj.children[++siblingI];)
 				this.#changeCellObjIndex(sibling,siblingI+1);
-		path.push(index??parentObj.children.length);
+		path.push(index??listObj.children.length);
 		if (this.#generateExpansionContent(struct,mainIndex,cellChild,contentTd,path,data)) {//generate content
 			//and add it to dom if condition falls true, e.g. content was actually created. it might not be if it is
 			//a repeated and there was no data for it add
-			for (var containerObj=parentObj; containerObj.struct.type=="repeated"; containerObj=containerObj.parent);
+			for (var containerObj=listObj; containerObj.struct.type=="repeated"; containerObj=containerObj.parent);
 			let listTr=document.createElement("tr");
-			container.insertBefore(listTr,insertBeforeEl);
+			tbody.insertBefore(listTr,insertBeforeEl);
 			if (containerObj.struct.type=="list"&&containerObj.struct.titlesColWidth!=false) {
 				let titleTd=listTr.insertCell();
 				titleTd.className="title";
 				titleTd.innerText=struct.title??"";
 			}
 			listTr.appendChild(contentTd);
-			parentObj.children.splice(index??Infinity,0,cellChild);
+			listObj.children.splice(index??Infinity,0,cellChild);
 		}
 		path.pop();
-		return contentTd;
+		return cellChild;
 	}
 
 	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {	
@@ -1625,30 +1625,32 @@ class Tablance {
 		const pathOfNew=[...repeatCreater.path];
 		repeatCreater.path[repeatCreater.path.length-1]++;
 		repeatCreater.el.parentElement.dataset.path=repeatCreater.path.join("-");
-		const reptPar=repeatCreater.parent;
-		const indexOfNew=reptPar.children.length-1;
-		const childObj={parent:reptPar,index:indexOfNew,creating:true};//creating means it hasn't been commited yet
-		reptPar.children.splice(indexOfNew,0,childObj);
+		const repeatedObj=repeatCreater.parent;
+		const containerObj=repeatedObj.parent;
+		const indexOfNew=repeatedObj.children.length-1;
+		let rowIndex;
+		let newObj;
+		for (let root=containerObj; root.parent; root=root.parent,rowIndex=root.rowIndex);//get main-index
 		
-		const data=reptPar.dataObj[indexOfNew]={};		
-		let struct=reptPar.struct;
+		const data=repeatedObj.dataObj[indexOfNew]={};		
+		let struct=repeatedObj.struct;
 		if (struct.create&&struct.entry.type==="group")
 			(struct={...struct}).entry=this.#structCopyWithDeleteControls(struct.entry,this.#repeatedOnDelete);
 			//copy repeat-struct not to edit orig. Then add delete-controls to its inner group which also gets copied.
-		const newDiv=document.createElement("div");
-		repeatCreater.el.parentElement.parentElement.insertBefore(newDiv,repeatCreater.el.parentElement)
-		this.#generateExpansionContent(struct.entry,indexOfNew,childObj,newDiv,pathOfNew,data);
-		for (var cellPar=childObj,cellI=0,cell=childObj;cell.struct.type!="field";cell=cellPar.children[cellI++]){
-			if (cell.struct.type==="group")
-				cell.el.classList.add("open");
-			if (cell.children) {
-				cellPar=cell;
-				cellI=0;
-			}
+		if (containerObj.struct.type=="list") {
+			newObj=this.#generateListItem(containerObj.listTable.firstChild,struct.entry,rowIndex,containerObj,pathOfNew,data,repeatCreater.el.closest("tr"),indexOfNew);
+		} else {
+			newObj={parent:repeatedObj,index:indexOfNew,creating:true};//creating means it hasn't been commited yet
+			repeatedObj.children.splice(indexOfNew,0,newObj);
+			const newDiv=document.createElement("div");
+			repeatCreater.el.parentElement.parentElement.insertBefore(newDiv,repeatCreater.el.parentElement)
+			this.#generateExpansionContent(struct.entry,rowIndex,newObj,newDiv,pathOfNew,data);
 		}
+		
+		newObj.el.classList.add("open");
+		this.#selectFirstSelectableExpansionCell(newObj,true,true);
 		repeatCreater.index++;
 		repeatCreater.el.parentElement.appendChild(repeatCreater.el);
-		this.#selectExpansionCell(cell);
 		repeatCreater.el.scrollIntoView({behavior:'smooth',block:"center"});
 	}
 
