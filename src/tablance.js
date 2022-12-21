@@ -1092,6 +1092,7 @@ class Tablance {
 			const creationStrct={type:"group",closedRender:()=>creationTxt,entries:[]
 														,onOpen:this.#onOpenCreationGroup,cssClass:"repeat-insertion"};
 			const creationDiv=parentEl.appendChild(document.createElement("div"));
+			creationDiv.classList.add("empty");//so it gets hidden when group is closed
 			const creationObj=cellObj.children[repeatData.length]=
 															{parent:cellObj,el:creationDiv,index:repeatData.length};
 			path.push(repeatData.length);
@@ -1153,7 +1154,7 @@ class Tablance {
 		groupTable.dataset.path=path.join("-");
 		parentEl.classList.add("group-cell");
 		cellObj.el=groupTable;//so that the whole group-table can be selectedf
-		groupTable.className="expansion-group "+groupStructure.cssClass??"";
+		groupTable.className="expansion-group "+(groupStructure.cssClass??"");
 		for (let entryI=-1,struct; struct=groupStructure.entries[++entryI];) {
 			let tr=groupTable.insertRow();
 			tr.className="empty";//start as empty to hide when closed.updateCell() will remove it if a cell is non-empty
@@ -1246,15 +1247,21 @@ class Tablance {
 				let repeatData=rowData[struct.id];
 				const rptCelObj=listCelObj.children[entryI]=
 										{parent:listCelObj,index:entryI,children:[],struct:struct,dataObj:repeatData};
+				path.push(entryI);
 				if (repeatData?.length){
 					if (struct.sortCompare)
 						(repeatData=[...repeatData]).sort(struct.sortCompare);
-					for (const itemData of repeatData) {
-						path.push(entryI);
+					for (const itemData of repeatData) {		
 						this.#generateListItem(listTable.firstChild,struct.entry,mainIndex,rptCelObj,path,itemData);
-						path.pop();
 					}
 				}
+				if (struct.create) {
+					const creationTxt=struct.creationText??this.#opts.lang?.insertNew??"Insert new";
+					const creationStruct={type:"group",closedRender:()=>creationTxt,entries:[]
+														,onOpen:this.#onOpenCreationGroup,cssClass:"repeat-insertion"};
+					this.#generateListItem(listTable.firstChild,creationStruct,mainIndex,rptCelObj,path);
+				}
+				path.pop();
 			} else
 				this.#generateListItem(listTable.firstChild,struct,mainIndex,listCelObj,path,rowData);
 		}
