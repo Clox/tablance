@@ -1269,19 +1269,19 @@ class Tablance {
 		return true;
 	}
 
-	#generateListItem(tbody,struct,mainIndex,listObj,path,data,insertBeforeEl=null,index=null) {
+	#generateListItem(tbody,struct,mainIndex,listOrRepeated,path,data,insertBeforeEl=null,index=null) {
 		let contentTd=document.createElement("td");
 		contentTd.className="value";
-		let cellChild={parent:listObj,index:index??listObj.children.length};
+		let cellChild={parent:listOrRepeated,index:index??listOrRepeated.children.length};
 		
 		if (index!=null)
-			for (let siblingI=index-1,sibling; sibling=listObj.children[++siblingI];)
+			for (let siblingI=index-1,sibling; sibling=listOrRepeated.children[++siblingI];)
 				this.#changeCellObjIndex(sibling,siblingI+1);
-		path.push(index??listObj.children.length);
+		path.push(index??listOrRepeated.children.length);
 		if (this.#generateExpansionContent(struct,mainIndex,cellChild,contentTd,path,data)) {//generate content
 			//and add it to dom if condition falls true, e.g. content was actually created. it might not be if it is
 			//a repeated and there was no data for it add
-			for (var containerObj=listObj; containerObj.struct.type=="repeated"; containerObj=containerObj.parent);
+			for (var containerObj=listOrRepeated;containerObj.struct.type=="repeated";containerObj=containerObj.parent);
 			let listTr=document.createElement("tr");
 			tbody.insertBefore(listTr,insertBeforeEl);
 			if (containerObj.struct.type=="list"&&containerObj.struct.titlesColWidth!=false) {
@@ -1290,7 +1290,7 @@ class Tablance {
 				titleTd.innerText=struct.title??"";
 			}
 			listTr.appendChild(contentTd);
-			listObj.children.splice(index??Infinity,0,cellChild);
+			listOrRepeated.children.splice(index??Infinity,0,cellChild);
 		}
 		path.pop();
 		return cellChild;
@@ -1626,30 +1626,31 @@ class Tablance {
 		repeatCreater.path[repeatCreater.path.length-1]++;
 		repeatCreater.el.parentElement.dataset.path=repeatCreater.path.join("-");
 		const repeatedObj=repeatCreater.parent;
-		const containerObj=repeatedObj.parent;
 		const indexOfNew=repeatedObj.children.length-1;
 		let rowIndex;
 		let newObj;
-		for (let root=containerObj; root.parent; root=root.parent,rowIndex=root.rowIndex);//get main-index
+		for (let root=repeatedObj.parent; root.parent; root=root.parent,rowIndex=root.rowIndex);//get main-index
 		
 		const data=repeatedObj.dataObj[indexOfNew]={};		
 		let struct=repeatedObj.struct;
 		if (struct.create&&struct.entry.type==="group")
 			(struct={...struct}).entry=this.#structCopyWithDeleteControls(struct.entry,this.#repeatedOnDelete);
 			//copy repeat-struct not to edit orig. Then add delete-controls to its inner group which also gets copied.
-		if (containerObj.struct.type=="list") {
-			newObj=this.#generateListItem(containerObj.listTable.firstChild,struct.entry,rowIndex,containerObj,pathOfNew,data,repeatCreater.el.closest("tr"),indexOfNew);
+		if (repeatedObj.parent.struct.type=="list") {
+			pathOfNew.pop();//generateListItem takes care of adding the last path-bit based on the specified index
+			newObj=this.#generateListItem(repeatedObj.parent.listTable.firstChild,struct.entry,rowIndex,repeatedObj,pathOfNew,data,repeatCreater.el.closest("tr"),indexOfNew);
 		} else {
 			newObj={parent:repeatedObj,index:indexOfNew,creating:true};//creating means it hasn't been commited yet
 			repeatedObj.children.splice(indexOfNew,0,newObj);
 			const newDiv=document.createElement("div");
 			repeatCreater.el.parentElement.parentElement.insertBefore(newDiv,repeatCreater.el.parentElement)
 			this.#generateExpansionContent(struct.entry,rowIndex,newObj,newDiv,pathOfNew,data);
+			this.#changeCellObjIndex(repeatCreater,indexOfNew+1);
 		}
 		
 		newObj.el.classList.add("open");
 		this.#selectFirstSelectableExpansionCell(newObj,true,true);
-		repeatCreater.index++;
+		
 		repeatCreater.el.parentElement.appendChild(repeatCreater.el);
 		repeatCreater.el.scrollIntoView({behavior:'smooth',block:"center"});
 	}
@@ -1657,15 +1658,16 @@ class Tablance {
 	#changeCellObjIndex(cellObj,newIndex) {
 		cellObj.index=newIndex;
 		const level=cellObj.path.length-1;
-		fixPath(cellObj,newIndex);
-		function fixPath(cellObj) {
-			if (cellObj.path) {
+		for (const pathEl of cellObj.el.parentElement.querySelectorAll('[data-path]')) {
+			const path=pathEl.dataset.path.split("-");
+			path[level]=newIndex;
+			pathEl.dataset.path=path.join("-");
+		}
+		fixObjPath(cellObj,newIndex);
+		function fixObjPath(cellObj) {
+			if (cellObj.path)
 				cellObj.path[level]=newIndex;
-				(cellObj.selEl??cellObj.el).dataset.path=cellObj.path.join("-");
-			}
-			if (cellObj.children)
-				for (const child of cellObj.children)
-					fixPath(child)
+			cellObj.children?.forEach(fixObjPath);
 		}
 	}
 
