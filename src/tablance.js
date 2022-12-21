@@ -1616,7 +1616,7 @@ class Tablance {
 			//look for ancestor-cell with rowData which repeated rows have. It's a sub-data-row of #data.
 			//if we got all the way to the root without finding any repeated-rows then use datarow directly from #data
 			for (cell=groupObject.parent;!cell.dataObj&&cell.parent;cell=cell.parent);//look for ancestor with rowData
-			renderText=groupObject.struct.closedRender(cell.parent?cell.dataObj[cell.index]:this.#data[cell.rowIndex]);
+			renderText=groupObject.struct.closedRender(groupObject.dataObj);
 			groupObject.el.rows[groupObject.el.rows.length-1].cells[0].innerText=renderText;
 		}
 	}
@@ -3024,7 +3024,7 @@ class Tablance {
 			} else { //if (struct.input?.type==="select") {
 				let selOptObj=rowData[struct.id];
 				if (selOptObj&&typeof selOptObj!=="object")
-					selOptObj=struct.input.options.find(opt=>opt.value==rowData[struct.id]);
+					selOptObj=rowData[struct.id]=struct.input.options.find(opt=>opt.value==rowData[struct.id]);
 				newCellContent=selOptObj?.text??"";
 			}
 			let isDisabled=false;

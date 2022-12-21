@@ -57,7 +57,7 @@
 					,onDelete:(...args)=>console.log(args)
 					,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
 					,areYouSureYesText:"Ja",areYouSureNoText:"Nej",entry:
-						{type:"group",closedRender:data=>`${data.type} sedan ${data.date}`,entries:[
+						{type:"group",closedRender:data=>`${data.type?.text} sedan ${data.date}`,entries:[
 								{type:"field",title:"Datum",id:"date",input:{type:"date"}},
 								{type:"field",title:"Typ av ställföreträdarskap",id:"type",input:{type:"select",
 									options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"}]
@@ -75,7 +75,7 @@
 					,onDelete:(...args)=>console.log(args)
 					,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
 					,areYouSureYesText:"Ja",areYouSureNoText:"Nej",entry:
-						{type:"group",closedRender:data=>`${data.type} sedan ${data.date}`,entries:[
+						{type:"group",closedRender:data=>`${data.type?.text} sedan ${data.date}`,entries:[
 								{type:"field",title:"Datum",id:"date",input:{type:"date"}},
 								{type:"field",title:"Typ av ställföreträdarskap",id:"type",input:{type:"select",
 									options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"}]
