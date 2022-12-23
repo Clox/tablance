@@ -864,6 +864,7 @@ class Tablance {
 					this.#scrollToCursor();
 					this.#contractRow(this.#selectedCell.closest(".main-table>tbody>tr"));
 				break; case "Enter": case " ":
+					e.preventDefault();//prevent scrolling by pressing space
 					this.#scrollToCursor();
 					if (this.#activeStruct.type=="expand")
 						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
