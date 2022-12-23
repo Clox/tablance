@@ -1072,7 +1072,7 @@ class Tablance {
 	 * @returns */
 	#generateExpansionRepeated(struct,dataIndex,cellObj,parentEl,path,rowData) {
 		cellObj.children=[];
-		let repeatData=cellObj.dataObj=rowData[struct.id];
+		let repeatData=cellObj.dataObj=rowData[struct.id]??(rowData[struct.id]=[]);
 		if (repeatData?.length) {
 			if (struct.create&&struct.entry.type==="group")
 				//copy repeat-struct not to edit orig,then add delete-controls to its inner group which too gets copied.
@@ -1244,7 +1244,7 @@ class Tablance {
 		}
 		for (let entryI=-1,struct; struct=listStructure.entries[++entryI];) {
 			if (struct.type==="repeated") {
-				let repeatData=rowData[struct.id];
+				let repeatData=rowData[struct.id]??(rowData[struct.id]=[]);;
 				const rptCelObj=listCelObj.children[entryI]=
 										{parent:listCelObj,index:entryI,children:[],struct:struct,dataObj:repeatData};
 				path.push(entryI);
@@ -2435,11 +2435,12 @@ class Tablance {
 		mainPage.style.display="block";
 		this.#multiCells=[];
 		this.#multiCellsDataObj={};
-		this.#multiRowStructs=[];
+		const multiRowStructs=this.#multiRowStructs=[];
 		for (let colI=-1,colStruct; colStruct=this.#colStructs[++colI];)
-			addInputsFromEntryStruct.call(this,colStruct)
+			buildStruct(colStruct)
 		if (this.#expansion)
-			addInputsFromEntryStruct.call(this,this.#expansion,true);
+			buildStruct(this.#expansion,true);
+		//now, having built structures via buildStruct we just need to add them to the multi-row-area
 		for (let i=-1,struct; struct=this.#multiRowStructs[++i];)
 			this.#addStructToMultiRowArea(i,struct,mainPage,cellMouseDown);
 
@@ -2452,20 +2453,28 @@ class Tablance {
 		 * @param {*} containerStruct Used when the function calls itself reursively and it has found a container with
 		 * 						multiEdit which means the container-struct should be maintained in the multi-row-area.
 		 * @returns */
-		function addInputsFromEntryStruct(struct,isExpa,containerStruct) {
-			if (struct.type=="repeated")
-				return;
-			if (struct.entries?.length) {
+		function buildStruct(struct,isExpa,containerStruct) {
+			if (struct.type=="repeated") {
+				if (struct.multiEdit&&struct.create) {
+					const repeated={...struct,vals:{}};
+					(containerStruct?.entries??multiRowStructs).push(repeated);
+					if (repeated.entry.entries) {
+						repeated.entry={...repeated.entry,multiEdit:true,vals:{}};//if repeated is multiEdit 
+																			//then its entry should automatically be too
+						repeated.entry.entries.forEach(entryStruct=>buildStruct(entryStruct,true,repeated.entry));
+					}
+				}
+				
+			} else if (struct.entries?.length) {
 				let newContainerStrct;
 				if (struct.multiEdit)
-					 (newContainerStrct??this.#multiRowStructs)
+					 (newContainerStrct??multiRowStructs)
 					 						.push(newContainerStrct={...struct,entries:[],vals:{},origStruct:struct});
-				for (const entryStruct of struct.entries)
-					addInputsFromEntryStruct.call(this,entryStruct,true,newContainerStrct);
+				struct.entries.forEach(entryStruct=>buildStruct(entryStruct,true,newContainerStrct));
 				if (containerStruct&&newContainerStrct)
 					Object.assign(containerStruct.vals,newContainerStrct.vals);
 			} else if (struct.input&&((!isExpa&&struct.input.multiEdit!=false)||(isExpa&&struct.input.multiEdit))) {
-				(containerStruct?.entries??this.#multiRowStructs).push(struct);
+				(containerStruct?.entries??multiRowStructs).push(struct);
 				if (containerStruct)
 					containerStruct.vals[struct.id]=null;//properties are added to the base-structs of 
 						//this.#multiRowStructs if they are containers and are used later when assigning the
