@@ -1305,7 +1305,9 @@ class Tablance {
 	}
 
 	#scrollToCursor() {
-		if (this.#onlyExpansion) 
+		if (this.#cellCursor.closest(".tablance .multi-row-area"))//don't scroll if this is a sub-table in multirowarea 
+			return;
+		if (this.#onlyExpansion)
 			return this.#cellCursor.scrollIntoView({block: "center"});
 		const distanceRatioDeadzone=.5;//when moving the cellcursor within this distance from center of view no 
 										//scrolling will be done. 0.5 is half of view, 1 is entire height of view
