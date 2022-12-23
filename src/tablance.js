@@ -1655,7 +1655,7 @@ class Tablance {
 		this.#selectFirstSelectableExpansionCell(newObj,true,true);
 		
 		repeatCreater.el.parentElement.appendChild(repeatCreater.el);
-		repeatCreater.el.scrollIntoView({behavior:'smooth',block:"center"});
+		this.#scrollElementIntoView(repeatCreater.el)
 	}
 
 	#changeCellObjIndex(cellObj,newIndex) {
@@ -2073,13 +2073,13 @@ class Tablance {
 	}
 
 	#scrollElementIntoView(element) {
-		if (!this.#onlyExpansion) {
-			const pos=this.#getElPos(element);
-			this.#scrollBody.scrollTop=pos.y+element.offsetHeight/2-this.#scrollBody.offsetHeight/2;
-			this.#scrollMethod();
-		} else
-			this.#tooltip.scrollIntoView({behavior:'smooth',block:"center"});
-		
+		if (this.#cellCursor.closest(".tablance .multi-row-area"))//don't scroll if this is a sub-table in multirowarea 
+			if (!this.#onlyExpansion) {
+				const pos=this.#getElPos(element);
+				this.#scrollBody.scrollTop=pos.y+element.offsetHeight/2-this.#scrollBody.offsetHeight/2;
+				this.#scrollMethod();
+			} else
+				this.#tooltip.scrollIntoView({behavior:'smooth',block:"center"});
 	}
 
 	#closeRepeatedInsertion(repeatEntry) {
