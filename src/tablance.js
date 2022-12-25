@@ -2425,14 +2425,14 @@ class Tablance {
 		this.#borderSpacingY=parseInt(window.getComputedStyle(this.#mainTable)['border-spacing'].split(" ")[1]);
 	}
 
-	#updateMultiRowAreaHeight() {
+	#updateMultiRowAreaHeight(open) {
 		this.#multiRowArea.style.height=open?this.#multiRowArea.firstChild.offsetHeight+"px":0;
 		this.#animate(this.#updateViewportHeight,Infinity,"adjustViewportHeight");
 	}
 
 	#createMultiRowArea() {
 		const self=this;
-		const updateHeight=this.#updateMultiRowAreaHeight.bind(this);
+		const updateHeight=this.#updateMultiRowAreaHeight.bind(this,true);
 		this.#multiRowArea=this.container.appendChild(document.createElement("div"));
 		this.#multiRowArea.classList.add("multi-row-area");
 		this.#multiRowArea.style.height=0;
@@ -2546,7 +2546,7 @@ class Tablance {
 		}
 		this.#multiRowArea.style.overflow="hidden";//hade to shift between hidden/visible because hidden is needed for 
 			//animation but visible is needed for dropdowns to be able to go outside of area
-		this.#updateMultiRowAreaHeight();
+		this.#updateMultiRowAreaHeight(open);
 	}
 
 	#addStructToMultiRowArea(index,struct,inputsDiv,cellMouseDown) {
