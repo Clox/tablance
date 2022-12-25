@@ -318,6 +318,14 @@ class Tablance {
 	 * 				onCreate Function Callback fired when the user has deleted an entry via the interface available if
 	 * 					"create" is true. It is counted as committed when the cell-cursor has left the repeat-row after
 	 * 					having created it. It will get passed arguments: 1:rowData,2:cellObject
+	 * 				onCreateOpen Function If the entry of the repeated is group and "create" is set to true, then this
+	 * 					callback-function will be called when a new group is added, i.e. when the user interacts with
+	 * 					insertNew-cell, not when the data is actually created, that triggers "onCreate".
+	 * 					It will get passed arguments: 1:cellObject of the repeated-object
+	 * 				onCreateCancel Function If the entry of the repeated is group and "create" is set to true, then this
+	 * 					callback-function will be called when the creation of a new entry is canceled, either by leaving
+	 * 					the group with no data inserted, or by pressing the delete/cancel-button.
+	 * 					It will get passed arguments: 1:cellObject of the repeated-object
 	 * 				onDelete Function Callback fired when the user has deleted an entry via the interface available if
 	 * 					"create" is true. It is counted as committed when the cell-cursor has left the repeat-row after
 	 * 					having created it. It will get passed arguments: 1:rowData,2:cellObject
@@ -365,8 +373,10 @@ class Tablance {
 	 * 							at first but by entering it a page dedicated to that container is changed to.
 	 * 				onOpen Function Function that fires when the group is opened. Gets passed the following arguments:
 	 * 					1: tablanceEvent-object. It has a preventDefault-function that can be called in order to
-	 * 					prevent the group frm actually opening. 2: group-object
-  	 * 			}
+	 * 					prevent the group from actually opening. 2: group-object
+	 * 				onClose Function Callback that is fired when the group closes. Gets passed the following arguments:
+	 * 					1: group-object
+  	 * 			}		
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							searchbar Bool that defaults to true. If true then there will be a searchbar that
 	 * 								can be used to filter the data.
@@ -607,6 +617,11 @@ class Tablance {
 	selectTopBottomCellOnlyExpansion(top) {
 		this.#highlightOnFocus=false;
 		this.#selectFirstSelectableExpansionCell(this.#openExpansions[0],top);
+	}
+
+	#updateViewportHeight=()=>{
+		this.#scrollBody.style.height=this.container.clientHeight-this.#headerTable.offsetHeight
+				-(this.#searchInput?.offsetHeight??0)-this.#multiRowArea.offsetHeight+"px";
 	}
 	
 	#setupSearchbar() {
@@ -1432,7 +1447,6 @@ class Tablance {
 		if (this.#numRowsSelected^this.#multiRowAreaOpen) {
 			this.#multiRowAreaOpen=!!this.#numRowsSelected;
 			this.#setMultiRowAreaPage(this.#multiRowAreaOpen);
-			this.#animate(this.#updateViewportHeight.bind(this),Infinity,"adjustViewportHeight");
 		}
 	}
 
@@ -1586,6 +1600,8 @@ class Tablance {
 		if (doOpen) {
 			groupObj.el.classList.add("open");
 			this.#selectExpansionCell(this.#getFirstSelectableExpansionCell(groupObj,true,true));
+				if (this.#cellCursor.closest(".tablance .multi-row-area"))
+					this.#updateViewportHeight();
 		}
 	}
 
@@ -1622,6 +1638,7 @@ class Tablance {
 			renderText=groupObject.struct.closedRender(groupObject.dataObj);
 			groupObject.el.rows[groupObject.el.rows.length-1].cells[0].innerText=renderText;
 		}
+		groupObject.struct.onClose?.(groupObject);
 	}
 
 	#repeatInsertNew(repeatCreater) {
@@ -1652,6 +1669,7 @@ class Tablance {
 		}
 		
 		newObj.el.classList.add("open");
+		repeatedObj.struct.onCreateOpen?.(repeatedObj);
 		this.#selectFirstSelectableExpansionCell(newObj,true,true);
 		
 		repeatCreater.el.parentElement.appendChild(repeatCreater.el);
@@ -1687,6 +1705,7 @@ class Tablance {
 		cellObj.el.parentElement.remove();
 		this.#activeExpCell=null;//causes problem otherwise when #selectExpansionCell checks old cell
 		this.#selectExpansionCell(newSelectedCell??cellObj.parent.parent);
+		cellObj.creating&&cellObj.parent.struct.onCreateCancel?.(cellObj.parent);
 	}
 
 	#openTextEdit() {
@@ -2083,7 +2102,6 @@ class Tablance {
 	}
 
 	#closeRepeatedInsertion(repeatEntry) {
-		repeatEntry.creating=false;//needs to be set to false before potentially calling #deleteCall or stack overflows
 		if (Object.values(repeatEntry.dataObj).filter(x=>x!=null).length) {
 			let message;//message to show to the user if creation was unsucessful
 			for (var root=repeatEntry; root.parent; root=root.parent);//get root-object in order to retrieve rowIndex
@@ -2092,11 +2110,11 @@ class Tablance {
 				doCreate=repeatEntry.struct.creationValidation(m=>message=m,repeatEntry.struct,repeatEntry.dataObj
 																						,root.rowIndex,repeatEntry);
 			if (!doCreate) {
-				repeatEntry.creating=true;//needs to stay at creating true but it was set to false at start of this func
 				if (message)
 					this.#showTooltip(message,repeatEntry.el);
 				return false;//prevent commiting/closing the group
 			}
+			repeatEntry.creating=false;
 			repeatEntry.parent.struct.onCreate?.(repeatEntry.dataObj,repeatEntry);
 		} else {
 			this.#deleteCell(repeatEntry);
@@ -2400,7 +2418,14 @@ class Tablance {
 		this.#borderSpacingY=parseInt(window.getComputedStyle(this.#mainTable)['border-spacing'].split(" ")[1]);
 	}
 
+	#updateMultiRowAreaHeight() {
+		this.#multiRowArea.style.height=open?this.#multiRowArea.firstChild.offsetHeight+"px":0;
+		this.#animate(this.#updateViewportHeight,Infinity,"adjustViewportHeight");
+	}
+
 	#createMultiRowArea() {
+		const self=this;
+		const updateHeight=this.#updateMultiRowAreaHeight.bind(this);
 		this.#multiRowArea=this.container.appendChild(document.createElement("div"));
 		this.#multiRowArea.classList.add("multi-row-area");
 		this.#multiRowArea.style.height=0;
@@ -2425,10 +2450,10 @@ class Tablance {
 		containerControllers.classList.add("container-controllers");
 		const containerCancelBtn=containerControllers.appendChild(document.createElement("button"));
 		containerCancelBtn.innerText="Cancel";
-		containerCancelBtn.addEventListener("click",containerCancel.bind(this))
+		containerCancelBtn.addEventListener("click",containerCancel)
 		const containerApplyBtn=containerControllers.appendChild(document.createElement("button"));
 		containerApplyBtn.innerText="Apply";
-		containerApplyBtn.addEventListener("click",containerApply.bind(this))
+		containerApplyBtn.addEventListener("click",containerApply)
 
 		const pagesDiv=multiRowAreaContent.appendChild(document.createElement("div"));//for having multiple pages
 		pagesDiv.classList.add("pages");										//which is needed if having groups in it
@@ -2438,7 +2463,7 @@ class Tablance {
 		mainPage.style.display="block";
 		this.#multiCells=[];
 		this.#multiCellsDataObj={};
-		const multiRowStructs=this.#multiRowStructs=[];
+		this.#multiRowStructs=[];
 		for (let colI=-1,colStruct; colStruct=this.#colStructs[++colI];)
 			buildStruct(colStruct)
 		if (this.#expansion)
@@ -2457,46 +2482,48 @@ class Tablance {
 		 * 						multiEdit which means the container-struct should be maintained in the multi-row-area.
 		 * @returns */
 		function buildStruct(struct,isExpa,containerStruct) {
+			let structToAdd;
 			if (struct.type=="repeated") {
 				if (struct.multiEdit&&struct.create) {
-					const repeated={...struct,vals:{}};
-					(containerStruct?.entries??multiRowStructs).push(repeated);
-					if (repeated.entry.entries) {
-						repeated.entry={...repeated.entry,multiEdit:true,vals:{}};//if repeated is multiEdit 
-																			//then its entry should automatically be too
-						repeated.entry.entries.forEach(entryStruct=>buildStruct(entryStruct,true,repeated.entry));
-					}
+					structToAdd={...struct,vals:{},entry:{...struct.entry,multiEdit:true},onCreateOpen:updateHeight};
+					buildStruct(structToAdd.entry,true,structToAdd);
 				}
-				
 			} else if (struct.entries?.length) {
-				let newContainerStrct;
-				if (struct.multiEdit)
-					 (newContainerStrct??multiRowStructs)
-					 						.push(newContainerStrct={...struct,entries:[],vals:{},origStruct:struct});
-				struct.entries.forEach(entryStruct=>buildStruct(entryStruct,true,newContainerStrct));
-				if (containerStruct&&newContainerStrct)
-					Object.assign(containerStruct.vals,newContainerStrct.vals);
+				if (struct.multiEdit) {
+					structToAdd={...struct,entries:[],vals:{},origStruct:struct};
+					if (struct.type=="group"&&containerStruct)
+						structToAdd.onOpen=structToAdd.onClose=updateHeight;
+				}
+				//still call buildStruct for containers without multiEdit,entries may still have it
+				struct.entries.forEach(entryStruct=>buildStruct(entryStruct,true,structToAdd));
+				if (containerStruct&&structToAdd)
+					Object.assign(containerStruct.vals,structToAdd.vals);
 			} else if (struct.input&&((!isExpa&&struct.input.multiEdit!=false)||(isExpa&&struct.input.multiEdit))) {
-				(containerStruct?.entries??multiRowStructs).push(struct);
+				structToAdd=struct;
 				if (containerStruct)
 					containerStruct.vals[struct.id]=null;//properties are added to the base-structs of 
 						//this.#multiRowStructs if they are containers and are used later when assigning the
 						//container-vals to selected rows so that also unchanged fields with null values are assigned.
 			}
+			if (structToAdd)
+				if (!containerStruct||containerStruct.entries)
+					(containerStruct?.entries??self.#multiRowStructs).push(structToAdd);
+				else
+					containerStruct.entry=structToAdd;
 		}
 		function containerCancel() {
-			this.#setMultiRowAreaPage(true,-1);
-			this.container.focus();
-			this.#cellCursor.style.display="block";
+			self.#setMultiRowAreaPage(true,-1);
+			self.container.focus();
+			self.#cellCursor.style.display="block";
 		}
 		function containerApply() {
-			const data=this.#multiRowStructs[this.#multiCellInputIndex].tablance._allData[0];
-			for (const selectedRow of this.#selectedRows)
+			const data=self.#multiRowStructs[self.#multiCellInputIndex].tablance._allData[0];
+			for (const selectedRow of self.#selectedRows)
 				Object.assign(selectedRow,data);
-			for (const selectedTr of this.#mainTbody.querySelectorAll("tr.selected.expanded"))
+			for (const selectedTr of self.#mainTbody.querySelectorAll("tr.selected.expanded"))
 				for (const id of Object.keys(data))
-					this.updateData(selectedTr.dataset.dataRowIndex,id,null,false,true);
-			this.#multiCells[this.#multiCellInputIndex].innerText="(Same)";
+					self.updateData(selectedTr.dataset.dataRowIndex,id,null,false,true);
+			self.#multiCells[self.#multiCellInputIndex].innerText="(Same)";
 		}
 	}
 
@@ -2512,8 +2539,7 @@ class Tablance {
 		}
 		this.#multiRowArea.style.overflow="hidden";//hade to shift between hidden/visible because hidden is needed for 
 			//animation but visible is needed for dropdowns to be able to go outside of area
-		this.#multiRowArea.style.height=open?this.#multiRowArea.firstChild.offsetHeight+"px":0;
-		this.#animate(this.#updateViewportHeight.bind(this),Infinity,"adjustViewportHeight");
+		this.#updateMultiRowAreaHeight();
 	}
 
 	#addStructToMultiRowArea(index,struct,inputsDiv,cellMouseDown) {
@@ -2562,11 +2588,6 @@ class Tablance {
 			}
 			this.#multiCells[cellIndex].classList.toggle("mixed",mixed);
 		}
-	}
-
-	#updateViewportHeight() {
-		this.#scrollBody.style.height=this.container.clientHeight-this.#headerTable.offsetHeight
-				-(this.#searchInput?.offsetHeight??0)-this.#multiRowArea.offsetHeight+"px";
 	}
 
 	#updateSizesOfViewportAndCols() {
