@@ -1550,28 +1550,35 @@ class Tablance {
 
 	/**Aligns dropdowns like select and date-picker correctly by the cellcursor or any other target-element specified */
 	#alignDropdown(dropdown,target=this.#cellCursor) {
-		const container=this.#onlyExpansion?this.container:this.#scrollBody;
-		const targetPos=this.#getElPos(target);
+
+		//container of the dropdown
+		const placementCont=this.#onlyExpansion||this.#multiCellSelected?this.container:this.#scrollBody;
+		const placementPos=this.#getElPos(target);//and its position inside
+		let alignmentContainer=placementCont,alignmentPos;//used to determine alignment but not actual pos
+		if (target.parentElement.closest(".tablance .multi-row-area")&&!this.#multiCellSelected)//if in inner tablance
+			alignmentContainer=this.container.parentElement.closest(".tablance");
+		alignmentPos=this.#getElPos(target,alignmentContainer);
+		
 		//if target-element is below middle of viewport or if in multi-row-area
-		dropdown.classList.remove("above","below","left","right")
-		if (targetPos.y+target.clientHeight/2>container.scrollTop+container.clientHeight/2||this.#multiCellSelected) {
+		dropdown.classList.remove("above","below","left","right");
+		if (alignmentPos.y+target.clientHeight/2>alignmentContainer.scrollTop+alignmentContainer.clientHeight/2) {
 			//then place dropdown above target-element
-			dropdown.style.top=targetPos.y-dropdown.offsetHeight+"px";
+			dropdown.style.top=placementPos.y-dropdown.offsetHeight+"px";
 			dropdown.classList.add("above");
 		} else {
 			//else place dropdown below target-element
-			dropdown.style.top=targetPos.y+target.clientHeight+"px";
+			dropdown.style.top=placementPos.y+target.clientHeight+"px";
 			dropdown.classList.add("below");
 		}
 
 		//if there's enough space to the right of target-element
-		if (container.clientWidth-targetPos.x>dropdown.offsetWidth) {
+		if (alignmentContainer.clientWidth-alignmentPos.x>dropdown.offsetWidth) {
 			//then align the left of the dropdown with the left of the target-element
-			dropdown.style.left=targetPos.x+"px";
+			dropdown.style.left=placementPos.x+"px";
 			dropdown.classList.add("left");
 		} else {
 			//otherwise align the right of the dropdown with the right of the target-element
-			dropdown.style.left=targetPos.x-(dropdown.offsetWidth-target.offsetWidth)+"px";
+			dropdown.style.left=placementPos.x-(dropdown.offsetWidth-target.offsetWidth)+"px";
 			dropdown.classList.add("right");
 		}
 	}
@@ -2239,10 +2246,11 @@ class Tablance {
 		this.#selectedCellVal=dataObj?.[struct.id];
 	}
 
-	#getElPos(el) {
+	#getElPos(el,container) {
 		const cellPos=el.getBoundingClientRect();
-		const contPos=(this.#multiCellSelected?this.#multiRowArea.firstChild:this.#tableSizer??this.container)
-																							.getBoundingClientRect();
+		if (!container)
+			container=this.#multiCellSelected?this.#multiRowArea.firstChild:this.#tableSizer??this.container;
+		const contPos=container.getBoundingClientRect();
 		return {x:cellPos.x-contPos.x, y:cellPos.y-contPos.y+(this.#tableSizer?.offsetTop??0)}
 	}
 
