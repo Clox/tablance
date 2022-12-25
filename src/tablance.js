@@ -1609,13 +1609,11 @@ class Tablance {
 
 	#openGroup(groupObj) {
 		let doOpen=true;
-		groupObj.struct.onOpen?.({preventDefault:()=>doOpen=false},groupObj);
 		if (doOpen) {
 			groupObj.el.classList.add("open");
 			this.#selectExpansionCell(this.#getFirstSelectableExpansionCell(groupObj,true,true));
-				if (this.#cellCursor.closest(".tablance .multi-row-area"))
-					this.#updateViewportHeight();
 		}
+		groupObj.struct.onOpen?.({preventDefault:()=>doOpen=false},groupObj);
 	}
 
 	/**Input-fields in the multi-row-area may be container-structs in which case if they are entered, the multi-row-area
