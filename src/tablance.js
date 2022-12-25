@@ -1709,7 +1709,10 @@ class Tablance {
 			newSelectedCell=cellObj.parent.children[cellObj.index-1];
 		cellObj.parent.children.splice(cellObj.index,1);
 		cellObj.parent.dataObj.splice(cellObj.index,1);
-		cellObj.el.parentElement.remove();
+		if (cellObj.parent.struct.type==="repeated"&&cellObj.parent.parent.struct.type==="list")
+			cellObj.el.parentElement.parentElement.remove();
+		else
+			cellObj.el.parentElement.remove();
 		this.#activeExpCell=null;//causes problem otherwise when #selectExpansionCell checks old cell
 		this.#selectExpansionCell(newSelectedCell??cellObj.parent.parent);
 		cellObj.creating&&cellObj.parent.struct.onCreateCancel?.(cellObj.parent);
