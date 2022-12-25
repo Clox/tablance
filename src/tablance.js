@@ -845,10 +845,9 @@ class Tablance {
 	}
 	
 	#spreadsheetKeyDown(e) {
-		if (!(this.#inEditMode&&this.#activeStruct.input.type=="date"))//don't prevent date-picker from being controlled
-			e.stopPropagation();//need this or else when navigating in inner Tablance i.e. a container-struct inside the
-							//multi-row-area, this will bubble out to outer Tablance and will focus it, so inner gets
-							//blurred and can't receive more input-events
+		//prevent this from running if an inner tablance is selected
+		if (this.#multiRowArea?.contains(document.activeElement)&&!this.#multiCellSelected)
+			return;
 		this.#tooltip.style.visibility="hidden";
 		if (this.#inEditMode&&this.#activeStruct.input.type==="date") {
 			if (e.key.slice(0,5)==="Arrow") {
@@ -1619,6 +1618,7 @@ class Tablance {
 	#openMultiRowAreaContainer(containerStruct) {
 		this.#cellCursor.style.display="none";
 		this.#multiRowArea.querySelector(".main").style.display="none";
+		this.#multiCellSelected=false;
 		if (!containerStruct.page) {
 			containerStruct.page=this.#multiRowArea.querySelector(".pages").appendChild(document.createElement("div"));
 			if (containerStruct.type=="group") {
