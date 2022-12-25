@@ -36,6 +36,7 @@ class Tablance {
 	#multiCells;//the multi-edit-cells in multiRowArea, in the same order as in #multiCellIds. 
 	#multiCellsDataObj;//used to store values of the multi-cells so the inputs can get set correctly initially on edit
 	#multiCellInputIndex;//the index of the currently active input-element in the multi-row-area
+	#multiRowAreaActivePage;//currently active page(there are pages for cells that are containers and can be entered)
 	#numberOfRowsSelectedSpan;//resides in #multiRowArea. Should be set to the number of rows selected
 	#borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
@@ -693,7 +694,11 @@ class Tablance {
 			this.container.style.removeProperty("outline");
 		else
 			this.container.style.outline="none";
-		this.#cellCursor.style.display="block";
+		
+		//why is this needed? it messes things up when cellcursor is in mainpage of multirowarea but hidden because
+		//other page is open, and the tablance gets focus because then it will be visible through the active page
+		//this.#cellCursor.style.display="block";
+		
 		if (tabbedTo)
 			this.#scrollToCursor();
 	}
@@ -718,7 +723,8 @@ class Tablance {
 			this.#scrollToCursor();//need this first to make sure adjacent cell is even rendered
 
 		if (this.#multiCellSelected) {
-			this.#selectMultiCell(hSign?this.#selectedCell.parentNode[(hSign>0?"next":"previous")+"Sibling"]
+			if (this.#multiRowAreaActivePage==-1)//if on the main-page
+				this.#selectMultiCell(hSign?this.#selectedCell.parentNode[(hSign>0?"next":"previous")+"Sibling"]
 																		?.querySelector(".cell"):this.#selectedCell);
 		} else if (this.#activeExpCell?.parent?.struct.type==="collection")
 			this.#moveInsideCollection(hSign,vSign);
@@ -846,7 +852,7 @@ class Tablance {
 	
 	#spreadsheetKeyDown(e) {
 		//prevent this from running if an inner tablance is selected
-		if (this.#multiRowArea?.contains(document.activeElement)&&!this.#multiCellSelected)
+		if (this.#multiRowArea?.contains(document.activeElement)&&this.#multiRowAreaActivePage!=-1)
 			return;
 		this.#tooltip.style.visibility="hidden";
 		if (this.#inEditMode&&this.#activeStruct.input.type==="date") {
@@ -1618,7 +1624,7 @@ class Tablance {
 	#openMultiRowAreaContainer(containerStruct) {
 		this.#cellCursor.style.display="none";
 		this.#multiRowArea.querySelector(".main").style.display="none";
-		this.#multiCellSelected=false;
+		this.#cellCursor.style.display="none";
 		if (!containerStruct.page) {
 			containerStruct.page=this.#multiRowArea.querySelector(".pages").appendChild(document.createElement("div"));
 			if (containerStruct.type=="group") {
@@ -1633,6 +1639,7 @@ class Tablance {
 		}
 		this.#multiRowArea.querySelector(".container-controllers").style.display="block";
 		this.#setMultiRowAreaPage(true,this.#multiCellInputIndex);
+		containerStruct.page.focus();
 	}
 
 	#closeGroup(groupObject) {
@@ -2536,6 +2543,7 @@ class Tablance {
 
 	#setMultiRowAreaPage(open,index=null) {
 		if (index!=null) {//changing page
+			this.#multiRowAreaActivePage=index;
 			if (this.#multiCellInputIndex)
 				this.#multiRowStructs[this.#multiCellInputIndex].page.style.display="none";
 			if (index==-1)
@@ -2544,7 +2552,7 @@ class Tablance {
 				this.#multiRowStructs[this.#multiCellInputIndex].page.style.display="block";
 			this.#multiRowArea.querySelector(".container-controllers").style.display=index==-1?"none":"block";
 		}
-		this.#multiRowArea.style.overflow="hidden";//hade to shift between hidden/visible because hidden is needed for 
+		this.#multiRowArea.style.overflow="hidden";//have to shift between hidden/visible because hidden is needed for 
 			//animation but visible is needed for dropdowns to be able to go outside of area
 		this.#updateMultiRowAreaHeight(open);
 	}
