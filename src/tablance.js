@@ -1092,7 +1092,7 @@ class Tablance {
 		if (repeatData?.length) {
 			if (struct.create&&struct.entry.type==="group")
 				//copy repeat-struct not to edit orig,then add delete-controls to its inner group which too gets copied.
-				(struct={...struct}).entry=this.#structCopyWithDeleteControls(struct.entry,this.#repeatedOnDelete);
+				(struct={...struct}).entry=this.#structCopyWithDeleteButton(struct.entry,this.#repeatedOnDelete);
 			if (struct.sortCompare)
 				(repeatData=[...repeatData]).sort(struct.sortCompare);
 			for (let childI=0; childI<repeatData.length; childI++) {
@@ -1132,7 +1132,7 @@ class Tablance {
 			this.#selectExpansionCell(cell.parent.children[0]);
 	}
 
-	#structCopyWithDeleteControls(struct,deleteHandler) {
+	#structCopyWithDeleteButton(struct,deleteHandler) {
 		const deleteControls={type:"collection",cssClass:"delete-controls"
 			,onBlur:cel=>cel.selEl.querySelector(".collection").classList.remove("delete-confirming")
 			,entries:[{type:"field",input:{type:"button",
@@ -1265,6 +1265,8 @@ class Tablance {
 										{parent:listCelObj,index:entryI,children:[],struct:struct,dataObj:repeatData};
 				path.push(entryI);
 				if (repeatData?.length){
+					if (struct.create&&struct.entry.type==="group")
+						struct={...struct,entry:this.#structCopyWithDeleteButton(struct.entry,this.#repeatedOnDelete)};
 					if (struct.sortCompare)
 						(repeatData=[...repeatData]).sort(struct.sortCompare);
 					for (const itemData of repeatData) {		
@@ -1289,7 +1291,6 @@ class Tablance {
 		let contentTd=document.createElement("td");
 		contentTd.className="value";
 		let cellChild={parent:listOrRepeated,index:index??listOrRepeated.children.length};
-		
 		if (index!=null)
 			for (let siblingI=index-1,sibling; sibling=listOrRepeated.children[++siblingI];)
 				this.#changeCellObjIndex(sibling,siblingI+1);
@@ -1658,7 +1659,7 @@ class Tablance {
 		const data=repeatedObj.dataObj[indexOfNew]={};		
 		let struct=repeatedObj.struct;
 		if (struct.create&&struct.entry.type==="group")
-			(struct={...struct}).entry=this.#structCopyWithDeleteControls(struct.entry,this.#repeatedOnDelete);
+			(struct={...struct}).entry=this.#structCopyWithDeleteButton(struct.entry,this.#repeatedOnDelete);
 			//copy repeat-struct not to edit orig. Then add delete-controls to its inner group which also gets copied.
 		if (repeatedObj.parent.struct.type=="list") {
 			pathOfNew.pop();//generateListItem takes care of adding the last path-bit based on the specified index
@@ -2985,7 +2986,7 @@ class Tablance {
 				metaEntries.splice(metaI,1);//potentially remove (some of) them
 		//define the group-structure for the file
 		
-		const fileGroup=this.#structCopyWithDeleteControls({type:"group",entries:[]},this.#fileOnDelete);
+		const fileGroup=this.#structCopyWithDeleteButton({type:"group",entries:[]},this.#fileOnDelete);
 		fileGroup.entries[0].entries.unshift({type:"field",input:{type:"button",btnText:"Open"
 				,clickHandler:(e,file,mainIndex,struct,btnObj)=>{
 					rowData??=this.#data[mainIndex];
