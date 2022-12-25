@@ -1628,7 +1628,10 @@ class Tablance {
 	}
 
 	#closeGroup(groupObject) {
+		if (groupObject.creating&&!this.#closeRepeatedInsertion(groupObject))
+			return false;
 		groupObject.el.classList.remove("open");
+		this.#ignoreClicksUntil=Date.now()+500;
 		if (groupObject.updateRenderOnClose) {//if group is flagged for having its closed-render updated on close
 			delete groupObject.updateRenderOnClose;//delete the flag so it doesn't get triggered again
 			let cell,renderText;
@@ -1639,6 +1642,7 @@ class Tablance {
 			groupObject.el.rows[groupObject.el.rows.length-1].cells[0].innerText=renderText;
 		}
 		groupObject.struct.onClose?.(groupObject);
+		return true;
 	}
 
 	#repeatInsertNew(repeatCreater) {
@@ -1658,15 +1662,17 @@ class Tablance {
 			//copy repeat-struct not to edit orig. Then add delete-controls to its inner group which also gets copied.
 		if (repeatedObj.parent.struct.type=="list") {
 			pathOfNew.pop();//generateListItem takes care of adding the last path-bit based on the specified index
-			newObj=this.#generateListItem(repeatedObj.parent.listTable.firstChild,struct.entry,rowIndex,repeatedObj,pathOfNew,data,repeatCreater.el.closest("tr"),indexOfNew);
+			newObj=this.#generateListItem(repeatedObj.parent.listTable.firstChild,struct.entry,rowIndex,repeatedObj
+															,pathOfNew,data,repeatCreater.el.closest("tr"),indexOfNew);
 		} else {
-			newObj={parent:repeatedObj,index:indexOfNew,creating:true};//creating means it hasn't been commited yet
+			newObj={parent:repeatedObj,index:indexOfNew};
 			repeatedObj.children.splice(indexOfNew,0,newObj);
 			const newDiv=document.createElement("div");
 			repeatCreater.el.parentElement.parentElement.insertBefore(newDiv,repeatCreater.el.parentElement)
 			this.#generateExpansionContent(struct.entry,rowIndex,newObj,newDiv,pathOfNew,data);
 			this.#changeCellObjIndex(repeatCreater,indexOfNew+1);
 		}
+		newObj.creating=true;//creating means it hasn't been commited yet.
 		
 		newObj.el.classList.add("open");
 		repeatedObj.struct.onCreateOpen?.(repeatedObj);
@@ -2127,12 +2133,8 @@ class Tablance {
 		if (this.#activeExpCell) {
 			for (let oldCellParent=this.#activeExpCell; oldCellParent=oldCellParent.parent;) {
 				if (oldCellParent.struct.type==="group") {
-					if (oldCellParent.creating) {
-						const allowCreation=this.#closeRepeatedInsertion(oldCellParent);
-						if (!allowCreation)
-							return false;
-					}
-					this.#closeGroup(oldCellParent);//close any open group above old cell
+					if (!this.#closeGroup(oldCellParent))//close any open group above old cell
+						return false;
 					this.#ignoreClicksUntil=Date.now()+500;
 				}
 				
@@ -2180,15 +2182,8 @@ class Tablance {
 							break;
 						}
 					if (oldParnt) {
-						if (oldParnt.creating) {
-							const allow=this.#closeRepeatedInsertion(oldParnt);
-							if (!allow)
-								return false;
-						}
-						if (oldParnt.struct.type==="group") {
-							this.#closeGroup(oldParnt)//if old parent-group is not part of new then close it
-							this.#ignoreClicksUntil=Date.now()+500;
-						}
+						if (oldParnt.struct.type==="group"&&!this.#closeGroup(oldParnt))
+							return false;
 						if (oldParnt.struct.onBlur)
 							oldParnt.struct.onBlur?.(oldParnt,mainRowIndex);
 					}
