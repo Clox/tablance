@@ -2506,7 +2506,13 @@ class Tablance {
 			let structToAdd;
 			if (struct.type=="repeated") {
 				if (struct.multiEdit&&struct.create) {
-					structToAdd={...struct,vals:{},entry:{...struct.entry,multiEdit:true},onCreateOpen:updateHeight};
+					//create copy of the repeated-container. and set it to structToAdd so it gets added at the end of
+					//this function. Set onCreate to null so that any function for onCreate set at the implementation
+					//of Tablance wont get fired because we don't want that in the multirowarea
+					structToAdd={...struct,vals:{},entry:{...struct.entry,multiEdit:true},onCreate:null};
+					//update height of multirowarea whenever entries are added or removed
+					structToAdd.onCreateOpen=structToAdd.onCreateCancel=structToAdd.onDelete=updateHeight;
+					//call this function again recursively for the entry of repeated which is the actual repeated data
 					buildStruct(structToAdd.entry,true,structToAdd);
 				}
 			} else if (struct.entries?.length) {

@@ -53,8 +53,9 @@
 				},
 				{type:"field",input:{type:"button",btnText:"Cool button",clickHandler:btnClickHandler}},
 				{type:"group",title:"förordnande",multiEdit:true,entries:[
-					{type:"repeated",id:"custodianshipChanges",multiEdit:true,create:true,
-					onCreate:(...args)=>console.log(args)
+					{type:"repeated",id:"custodianshipChanges",multiEdit:true,create:true
+					,sortCompare:(a,b)=>a.date>b.date?1:-1
+					,onCreate:(...args)=>console.log(args)
 					,onDelete:(...args)=>console.log(args)
 					,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
 					,areYouSureYesText:"Ja",areYouSureNoText:"Nej",entry:
