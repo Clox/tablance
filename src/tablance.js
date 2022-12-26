@@ -318,9 +318,10 @@ class Tablance {
 	 * 				create: Bool If true then there will be a user-interface for creating and deleting entries
 	 * 				onCreate Function Callback fired when the user has deleted an entry via the interface available if
 	 * 					"create" is true. It is considered committed when the cell-cursor has left the repeat-row after
-	 * 					having created it. It will normally get passed arguments: 1:rowData,2:cellObject
-	 * 					However if this is present in the multi-row-area by setting "multiEdit" to true then it will get
-	 * 					passed 1:array of rowData, 2:array of cellObjects, 3:true (to easily check for multi-row edit)
+	 * 					having created it. It will normally get passed arguments: 1:new data,2:rowData,3:repeatedStruct
+	 * 					,4:cellObject
+	 * 					However if in the multi-row-area by setting "multiEdit" to true then it will get passed
+	 * 					1:new data, 2:array of rowData, 3:repeatedStruct, 4:true (to easily check for multi-row edit)
 	 * 				onCreateOpen Function If the entry of the repeated is group and "create" is set to true, then this
 	 * 					callback-function will be called when a new group is added, i.e. when the user interacts with
 	 * 					insertNew-cell, not when the data is actually created, that triggers "onCreate".
@@ -2147,7 +2148,8 @@ class Tablance {
 				return false;//prevent commiting/closing the group
 			}
 			repeatEntry.creating=false;
-			repeatEntry.parent.struct.onCreate?.(repeatEntry.dataObj,repeatEntry);
+			repeatEntry.parent.struct.onCreate?.
+								(repeatEntry.dataObj,this.#data[root.rowIndex],repeatEntry.parent.struct,repeatEntry);
 		} else {
 			this.#deleteCell(repeatEntry);
 			return false;
@@ -2548,15 +2550,31 @@ class Tablance {
 		function containerApply() {
 			const multiRowStruct=self.#multiRowStructs[self.#multiCellInputIndex];
 			const data=multiRowStruct.tablance._allData[0];
+
+			//for repeated structs, when the data is actually commited we want separate instances of these objects so
+			//that they can be edites eparately like adding an id to them or whatever. So copies will be created and
+			//then stored in here. Key is field-id and value is array of all the copied objects
+			const newRepeatedObjects={};
+			
 			for (const dataKey of Object.keys(data))
 				for (const origStruct of multiRowStruct.origStruct.entries)
 					if (origStruct.id===dataKey) {
-						origStruct.input.onChange?.(()=>delete data[dataKey],data[dataKey]
+						if (origStruct.type=="repeated") {
+							const copies=newRepeatedObjects[dataKey]=[];
+							while (copies.push(structuredClone(data[dataKey]))<self.#selectedRows.length);
+							origStruct.onCreate?.(copies,self.#selectedRows,origStruct,true);
+						}
+						else
+							origStruct.input.onChange?.(()=>delete data[dataKey],data[dataKey]
 																				,null,self.#selectedRows,origStruct);
 						break;
 					}
 			if (Object.keys(data).length) {//if not all fields were prevented
-				self.#selectedRows.forEach(rowData=>Object.assign(rowData,data));
+				for (let rowData,selectedRowI=-1; rowData=self.#selectedRows[++selectedRowI];) {
+					for (const copiesKey of Object.keys(newRepeatedObjects))
+						data[copiesKey]=newRepeatedObjects[copiesKey][selectedRowI];
+					Object.assign(rowData,data);
+				}
 				for (const selectedTr of self.#mainTbody.querySelectorAll("tr.selected.expanded"))
 					Object.keys(data).forEach(id=>self.updateData(selectedTr.dataset.dataRowIndex,id,null,false,true));
 				self.#multiCells[self.#multiCellInputIndex].innerText="(Same)";
