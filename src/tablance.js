@@ -317,8 +317,10 @@ class Tablance {
 	 * 								level deeper so the path from the base would be idOfRepeatedRows->arrayIndex->*
 	 * 				create: Bool If true then there will be a user-interface for creating and deleting entries
 	 * 				onCreate Function Callback fired when the user has deleted an entry via the interface available if
-	 * 					"create" is true. It is counted as committed when the cell-cursor has left the repeat-row after
-	 * 					having created it. It will get passed arguments: 1:rowData,2:cellObject
+	 * 					"create" is true. It is considered committed when the cell-cursor has left the repeat-row after
+	 * 					having created it. It will normally get passed arguments: 1:rowData,2:cellObject
+	 * 					However if this is present in the multi-row-area by setting "multiEdit" to true then it will get
+	 * 					passed 1:array of rowData, 2:array of cellObjects, 3:true (to easily check for multi-row edit)
 	 * 				onCreateOpen Function If the entry of the repeated is group and "create" is set to true, then this
 	 * 					callback-function will be called when a new group is added, i.e. when the user interacts with
 	 * 					insertNew-cell, not when the data is actually created, that triggers "onCreate".
@@ -2526,7 +2528,7 @@ class Tablance {
 				if (containerStruct&&structToAdd)
 					Object.assign(containerStruct.vals,structToAdd.vals);
 			} else if (struct.input&&((!isExpa&&struct.input.multiEdit!=false)||(isExpa&&struct.input.multiEdit))) {
-				structToAdd=struct;
+				structToAdd={...struct,input:{...struct.input,onChange:null}};//prevent onChange-event in multiRowArea
 				if (containerStruct)
 					containerStruct.vals[struct.id]=null;//properties are added to the base-structs of 
 						//this.#multiRowStructs if they are containers and are used later when assigning the
@@ -2544,13 +2546,21 @@ class Tablance {
 			self.#cellCursor.style.display="block";
 		}
 		function containerApply() {
-			const data=self.#multiRowStructs[self.#multiCellInputIndex].tablance._allData[0];
-			for (const selectedRow of self.#selectedRows)
-				Object.assign(selectedRow,data);
-			for (const selectedTr of self.#mainTbody.querySelectorAll("tr.selected.expanded"))
-				for (const id of Object.keys(data))
-					self.updateData(selectedTr.dataset.dataRowIndex,id,null,false,true);
-			self.#multiCells[self.#multiCellInputIndex].innerText="(Same)";
+			const multiRowStruct=self.#multiRowStructs[self.#multiCellInputIndex];
+			const data=multiRowStruct.tablance._allData[0];
+			for (const dataKey of Object.keys(data))
+				for (const origStruct of multiRowStruct.origStruct.entries)
+					if (origStruct.id===dataKey) {
+						origStruct.input.onChange?.(()=>delete data[dataKey],data[dataKey]
+																				,null,self.#selectedRows,origStruct);
+						break;
+					}
+			if (Object.keys(data).length) {//if not all fields were prevented
+				self.#selectedRows.forEach(rowData=>Object.assign(rowData,data));
+				for (const selectedTr of self.#mainTbody.querySelectorAll("tr.selected.expanded"))
+					Object.keys(data).forEach(id=>self.updateData(selectedTr.dataset.dataRowIndex,id,null,false,true));
+				self.#multiCells[self.#multiCellInputIndex].innerText="(Same)";
+			}
 		}
 	}
 

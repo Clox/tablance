@@ -44,9 +44,12 @@
 					[{type:"field",title:"Gata",id:"street"},{type:"field",title:"Postnummer",id:"zip"}
 						,{type:"field",title:"Ort",id:"city"}]}},
 				{type:"group",title:"Hemadress",multiEdit:true,entries:
-					[{type:"field",title:"Gata",id:"home_street",input:{type:"text",multiEdit:true}}
-						,{type:"field",title:"Postnummer",id:"home_zip",input:{type:"text",multiEdit:true}}
-						,{type:"field",title:"Ort",id:"home_city",input:{type:"text",multiEdit:true}}]},
+					[{type:"field",title:"Gata",id:"home_street",input:{type:"text",multiEdit:true
+							,onChange:(...args)=>console.log(args)}}
+						,{type:"field",title:"Postnummer",id:"home_zip",input:{type:"text",multiEdit:true
+							,onChange:(...args)=>console.log(args)}}
+						,{type:"field",title:"Ort",id:"home_city",input:{type:"text",multiEdit:true
+							,onChange:(...args)=>console.log(args)}}]},
 				{type:"field",title:"Date",id:"date",input:{type:"date",onChange:(...args)=>console.log(args)}},
 				{type:"repeated",id:"repeatedField",sortCompare:(a,b)=>a.bar>b.bar?1:-1,entry:
 					{type:"field",title:"repeated row",id:"foo"}
