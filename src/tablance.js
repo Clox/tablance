@@ -372,9 +372,13 @@ class Tablance {
 	 * 							inner group has inputs with true multiEdit as well then multi-level groups will be 
 	 * 							added to the multi-row-area. Containers in the multi-row-area appear as a normal cell
 	 * 							at first but by entering it a page dedicated to that container is changed to.
-	 * 				onOpen Function Function that fires when the group is opened. Gets passed the following arguments:
+	 * 				onOpen Function Function that fires when the group is opened, before it has been rendered.
+	 * 					Gets passed the following arguments:
 	 * 					1: tablanceEvent-object. It has a preventDefault-function that can be called in order to
 	 * 					prevent the group from actually opening. 2: group-object
+	 * 				onOpenAfter Function Function that fires when the group is opened, but after it has been rendered.
+	 * 					Gets passed the following arguments:
+	 * 					1: group-object
 	 * 				onClose Function Callback that is fired when the group closes. Gets passed the following arguments:
 	 * 					1: group-object
   	 * 			}		
@@ -1609,11 +1613,12 @@ class Tablance {
 
 	#openGroup(groupObj) {
 		let doOpen=true;
+		groupObj.struct.onOpen?.({preventDefault:()=>doOpen=false},groupObj);
 		if (doOpen) {
 			groupObj.el.classList.add("open");
 			this.#selectExpansionCell(this.#getFirstSelectableExpansionCell(groupObj,true,true));
 		}
-		groupObj.struct.onOpen?.({preventDefault:()=>doOpen=false},groupObj);
+		groupObj.struct.onOpenAfter?.(groupObj);
 	}
 
 	/**Input-fields in the multi-row-area may be container-structs in which case if they are entered, the multi-row-area
@@ -2504,7 +2509,7 @@ class Tablance {
 				if (struct.multiEdit) {
 					structToAdd={...struct,entries:[],vals:{},origStruct:struct};
 					if (struct.type=="group"&&containerStruct)
-						structToAdd.onOpen=structToAdd.onClose=updateHeight;
+						structToAdd.onOpenAfter=structToAdd.onClose=updateHeight;
 				}
 				//still call buildStruct for containers without multiEdit,entries may still have it
 				struct.entries.forEach(entryStruct=>buildStruct(entryStruct,true,structToAdd));
