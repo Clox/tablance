@@ -2476,6 +2476,7 @@ class Tablance {
 		pagesDiv.classList.add("pages");										//which is needed if having groups in it
 		
 		const mainPage=pagesDiv.appendChild(document.createElement("div"));
+		this.#multiRowAreaActivePage=-1;//keeps track of current page. main is -1, the rest is index of their inputs
 		mainPage.classList.add("main");
 		mainPage.style.display="block";
 		this.#multiCells=[];
