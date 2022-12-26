@@ -1243,13 +1243,16 @@ class Tablance {
 	}
 
 	#generateCollectionItem(struct,mainIndex,cellObj,parentEl,path,data) {
-		const containerSpan=cellObj.selEl=document.createElement("span");
+		const containerSpan=cellObj.el=document.createElement("span");
+		containerSpan.dataset.path=path.join("-");
 		if (struct.title) {
 			const header=containerSpan.appendChild(document.createElement("h4"));
 			header.innerHTML=struct.title;
 		}
-		let contentDiv=containerSpan.appendChild(document.createElement("div"));
+		let contentDiv=cellObj.selEl=containerSpan.appendChild(document.createElement("div"));
 		contentDiv.className="value";
+		if (struct.input&&struct.input.type!="button")
+			contentDiv.classList.add("input-cell");
 		if (this.#generateExpansionContent(struct,mainIndex,cellObj,contentDiv,path,data))
 			parentEl.appendChild(containerSpan);
 		if (struct.cssClass)
