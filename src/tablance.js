@@ -2580,7 +2580,7 @@ class Tablance {
 		for (let multiCellI=-1, multiCellStruct; multiCellStruct=structsToUpdateCellsFor[++multiCellI];) {
 			const cellIndex=this.#multiRowStructs.indexOf(multiCellStruct);
 			let mixed=false;
-			if (!multiCellStruct.entries) {
+			if (!multiCellStruct.entries) {//if this cell/col is simple single val
 				let val,lastVal;
 				for (let rowI=-1,row; row=this.#selectedRows[++rowI];) {
 					val=row[multiCellStruct.id];
@@ -2590,7 +2590,7 @@ class Tablance {
 					}
 					lastVal=val;
 				}
-				this.#multiCellsDataObj[multiCellStruct]=mixed?"":val;
+				this.#multiCellsDataObj[multiCellStruct.id]=mixed?"":val;
 				this.#multiCells[cellIndex].innerText=mixed?mixedText:val?.text??val??"";
 			} else {
 				const fieldKeys=Object.keys(multiCellStruct.vals);
