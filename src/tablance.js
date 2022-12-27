@@ -532,7 +532,7 @@ class Tablance {
 				case "field":
 					this.#updateExpansionCell(celObj,celData);
 				break; case "repeated":
-					updatedEl=this.#insertRepeatData(celObj,celData[celData.length-1],mainIndx,path).el.parentElement;
+					updatedEl=this.#repeatInsertNew(celObj,false,celData.at(-1));
 			}
 			if (scrollTo) {
 				newEl.scrollIntoView({behavior:'smooth',block:"center"});
@@ -1084,7 +1084,7 @@ class Tablance {
 
 	#onOpenCreationGroup=(e,groupObject)=>{
 		e.preventDefault();
-		this.#repeatInsertNew(groupObject);
+		this.#repeatInsertNew(groupObject.parent,true);
 	}
 
 
@@ -1276,33 +1276,35 @@ class Tablance {
 		for (let entryI=-1,struct; struct=listStructure.entries[++entryI];) {
 			if (struct.type==="repeated") {
 				let repeatData=rowData[struct.id]??(rowData[struct.id]=[]);;
-				const rptCelObj=listCelObj.children[entryI]=
-										{parent:listCelObj,index:entryI,children:[],struct:struct,dataObj:repeatData};
 				path.push(entryI);
+				const rptCelObj=listCelObj.children[entryI]=
+						{parent:listCelObj,index:entryI,children:[],struct:struct,dataObj:repeatData,path:[...path]};
+				
 				if (repeatData?.length){
 					if (struct.create&&struct.entry.type==="group")
 						struct={...struct,entry:this.#structCopyWithDeleteButton(struct.entry,this.#repeatedOnDelete)};
 					if (struct.sortCompare)
 						(repeatData=[...repeatData]).sort(struct.sortCompare);
 					for (const itemData of repeatData) {		
-						this.#generateListItem(listTable.firstChild,struct.entry,mainIndex,rptCelObj,path,itemData);
+						this.#generateListItem(struct.entry,mainIndex,rptCelObj,path,itemData);
 					}
 				}
 				if (struct.create) {
 					const creationTxt=struct.creationText??this.#opts.lang?.insertNew??"Insert new";
 					const creationStruct={type:"group",closedRender:()=>creationTxt,entries:[]
 														,onOpen:this.#onOpenCreationGroup,cssClass:"repeat-insertion"};
-					this.#generateListItem(listTable.firstChild,creationStruct,mainIndex,rptCelObj,path);
+					this.#generateListItem(creationStruct,mainIndex,rptCelObj,path);
 				}
 				path.pop();
 			} else
-				this.#generateListItem(listTable.firstChild,struct,mainIndex,listCelObj,path,rowData);
+				this.#generateListItem(struct,mainIndex,listCelObj,path,rowData);
 		}
 		parentEl.appendChild(listTable);
 		return true;
 	}
 
-	#generateListItem(tbody,struct,mainIndex,listOrRepeated,path,data,insertBeforeEl=null,index=null) {
+	#generateListItem(struct,mainIndex,listOrRepeated,path,data,index=null) {
+		const tbody=(listOrRepeated.listTable?listOrRepeated:listOrRepeated.parent).listTable.querySelector("tbody");
 		let contentTd=document.createElement("td");
 		contentTd.className="value";
 		let cellChild={parent:listOrRepeated,index:index??listOrRepeated.children.length};
@@ -1315,7 +1317,7 @@ class Tablance {
 			//a repeated and there was no data for it add
 			for (var containerObj=listOrRepeated;containerObj.struct.type=="repeated";containerObj=containerObj.parent);
 			let listTr=document.createElement("tr");
-			tbody.insertBefore(listTr,insertBeforeEl);
+			tbody.insertBefore(listTr,index==null?null:tbody.rows[index]);
 			if (containerObj.struct.type=="list"&&containerObj.struct.titlesColWidth!=false) {
 				let titleTd=listTr.insertCell();
 				titleTd.className="title";
@@ -1669,41 +1671,37 @@ class Tablance {
 		return true;
 	}
 
-	#repeatInsertNew(repeatCreater) {
-		const pathOfNew=[...repeatCreater.path];
-		repeatCreater.path[repeatCreater.path.length-1]++;
-		repeatCreater.el.parentElement.dataset.path=repeatCreater.path.join("-");
-		const repeatedObj=repeatCreater.parent;
-		const indexOfNew=repeatedObj.children.length-1;
-		let rowIndex;
-		let newObj;
-		for (let root=repeatedObj.parent; root.parent; root=root.parent,rowIndex=root.rowIndex);//get main-index
-		
-		const data=repeatedObj.dataObj[indexOfNew]={};		
-		let struct=repeatedObj.struct;
+	#repeatInsertNew(repeated,creating,data={}) {
+		let indexOfNew,rowIndex,newObj;
+		if (!creating&&repeated.struct.sortCompare) {
+			for (indexOfNew=0;indexOfNew<repeated.children.length-!!repeated.struct.create; indexOfNew++)
+				if (repeated.struct.sortCompare(data,repeated.dataObj[indexOfNew])<0)
+					break;
+		} else
+			indexOfNew=repeated.children.length-!!repeated.struct.create;
+		for (let root=repeated.parent; root.parent; root=root.parent,rowIndex=root.rowIndex);//get main-index
+		repeated.dataObj.splice(indexOfNew,0,data);
+		let struct=repeated.struct;
 		if (struct.create&&struct.entry.type==="group")
 			(struct={...struct}).entry=this.#structCopyWithDeleteButton(struct.entry,this.#repeatedOnDelete);
 			//copy repeat-struct not to edit orig. Then add delete-controls to its inner group which also gets copied.
-		if (repeatedObj.parent.struct.type=="list") {
-			pathOfNew.pop();//generateListItem takes care of adding the last path-bit based on the specified index
-			newObj=this.#generateListItem(repeatedObj.parent.listTable.firstChild,struct.entry,rowIndex,repeatedObj
-															,pathOfNew,data,repeatCreater.el.closest("tr"),indexOfNew);
-		} else {
-			newObj={parent:repeatedObj,index:indexOfNew};
-			repeatedObj.children.splice(indexOfNew,0,newObj);
+		if (repeated.parent.struct.type!="list") {
+			newObj={parent:repeated,index:indexOfNew};
+			repeated.children.splice(indexOfNew,0,newObj);
 			const newDiv=document.createElement("div");
-			repeatCreater.el.parentElement.parentElement.insertBefore(newDiv,repeatCreater.el.parentElement)
-			this.#generateExpansionContent(struct.entry,rowIndex,newObj,newDiv,pathOfNew,data);
-			this.#changeCellObjIndex(repeatCreater,indexOfNew+1);
+			const container=repeated.parent.el.querySelector("div.value");
+			container.insertBefore(newDiv,container.children[indexOfNew]);
+			this.#generateExpansionContent(struct.entry,rowIndex,newObj,newDiv,[...repeated.path,indexOfNew],data);
+			for (let siblingI=indexOfNew,sibling; sibling=repeated.children[++siblingI];)
+				this.#changeCellObjIndex(sibling,siblingI);
+		} else 
+			newObj=this.#generateListItem(struct.entry,rowIndex,repeated,repeated.path,data,indexOfNew);
+		if (creating) {
+			newObj.creating=true;//creating means it hasn't been commited yet.
+			repeated.struct.onCreateOpen?.(repeated);
+			this.#selectFirstSelectableExpansionCell(newObj,true,true);
 		}
-		newObj.creating=true;//creating means it hasn't been commited yet.
-		
-		newObj.el.classList.add("open");
-		repeatedObj.struct.onCreateOpen?.(repeatedObj);
-		this.#selectFirstSelectableExpansionCell(newObj,true,true);
-		
-		repeatCreater.el.parentElement.appendChild(repeatCreater.el);
-		this.#scrollElementIntoView(repeatCreater.el)
+		return newObj.el;
 	}
 
 	#changeCellObjIndex(cellObj,newIndex) {
@@ -3144,34 +3142,6 @@ class Tablance {
 			this.#highlightElements(tr.children);
 		else
 			this.#highlightRowsOnView[index]=true;
-	}
-
-	#insertRepeatData(rptCel,data,mainIndex,path) {
-		const nextSiblingObj=findClosestRenderedSibling(rptCel);
-		let nextSibl;
-		if (nextSiblingObj)
-			nextSibl=(nextSiblingObj.el??nextSiblingObj.listTable).parentElement;//next sibling/element to insert before
-		let parentContainerEl=(rptCel.parent.listTable??rptCel.parent.el).firstChild;
-		if (rptCel.parent.struct.type=="list")
-			nextSibl=nextSibl?.parentElement;
-		if (rptCel.struct.sortCompare) {
-			const sortedRowData=[...rptCel.dataObj].sort(rptCel.struct.sortCompare);
-			for (var indx=sortedRowData.length-1;sortedRowData[indx]!=data;indx--)
-				nextSibl=nextSibl.previousSibling;
-		}
-		
-		return this.#generateListItem(parentContainerEl,rptCel.struct.entry,mainIndex,rptCel,path,data,nextSibl,indx);
-		function findClosestRenderedSibling(startCell) {
-			for (let i=startCell.index,otherCell; otherCell=startCell.parent.children[++i];) {
-				if (otherCell.el||otherCell.listTable)
-					return otherCell;
-				if (otherCell.children) {
-					const lastRenderedChild=findClosestRenderedSibling(otherCell.children[0]);
-					if (lastRenderedChild)
-						return lastRenderedChild;
-				}
-			}	
-		}
 	}
 
 	#highlightElements(elements) {
