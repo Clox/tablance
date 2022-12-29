@@ -497,78 +497,95 @@ class Tablance {
 	 * 				For repeated-arrays which data should be added to "[]" can be used similiar to how it's done in PHP.
 	 * 				For instance the path could be "foo[]" or "foo[].bar". Objects/arrays will be created recursively
 	 * 				if they don't yet exist.
-	 * @param {*} data The actual data to be replaced with or added
+	 * @param {*} newData The actual data to be replaced with or added
 	 * @param {bool} scrollTo Whether the modified/added data should be scrolled to and highlighted.
 	 * @param {bool} onlyRefresh If true then no new data will be written and argument "data" will be ignored.
 	 * 							The cell will only be refreshed with the value already present in the data.
 	 * @returns The tablance-object, for chaining*/
-	updateData(dataRow_or_mainIndex,dataPath,data,scrollTo=false,onlyRefresh=false) {
-		let dataRow,mainIndx,updatedEl,path=[];
+	updateData(dataRow_or_mainIndex,dataPath,newData,scrollTo=false,onlyRefresh=false) {
+		let dataRow;//simply an element from #data, e.g. a whole dataset for a row of the maintable.
+		let mainIndx;//the index of dataRow
+		let updatedEl;
 		if (!isNaN(dataRow_or_mainIndex))
 			dataRow=this.#data[mainIndx=dataRow_or_mainIndex];
 		else //if (typeof dataRow_or_mainIndex=="object")
 			mainIndx=this.#data.indexOf(dataRow=dataRow_or_mainIndex);
-		const pathArr=typeof dataPath=="string"?dataPath.split(/\.|(?=\[\])/):dataPath;
-		let celObj=this.#openExpansions[mainIndx],celData=dataRow;
-		for (let i=-1,dataStep,dataPortion=dataRow; dataStep=pathArr[++i];) {
-			if (i<pathArr.length-1) {//if not at last step yet meaning this is a container
-				if (!dataPortion[dataStep])//the container doesn't exist
-					dataPortion=dataPortion[dataStep=="[]"?dataPortion.length:dataStep]
-											=(isNaN(pathArr[i+1])&&pathArr[i+1]!=="[]")?{}:[];//then create it
-				else
-					dataPortion=dataPortion[dataStep];
-			} else if (!onlyRefresh)//at last step
-				dataPortion[dataStep=="[]"?dataPortion.length:dataStep]=data;
-			if (celObj) {
-				const childCel=findCelRecursive(celObj,dataPortion,dataStep,path);
-				if (childCel) {
-					celData=dataPortion;
-					celObj=childCel;
+		dataPath=typeof dataPath=="string"?dataPath.split(/\.|(?=\[\d*\])/):dataPath;
+
+		//update the actual data, deal with the dom later
+		let dataPortion=dataRow;//object that is going to have a property updated, or array that will be pushed to
+		for (let i=0; i<dataPath.length; i++) {
+			const key=i%2?dataPath[i].replace(/^\[|\]$/g,""):dataPath[i];//get rid of brackets. 
+			//key is now either property-name, string-int for index, or empty string for pushing
+			if (i==dataPath.length-1)//if last step
+				dataPortion[key||dataPortion.length]=newData;//assign the data
+			else if (!key) {//not last step and empty string, meaning push
+				dataPortion=dataPortion[dataPortion.length]={};//do push
+			} else//not last step and key is index or property-name
+				dataPortion=dataPortion[key]??(dataPortion[key]=i%2?[]:{});
+		}
+		if (mainIndx<this.#scrollRowIndex||mainIndx>=this.#scrollRowIndex+this.#numRenderedRows)
+			return;//the row to be updated is outside of view. It'll be updated automatically if scrolled into view
+		
+		//is it a column of the main-table?
+		if (dataPath.length==1) {//it's possible only if the path is a single id-key..
+			for (let colI=-1,colStruct;colStruct=this.#colStructs[++colI];)
+				if (colStruct.id==dataPath[0]) {//if true then yes, it was a column of main-table
+					dataRow[colStruct.id]=newData;//update the actual data
+					const tr=this.#mainTbody.querySelector(`[data-data-row-index="${mainIndx}"]:not(.expansion)`);
+					return this.#updateMainRowCell(tr.cells[colI],colStruct);//update it and be done with this
+				}
+		}
+
+		//The data is somewhere in expansion
+		
+		let cellObjToUpdate=this.#openExpansions[mainIndx];//points to the cellObject that will be subject to update
+		if (!cellObjToUpdate)//if the updates expansion is not open
+			return;
+
+		//look through the celObjToUpdate and its descendants-tree (currently set to whole expansion), following the
+		//dataPath. At the end of this loop celObjToUpdate should be set to the deepest down object that dataPath points
+		//to, and pathIndex should be the index in dataPath that is the last step pointing to celObjToUpdate.
+		//When simply editing an already existing field then celObjToUpdate would be the container of that cell, and
+		//pathIndex would be set to the index of the last element in dataPath
+		for (let i=0,cellObjId; cellObjId=dataPath[i]; i+=2) {
+			const arrayIndex=dataPath[i+1]?.replace(/^\[|\]$/g,"");
+			cellObjToUpdate=findCellObj(cellObjToUpdate,cellObjId);
+			if (cellObjToUpdate.struct.type=="repeated") {//should be true until possibly last iteration
+				if (i==dataPath.length-1) {//final array-index not specified. replace whole repeated
+					for (let entryI=cellObjToUpdate.children.length,entry; entry=cellObjToUpdate.children[--entryI];)
+						this.#deleteCell(entry,true);
+					cellObjToUpdate.children=[];
+					//TODO this is not working yet
+					this.#generateExpansionRepeated(cellObjToUpdate.struct,mainIndx,cellObjToUpdate
+													,cellObjToUpdate.el,cellObjToUpdate.path,cellObjToUpdate.dataObj);
+					break;
+				} else if (arrayIndex) {//index pointing at existing repeated-child
+					cellObjToUpdate=cellObjToUpdate.children[arrayIndex];
+				} else {//[] - insert new
+					this.#repeatInsertNew(cellObjToUpdate,false,cellObjToUpdate.dataObj.splice(-1,1)[0]);
+					break;
 				}
 			}
 		}
-		if (celObj) {
-			switch (celObj.struct.type) {
-				case "field":
-					this.#updateExpansionCell(celObj,celData);
-				break; case "repeated":
-					updatedEl=this.#repeatInsertNew(celObj,false,celData.at(-1));
-			}
-			if (scrollTo) {
-				newEl.scrollIntoView({behavior:'smooth',block:"center"});
-				this.#highlightElements([updatedEl,...updatedEl.getElementsByTagName('*')]);
-			}
-			this.#adjustCursorPosSize(this.#selectedCell,true);
-		} else {
-			if (mainIndx>=this.#scrollRowIndex&&mainIndx<this.#scrollRowIndex+this.#numRenderedRows) {
-				const tr=this.#mainTbody.querySelector(`[data-data-row-index="${mainIndx}"]:not(.expansion)`);
-				for (let i=-1,colStruct;colStruct=this.#colStructs[++i];)
-					if (colStruct.id==dataPath)
-						return this.#updateMainRowCell(tr.cells[i],colStruct);
-				if (!celObj)
-					return;
-			}
-			if (scrollTo)
-				scrollToDataRow(dataRow,true);
+
+		if (cellObjToUpdate.struct.type=="field")
+			this.#updateExpansionCell(cellObjToUpdate);
+		if (scrollTo) {
+			newEl.scrollIntoView({behavior:'smooth',block:"center"});
+			this.#highlightElements([updatedEl,...updatedEl.getElementsByTagName('*')]);
 		}
+		this.#adjustCursorPosSize(this.#selectedCell,true);
 		return this;
 
-		function findCelRecursive(celObj,dataPortion,dataStep,path) {
-			if (celObj.children)
-				for (let child,childI=-1; child=celObj.children[++childI];) {
-					path.push(childI);
-					if (child.struct.id==dataStep)
-						return child;
-					if (child.struct.type=="repeated"&&child.dataObj==dataPortion) {
-						path.push(child.index);
-						return child;
-					}
-					if (child.struct.type=="group"||child.struct.type=="list") {
-						const cel=findCelRecursive(child,dataPortion,dataStep,path);
-						if (cel)
-							return cel;
-					}
-					path.pop();
+		function findCellObj(searchInObj,idToFind) {
+			for (const child of searchInObj.children)
+				if (child.struct.id==idToFind)//if true then its the repeated-obj we're looking for
+					return child;
+				else if (child.children) {//if container-obj
+					const result=findCellObj(child,idToFind);
+					if (result)
+						return result;
 				}
 		}
 	}
@@ -1099,6 +1116,7 @@ class Tablance {
 	 * @param {*} rowData 
 	 * @returns */
 	#generateExpansionRepeated(struct,dataIndex,cellObj,parentEl,path,rowData) {
+		cellObj.el=parentEl;
 		cellObj.children=[];
 		let repeatData=cellObj.dataObj=rowData[struct.id]??(rowData[struct.id]=[]);
 		if (repeatData?.length) {
@@ -1304,7 +1322,7 @@ class Tablance {
 	}
 
 	#generateListItem(struct,mainIndex,listOrRepeated,path,data,index=null) {
-		const tbody=(listOrRepeated.listTable?listOrRepeated:listOrRepeated.parent).listTable.querySelector("tbody");
+		const tbody=(listOrRepeated.listTable??listOrRepeated.parent.listTable).querySelector("tbody");
 		let contentTd=document.createElement("td");
 		contentTd.className="value";
 		let cellChild={parent:listOrRepeated,index:index??listOrRepeated.children.length};
@@ -1317,7 +1335,10 @@ class Tablance {
 			//a repeated and there was no data for it add
 			for (var containerObj=listOrRepeated;containerObj.struct.type=="repeated";containerObj=containerObj.parent);
 			let listTr=document.createElement("tr");
-			tbody.insertBefore(listTr,index==null?null:tbody.rows[index]);
+			let siblingAfter;
+			if (index!=null&&!(siblingAfter=findRenderedObject(listOrRepeated,index)))
+				siblingAfter=findRenderedObject(listOrRepeated.parent,listOrRepeated.index);
+			tbody.insertBefore(listTr,siblingAfter?.el.closest("tr")??null);
 			if (containerObj.struct.type=="list"&&containerObj.struct.titlesColWidth!=false) {
 				let titleTd=listTr.insertCell();
 				titleTd.className="title";
@@ -1328,6 +1349,16 @@ class Tablance {
 		}
 		path.pop();
 		return cellChild;
+		function findRenderedObject(cellObject,startAtIndex) {
+			if (cellObject.el)
+				return cellObject;
+			if (cellObject.children)
+				for (let childI=startAtIndex-1,child;  child=cellObject.children[++childI];) {
+					const renderedChild=findRenderedObject(child);
+					if (renderedChild)
+						return renderedChild;
+				}
+		}
 	}
 
 	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {	
@@ -1720,7 +1751,7 @@ class Tablance {
 		}
 	}
 
-	#deleteCell(cellObj) {
+	#deleteCell(cellObj,programatically=false) {
 		let newSelectedCell;
 		for (let i=cellObj.index,otherCell; otherCell=cellObj.parent.children[++i];)
 			this.#changeCellObjIndex(otherCell,i-1)
@@ -1729,13 +1760,15 @@ class Tablance {
 		else if (cellObj.parent.children.length>1)
 			newSelectedCell=cellObj.parent.children[cellObj.index-1];
 		cellObj.parent.children.splice(cellObj.index,1);
-		cellObj.parent.dataObj.splice(cellObj.index,1);
+		if (!programatically)
+			cellObj.parent.dataObj.splice(cellObj.index,1);
 		if (cellObj.parent.struct.type==="repeated"&&cellObj.parent.parent.struct.type==="list")
 			cellObj.el.parentElement.parentElement.remove();
 		else
 			cellObj.el.parentElement.remove();
 		this.#activeExpCell=null;//causes problem otherwise when #selectExpansionCell checks old cell
-		this.#selectExpansionCell(newSelectedCell??cellObj.parent.parent);
+		if (!programatically)
+			this.#selectExpansionCell(newSelectedCell??cellObj.parent.parent);
 		cellObj.creating&&cellObj.parent.struct.onCreateCancel?.(cellObj.parent);
 	}
 
@@ -3073,7 +3106,8 @@ class Tablance {
 	/**Updates the html-element of a cell inside an expansion. Also updates nonEmptyDescentants of the cell-object of 
 	 * 	group-rows as well as toggling the empty-class of them. Reports back whether visibility has been changed.
 	 * @param {*} cellObj */
-	#updateExpansionCell(cellObj,rowData) {
+	#updateExpansionCell(cellObj,rowData=null) {
+		for (let otherCellObj=cellObj; !(rowData=otherCellObj.dataObj); otherCellObj=otherCellObj.parent);
 		let cellEl=cellObj.el;
 		if (cellObj.struct.maxHeight) {//if there's a maxHeight stated, which is used for textareas
 			cellEl.innerHTML="";//empty the cell, otherwise multiple calls to this would add more and more content to it
