@@ -1119,20 +1119,20 @@ class Tablance {
 		cellObj.children=[];
 		let repeatData=cellObj.dataObj=rowData[struct.id]??(rowData[struct.id]=[]);
 		repeatData?.forEach(repeatData=>this.#repeatInsert(cellObj,false,repeatData));
-		if (struct.create) {
-			const creationTxt=struct.creationText??this.#opts.lang?.insertNew??"Insert new";
-			const creationStrct={type:"group",closedRender:()=>creationTxt,entries:[]
-														,onOpen:this.#onOpenCreationGroup,cssClass:"repeat-insertion"};
-			const creationDiv=parentEl.appendChild(document.createElement("div"));
-			creationDiv.classList.add("empty");//so it gets hidden when group is closed
-			const creationObj=cellObj.children[repeatData.length]=
-															{parent:cellObj,el:creationDiv,index:repeatData.length};
-			path.push(repeatData.length);
-			this.#generateExpansionContent(creationStrct,dataIndex,creationObj,creationDiv,path,{});
-			path.pop();
-		}
-		
+		struct.create&&this.#generateRepeatedCreator(cellObj);
 		return !!repeatData?.length||struct.create;
+	}
+
+	/**For repeated-structs with create set to true, meaning that the user can create more entries via a user-interface,
+	 * this method creates the last entry that the user interacts with to create another entry
+	 * @param {Object} repeatedObj The object representing the repeated-container*/
+	#generateRepeatedCreator(repeatedObj) {
+		const creationTxt=repeatedObj.struct.creationText??this.#opts.lang?.insertNew??"Insert new";
+		const creationStrct={type:"group",closedRender:()=>creationTxt,entries:[],
+							creator:true//used to know that this entry is the creator and that it should not be sorted
+							,onOpen:this.#onOpenCreationGroup,cssClass:"repeat-insertion"};
+		const el=this.#repeatInsert(repeatedObj,false,{},creationStrct);
+		el.parentElement.classList.add("empty");//this will make it hidden if inside a group that is closed
 	}
 
 	#beginDeleteRepeated(e,data,mainIndex,struct,cell) {
@@ -1280,18 +1280,10 @@ class Tablance {
 		for (let entryI=-1,struct; struct=listStructure.entries[++entryI];) {
 			if (struct.type==="repeated") {
 				const repeatData=rowData[struct.id]??(rowData[struct.id]=[]);
-				path.push(entryI);
 				const rptCelObj=listCelObj.children[entryI]={parent:listCelObj,index:entryI,children:[],struct:struct
-																			,dataObj:repeatData,path:[...path]};
+																			,dataObj:repeatData,path:[...path,entryI]};
 				repeatData?.forEach(repeatData=>this.#repeatInsert(rptCelObj,false,repeatData));
-				if (struct.create) {
-					const creationTxt=struct.creationText??this.#opts.lang?.insertNew??"Insert new";
-					const creationStruct={type:"group",closedRender:()=>creationTxt,entries:[]
-														,onOpen:this.#onOpenCreationGroup,cssClass:"repeat-insertion"};
-					this.#generateListItem(creationStruct,mainIndex,rptCelObj,path);
-					
-				}
-				path.pop();
+				struct.create&&this.#generateRepeatedCreator(rptCelObj);
 			} else
 				this.#generateListItem(struct,mainIndex,listCelObj,path,rowData);
 		}
@@ -1680,9 +1672,10 @@ class Tablance {
 		return true;
 	}
 
-	#repeatInsert(repeated,creating,data) {
+	#repeatInsert(repeated,creating,data,entryStruct=null) {
+		entryStruct??=repeated.struct.entry;
 		let indexOfNew,rowIndex,newObj;
-		if (!creating&&repeated.struct.sortCompare) {
+		if (!creating&&repeated.struct.sortCompare&&!entryStruct.creator) {
 			for (indexOfNew=0;indexOfNew<repeated.children.length-!!repeated.struct.create; indexOfNew++)
 				if (repeated.struct.sortCompare(data,repeated.dataObj[indexOfNew])<0)
 					break;
@@ -1690,8 +1683,8 @@ class Tablance {
 			indexOfNew=repeated.children.length-!!creating;
 		for (let root=repeated.parent; root.parent; root=root.parent,rowIndex=root.rowIndex);//get main-index
 		let struct=repeated.struct;
-		if (struct.create&&struct.entry.type==="group")
-			(struct={...struct}).entry=this.#structCopyWithDeleteButton(struct.entry,this.#repeatedOnDelete);
+		if (struct.create&&entryStruct.type==="group")
+			(struct={...struct}).entry=this.#structCopyWithDeleteButton(entryStruct,this.#repeatedOnDelete);
 			//copy repeat-struct not to edit orig. Then add delete-controls to its inner group which also gets copied.
 		if (repeated.parent.struct.type!="list") {
 			newObj={parent:repeated,index:indexOfNew};
@@ -1699,11 +1692,11 @@ class Tablance {
 			const newDiv=document.createElement("div");
 			const container=repeated.parent.el.querySelector("div.value");
 			container.insertBefore(newDiv,container.children[indexOfNew]);
-			this.#generateExpansionContent(struct.entry,rowIndex,newObj,newDiv,[...repeated.path,indexOfNew],data);
+			this.#generateExpansionContent(entryStruct,rowIndex,newObj,newDiv,[...repeated.path,indexOfNew],data);
 			for (let siblingI=indexOfNew,sibling; sibling=repeated.children[++siblingI];)
 				this.#changeCellObjIndex(sibling,siblingI);
 		} else 
-			newObj=this.#generateListItem(struct.entry,rowIndex,repeated,repeated.path,data,indexOfNew);
+			newObj=this.#generateListItem(entryStruct,rowIndex,repeated,repeated.path,data,indexOfNew);
 		if (creating) {
 			newObj.creating=true;//creating means it hasn't been commited yet.
 			repeated.struct.onCreateOpen?.(repeated);
