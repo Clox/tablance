@@ -1279,27 +1279,18 @@ class Tablance {
 		}
 		for (let entryI=-1,struct; struct=listStructure.entries[++entryI];) {
 			if (struct.type==="repeated") {
-				let repeatData=rowData[struct.id]??(rowData[struct.id]=[]);;
-				path.push(entryI);
+				const repeatData=rowData[struct.id]??(rowData[struct.id]=[]);
 				const rptCelObj=listCelObj.children[entryI]=
 						{parent:listCelObj,index:entryI,children:[],struct:struct,dataObj:repeatData,path:[...path]};
-				
-				if (repeatData?.length){
-					if (struct.create&&struct.entry.type==="group")
-						struct={...struct,entry:this.#structCopyWithDeleteButton(struct.entry,this.#repeatedOnDelete)};
-					if (struct.sortCompare)
-						(repeatData=[...repeatData]).sort(struct.sortCompare);
-					for (const itemData of repeatData) {		
-						this.#generateListItem(struct.entry,mainIndex,rptCelObj,path,itemData);
-					}
-				}
+				repeatData?.forEach(repeatData=>this.#repeatInsert(rptCelObj,false,repeatData));
 				if (struct.create) {
+					path.push(entryI);
 					const creationTxt=struct.creationText??this.#opts.lang?.insertNew??"Insert new";
 					const creationStruct={type:"group",closedRender:()=>creationTxt,entries:[]
 														,onOpen:this.#onOpenCreationGroup,cssClass:"repeat-insertion"};
 					this.#generateListItem(creationStruct,mainIndex,rptCelObj,path);
+					path.pop();
 				}
-				path.pop();
 			} else
 				this.#generateListItem(struct,mainIndex,listCelObj,path,rowData);
 		}
