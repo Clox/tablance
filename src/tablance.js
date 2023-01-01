@@ -563,7 +563,7 @@ class Tablance {
 				} else if (arrayIndex) {//index pointing at existing repeated-child
 					cellObjToUpdate=cellObjToUpdate.children[arrayIndex];
 				} else {//[] - insert new
-					this.#repeatInsertNew(cellObjToUpdate,false,cellObjToUpdate.dataObj.splice(-1,1)[0]);
+					this.#repeatInsert(cellObjToUpdate,false,cellObjToUpdate.dataObj.at(-1));
 					break;
 				}
 			}
@@ -1101,7 +1101,7 @@ class Tablance {
 
 	#onOpenCreationGroup=(e,groupObject)=>{
 		e.preventDefault();
-		this.#repeatInsertNew(groupObject.parent,true);
+		this.#repeatInsert(groupObject.parent,true,groupObject.parent.dataObj[groupObject.parent.dataObj.length]={});
 	}
 
 
@@ -1116,23 +1116,9 @@ class Tablance {
 	 * @param {*} rowData 
 	 * @returns */
 	#generateExpansionRepeated(struct,dataIndex,cellObj,parentEl,path,rowData) {
-		cellObj.el=parentEl;
 		cellObj.children=[];
 		let repeatData=cellObj.dataObj=rowData[struct.id]??(rowData[struct.id]=[]);
-		if (repeatData?.length) {
-			if (struct.create&&struct.entry.type==="group")
-				//copy repeat-struct not to edit orig,then add delete-controls to its inner group which too gets copied.
-				(struct={...struct}).entry=this.#structCopyWithDeleteButton(struct.entry,this.#repeatedOnDelete);
-			if (struct.sortCompare)
-				(repeatData=[...repeatData]).sort(struct.sortCompare);
-			for (let childI=0; childI<repeatData.length; childI++) {
-				let childObj=cellObj.children[childI]={parent:cellObj,index:childI};
-				path.push(childI);
-				const contentDiv=parentEl.appendChild(document.createElement("div"));
-				this.#generateExpansionContent(struct.entry,dataIndex,childObj,contentDiv,path,repeatData[childI]);
-				path.pop();
-			}
-		}
+		repeatData?.forEach(repeatData=>this.#repeatInsert(cellObj,false,repeatData));
 		if (struct.create) {
 			const creationTxt=struct.creationText??this.#opts.lang?.insertNew??"Insert new";
 			const creationStrct={type:"group",closedRender:()=>creationTxt,entries:[]
@@ -1702,7 +1688,7 @@ class Tablance {
 		return true;
 	}
 
-	#repeatInsertNew(repeated,creating,data={}) {
+	#repeatInsert(repeated,creating,data) {
 		let indexOfNew,rowIndex,newObj;
 		if (!creating&&repeated.struct.sortCompare) {
 			for (indexOfNew=0;indexOfNew<repeated.children.length-!!repeated.struct.create; indexOfNew++)
@@ -1711,7 +1697,6 @@ class Tablance {
 		} else
 			indexOfNew=repeated.children.length-!!repeated.struct.create;
 		for (let root=repeated.parent; root.parent; root=root.parent,rowIndex=root.rowIndex);//get main-index
-		repeated.dataObj.splice(indexOfNew,0,data);
 		let struct=repeated.struct;
 		if (struct.create&&struct.entry.type==="group")
 			(struct={...struct}).entry=this.#structCopyWithDeleteButton(struct.entry,this.#repeatedOnDelete);
