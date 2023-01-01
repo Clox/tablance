@@ -1280,17 +1280,18 @@ class Tablance {
 		for (let entryI=-1,struct; struct=listStructure.entries[++entryI];) {
 			if (struct.type==="repeated") {
 				const repeatData=rowData[struct.id]??(rowData[struct.id]=[]);
-				const rptCelObj=listCelObj.children[entryI]=
-						{parent:listCelObj,index:entryI,children:[],struct:struct,dataObj:repeatData,path:[...path]};
+				path.push(entryI);
+				const rptCelObj=listCelObj.children[entryI]={parent:listCelObj,index:entryI,children:[],struct:struct
+																			,dataObj:repeatData,path:[...path]};
 				repeatData?.forEach(repeatData=>this.#repeatInsert(rptCelObj,false,repeatData));
 				if (struct.create) {
-					path.push(entryI);
 					const creationTxt=struct.creationText??this.#opts.lang?.insertNew??"Insert new";
 					const creationStruct={type:"group",closedRender:()=>creationTxt,entries:[]
 														,onOpen:this.#onOpenCreationGroup,cssClass:"repeat-insertion"};
 					this.#generateListItem(creationStruct,mainIndex,rptCelObj,path);
-					path.pop();
+					
 				}
+				path.pop();
 			} else
 				this.#generateListItem(struct,mainIndex,listCelObj,path,rowData);
 		}
@@ -1686,7 +1687,7 @@ class Tablance {
 				if (repeated.struct.sortCompare(data,repeated.dataObj[indexOfNew])<0)
 					break;
 		} else
-			indexOfNew=repeated.children.length-!!repeated.struct.create;
+			indexOfNew=repeated.children.length-!!creating;
 		for (let root=repeated.parent; root.parent; root=root.parent,rowIndex=root.rowIndex);//get main-index
 		let struct=repeated.struct;
 		if (struct.create&&struct.entry.type==="group")
