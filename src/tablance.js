@@ -552,13 +552,17 @@ class Tablance {
 			const arrayIndex=dataPath[i+1]?.replace(/^\[|\]$/g,"");
 			cellObjToUpdate=findCellObj(cellObjToUpdate,cellObjId);
 			if (cellObjToUpdate.struct.type=="repeated") {//should be true until possibly last iteration
-				if (i==dataPath.length-1) {//final array-index not specified. replace whole repeated
-					for (let entryI=cellObjToUpdate.children.length,entry; entry=cellObjToUpdate.children[--entryI];)
+				if (i==dataPath.length-1) {//final array-index not specified. replace all of the data in repeated
+
+					//remove all the current entries. Do it backwards so that the remaining entries doesn't have to
+					//have their index&path updates each time
+					const children=cellObjToUpdate.children;
+					for (let entryI=children.length-!!cellObjToUpdate.struct.create,entry; entry=children[--entryI];)
 						this.#deleteCell(entry,true);
-					cellObjToUpdate.children=[];
-					//TODO this is not working yet
-					this.#generateExpansionRepeated(cellObjToUpdate.struct,mainIndx,cellObjToUpdate
-													,cellObjToUpdate.el,cellObjToUpdate.path,cellObjToUpdate.dataObj);
+
+					//insert all the new data
+					cellObjToUpdate.dataObj=cellObjToUpdate.parent.dataObj[cellObjToUpdate.struct.id];
+					cellObjToUpdate.dataObj.forEach(dataEntry=>this.#repeatInsert(cellObjToUpdate,false,dataEntry));
 					break;
 				} else if (arrayIndex) {//index pointing at existing repeated-child
 					cellObjToUpdate=cellObjToUpdate.children[arrayIndex];
@@ -1118,8 +1122,9 @@ class Tablance {
 	#generateExpansionRepeated(struct,dataIndex,cellObj,parentEl,path,rowData) {
 		cellObj.children=[];
 		let repeatData=cellObj.dataObj=rowData[struct.id]??(rowData[struct.id]=[]);
-		repeatData?.forEach(repeatData=>this.#repeatInsert(cellObj,false,repeatData));
+		cellObj.insertionPoint=parentEl.appendChild(document.createComment("repeated-insert"));
 		struct.create&&this.#generateRepeatedCreator(cellObj);
+		repeatData?.forEach(repeatData=>this.#repeatInsert(cellObj,false,repeatData));
 		return !!repeatData?.length||struct.create;
 	}
 
@@ -1269,7 +1274,7 @@ class Tablance {
 	#generateExpansionList(listStructure,mainIndex,listCelObj,parentEl,path,rowData) {
 		listCelObj.children=[];
 		const listTable=listCelObj.listTable=document.createElement("table");
-		listTable.appendChild(document.createElement("tbody"));
+		const tbody=listTable.appendChild(document.createElement("tbody"));
 		listTable.className="expansion-list";
 		if (listStructure.titlesColWidth!=false) {
 			let titlesCol=document.createElement("col");
@@ -1282,8 +1287,9 @@ class Tablance {
 				const repeatData=rowData[struct.id]??(rowData[struct.id]=[]);
 				const rptCelObj=listCelObj.children[entryI]={parent:listCelObj,index:entryI,children:[],struct:struct
 																			,dataObj:repeatData,path:[...path,entryI]};
-				repeatData?.forEach(repeatData=>this.#repeatInsert(rptCelObj,false,repeatData));
+				rptCelObj.insertionPoint=tbody.appendChild(document.createComment("repeated-insert"));
 				struct.create&&this.#generateRepeatedCreator(rptCelObj);
+				repeatData?.forEach(repeatData=>this.#repeatInsert(rptCelObj,false,repeatData));
 			} else
 				this.#generateListItem(struct,mainIndex,listCelObj,path,rowData);
 		}
@@ -1305,10 +1311,13 @@ class Tablance {
 			//a repeated and there was no data for it add
 			for (var containerObj=listOrRepeated;containerObj.struct.type=="repeated";containerObj=containerObj.parent);
 			let listTr=document.createElement("tr");
+
 			let siblingAfter;
-			if (index!=null&&!(siblingAfter=findRenderedObject(listOrRepeated,index)))
-				siblingAfter=findRenderedObject(listOrRepeated.parent,listOrRepeated.index);
-			tbody.insertBefore(listTr,siblingAfter?.el.closest("tr")??null);
+			if (listOrRepeated.struct.type=="repeated")
+				siblingAfter=listOrRepeated.children[
+								(listOrRepeated.insertionPoint.nextSibling?.rowIndex??listOrRepeated.children.length)
+																				-listOrRepeated.children.length+index];
+			tbody.insertBefore(listTr,siblingAfter?.el.closest("tr")??listOrRepeated.insertionPoint);
 			if (containerObj.struct.type=="list"&&containerObj.struct.titlesColWidth!=false) {
 				let titleTd=listTr.insertCell();
 				titleTd.className="title";
@@ -1319,16 +1328,6 @@ class Tablance {
 		}
 		path.pop();
 		return cellChild;
-		function findRenderedObject(cellObject,startAtIndex) {
-			if (cellObject.el)
-				return cellObject;
-			if (cellObject.children)
-				for (let childI=startAtIndex-1,child;  child=cellObject.children[++childI];) {
-					const renderedChild=findRenderedObject(child);
-					if (renderedChild)
-						return renderedChild;
-				}
-		}
 	}
 
 	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {	
@@ -1680,7 +1679,7 @@ class Tablance {
 				if (repeated.struct.sortCompare(data,repeated.dataObj[indexOfNew])<0)
 					break;
 		} else
-			indexOfNew=repeated.children.length-!!creating;
+			indexOfNew=repeated.children.length-!!(creating||repeated.struct.create);
 		for (let root=repeated.parent; root.parent; root=root.parent,rowIndex=root.rowIndex);//get main-index
 		let struct=repeated.struct;
 		if (struct.create&&entryStruct.type==="group")
