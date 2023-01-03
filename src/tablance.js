@@ -1698,8 +1698,8 @@ class Tablance {
 			newObj=this.#generateListItem(entryStruct,rowIndex,repeated,repeated.path,data,indexOfNew);
 		if (creating) {
 			newObj.creating=true;//creating means it hasn't been commited yet.
-			repeated.struct.onCreateOpen?.(repeated);
 			this.#selectFirstSelectableExpansionCell(newObj,true,true);
+			repeated.struct.onCreateOpen?.(repeated);
 		}
 		return newObj.el;
 	}
