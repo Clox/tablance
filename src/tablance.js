@@ -512,18 +512,21 @@ class Tablance {
 			mainIndx=this.#data.indexOf(dataRow=dataRow_or_mainIndex);
 		dataPath=typeof dataPath=="string"?dataPath.split(/\.|(?=\[\d*\])/):dataPath;
 
-		//update the actual data, deal with the dom later
-		let dataPortion=dataRow;//object that is going to have a property updated, or array that will be pushed to
-		for (let i=0; i<dataPath.length; i++) {
-			const key=i%2?dataPath[i].replace(/^\[|\]$/g,""):dataPath[i];//get rid of brackets. 
-			//key is now either property-name, string-int for index, or empty string for pushing
-			if (i==dataPath.length-1)//if last step
-				dataPortion[key||dataPortion.length]=newData;//assign the data
-			else if (!key) {//not last step and empty string, meaning push
-				dataPortion=dataPortion[dataPortion.length]={};//do push
-			} else//not last step and key is index or property-name
-				dataPortion=dataPortion[key]??(dataPortion[key]=i%2?[]:{});
+		if (!onlyRefresh) {
+			//update the actual data, deal with the dom later
+			let dataPortion=dataRow;//object that is going to have a property updated, or array that will be pushed to
+			for (let i=0; i<dataPath.length; i++) {
+				const key=i%2?dataPath[i].replace(/^\[|\]$/g,""):dataPath[i];//get rid of brackets. 
+				//key is now either property-name, string-int for index, or empty string for pushing
+				if (i==dataPath.length-1)//if last step
+					dataPortion[key||dataPortion.length]=newData;//assign the data
+				else if (!key) {//not last step and empty string, meaning push
+					dataPortion=dataPortion[dataPortion.length]={};//do push
+				} else//not last step and key is index or property-name
+					dataPortion=dataPortion[key]??(dataPortion[key]=i%2?[]:{});
+			}
 		}
+
 		if (mainIndx<this.#scrollRowIndex||mainIndx>=this.#scrollRowIndex+this.#numRenderedRows)
 			return;//the row to be updated is outside of view. It'll be updated automatically if scrolled into view
 		
@@ -537,7 +540,7 @@ class Tablance {
 				}
 		}
 
-		//The data is somewhere in expansion
+		//The data is somewhere in expansion which is open
 		
 		let cellObjToUpdate=this.#openExpansions[mainIndx];//points to the cellObject that will be subject to update
 		if (!cellObjToUpdate)//if the updates expansion is not open
