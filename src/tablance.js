@@ -183,11 +183,11 @@ class Tablance {
 	 * 							at first but by entering it a page dedicated to that container is changed to.
 	 *			}
 	 *			{	
-	 *				type "collection" basically like a list but each item is inlined, meaning they will be lined up
+	 *				type "lineup" similiar to a list but each item is inlined, meaning they will be lined up
 	 *									in a horizontal line and will also wrap to multiple lines if needed
 	 *				title String displayed title if placed in a container which displays the title
 	 * 				entries Array each element should be another entry
-	 * 				cssClass String Css-classes to be added to the collection-div
+	 * 				cssClass String Css-classes to be added to the lineup-div
 	 * 				onBlur Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
 	 * 				multiEdit Bool Besides setting multiEdit on input of fields it can also be set on containers which
@@ -540,7 +540,7 @@ class Tablance {
 				}
 		}
 
-		//The data is somewhere in expansion which is open
+		//The data is somewhere in expansion
 		
 		let cellObjToUpdate=this.#openExpansions[mainIndx];//points to the cellObject that will be subject to update
 		if (!cellObjToUpdate)//if the updates expansion is not open
@@ -736,9 +736,9 @@ class Tablance {
 
 	#spreadsheetOnBlur(e) {
 		setTimeout(()=>{
-			if (!this.container.contains(document.activeElement)) {
+			if (!this.container.contains(document.activeElement)||this.#multiRowArea?.contains(document.activeElement)) {
 				this.#highlightOnFocus=true;
-				if (this.neighbourTables&&Object.values(this.neighbourTables).filter(Boolean).length)
+				//if (this.neighbourTables&&Object.values(this.neighbourTables).filter(Boolean).length)
 					this.#cellCursor.style.display="none";
 			}
 		});
@@ -757,8 +757,8 @@ class Tablance {
 			if (this.#multiRowAreaActivePage==-1)//if on the main-page
 				this.#selectMultiCell(hSign?this.#selectedCell.parentNode[(hSign>0?"next":"previous")+"Sibling"]
 																		?.querySelector(".cell"):this.#selectedCell);
-		} else if (this.#activeExpCell?.parent?.struct.type==="collection")
-			this.#moveInsideCollection(hSign,vSign);
+		} else if (this.#activeExpCell?.parent?.struct.type==="lineup")
+			this.#moveInsideLineup(hSign,vSign);
 		else if (vSign) {//moving up or down
 			let newColIndex=this.#mainColIndex;
 			if (this.#activeExpCell) {//moving from inside expansion.might move to another cell inside,or outside
@@ -778,7 +778,7 @@ class Tablance {
 			this.#scrollToCursor();
 	}
 
-	#moveInsideCollection(numCols,numRows) {
+	#moveInsideLineup(numCols,numRows) {
 		const currentCellX=this.#activeExpCell.el.offsetLeft;
 		const currentCellTop=this.#activeExpCell.el.offsetTop;
 		const currentCellBottom=this.#activeExpCell.el.offsetTop+this.#activeExpCell.el.offsetHeight;
@@ -866,7 +866,7 @@ class Tablance {
 			return cellObj;
 		const children=cellObj.children;
 		let startI=isGoingDown?0:children.length-1;
-		if (cellObj.struct.type==="collection"&&!isGoingDown) {
+		if (cellObj.struct.type==="lineup"&&!isGoingDown) {
 			let chosenCell;
 			for (let i=startI,otherCell;otherCell=children[i--];)
 				if (otherCell.el.offsetParent)
@@ -1080,11 +1080,11 @@ class Tablance {
 		cellObject.struct=struct;
 		const args=[struct,dataIndex,cellObject,parentEl,path,rowData];
 		switch (struct.type) {
-			case "list": return this.#generateExpansionList(...args);
+			case "list": return this.#generateExpansionCollection(...args);
 			case "field": return this.#generateField(...args);
 			case "group": return this.#generateExpansionGroup(...args);
 			case "repeated": return this.#generateExpansionRepeated(...args);
-			case "collection": return this.#generateExpansionCollection(...args);
+			case "lineup": return this.#generateExpansionCollection(...args);
 		}
 	}
 
@@ -1146,7 +1146,7 @@ class Tablance {
 	#beginDeleteRepeated(e,data,mainIndex,struct,cell) {
 		if (!cell.parent.parent.creating) {
 			cell.parent.containerEl.classList.add("delete-confirming");
-			this.#moveInsideCollection(1);//move away from the delete-button which now dissapeared, to the next btn
+			this.#moveInsideLineup(1);//move away from the delete-button which now dissapeared, to the next btn
 		} else
 			this.#deleteCell(cell.parent.parent);
 	}
@@ -1157,8 +1157,8 @@ class Tablance {
 	}
 
 	#structCopyWithDeleteButton(struct,deleteHandler) {
-		const deleteControls={type:"collection",cssClass:"delete-controls"
-			,onBlur:cel=>cel.selEl.querySelector(".collection").classList.remove("delete-confirming")
+		const deleteControls={type:"lineup",cssClass:"delete-controls"
+			,onBlur:cel=>cel.selEl.querySelector(".lineup").classList.remove("delete-confirming")
 			,entries:[{type:"field",input:{type:"button",
 				btnText:struct.deleteText??this.#opts.lang?.delete??"Delete"
 				,clickHandler:this.#beginDeleteRepeated.bind(this)},cssClass:"delete"},
@@ -1236,43 +1236,109 @@ class Tablance {
 		return true;
 	}
 
-	#generateExpansionCollection(collectionStructure,mainIndex,collObj,parentEl,path,rowData) {
-		Object.assign(collObj,{children:[],struct:collectionStructure,rowData:rowData});
-		const container=collObj.containerEl=parentEl.appendChild(document.createElement("div"));
-		container.classList.add("collection",...collectionStructure.cssClass?.split(" ")??[]);
-		for (let entryI=-1,struct; struct=collectionStructure.entries[++entryI];) {
-			path.push(entryI);
-			const celObj=collObj.children[entryI]={parent:collObj,index:entryI,struct:struct};
-			if (struct.type==="repeated"&&rowData[struct.id]?.length) {
-				celObj.children=[];
-				for (let repeatI=-1,repeatData;repeatData=rowData[struct.id][++repeatI];) {
-					let repeatdObj=celObj.children[repeatI]={parent:celObj,index:repeatI,struct:struct.entry};
-					this.#generateCollectionItem(struct,mainIndex,repeatdObj,container,path,repeatData);
-				}
-			} else {
-				this.#generateCollectionItem(struct,mainIndex,celObj,container,path,rowData);
+	#generateExpansionCollection(containerStruct,mainIndex,collectionObj,parentEl,path,rowData) {
+		collectionObj.children=[];
+		let collectionEl;
+		if (containerStruct.type=="list") {
+			const listTable=collectionObj.listTable=parentEl.appendChild(document.createElement("table"));
+			collectionEl=listTable.appendChild(document.createElement("tbody"));
+			collectionEl.classList.add("collection");
+			listTable.className="expansion-list";
+			if (containerStruct.titlesColWidth!=false) {
+				let titlesCol=document.createElement("col");
+				listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
+				if (containerStruct.titlesColWidth!=null)
+					titlesCol.style.width=containerStruct.titlesColWidth;
 			}
-			path.pop();
+		} else {
+			collectionEl=collectionObj.containerEl=parentEl.appendChild(document.createElement("div"));
+			collectionEl.classList.add("lineup","collection",...containerStruct.cssClass?.split(" ")??[]);
+		}
+		if (containerStruct.type=="list") {
+			for (let entryI=-1,childStruct; childStruct=containerStruct.entries[++entryI];) {
+				if (childStruct.type==="repeated") {
+					const repeatData=rowData[childStruct.id]??(rowData[childStruct.id]=[]);
+					const rptCelObj=collectionObj.children[entryI]={parent:collectionObj,index:entryI,children:[],struct:childStruct
+																				,dataObj:repeatData,path:[...path,entryI]};
+					rptCelObj.insertionPoint=collectionEl.appendChild(document.createComment("repeated-insert"));
+					childStruct.create&&this.#generateRepeatedCreator(rptCelObj);
+					repeatData?.forEach(repeatData=>this.#repeatInsert(rptCelObj,false,repeatData));
+				} else
+					this.#generateCollectionItem(childStruct,mainIndex,collectionObj,path,rowData);
+			}
+		} else {
+			for (let entryI=-1,childStruct; childStruct=containerStruct.entries[++entryI];) {
+				if (childStruct.type==="repeated"&&rowData[childStruct.id]?.length) {
+					const celObj=collectionObj.children[entryI]={parent:collectionObj,index:entryI,struct:childStruct};
+					path.push(entryI);
+					celObj.children=[];
+					for (let repeatI=-1,repeatData;repeatData=rowData[childStruct.id][++repeatI];) {
+						let repeatdObj=celObj.children[repeatI]={parent:celObj,index:repeatI,struct:childStruct.entry};
+						this.#generateLineupItem(childStruct,mainIndex,repeatdObj,collectionEl,path,repeatData);
+					}
+					path.pop();
+				} else {
+					this.#generateCollectionItem(childStruct,mainIndex,collectionObj,path,rowData);
+				}
+				
+			}
 		}
 		return true;
 	}
 
-	#generateCollectionItem(struct,mainIndex,cellObj,parentEl,path,data) {
-		const containerSpan=cellObj.el=document.createElement("span");
-		containerSpan.dataset.path=path.join("-");
-		if (struct.title) {
-			const header=containerSpan.appendChild(document.createElement("h4"));
-			header.innerHTML=struct.title;
-		}
-		let contentDiv=cellObj.selEl=containerSpan.appendChild(document.createElement("div"));
-		contentDiv.className="value";
+	#generateCollectionItem(struct,mainIndex,containerOrRepeated,path,data,index=null) {
+		const collection=containerOrRepeated.struct.type=="repeated"?containerOrRepeated.parent:containerOrRepeated;
+		const collectionEl=collection.containerEl??collection.listTable.querySelector("tbody");
+		
+		let containerEl;//is the element that the content will be added to
+		let outerContainerEl;//is the outermost element that belongs exclusevily to this item
+		const itemObj={parent:containerOrRepeated,index:index??containerOrRepeated.children.length};
+		if (collection.struct.type=="list") {
+			outerContainerEl=document.createElement("tr");
+			if (collection.struct.titlesColWidth!=false) {
+				const titleTd=outerContainerEl.insertCell();
+				titleTd.className="title";
+				titleTd.innerText=struct.title??"";
+			}
+			containerEl=outerContainerEl.insertCell();
+		} else if (collection.struct.type=="lineup") {
+			outerContainerEl=document.createElement("span");
+			if (struct.title) {
+				const header=outerContainerEl.appendChild(document.createElement("h4"));
+				header.innerHTML=struct.title;
+			}
+			containerEl=itemObj.selEl=outerContainerEl.appendChild(document.createElement("div"));
+		} else
+			outerContainerEl=containerEl=document.createElement("div");
 		if (struct.input&&struct.input.type!="button")
-			contentDiv.classList.add("input-cell");
-		if (this.#generateExpansionContent(struct,mainIndex,cellObj,contentDiv,path,data))
-			parentEl.appendChild(containerSpan);
-		if (struct.cssClass)
-			containerSpan.className+=" "+struct.cssClass;
+			containerEl.classList.add("input-cell");
+		
+		containerEl.classList.add("value");
+		//containerEl.dataset.path=path.join("-");
+		
+		if (index!=null)
+			for (let siblingI=index-1,sibling; sibling=containerOrRepeated.children[++siblingI];)
+				this.#changeCellObjIndex(sibling,siblingI+1);
+		path.push(index??containerOrRepeated.children.length);
+		if (this.#generateExpansionContent(struct,mainIndex,itemObj,containerEl,path,data)) {//generate content
+			//and add it to dom if condition falls true, e.g. content was actually created. it might not be if it is
+			//a repeated and there was no data for it add
+
+			let siblingAfter;
+			if (containerOrRepeated.struct.type=="repeated")
+				siblingAfter=containerOrRepeated.children[
+						(containerOrRepeated.insertionPoint.nextSibling?.rowIndex??containerOrRepeated.children.length)
+																			-containerOrRepeated.children.length+index];
+			collectionEl.insertBefore(outerContainerEl,siblingAfter?.el.closest(".collection>*")??containerOrRepeated.insertionPoint);
+			containerOrRepeated.children.splice(index??Infinity,0,itemObj);
+			if (struct.cssClass)
+				outerContainerEl.className+=" "+struct.cssClass;
+		}
+		path.pop();
+		return itemObj;
 	}
+
+	
 
 	#generateExpansionList(listStructure,mainIndex,listCelObj,parentEl,path,rowData) {
 		listCelObj.children=[];
@@ -1298,6 +1364,44 @@ class Tablance {
 		}
 		parentEl.appendChild(listTable);
 		return true;
+	}
+
+	#generateExpansionLineup(lineupStructure,mainIndex,collObj,parentEl,path,rowData) {
+		Object.assign(collObj,{children:[],struct:lineupStructure,rowData:rowData});
+		const container=collObj.containerEl=parentEl.appendChild(document.createElement("div"));
+		container.classList.add("lineup",...lineupStructure.cssClass?.split(" ")??[]);
+		for (let entryI=-1,struct; struct=lineupStructure.entries[++entryI];) {
+			path.push(entryI);
+			const celObj=collObj.children[entryI]={parent:collObj,index:entryI,struct:struct};
+			if (struct.type==="repeated"&&rowData[struct.id]?.length) {
+				celObj.children=[];
+				for (let repeatI=-1,repeatData;repeatData=rowData[struct.id][++repeatI];) {
+					let repeatdObj=celObj.children[repeatI]={parent:celObj,index:repeatI,struct:struct.entry};
+					this.#generateLineupItem(struct,mainIndex,repeatdObj,container,path,repeatData);
+				}
+			} else {
+				this.#generateLineupItem(struct,mainIndex,celObj,container,path,rowData);
+			}
+			path.pop();
+		}
+		return true;
+	}
+
+	#generateLineupItem(struct,mainIndex,cellObj,parentEl,path,data) {
+		const containerSpan=cellObj.el=document.createElement("span");
+		containerSpan.dataset.path=path.join("-");
+		if (struct.title) {
+			const header=containerSpan.appendChild(document.createElement("h4"));
+			header.innerHTML=struct.title;
+		}
+		let contentDiv=cellObj.selEl=containerSpan.appendChild(document.createElement("div"));
+		contentDiv.className="value";
+		if (struct.input&&struct.input.type!="button")
+			contentDiv.classList.add("input-cell");
+		if (this.#generateExpansionContent(struct,mainIndex,cellObj,contentDiv,path,data))
+			parentEl.appendChild(containerSpan);
+		if (struct.cssClass)
+			containerSpan.className+=" "+struct.cssClass;
 	}
 
 	#generateListItem(struct,mainIndex,listOrRepeated,path,data,index=null) {
@@ -3056,7 +3160,7 @@ class Tablance {
 					fileStruct.input.openHandler?.(e,file,fileStruct,fileCellObj.dataObj,mainIndex,btnObj);
 			}},
 		});
-		fileGroup.entries.push({type:"collection",entries:metaEntries});
+		fileGroup.entries.push({type:"lineup",entries:metaEntries});
 		
 		const fileData=rowData[fileCellObj.struct.id];
 		this.#generateExpansionContent(fileGroup,dataIndex,fileCellObj,cellEl,fileCellObj.path,fileData);
