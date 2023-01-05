@@ -29,7 +29,7 @@
 					,selectInputPlaceholder:"Sök/Skapa"}}
 				,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"}}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
-				{type:"field",title:"File",id:"file",input:{type:"file",fileUploadHandler:xhr=>{
+				/*{type:"field",title:"File",id:"file",input:{type:"file",fileUploadHandler:xhr=>{
 						xhr.open("POST", "http://localhost:3000/tests/serve.php", true);
 					},
 					fileMetasToShow:{filename:true},
@@ -56,7 +56,7 @@
 					{type:"field",title:"repeated row",id:"foo"}
 				},
 				{type:"field",input:{type:"button",btnText:"Cool button",clickHandler:btnClickHandler}},
-			/* 	{type:"group",title:"förordnande",multiEdit:true,entries:[
+			 	{type:"group",title:"förordnande",multiEdit:true,entries:[
 					{type:"repeated",id:"custodianshipChanges",multiEdit:true,create:true
 					,sortCompare:(a,b)=>a.date>b.date?1:-1
 					,onCreate:(...args)=>console.log(args)
@@ -94,7 +94,7 @@
 							}
 						}
 					}
-				]},
+				]},/* 
 				{type:"lineup",title:"Bunch ",entries:[
 					{type:"field",title:"First thing",id:"first"},
 					{type:"field",title:"Second thing",id:"second"},
@@ -123,7 +123,7 @@
 					{type:"field",title:"Cleave-datum",id:"cleaveDate",
 						input:{cleave:{date: true,delimiter: '-',datePattern: ['Y','m','d']},placeholder:"ÅÅÅÅ-MM-DD"}},
 					{type:"field",title:"Anteckningar",id:"notes",maxHeight:150,input:{type:"textarea"}},
-				]},
+				]}, */
 			]};
 			const lang={fileName:"Filnamn",fileLastModified:"Senast ändrad", fileSize:"Filstorlek"
 								,fileUploadDone:"Färdig!",fileType:"Filtyp"
