@@ -1080,11 +1080,11 @@ class Tablance {
 		cellObject.struct=struct;
 		const args=[struct,dataIndex,cellObject,parentEl,path,rowData];
 		switch (struct.type) {
-			case "list": return this.#generateExpansionCollection(...args);
+			case "list": return this.#generateExpansionList2(...args);
 			case "field": return this.#generateField(...args);
 			case "group": return this.#generateExpansionGroup(...args);
 			case "repeated": return this.#generateExpansionRepeated(...args);
-			case "lineup": return this.#generateExpansionCollection(...args);
+			case "lineup": return this.#generateExpansionLineup2(...args);
 		}
 	}
 
@@ -1236,30 +1236,34 @@ class Tablance {
 		return true;
 	}
 
+	#generateExpansionList2(containerStruct,mainIndex,collectionObj,parentEl,path,rowData) {
+		const listTable=parentEl.appendChild(document.createElement("table"));
+		collectionObj.containerEl=listTable.appendChild(document.createElement("tbody"));
+		collectionObj.containerEl.classList.add("collection");
+		listTable.className="expansion-list";
+		if (containerStruct.titlesColWidth!=false) {
+			let titlesCol=document.createElement("col");
+			listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
+			if (containerStruct.titlesColWidth!=null)
+				titlesCol.style.width=containerStruct.titlesColWidth;
+		}
+		return this.#generateExpansionCollection(containerStruct,mainIndex,collectionObj,parentEl,path,rowData);
+	}
+
+	#generateExpansionLineup2(containerStruct,mainIndex,collectionObj,parentEl,path,rowData) {
+		collectionObj.containerEl=parentEl.appendChild(document.createElement("div"));
+		collectionObj.containerEl.classList.add("lineup","collection",...containerStruct.cssClass?.split(" ")??[]);
+		return this.#generateExpansionCollection(containerStruct,mainIndex,collectionObj,parentEl,path,rowData);
+	}
+
 	#generateExpansionCollection(containerStruct,mainIndex,collectionObj,parentEl,path,rowData) {
 		collectionObj.children=[];
-		let collectionEl;
-		if (containerStruct.type=="list") {
-			const listTable=collectionObj.listTable=parentEl.appendChild(document.createElement("table"));
-			collectionEl=listTable.appendChild(document.createElement("tbody"));
-			collectionEl.classList.add("collection");
-			listTable.className="expansion-list";
-			if (containerStruct.titlesColWidth!=false) {
-				let titlesCol=document.createElement("col");
-				listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
-				if (containerStruct.titlesColWidth!=null)
-					titlesCol.style.width=containerStruct.titlesColWidth;
-			}
-		} else {
-			collectionEl=collectionObj.containerEl=parentEl.appendChild(document.createElement("div"));
-			collectionEl.classList.add("lineup","collection",...containerStruct.cssClass?.split(" ")??[]);
-		}
 		for (let entryI=-1,childStruct; childStruct=containerStruct.entries[++entryI];) {
 			if (childStruct.type==="repeated") {
 				const repeatData=rowData[childStruct.id]??(rowData[childStruct.id]=[]);
 				const rptCelObj=collectionObj.children[entryI]={parent:collectionObj,index:entryI,children:[]
 														,struct:childStruct,dataObj:repeatData,path:[...path,entryI]};
-				rptCelObj.insertionPoint=collectionEl.appendChild(document.createComment("repeated-insert"));
+				rptCelObj.insertionPoint=collectionObj.containerEl.appendChild(document.createComment("repeat-insert"));
 				childStruct.create&&this.#generateRepeatedCreator(rptCelObj);
 				repeatData?.forEach(repeatData=>this.#repeatInsert2(rptCelObj,false,repeatData));
 			} else
@@ -1300,7 +1304,7 @@ class Tablance {
 
 	#generateCollectionItem(struct,mainIndex,containerOrRepeated,path,data,index=null) {
 		const collection=containerOrRepeated.struct.type=="repeated"?containerOrRepeated.parent:containerOrRepeated;
-		const collectionEl=collection.containerEl??collection.listTable.querySelector("tbody");
+		const collectionEl=collection.containerEl;
 		
 		let containerEl;//is the element that the content will be added to
 		let outerContainerEl;//is the outermost element that belongs exclusevily to this item
