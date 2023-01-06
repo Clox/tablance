@@ -1244,6 +1244,7 @@ class Tablance {
 		parentEl.classList.add("group-cell");
 		groupObj.el=groupTable;//so that the whole group-table can be selectedf
 		groupTable.className="expansion-group "+(groupStructure.cssClass??"");
+		this.#generateExpansionCollection(groupStructure,dataIndex,groupObj,parentEl,path,rowData);
 		if (groupStructure.closedRender) {
 			groupTable.classList.add("closed-render");
 			const renderRow=tbody.insertRow();
@@ -1252,7 +1253,7 @@ class Tablance {
 			const renderCell=renderRow.insertCell();
 			renderCell.innerText=groupStructure.closedRender(rowData);
 		}
-		return this.#generateExpansionCollection(groupStructure,dataIndex,groupObj,parentEl,path,rowData);
+		return true;
 	}
 
 	#generateExpansionList2(containerStruct,mainIndex,collectionObj,parentEl,path,rowData) {
