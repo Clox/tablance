@@ -1082,7 +1082,7 @@ class Tablance {
 		switch (struct.type) {
 			case "list": return this.#generateExpansionList2(...args);
 			case "field": return this.#generateField(...args);
-			case "group": return this.#generateExpansionGroup(...args);
+			case "group": return this.#generateExpansionGroup2(...args);
 			case "repeated": return this.#generateExpansionRepeated(...args);
 			case "lineup": return this.#generateExpansionLineup2(...args);
 		}
@@ -1236,6 +1236,25 @@ class Tablance {
 		return true;
 	}
 
+	#generateExpansionGroup2(groupStructure,dataIndex,groupObj,parentEl,path,rowData) {
+		groupObj.select=()=>this.#selectExpansionCell(groupObj);
+		const groupTable=parentEl.appendChild(document.createElement("table"));
+		const tbody=groupObj.containerEl=groupTable.appendChild(document.createElement("tbody"));
+		groupTable.dataset.path=path.join("-");
+		parentEl.classList.add("group-cell");
+		groupObj.el=groupTable;//so that the whole group-table can be selectedf
+		groupTable.className="expansion-group "+(groupStructure.cssClass??"");
+		if (groupStructure.closedRender) {
+			groupTable.classList.add("closed-render");
+			const renderRow=tbody.insertRow();
+			renderRow.dataset.path=path.join("-");
+			renderRow.className="group-render";
+			const renderCell=renderRow.insertCell();
+			renderCell.innerText=groupStructure.closedRender(rowData);
+		}
+		return this.#generateExpansionCollection(groupStructure,dataIndex,groupObj,parentEl,path,rowData);
+	}
+
 	#generateExpansionList2(containerStruct,mainIndex,collectionObj,parentEl,path,rowData) {
 		const listTable=parentEl.appendChild(document.createElement("table"));
 		collectionObj.containerEl=listTable.appendChild(document.createElement("tbody"));
@@ -1305,6 +1324,7 @@ class Tablance {
 	#generateCollectionItem(struct,mainIndex,containerOrRepeated,path,data,index=null) {
 		const collection=containerOrRepeated.struct.type=="repeated"?containerOrRepeated.parent:containerOrRepeated;
 		const collectionEl=collection.containerEl;
+		index??=containerOrRepeated.children.length;
 		
 		let containerEl;//is the element that the content will be added to
 		let outerContainerEl;//is the outermost element that belongs exclusevily to this item
@@ -1324,6 +1344,26 @@ class Tablance {
 				header.innerHTML=struct.title;
 			}
 			containerEl=itemObj.selEl=outerContainerEl.appendChild(document.createElement("div"));
+		} else if (collection.struct.type=="group") {
+			outerContainerEl=document.createElement("tr");
+			outerContainerEl.className="empty";//start as empty to hide when closed.updateCell() will remove it if a cell is non-empty
+			const td=outerContainerEl.insertCell();
+			td.classList.toggle("disabled",struct.type=="field"&&!struct.input)
+			console.log(index)
+			if (index>0)
+				td.appendChild(document.createElement("div")).className="separator";
+			if (struct.title)
+				td.appendChild(document.createElement("h4")).innerText=struct.title;
+			
+			containerEl=td.appendChild(document.createElement("div"));
+			
+
+			//create cell-object for group-member. nonEmptyDescentants keeps track of how many descendant-cells that are
+			//non-empty in order to mark group-rows as empty to hide them while group is closed
+			//selEl is set and will be what the cell-cursor highlights. We do want to highlight the whole td but still
+			//it can't be used as the normal el and therefore get its innerText set when editing it because it also
+			//contains a header-element
+			Object.assign(itemObj,{nonEmptyDescentants:0,grpTr:outerContainerEl,selEl:td});
 		} else
 			outerContainerEl=containerEl=document.createElement("div");
 		if (struct.input&&struct.input.type!="button")
@@ -1332,7 +1372,7 @@ class Tablance {
 		containerEl.classList.add("value");
 		//containerEl.dataset.path=path.join("-");
 		
-		if (index!=null)
+		if (index<containerOrRepeated.children.length)
 			for (let siblingI=index-1,sibling; sibling=containerOrRepeated.children[++siblingI];)
 				this.#changeCellObjIndex(sibling,siblingI+1);
 		path.push(index??containerOrRepeated.children.length);
