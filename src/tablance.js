@@ -1108,7 +1108,7 @@ class Tablance {
 
 	#onOpenCreationGroup=(e,groupObject)=>{
 		e.preventDefault();
-		this.#repeatInsert(groupObject.parent,true,groupObject.parent.dataObj[groupObject.parent.dataObj.length]={});
+		this.#repeatInsert2(groupObject.parent,true,groupObject.parent.dataObj[groupObject.parent.dataObj.length]={});
 	}
 
 
@@ -1350,7 +1350,6 @@ class Tablance {
 			outerContainerEl.className="empty";//start as empty to hide when closed.updateCell() will remove it if a cell is non-empty
 			const td=outerContainerEl.insertCell();
 			td.classList.toggle("disabled",struct.type=="field"&&!struct.input)
-			console.log(index)
 			if (index>0)
 				td.appendChild(document.createElement("div")).className="separator";
 			if (struct.title)
