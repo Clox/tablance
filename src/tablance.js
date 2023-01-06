@@ -1352,8 +1352,8 @@ class Tablance {
 			outerContainerEl.className="empty";//start as empty to hide when closed.updateCell() will remove it if a cell is non-empty
 			const td=outerContainerEl.insertCell();
 			td.classList.toggle("disabled",struct.type=="field"&&!struct.input)
-			if (index>0)
-				td.appendChild(document.createElement("div")).className="separator";
+			if (struct.type!="group")
+				td.appendChild(document.createElement("hr")).className="separator";
 			if (struct.title)
 				td.appendChild(document.createElement("h4")).innerText=struct.title;
 			

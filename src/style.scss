@@ -305,7 +305,7 @@
 					display: none;
 				}
 			}
-			&.open>tbody>tr,>tbody>tr:not(.empty) + tr:not(.empty) {
+			&.open>tbody>tr:not(:first-child),>tbody>tr:not(.empty) + tr:not(.empty) {
 				> td>.separator {
 					display: block;
 				}
@@ -329,6 +329,7 @@
 					padding-left: 4px;
 					>.separator {
 						border-top: 1px dashed #ccc;
+						margin: 0;
 						display: none;
 					}
 				}
