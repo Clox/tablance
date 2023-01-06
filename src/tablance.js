@@ -1259,7 +1259,6 @@ class Tablance {
 	#generateExpansionList2(containerStruct,mainIndex,collectionObj,parentEl,path,rowData) {
 		const listTable=parentEl.appendChild(document.createElement("table"));
 		collectionObj.containerEl=listTable.appendChild(document.createElement("tbody"));
-		collectionObj.containerEl.classList.add("collection");
 		listTable.className="expansion-list";
 		if (containerStruct.titlesColWidth!=false) {
 			let titlesCol=document.createElement("col");
@@ -1277,6 +1276,9 @@ class Tablance {
 	}
 
 	#generateExpansionCollection(containerStruct,mainIndex,collectionObj,parentEl,path,rowData) {
+		//allows for easily finding the outer-most parent of elements that are placed in collection
+		collectionObj.containerEl.classList.add("collection");
+
 		collectionObj.children=[];
 		for (let entryI=-1,childStruct; childStruct=containerStruct.entries[++entryI];) {
 			if (childStruct.type==="repeated") {

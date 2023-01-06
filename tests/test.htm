@@ -55,7 +55,7 @@
 				{type:"repeated",id:"repeatedField",sortCompare:(a,b)=>a.bar>b.bar?1:-1,entry:
 					{type:"field",title:"repeated row",id:"foo"}
 				},
-				{type:"field",input:{type:"button",btnText:"Cool button",clickHandler:btnClickHandler}},
+				{type:"field",input:{type:"button",btnText:"Cool button",clickHandler:btnClickHandler}},*/
 			 	{type:"group",title:"förordnande",multiEdit:true,entries:[
 					{type:"repeated",id:"custodianshipChanges",multiEdit:true,create:true
 					,sortCompare:(a,b)=>a.date>b.date?1:-1
@@ -75,7 +75,7 @@
 							}
 						}
 					}
-				]}, */
+				]}, 
 				{type:"list",title:"förordnande-lista",titlesColWidth:0,entries:[
 					{type:"repeated",id:"custodianshipChanges",create:true,onCreate:(...args)=>console.log(args)
 					,onDelete:(...args)=>console.log(args)
