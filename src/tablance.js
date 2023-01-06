@@ -183,11 +183,11 @@ class Tablance {
 	 * 							at first but by entering it a page dedicated to that container is changed to.
 	 *			}
 	 *			{	
-	 *				type "collection" basically like a list but each item is inlined, meaning they will be lined up
+	 *				type "lineup" similiar to a list but each item is inlined, meaning they will be lined up
 	 *									in a horizontal line and will also wrap to multiple lines if needed
 	 *				title String displayed title if placed in a container which displays the title
 	 * 				entries Array each element should be another entry
-	 * 				cssClass String Css-classes to be added to the collection-div
+	 * 				cssClass String Css-classes to be added to the lineup-div
 	 * 				onBlur Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
 	 * 				multiEdit Bool Besides setting multiEdit on input of fields it can also be set on containers which
@@ -540,7 +540,7 @@ class Tablance {
 				}
 		}
 
-		//The data is somewhere in expansion which is open
+		//The data is somewhere in expansion
 		
 		let cellObjToUpdate=this.#openExpansions[mainIndx];//points to the cellObject that will be subject to update
 		if (!cellObjToUpdate)//if the updates expansion is not open
@@ -736,9 +736,9 @@ class Tablance {
 
 	#spreadsheetOnBlur(e) {
 		setTimeout(()=>{
-			if (!this.container.contains(document.activeElement)) {
+			if (!this.container.contains(document.activeElement)||this.#multiRowArea?.contains(document.activeElement)) {
 				this.#highlightOnFocus=true;
-				if (this.neighbourTables&&Object.values(this.neighbourTables).filter(Boolean).length)
+				//if (this.neighbourTables&&Object.values(this.neighbourTables).filter(Boolean).length)
 					this.#cellCursor.style.display="none";
 			}
 		});
@@ -757,8 +757,8 @@ class Tablance {
 			if (this.#multiRowAreaActivePage==-1)//if on the main-page
 				this.#selectMultiCell(hSign?this.#selectedCell.parentNode[(hSign>0?"next":"previous")+"Sibling"]
 																		?.querySelector(".cell"):this.#selectedCell);
-		} else if (this.#activeExpCell?.parent?.struct.type==="collection")
-			this.#moveInsideCollection(hSign,vSign);
+		} else if (this.#activeExpCell?.parent?.struct.type==="lineup")
+			this.#moveInsideLineup(hSign,vSign);
 		else if (vSign) {//moving up or down
 			let newColIndex=this.#mainColIndex;
 			if (this.#activeExpCell) {//moving from inside expansion.might move to another cell inside,or outside
@@ -778,7 +778,7 @@ class Tablance {
 			this.#scrollToCursor();
 	}
 
-	#moveInsideCollection(numCols,numRows) {
+	#moveInsideLineup(numCols,numRows) {
 		const currentCellX=this.#activeExpCell.el.offsetLeft;
 		const currentCellTop=this.#activeExpCell.el.offsetTop;
 		const currentCellBottom=this.#activeExpCell.el.offsetTop+this.#activeExpCell.el.offsetHeight;
@@ -866,7 +866,7 @@ class Tablance {
 			return cellObj;
 		const children=cellObj.children;
 		let startI=isGoingDown?0:children.length-1;
-		if (cellObj.struct.type==="collection"&&!isGoingDown) {
+		if (cellObj.struct.type==="lineup"&&!isGoingDown) {
 			let chosenCell;
 			for (let i=startI,otherCell;otherCell=children[i--];)
 				if (otherCell.el.offsetParent)
@@ -1084,7 +1084,7 @@ class Tablance {
 			case "field": return this.#generateField(...args);
 			case "group": return this.#generateExpansionGroup(...args);
 			case "repeated": return this.#generateExpansionRepeated(...args);
-			case "collection": return this.#generateExpansionCollection(...args);
+			case "lineup": return this.#generateExpansionLineup(...args);
 		}
 	}
 
@@ -1146,7 +1146,7 @@ class Tablance {
 	#beginDeleteRepeated(e,data,mainIndex,struct,cell) {
 		if (!cell.parent.parent.creating) {
 			cell.parent.containerEl.classList.add("delete-confirming");
-			this.#moveInsideCollection(1);//move away from the delete-button which now dissapeared, to the next btn
+			this.#moveInsideLineup(1);//move away from the delete-button which now dissapeared, to the next btn
 		} else
 			this.#deleteCell(cell.parent.parent);
 	}
@@ -1157,8 +1157,8 @@ class Tablance {
 	}
 
 	#structCopyWithDeleteButton(struct,deleteHandler) {
-		const deleteControls={type:"collection",cssClass:"delete-controls"
-			,onBlur:cel=>cel.selEl.querySelector(".collection").classList.remove("delete-confirming")
+		const deleteControls={type:"lineup",cssClass:"delete-controls"
+			,onBlur:cel=>cel.selEl.querySelector(".lineup").classList.remove("delete-confirming")
 			,entries:[{type:"field",input:{type:"button",
 				btnText:struct.deleteText??this.#opts.lang?.delete??"Delete"
 				,clickHandler:this.#beginDeleteRepeated.bind(this)},cssClass:"delete"},
@@ -1186,151 +1186,133 @@ class Tablance {
 		return true;
 	}
 
-	#generateExpansionGroup(groupStructure,dataIndex,cellObj,parentEl,path,rowData) {
-		cellObj.select=()=>this.#selectExpansionCell(cellObj);
-		cellObj.children=[];
-		cellObj.dataObj=rowData;
-		const groupTable=document.createElement("table");
+	#generateExpansionGroup(groupStructure,dataIndex,groupObj,parentEl,path,rowData) {
+		groupObj.select=()=>this.#selectExpansionCell(groupObj);
+		const groupTable=parentEl.appendChild(document.createElement("table"));
+		const tbody=groupObj.containerEl=groupTable.appendChild(document.createElement("tbody"));
 		groupTable.dataset.path=path.join("-");
 		parentEl.classList.add("group-cell");
-		cellObj.el=groupTable;//so that the whole group-table can be selectedf
+		groupObj.el=groupTable;//so that the whole group-table can be selectedf
 		groupTable.className="expansion-group "+(groupStructure.cssClass??"");
-		for (let entryI=-1,struct; struct=groupStructure.entries[++entryI];) {
-			let tr=groupTable.insertRow();
-			tr.className="empty";//start as empty to hide when closed.updateCell() will remove it if a cell is non-empty
-			let td=tr.insertCell();
-			td.classList.toggle("disabled",struct.type=="field"&&!struct.input)
-			if (entryI>0) {
-				const separator=td.appendChild(document.createElement("div"));
-				separator.className="separator";
+		this.#generateExpansionCollection(groupStructure,dataIndex,groupObj,parentEl,path,rowData);
+		if (groupStructure.closedRender) {
+			groupTable.classList.add("closed-render");
+			const renderRow=tbody.insertRow();
+			renderRow.dataset.path=path.join("-");
+			renderRow.className="group-render";
+			const renderCell=renderRow.insertCell();
+			renderCell.innerText=groupStructure.closedRender(rowData);
+		}
+		return true;
+	}
+
+	#generateExpansionList(containerStruct,mainIndex,collectionObj,parentEl,path,rowData) {
+		const listTable=parentEl.appendChild(document.createElement("table"));
+		collectionObj.containerEl=listTable.appendChild(document.createElement("tbody"));
+		listTable.className="expansion-list";
+		if (containerStruct.titlesColWidth!=false) {
+			let titlesCol=document.createElement("col");
+			listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
+			if (containerStruct.titlesColWidth!=null)
+				titlesCol.style.width=containerStruct.titlesColWidth;
+		}
+		return this.#generateExpansionCollection(containerStruct,mainIndex,collectionObj,parentEl,path,rowData);
+	}
+
+	#generateExpansionLineup(containerStruct,mainIndex,collectionObj,parentEl,path,rowData) {
+		collectionObj.containerEl=parentEl.appendChild(document.createElement("div"));
+		collectionObj.containerEl.classList.add("lineup","collection",...containerStruct.cssClass?.split(" ")??[]);
+		return this.#generateExpansionCollection(containerStruct,mainIndex,collectionObj,parentEl,path,rowData);
+	}
+
+	#generateExpansionCollection(containerStruct,mainIndex,collectionObj,parentEl,path,rowData) {
+		//allows for easily finding the outer-most parent of elements that are placed in collection
+		collectionObj.containerEl.classList.add("collection");
+
+		collectionObj.children=[];
+		for (let entryI=-1,childStruct; childStruct=containerStruct.entries[++entryI];) {
+			if (childStruct.type==="repeated") {
+				const repeatData=rowData[childStruct.id]??(rowData[childStruct.id]=[]);
+				const rptCelObj=collectionObj.children[entryI]={parent:collectionObj,index:entryI,children:[]
+														,struct:childStruct,dataObj:repeatData,path:[...path,entryI]};
+				rptCelObj.insertionPoint=collectionObj.containerEl.appendChild(document.createComment("repeat-insert"));
+				childStruct.create&&this.#generateRepeatedCreator(rptCelObj);
+				repeatData?.forEach(repeatData=>this.#repeatInsert(rptCelObj,false,repeatData));
+			} else
+				this.#generateCollectionItem(childStruct,mainIndex,collectionObj,path,rowData);
+		}
+		return true;
+	}
+
+	#generateCollectionItem(struct,mainIndex,collectionOrRepeated,path,data,index=null) {
+		const collection=collectionOrRepeated.struct.type=="repeated"?collectionOrRepeated.parent:collectionOrRepeated;
+		const collectionEl=collection.containerEl;
+		index??=collectionOrRepeated.children.length;
+		
+		let containerEl;//is the element that the content will be added to
+		let outerContainerEl;//is the outermost element that belongs exclusevily to this item
+		const itemObj={parent:collectionOrRepeated,index:index??collectionOrRepeated.children.length};
+		if (collection.struct.type=="list") {
+			outerContainerEl=document.createElement("tr");
+			if (collection.struct.titlesColWidth!=false) {
+				const titleTd=outerContainerEl.insertCell();
+				titleTd.className="title";
+				titleTd.innerText=struct.title??"";
 			}
+			containerEl=outerContainerEl.insertCell();
+		} else if (collection.struct.type=="lineup") {
+			outerContainerEl=document.createElement("span");
 			if (struct.title) {
-				let header=td.appendChild(document.createElement("h4"));
-				header.innerText=struct.title;
+				const header=outerContainerEl.appendChild(document.createElement("h4"));
+				header.innerHTML=struct.title;
 			}
-			
-			let contentDiv=td.appendChild(document.createElement("div"));
-			contentDiv.className="value";
-			path.push(entryI);
+			containerEl=itemObj.selEl=outerContainerEl.appendChild(document.createElement("div"));
+		} else if (collection.struct.type=="group") {
+			outerContainerEl=document.createElement("tr");
+			outerContainerEl.className="empty";	//start as empty to hide when closed.updateCell() will remove it if 
+												//a cell is non-empty
+			const td=outerContainerEl.insertCell();
+			td.classList.toggle("disabled",struct.type=="field"&&!struct.input)
+			if (struct.type!="group")
+				td.appendChild(document.createElement("hr")).className="separator";
+			if (struct.title)
+				td.appendChild(document.createElement("h4")).innerText=struct.title;	
+			containerEl=td.appendChild(document.createElement("div"));
 
 			//create cell-object for group-member. nonEmptyDescentants keeps track of how many descendant-cells that are
 			//non-empty in order to mark group-rows as empty to hide them while group is closed
 			//selEl is set and will be what the cell-cursor highlights. We do want to highlight the whole td but still
 			//it can't be used as the normal el and therefore get its innerText set when editing it because it also
 			//contains a header-element
-			let childCellObj=cellObj.children[entryI]
-												={nonEmptyDescentants:0,grpTr:tr,parent:cellObj,index:entryI,selEl:td};
-
-			this.#generateExpansionContent(struct,dataIndex,childCellObj,contentDiv,path,rowData);
-			path.pop();
-		}
-		if (groupStructure.closedRender) {
-			groupTable.classList.add("closed-render");
-			const renderRow=groupTable.insertRow();
-			renderRow.dataset.path=path.join("-");
-			renderRow.className="group-render";
-			const renderCell=renderRow.insertCell();
-			renderCell.innerText=groupStructure.closedRender(rowData);
-		}
-		parentEl.appendChild(groupTable);
-		return true;
-	}
-
-	#generateExpansionCollection(collectionStructure,mainIndex,collObj,parentEl,path,rowData) {
-		Object.assign(collObj,{children:[],struct:collectionStructure,rowData:rowData});
-		const container=collObj.containerEl=parentEl.appendChild(document.createElement("div"));
-		container.classList.add("collection",...collectionStructure.cssClass?.split(" ")??[]);
-		for (let entryI=-1,struct; struct=collectionStructure.entries[++entryI];) {
-			path.push(entryI);
-			const celObj=collObj.children[entryI]={parent:collObj,index:entryI,struct:struct};
-			if (struct.type==="repeated"&&rowData[struct.id]?.length) {
-				celObj.children=[];
-				for (let repeatI=-1,repeatData;repeatData=rowData[struct.id][++repeatI];) {
-					let repeatdObj=celObj.children[repeatI]={parent:celObj,index:repeatI,struct:struct.entry};
-					this.#generateCollectionItem(struct,mainIndex,repeatdObj,container,path,repeatData);
-				}
-			} else {
-				this.#generateCollectionItem(struct,mainIndex,celObj,container,path,rowData);
-			}
-			path.pop();
-		}
-		return true;
-	}
-
-	#generateCollectionItem(struct,mainIndex,cellObj,parentEl,path,data) {
-		const containerSpan=cellObj.el=document.createElement("span");
-		containerSpan.dataset.path=path.join("-");
-		if (struct.title) {
-			const header=containerSpan.appendChild(document.createElement("h4"));
-			header.innerHTML=struct.title;
-		}
-		let contentDiv=cellObj.selEl=containerSpan.appendChild(document.createElement("div"));
-		contentDiv.className="value";
+			Object.assign(itemObj,{nonEmptyDescentants:0,grpTr:outerContainerEl,selEl:td});
+		} else
+			outerContainerEl=containerEl=document.createElement("div");
 		if (struct.input&&struct.input.type!="button")
-			contentDiv.classList.add("input-cell");
-		if (this.#generateExpansionContent(struct,mainIndex,cellObj,contentDiv,path,data))
-			parentEl.appendChild(containerSpan);
-		if (struct.cssClass)
-			containerSpan.className+=" "+struct.cssClass;
-	}
-
-	#generateExpansionList(listStructure,mainIndex,listCelObj,parentEl,path,rowData) {
-		listCelObj.children=[];
-		const listTable=listCelObj.listTable=document.createElement("table");
-		const tbody=listTable.appendChild(document.createElement("tbody"));
-		listTable.className="expansion-list";
-		if (listStructure.titlesColWidth!=false) {
-			let titlesCol=document.createElement("col");
-			listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
-			if (listStructure.titlesColWidth!=null)
-				titlesCol.style.width=listStructure.titlesColWidth;
-		}
-		for (let entryI=-1,struct; struct=listStructure.entries[++entryI];) {
-			if (struct.type==="repeated") {
-				const repeatData=rowData[struct.id]??(rowData[struct.id]=[]);
-				const rptCelObj=listCelObj.children[entryI]={parent:listCelObj,index:entryI,children:[],struct:struct
-																			,dataObj:repeatData,path:[...path,entryI]};
-				rptCelObj.insertionPoint=tbody.appendChild(document.createComment("repeated-insert"));
-				struct.create&&this.#generateRepeatedCreator(rptCelObj);
-				repeatData?.forEach(repeatData=>this.#repeatInsert(rptCelObj,false,repeatData));
-			} else
-				this.#generateListItem(struct,mainIndex,listCelObj,path,rowData);
-		}
-		parentEl.appendChild(listTable);
-		return true;
-	}
-
-	#generateListItem(struct,mainIndex,listOrRepeated,path,data,index=null) {
-		const tbody=(listOrRepeated.listTable??listOrRepeated.parent.listTable).querySelector("tbody");
-		let contentTd=document.createElement("td");
-		contentTd.className="value";
-		let cellChild={parent:listOrRepeated,index:index??listOrRepeated.children.length};
-		if (index!=null)
-			for (let siblingI=index-1,sibling; sibling=listOrRepeated.children[++siblingI];)
+			containerEl.classList.add("input-cell");
+		
+		containerEl.classList.add("value");
+		
+		if (index<collectionOrRepeated.children.length)
+			for (let siblingI=index-1,sibling; sibling=collectionOrRepeated.children[++siblingI];)
 				this.#changeCellObjIndex(sibling,siblingI+1);
-		path.push(index??listOrRepeated.children.length);
-		if (this.#generateExpansionContent(struct,mainIndex,cellChild,contentTd,path,data)) {//generate content
+		path.push(index??collectionOrRepeated.children.length);
+		if (this.#generateExpansionContent(struct,mainIndex,itemObj,containerEl,path,data)) {//generate content
 			//and add it to dom if condition falls true, e.g. content was actually created. it might not be if it is
 			//a repeated and there was no data for it add
-			for (var containerObj=listOrRepeated;containerObj.struct.type=="repeated";containerObj=containerObj.parent);
-			let listTr=document.createElement("tr");
 
 			let siblingAfter;
-			if (listOrRepeated.struct.type=="repeated")
-				siblingAfter=listOrRepeated.children[
-								(listOrRepeated.insertionPoint.nextSibling?.rowIndex??listOrRepeated.children.length)
-																				-listOrRepeated.children.length+index];
-			tbody.insertBefore(listTr,siblingAfter?.el.closest("tr")??listOrRepeated.insertionPoint);
-			if (containerObj.struct.type=="list"&&containerObj.struct.titlesColWidth!=false) {
-				let titleTd=listTr.insertCell();
-				titleTd.className="title";
-				titleTd.innerText=struct.title??"";
-			}
-			listTr.appendChild(contentTd);
-			listOrRepeated.children.splice(index??Infinity,0,cellChild);
+			if (collectionOrRepeated.struct.type=="repeated")
+				siblingAfter=collectionOrRepeated.children[
+					(collectionOrRepeated.insertionPoint.nextSibling?.rowIndex??collectionOrRepeated.children.length)
+																		-collectionOrRepeated.children.length+index];
+			collectionEl.insertBefore(outerContainerEl
+										,siblingAfter?.el.closest(".collection>*")??collectionOrRepeated.insertionPoint);
+			collectionOrRepeated.children.splice(index??Infinity,0,itemObj);
+			if (struct.cssClass)
+				outerContainerEl.className+=" "+struct.cssClass;
 		}
 		path.pop();
-		return cellChild;
+		return itemObj;
 	}
 
 	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {	
@@ -1388,19 +1370,6 @@ class Tablance {
 				if (cellObject.struct.type==="group"&&!cellObject.el.classList.contains("open"))
 					break;
 			}
-			/*while (cellObject.children) {
-				let childI;
-				for (childI=0; childI<cellObject.children.length; childI++) {
-					if (cellObject.children[childI].el.contains(e.target)) {
-						cellObject=cellObject.children[childI];
-						break;
-					}
-				}
-				if (childI==cellObject.children?.length){ //none of the children matched but the parent matched. 
-					cellObject=null;
-					break
-				}
-			} */
 			this.#selectExpansionCell(cellObject);
 		} else {//not in expansion
 			const td=e.target.closest(".main-table>tbody>tr>td");
@@ -1675,30 +1644,22 @@ class Tablance {
 	}
 
 	#repeatInsert(repeated,creating,data,entryStruct=null) {
+		//normally entryStruct should be the entry of repeated, but struct can be supplied for creating creation-entries
 		entryStruct??=repeated.struct.entry;
-		let indexOfNew,rowIndex,newObj;
+
+		let indexOfNew,rowIndex;
 		if (!creating&&repeated.struct.sortCompare&&!entryStruct.creator) {
 			for (indexOfNew=0;indexOfNew<repeated.children.length-!!repeated.struct.create; indexOfNew++)
-				if (repeated.struct.sortCompare(data,repeated.dataObj[indexOfNew])<0)
+				if (repeated.struct.sortCompare(data,repeated.children[indexOfNew].dataObj)<0)
 					break;
 		} else
-			indexOfNew=repeated.children.length-!!(creating||repeated.struct.create);
+			indexOfNew=repeated.children.length-(repeated.struct.create&&!entryStruct.creator)//place before creator;
 		for (let root=repeated.parent; root.parent; root=root.parent,rowIndex=root.rowIndex);//get main-index
 		let struct=repeated.struct;
 		if (struct.create&&entryStruct.type==="group")
 			(struct={...struct}).entry=this.#structCopyWithDeleteButton(entryStruct,this.#repeatedOnDelete);
 			//copy repeat-struct not to edit orig. Then add delete-controls to its inner group which also gets copied.
-		if (repeated.parent.struct.type!="list") {
-			newObj={parent:repeated,index:indexOfNew};
-			repeated.children.splice(indexOfNew,0,newObj);
-			const newDiv=document.createElement("div");
-			const container=repeated.parent.el.querySelector("div.value");
-			container.insertBefore(newDiv,container.children[indexOfNew]);
-			this.#generateExpansionContent(entryStruct,rowIndex,newObj,newDiv,[...repeated.path,indexOfNew],data);
-			for (let siblingI=indexOfNew,sibling; sibling=repeated.children[++siblingI];)
-				this.#changeCellObjIndex(sibling,siblingI);
-		} else 
-			newObj=this.#generateListItem(entryStruct,rowIndex,repeated,repeated.path,data,indexOfNew);
+		const newObj=this.#generateCollectionItem(struct.entry,rowIndex,repeated,repeated.path,data,indexOfNew);
 		if (creating) {
 			newObj.creating=true;//creating means it hasn't been commited yet.
 			this.#selectFirstSelectableExpansionCell(newObj,true,true);
@@ -3056,7 +3017,7 @@ class Tablance {
 					fileStruct.input.openHandler?.(e,file,fileStruct,fileCellObj.dataObj,mainIndex,btnObj);
 			}},
 		});
-		fileGroup.entries.push({type:"collection",entries:metaEntries});
+		fileGroup.entries.push({type:"lineup",entries:metaEntries});
 		
 		const fileData=rowData[fileCellObj.struct.id];
 		this.#generateExpansionContent(fileGroup,dataIndex,fileCellObj,cellEl,fileCellObj.path,fileData);

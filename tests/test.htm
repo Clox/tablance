@@ -56,7 +56,7 @@
 					{type:"field",title:"repeated row",id:"foo"}
 				},
 				{type:"field",input:{type:"button",btnText:"Cool button",clickHandler:btnClickHandler}},
-				{type:"group",title:"förordnande",multiEdit:true,entries:[
+			 	{type:"group",title:"förordnande",multiEdit:true,entries:[
 					{type:"repeated",id:"custodianshipChanges",multiEdit:true,create:true
 					,sortCompare:(a,b)=>a.date>b.date?1:-1
 					,onCreate:(...args)=>console.log(args)
@@ -75,10 +75,11 @@
 							}
 						}
 					}
-				]},
+				]}, 
 				{type:"list",title:"förordnande-lista",titlesColWidth:0,entries:[
 					{type:"repeated",id:"custodianshipChanges",create:true,onCreate:(...args)=>console.log(args)
 					,onDelete:(...args)=>console.log(args)
+					,sortCompare:(a,b)=>a.date>b.date?1:-1
 					,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
 					,areYouSureYesText:"Ja",areYouSureNoText:"Nej",entry:
 						{type:"group",closedRender:data=>`${data.type?.text} sedan ${data.date}`,entries:[
@@ -94,7 +95,7 @@
 						}
 					}
 				]},
-				{type:"collection",title:"Bunch ",entries:[
+				{type:"lineup",title:"Bunch ",entries:[
 					{type:"field",title:"First thing",id:"first"},
 					{type:"field",title:"Second thing",id:"second"},
 					{type:"field",title:"Third thing",id:"third"},
@@ -152,8 +153,8 @@
 										,{foo:"row three in repeated",bar:3},{foo:"row four in repeated",bar:30}]
 						,repeatedGroup:[{foo1:"blahblah",foo2:"lalala"},{foo1:"bloj",foo2:"kapapa"}]
 						,custodianshipChanges:[
-										{date:"2021-01-01",type:"trustee"},{date:"2022-01-01",type:"administrator"}
-										,{date:"2021-01-01",type:"trustee"},{date:"2022-01-01",type:"administrator"}],
+										{date:"2020-01-01",type:"trustee"},{date:"1999-01-01",type:"administrator"}
+										,{date:"2003-01-01",type:"trustee"},{date:"1999-05-01",type:"administrator"}],
 						first:"One",second:"Second",third:"Third",fourth:"Fourth",fifth:"Five",sixth:"Sixth"
 						,seventh:"Seven"});
 				}
