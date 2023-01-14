@@ -1,6 +1,6 @@
 {
   "name": "tablance",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A library used for creating highly interactive tables that can handle large amounts of data and which spreadsheet-capabilities, meaning cells can be marked as editable. Also, rows can be expanded if needed, revealing more data can be structured with components and navigated through.",
   "main": "src/tablance.js",
   "scripts": {
