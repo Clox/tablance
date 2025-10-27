@@ -1,7 +1,7 @@
 <head>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/cleave.js/1.0.2/cleave.min.js" integrity="sha512-SvgzybymTn9KvnNGu0HxXiGoNeOi0TTK7viiG0EGn2Qbeu/NFi3JdWrJs2JHiGA1Lph+dxiDv5F9gDlcgBzjfA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 	<script src="../src/tablance.js"></script>
-	<link rel="stylesheet" href="../styles/style.min.css">
+	<link rel="stylesheet" href="../styles/tablance.min.css">
 
 	<script src="https://cdn.jsdelivr.net/npm/pikaday/pikaday.js"></script>
 	<link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/pikaday/css/pikaday.css">
@@ -9,7 +9,7 @@
 	<script>
 		document.addEventListener("DOMContentLoaded", ()=>{
 			function descFunc(value, dataRow,col,rowIndex) {
-				return `foobar ${rowIndex} - ${dataRow.descLetter}`
+				return `fo<u>ob</u>ar ${rowIndex} - ${dataRow.descLetter}`
 			}
 			const foods=[{text:"Nothing",pinned:true},{text:"banana",value:1},{text:"apple",value:2},
 						{text:"cucumber",value:3},{text:"orange",value:4},{text:"grapes",value:5},
@@ -19,7 +19,7 @@
 						{text:"another set of grapes",value:13},{text:"another melon",value:14},
 						{text:"another pineapple",value:15},{text:"another carrot",value:13}];
 			const myTablanceCols=[{type:"select"},{type:"expand"}
-				,{id:"desc",title:"Description",input:{multiEdit:false,onChange:(e,...args)=>{
+				,{id:"desc",title:"Descriptionn",dffdfdfd:69,html:true,input:{multiEdit:false,onChange:(e,...args)=>{
 					e.preventDefault();
 					console.log(args)
 				},type:"text",maxLength:5,placeholder:"placeholder",enabled:()=>Math.random()>.5},render:descFunc}
