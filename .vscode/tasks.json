@@ -6,7 +6,7 @@
 		{
 			"label": "Watch Sass",
 			"type": "shell",
-			"command": "sass --watch src/style.sass styles/style.css --style=compressed",
+			"command": "sass --watch src/style.scss styles/style.min.css --style=compressed",
 			"problemMatcher": [],
 			"group": {
 				"kind": "build",

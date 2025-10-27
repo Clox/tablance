@@ -405,7 +405,7 @@ class Tablance {
 	 * 								fileSize "Size"
 	 * 								fileType "Type"
 	 * 								fileUploadDone "Done!"
-	 * 								fileChooseOrDrag "<b>Press tp choose a file</b> or drag it here"
+	 * 								fileChooseOrDrag "<b>Press to choose a file</b> or drag it here"
 	 * 								fileDropToUpload "<b>Drop to upload</b>"
 	 *								filterPlaceholder "Search"
 	 * 								delete "Delete" (used in the deletion of repeat-items or files)
@@ -1886,7 +1886,7 @@ class Tablance {
 		renderOpts(pinnedUl,pinnedOpts,this.#inputVal);
 		renderOpts(mainUl,looseOpts,this.#inputVal);
 		const noResults=selectContainer.appendChild(document.createElement("div"));
-		noResults.innerHTML=strctInp.noResultsText??this.#opts.lang?.selectNoResultFound??"No results found";
+		noResults.innerHTML=strctInp.noResultsText??this.#opts.lang?.selectNoResultsFound??"No results found";
 		noResults.className="no-results";
 		
 		this.#cellCursor.parentElement.appendChild(selectContainer);
