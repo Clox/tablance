@@ -145,11 +145,12 @@ class Tablance {
 	 * 			width String The width of the column. This can be in either px or % units.
 	 * 				In case of % it will be calculated on the remaining space after all the fixed widths
 	 * 				have been accounted for.
-	 * 			input: See param expansion -> input. This is the same as that one expect textareas are only valid for
+	 * 			input: See param expansion -> input. This is the same as that one except textareas are only valid for
 	 * 												expansion-cells and not directly in a maintable-cell
 	 * 			render Function pass in a callback-function here and what it returns will be used as value for the
 	 * 				cells. It gets passed the following arguments:
 	 * 				1: The value from data pointed to by "id", 2:data-row, 3:column-struct, 4:main-index, 
+	 * 			html Bool Default is false. If true then the content of the cell will be rendered as html
 	 * 1: The value from data pointed to by "id", 2: data-row, 3: struct,4: main-index, 5: Cell-object
 	 * 			type String The default is "data". Possible values are:
 	 * 				"data" - As it it implies, simply to display data but also input-elements such as fields or buttons
@@ -430,7 +431,7 @@ class Tablance {
 		this.#opts=opts??{};
 		this.#onlyExpansion=onlyExpansion;
 		container.classList.add("tablance");
-		const allowedColProps=["id","title","width","input","type","render"];
+		const allowedColProps=["id","title","width","input","type","render","html"];
 		if (!onlyExpansion){
 			for (let col of columns) {
 				let processedCol={};
@@ -448,13 +449,13 @@ class Tablance {
 			(new ResizeObserver(this.#updateSizesOfViewportAndCols.bind(this))).observe(container);
 			this.#setupSpreadsheet(false);
 			this.#updateSizesOfViewportAndCols();
-			if (opts.sortAscHtml==null)
+			if (opts?.sortAscHtml==null)
 				opts.sortAscHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#000" points="4,10,0,6,8,6"/></svg>';
-			if (opts.sortDescHtml==null)
+			if (opts?.sortDescHtml==null)
 				opts.sortDescHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#000" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
-			if (opts.sortNoneHtml==null)
+			if (opts?.sortNoneHtml==null)
 				opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
 			this.#updateHeaderSortHtml();
@@ -3090,7 +3091,10 @@ class Tablance {
 					isDisabled=true;
 			}
 			(selEl??el).classList.toggle("disabled",isDisabled);
-			el.innerText=newCellContent??"";
+			if (struct.html)
+				el.innerHTML=newCellContent??"";
+			else
+				el.innerText=newCellContent??"";
 		}
 	}
 
