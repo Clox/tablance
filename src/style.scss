@@ -437,7 +437,7 @@
 	}
 	.multi-row-area {
 		//overflow: visible;//for picker-containers to be able to reach out of the container
-		//overflow: hidden;
+		overflow: hidden;
 		width: 100%;
 		position: absolute;
 		bottom: 0;
