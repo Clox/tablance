@@ -6,6 +6,7 @@
 		outline: 3px solid blue;
 	}
 	>.scroll-body {
+		background-color: white;//this will be the standard background-color for normal cells
 		overflow: auto;
 		>div {
 			position: relative;

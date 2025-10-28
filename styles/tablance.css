@@ -8,6 +8,7 @@
   outline: 3px solid blue;
 }
 .tablance > .scroll-body {
+  background-color: white;
   overflow: auto;
 }
 .tablance > .scroll-body > div {
