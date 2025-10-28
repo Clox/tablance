@@ -385,7 +385,35 @@ class Tablance {
 	 * 					1: group-object
 	 * 				onClose Function Callback that is fired when the group closes. Gets passed the following arguments:
 	 * 					1: group-object
-  	 * 			}		
+  	 * 			}
+	 * 			{
+	 * 				type "context" Used when a set of entries should be evaluated within the scope of a nested object
+	 * 					on the current record. It does not render any visible content of its own, but changes
+	 * 					the data context for its child entries. This is useful when the data is stored as a single
+	 * 					object rather than an array, for example when a client record has a single homeAddress
+	 * 					object instead of an array of addresses.
+	 * 				id String The property name of the nested object to use as the new context.
+	 * 				entry Object Any entry. May be field or list for instance or even further context or group entries
+	 * 				Notes:
+	 * 					- The context entry itself produces no DOM elements; it simply delegates rendering to its
+	 * 					  child entries with a modified data scope.
+	 * 					- Context entries can be nested multiple levels deep to traverse complex object structures.
+	 * 					- Unlike "group" or "list", context entries cannot be directly opened or closed by the user
+	 * 					  and have no visual representation on their own.
+	 * 
+	 * 				Example:
+	 * 				{
+	 * 					type: "context",
+	 * 					id: "homeAddress",
+	 * 					entry: {
+	 * 						type:"group",
+	 * 						entries:[
+	 * 							{ title: "Street", id: "street", editable: "text" },
+	 * 							{ title: "City", id: "city", editable: "text" }
+	 * 						]
+	 * 					}
+	 * 				}
+	 * 			}
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							searchbar Bool that defaults to true. If true then there will be a searchbar that
 	 * 								can be used to filter the data.
@@ -1086,6 +1114,7 @@ class Tablance {
 			case "group": return this.#generateExpansionGroup(...args);
 			case "repeated": return this.#generateExpansionRepeated(...args);
 			case "lineup": return this.#generateExpansionLineup(...args);
+			case "context": return this.#generateContext(...args);
 		}
 	}
 
@@ -1225,6 +1254,24 @@ class Tablance {
 		collectionObj.containerEl.classList.add("lineup","collection",...containerStruct.cssClass?.split(" ")??[]);
 		return this.#generateExpansionCollection(containerStruct,mainIndex,collectionObj,parentEl,path,rowData);
 	}
+
+	/**
+	 * Generates a "context"-entry.
+	 * A context entry does not produce its own visible container but instead
+	 * changes the data scope to a nested object on the current row.
+	 * Its child entries are then generated using this nested object as their data source.
+	 * @param {Object} containerStruct The context-structure definition.
+	 * @param {Number} mainIndex The main index of the parent row.
+	 * @param {Object} collectionObj The current collection object.
+	 * @param {HTMLElement} parentEl The element that receives rendered content.
+	 * @param {Array<int>} path Array describing current nesting path.
+	 * @param {Object} rowData The full record for the current row.
+	 */
+	#generateContext(containerStruct, mainIndex, collectionObj, parentEl, path, rowData) {
+		return this.#generateExpansionContent
+			(containerStruct.entry, mainIndex, collectionObj, parentEl, path, rowData[containerStruct.id]);
+	}
+	
 
 	#generateExpansionCollection(containerStruct,mainIndex,collectionObj,parentEl,path,rowData) {
 		//allows for easily finding the outer-most parent of elements that are placed in collection
@@ -2558,6 +2605,7 @@ class Tablance {
 				this.#multiRowStructs[this.#multiCellInputIndex].page.style.display="block";
 			this.#multiRowArea.querySelector(".container-controllers").style.display=index==-1?"none":"block";
 		}
+
 		this.#multiRowArea.style.overflow="hidden";//have to shift between hidden/visible because hidden is needed for 
 			//animation but visible is needed for dropdowns to be able to go outside of area
 		this.#updateMultiRowAreaHeight(open);
