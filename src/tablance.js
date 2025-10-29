@@ -939,15 +939,18 @@ class Tablance {
 					this.#groupEscape();
 				break; case "+":
 					this.#scrollToCursor();
-					this.#expandRow(this.#selectedCell.closest(".main-table>tbody>tr"));
+					this. #expandRow(this.#selectedCell.closest(".main-table>tbody>tr"));
 				break; case "-":
 					this.#scrollToCursor();
 					this.#contractRow(this.#selectedCell.closest(".main-table>tbody>tr"));
 				break; case "Enter": case " ":
-					e.preventDefault();//prevent scrolling by pressing space
+					if (e.key==" ")
+						e.preventDefault();//prevent scrolling when pressing space
 					this.#scrollToCursor();
 					if (this.#activeStruct.type=="expand")
-						return this.#toggleRowExpanded(this.#selectedCell.parentElement);
+						// the preventDefault() above can SOMETIMES suppress transitionend;
+						// deferring one frame ensures the animation completes and expansion is closed properly.
+						return requestAnimationFrame(()=>this.#toggleRowExpanded(this.#selectedCell.parentElement));
 					if (this.#activeStruct.type=="select")
 						return this.#rowCheckboxChange(this.#selectedCell,e.shiftKey);
 					if (e.key==="Enter"||this.#activeStruct.input?.type==="button") {
