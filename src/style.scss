@@ -6,7 +6,6 @@
 		outline: 3px solid blue;
 	}
 	>.scroll-body {
-		background-color: white;//this will be the standard background-color for normal cells
 		overflow: auto;
 		>div {
 			position: relative;
@@ -15,6 +14,9 @@
 	th {
 		cursor:pointer;
 		padding: 3px;
+	}
+	tbody>tr:not(.expansion) {
+		background-color: white;
 	}
 	.cell-cursor {
 
@@ -86,6 +88,7 @@
 		}
 	}
 	td {
+		
 		border-top: 1px solid #ddd;
 		border-right: 1px solid #ddd;
 		padding: 8px 10px;
@@ -161,9 +164,10 @@
 	.expansion {
 		>td {
 			padding: 0;
-			border-left: 15px solid #D8D8E7;
 			border-bottom: 2px solid #D8D8E7;
 			>div {
+				background-color: white;
+				margin-left: 15px;
 				overflow: hidden;//hide overflowing content when expanding/contracting-animating
 				transition: height .15s ease-out;
 				>div.expansion-shadow {

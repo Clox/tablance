@@ -8,7 +8,6 @@
   outline: 3px solid blue;
 }
 .tablance > .scroll-body {
-  background-color: white;
   overflow: auto;
 }
 .tablance > .scroll-body > div {
@@ -17,6 +16,9 @@
 .tablance th {
   cursor: pointer;
   padding: 3px;
+}
+.tablance tbody > tr:not(.expansion) {
+  background-color: white;
 }
 .tablance .cell-cursor {
   position: absolute;
@@ -153,10 +155,11 @@
 }
 .tablance .expansion > td {
   padding: 0;
-  border-left: 15px solid #D8D8E7;
   border-bottom: 2px solid #D8D8E7;
 }
 .tablance .expansion > td > div {
+  background-color: white;
+  margin-left: 15px;
   overflow: hidden;
   transition: height 0.15s ease-out;
 }
