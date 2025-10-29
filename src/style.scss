@@ -110,7 +110,10 @@
 		&.expand-col {
 			cursor:pointer;
 			&>div>a {
-				display: block;
+				position: relative;
+				box-sizing: content-box;
+				vertical-align: middle;
+				display: inline-block;
 				margin: auto;
 				background: linear-gradient(to bottom, #3DF651, #21A516);
 				border-radius: 100px;
@@ -131,6 +134,9 @@
 					font-weight: 950;
 					&::before {
 						content: "+";
+						display: block;
+         				line-height: 1;
+
 					}
 				}
 			}

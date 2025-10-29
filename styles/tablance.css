@@ -110,7 +110,10 @@
   cursor: pointer;
 }
 .tablance td.expand-col > div > a, .tablance th.expand-col > div > a {
-  display: block;
+  position: relative;
+  box-sizing: content-box;
+  vertical-align: middle;
+  display: inline-block;
   margin: auto;
   background: linear-gradient(to bottom, #3DF651, #21A516);
   border-radius: 100px;
@@ -133,6 +136,8 @@
 }
 .tablance td.expand-col > div > a > span::before, .tablance th.expand-col > div > a > span::before {
   content: "+";
+  display: block;
+  line-height: 1;
 }
 .tablance tr.selected > td {
   background-color: #bab8db;
