@@ -244,9 +244,9 @@ class Tablance {
 	 * 						onChange Function Callback fired when the user has changed the value of the input.
 	 * 							It will get passed arguments:
 	 * 							1:TablanceEvent. It has a method with key "preventDefault" which if called prevents the
-	 * 							data/cell from actually being changed. ,2:newValue,3:oldValue
-	 * 							,4:rowData or rowData[] if multi-row-cell was edited,5:struct
-	 * 							,6:cellObject of the input if in expansion,null if not inside expansion
+	 * 							data/cell from actually being changed. ,2:property-name (id) of edited value
+	 * 							,3:newValue,4:oldValue,5:rowData or rowData[] if multi-row-cell was edited,6:struct
+	 * 							,7:cellObject of the input if in expansion,null if not inside expansion
 	 * 						onBlur Function Callback fired when cellcursor goes from being inside the container
 	 * 							to outside. It will get passed arguments 1:cellObject, 2:mainIndex
 	 * 						enabled Function - If present then this function will be run and if it returns falsey then
@@ -2082,8 +2082,9 @@ class Tablance {
 		this.#cellCursor.classList.remove("edit-mode");
 		if (save&&this.#inputVal!=this.#selectedCellVal) {
 			let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
-				this.#activeStruct.input.onChange?.({preventDefault:()=>doUpdate=false},this.#inputVal
-						,this.#selectedCellVal,this.#multiCellSelected?this.#selectedRows:this.#cellCursorDataObj
+				this.#activeStruct.input.onChange?.({preventDefault:()=>doUpdate=false},this.#activeStruct.id,
+						this.#inputVal,this.#selectedCellVal
+						,this.#multiCellSelected?this.#selectedRows:this.#cellCursorDataObj
 						,this.#activeStruct,this.#activeExpCell);
 			if (doUpdate) {
 				const checked=this.#selectedRows.indexOf(this.#cellCursorDataObj)!=-1;
