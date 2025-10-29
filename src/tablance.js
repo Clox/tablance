@@ -926,7 +926,7 @@ class Tablance {
 		}
 		this.container.style.outline="none";//see #spreadsheetOnFocus
 		if (!this.#inEditMode) {
-			switch (e.key) {
+			switch (e.code) {
 				case "ArrowUp":
 					this.#moveCellCursor(0,-1,e);
 				break; case "ArrowDown":
@@ -937,14 +937,14 @@ class Tablance {
 					this.#moveCellCursor(1,0,e);
 				break; case "Escape":
 					this.#groupEscape();
-				break; case "+":
+				break; case "NumpadAdd":
 					this.#scrollToCursor();
 					this. #expandRow(this.#selectedCell.closest(".main-table>tbody>tr"));
-				break; case "-":
+				break; case "NumpadSubtract":
 					this.#scrollToCursor();
 					this.#contractRow(this.#selectedCell.closest(".main-table>tbody>tr"));
-				break; case "Enter": case " ":
-					if (e.key==" ")
+				break; case "Enter": case "NumpadEnter": case "Space":
+					if (e.code=="Space")
 						e.preventDefault();//prevent scrolling when pressing space
 					this.#scrollToCursor();
 					if (this.#activeStruct.type=="expand")
@@ -953,7 +953,7 @@ class Tablance {
 						return requestAnimationFrame(()=>this.#toggleRowExpanded(this.#selectedCell.parentElement));
 					if (this.#activeStruct.type=="select")
 						return this.#rowCheckboxChange(this.#selectedCell,e.shiftKey);
-					if (e.key==="Enter"||this.#activeStruct.input?.type==="button") {
+					if (e.code==="Enter"||this.#activeStruct.input?.type==="button") {
 						e.preventDefault();//prevent newline from being entered into textareas
 						return this.#enterCell(e);
 					}
