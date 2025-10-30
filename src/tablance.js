@@ -317,7 +317,7 @@ class Tablance {
   	 * 				entry Object Any entry. May be item or list for instance. The data retrieved for these will be 1
 	 * 								level deeper so the path from the base would be idOfRepeatedRows->arrayIndex->*
 	 * 				create: Bool If true then there will be a user-interface for creating and deleting entries
-	 * 				onCreate Function Callback fired when the user has deleted an entry via the interface available if
+	 * 				onCreate Function Callback fired when the user has created an entry via the interface available if
 	 * 					"create" is true. It is considered committed when the cell-cursor has left the repeat-row after
 	 * 					having created it. It will normally get passed arguments: 1:new data,2:rowData,3:repeatedStruct
 	 * 					,4:cellObject
@@ -332,8 +332,7 @@ class Tablance {
 	 * 					the group with no data inserted, or by pressing the delete/cancel-button.
 	 * 					It will get passed arguments: 1:cellObject of the repeated-object
 	 * 				onDelete Function Callback fired when the user has deleted an entry via the interface available if
-	 * 					"create" is true. It is counted as committed when the cell-cursor has left the repeat-row after
-	 * 					having created it. It will get passed arguments: 1:rowData,2:cellObject
+	 * 					"create" is true. It will get passed arguments: 1:rowData,2:cellObject
 	 * 				sortCompare Function Passing in a function allows for sorting the entries. As expected this
 	 * 					function will get called multiple times to compare the entries to one another.
 	 * 					It gets 4 arguments: 1: object A, 2: object B, 3: rowData, 4: cellObject
@@ -1104,20 +1103,19 @@ class Tablance {
 	 * @param []int path Keeps track of the "path" by adding and removing index-numbers from the array when going
 	 * 				in and out of nesting. This path is then added as a data-attribute to the cells that can be
 	 * 				interacted with and this data is then read from and the cell-object can then be retrieved from it.*/
-	#generateExpansionContent(struct,dataIndex,cellObject,parentEl,path,rowData) {
+	#generateExpansionContent(struct,dataIndex,cellObject,parentEl,path,rowData,notYetCreated) {
 		if (!path.length)
 			cellObject.rowIndex=dataIndex;
 		cellObject.path=[...path];
 		cellObject.dataObj=rowData;
 		cellObject.struct=struct;
-		const args=[struct,dataIndex,cellObject,parentEl,path,rowData];
 		switch (struct.type) {
-			case "list": return this.#generateExpansionList(...args);
-			case "field": return this.#generateField(...args);
-			case "group": return this.#generateExpansionGroup(...args);
-			case "repeated": return this.#generateExpansionRepeated(...args);
-			case "lineup": return this.#generateExpansionLineup(...args);
-			case "context": return this.#generateContext(...args);
+			case "list": return this.#generateExpansionList(...arguments);
+			case "field": return this.#generateField(...arguments);
+			case "group": return this.#generateExpansionGroup(...arguments);
+			case "repeated": return this.#generateExpansionRepeated(...arguments);
+			case "lineup": return this.#generateExpansionLineup(...arguments);
+			case "context": return this.#generateContext(...arguments);
 		}
 	}
 
@@ -1219,13 +1217,15 @@ class Tablance {
 		return true;
 	}
 
-	#generateExpansionGroup(groupStructure,dataIndex,groupObj,parentEl,path,rowData) {
+	#generateExpansionGroup(groupStructure,dataIndex,groupObj,parentEl,path,rowData,notYetCreated) {
 		groupObj.select=()=>this.#selectExpansionCell(groupObj);
 		const groupTable=parentEl.appendChild(document.createElement("table"));
 		const tbody=groupObj.containerEl=groupTable.appendChild(document.createElement("tbody"));
 		groupTable.dataset.path=path.join("-");
 		parentEl.classList.add("group-cell");
 		groupObj.el=groupTable;//so that the whole group-table can be selectedf
+		if (notYetCreated)
+			groupObj.creating=true;
 		groupTable.className="expansion-group "+(groupStructure.cssClass??"");
 		this.#generateExpansionCollection(groupStructure,dataIndex,groupObj,parentEl,path,rowData);
 		if (groupStructure.closedRender) {
@@ -1269,10 +1269,15 @@ class Tablance {
 	 * @param {HTMLElement} parentEl The element that receives rendered content.
 	 * @param {Array<int>} path Array describing current nesting path.
 	 * @param {Object} rowData The full record for the current row.
+	 * @param {Boolean} notYetCreated If the cellObj point to data within objects that not yet exist
 	 */
-	#generateContext(containerStruct, mainIndex, collectionObj, parentEl, path, rowData) {
+	#generateContext(containerStruct, mainIndex, collectionObj, parentEl, path, rowData,notYetCreated) {
+		if (!rowData[containerStruct.id]) {//if the structure point to data within objects that doesn't yet exist
+			notYetCreated=true;
+			rowData[containerStruct.id]={};
+		}
 		return this.#generateExpansionContent
-			(containerStruct.entry, mainIndex, collectionObj, parentEl, path, rowData[containerStruct.id]);
+			(containerStruct.entry, mainIndex, collectionObj, parentEl, path,rowData[containerStruct.id],notYetCreated);
 	}
 	
 
@@ -1645,11 +1650,12 @@ class Tablance {
 	#openGroup(groupObj) {
 		let doOpen=true;
 		groupObj.struct.onOpen?.({preventDefault:()=>doOpen=false},groupObj);
-		if (doOpen) {
-			groupObj.el.classList.add("open");
-			this.#selectExpansionCell(this.#getFirstSelectableExpansionCell(groupObj,true,true));
-		}
+		if (!doOpen)
+			return;
+		groupObj.el.classList.add("open");
+		this.#selectExpansionCell(this.#getFirstSelectableExpansionCell(groupObj,true,true));
 		groupObj.struct.onOpenAfter?.(groupObj);
+		
 	}
 
 	/**Input-fields in the multi-row-area may be container-structs in which case if they are entered, the multi-row-area

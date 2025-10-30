@@ -31,6 +31,15 @@
 					,selectInputPlaceholder:"Sök/Skapa"}}
 				,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"}}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
+			{type:"context",id:"hemadress",title:"Hemadress",entry: 
+					{type:"group",multiEdit:true,entries:
+						[{type:"field",title:"Gata",id:"home_street",input:{type:"text",
+								onChange:(...args)=>console.log(args)}}
+							,{type:"field",title:"Postnummer",id:"home_zip",input:{type:"text",
+								onChange:(...args)=>console.log(args)}}
+							,{type:"field",title:"Ort",id:"home_city",input:{type:"text",
+								onChange:(...args)=>console.log(args)}}]}
+				},
 				{type:"context",id:"innergrejer",title:"Inre grej",entry:{type:"field",id:"foo"}},
 				{type:"field",title:"File",id:"file",input:{type:"file",fileUploadHandler:xhr=>{
 						xhr.open("POST", "http://localhost:3000/tests/serve.php", true);
@@ -46,13 +55,7 @@
 					,entries:
 					[{type:"field",title:"Gata",id:"street"},{type:"field",title:"Postnummer",id:"zip"}
 						,{type:"field",title:"Ort",id:"city"}]}},
-				 {type:"group",title:"Hemadress",multiEdit:true,entries:
-					[{type:"field",title:"Gata",id:"home_street",input:{type:"text",multiEdit:true
-							,onChange:(...args)=>console.log(args)}}
-						,{type:"field",title:"Postnummer",id:"home_zip",input:{type:"text",multiEdit:true
-							,onChange:(...args)=>console.log(args)}}
-						,{type:"field",title:"Ort",id:"home_city",input:{type:"text",multiEdit:true
-							,onChange:(...args)=>console.log(args)}}]},
+				
 				
 				{type:"field",title:"Date",id:"date",input:{type:"date",onChange:(...args)=>console.log(args)}},
 				{type:"repeated",id:"repeatedField",sortCompare:(a,b)=>a.bar>b.bar?1:-1,entry:
@@ -138,7 +141,7 @@
 			const onlyExpansion=false;
 			const tablanceContainer=document.getElementById("tablanceContainer1");
 			tablanceContainer.classList.toggle("only-expansion",onlyExpansion);
-			const myTablance=new Tablance(tablanceContainer,myTablanceCols,true,true
+			const myTablance=window.myTablance=new Tablance(tablanceContainer,myTablanceCols,true,true
 				,myExpansion,{defaultFileMetasToShow:{filename:false},lang:lang},onlyExpansion);
 			window.tablance=myTablance;//to play with public methods via console
 
