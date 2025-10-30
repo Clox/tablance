@@ -2170,8 +2170,9 @@ class Tablance {
 				return false;//prevent commiting/closing the group
 			}
 			repeatEntry.creating=false;
-			repeatEntry.parent.struct.onCreate?.
-								(repeatEntry.dataObj,this.#data[root.rowIndex],repeatEntry.parent.struct,repeatEntry);
+			const creationContainer=repeatEntry.struct.type=="group"?repeatEntry:repeatEntry.parent;
+			creationContainer.struct.onCreate?.
+								(repeatEntry.dataObj,this.#data[root.rowIndex],creationContainer.struct,repeatEntry);
 		} else {
 			this.#deleteCell(repeatEntry);
 			return false;
