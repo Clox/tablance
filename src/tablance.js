@@ -465,7 +465,7 @@ class Tablance {
 				if ((col.type=="expand"||col.type=="select")&&!col.width)
 					processedCol.width=50;
 				for (let [colKey,colVal] of Object.entries(col))
-					if (allowedColProps.includes(colKey))
+					//if (allowedColProps.includes(colKey))
 						processedCol[colKey]=colVal;
 				this.#colStructs.push(processedCol);
 			}
