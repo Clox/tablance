@@ -1638,7 +1638,9 @@ class Tablance {
 					weekdays      : ['Söndag','Måndag','Tisdag','Onsdag','Torsdag','Fredag','Lördag'],
 					weekdaysShort : ['Sön','Mån','Tis','Ons','Tor','Fre','Lör']
 				},
-				onOpen:()=>this.#alignDropdown(pikaContainer)//have to wait until onOpen or size is 0
+				onOpen:()=>this.#alignDropdown(pikaContainer),//have to wait until onOpen or size is 0
+				onDraw: () => this.#alignDropdown(pikaContainer)//not all months include the same number of weeks,
+								//so sometimes the calendar gets taller or shorter and that's why we have to re-align
 			});
 			pika.el.style.position="static";//otherwise size of pikaContainer will be 0 and alignDropdown wont work
 			if (e instanceof KeyboardEvent)
