@@ -256,7 +256,26 @@ class Tablance {
 	 * 							It gets passed the following arguments - 
 	 * 							1:struct,2:rowData,3:mainIndex,4:cellObject(if in expansion)
 	 * 					----Properties specific to input "text"----
-	 * 							maxLength int Sets max-length for the string
+	 * 						format object When defined, Tablance automatically applies the specified pattern to 
+	 * 							the <input> element as the user types. It can enforce numeric-only input, insert
+	 * 							delimiters, and handle smart date validation.
+	 * 							Examples:
+	 * 							// Personnummer: 19900218-9999
+	 * 							input: {
+	 * 								type: "text",
+	 * 								format: { blocks: [8, 4], delimiter: "-", numericOnly: true }
+	 * 							}
+	 * 							// Date (YYYY-MM-DD) with month/day clamping and leap-year handling
+	 * 							input: {
+	 * 								type: "text",
+	 * 								format: { date: true, blocks: [4, 2, 2], delimiter: "-", numericOnly: true }
+	 * 							}
+	 * 							Supported properties:
+	 * 							 - blocks:        Array of block lengths to group the input (e.g. [4,2,2])
+	 * 							 - delimiter:     String inserted between blocks (default: none)
+	 * 							 - numericOnly:   Boolean, removes all non-digit characters
+	 * 							 - date:          Boolean, enables smart date validation (month/day limits + leap years)
+	 * 						maxLength int Sets max-length for the string							
 	 * 					----Properties specific to input "textarea"----
 	 * 						maxHeight int Sets the max-height in pixels that it should be able to be resized to
 	 * 					----Properties specific to input "file"----
@@ -682,6 +701,55 @@ class Tablance {
 	#updateViewportHeight=()=>{
 		this.#scrollBody.style.height=this.container.clientHeight-this.#headerTable.offsetHeight
 				-(this.#searchInput?.offsetHeight??0)-this.#multiRowArea.offsetHeight+"px";
+	}
+
+	#applyInputFormat(el, format) {
+		el.addEventListener("input", () => {
+			let val = el.value;
+	
+			// numericOnly: keep only digits
+			if (format.numericOnly)
+				val = val.replace(/\D/g, "");
+	
+			// date-specific logic
+			if (format.date) {
+				const y = val.slice(0, 4);
+				let m = val.slice(4, 6);
+				let d = val.slice(6, 8);
+	
+				// clamp month
+				if (m) {
+					let mm = +m;
+					if (mm < 1) mm = 1;
+					if (mm > 12) mm = 12;
+					m = mm.toString().padStart(2, "0");
+				}
+	
+				// clamp day based on month + leap year
+				if (d && y && m) {
+					let dd = +d;
+					const max = daysInMonth(+y, +m);
+					if (dd < 1) dd = 1;
+					if (dd > max) dd = max;
+					d = dd.toString().padStart(2, "0");
+				}
+	
+				let parts = [y, m, d].filter(Boolean);
+				el.value = parts.join(format.delimiter || "-");
+				return;
+			}
+	
+			// generic block formatting
+			let out = "";
+			let i = 0;
+			for (const block of format.blocks) {
+				if (val.length <= i) break;
+				if (out && format.delimiter) out += format.delimiter;
+				out += val.slice(i, i + block);
+				i += block;
+			}
+			el.value = out;
+		});
 	}
 	
 	#setupSearchbar() {
@@ -1371,7 +1439,7 @@ class Tablance {
 		return itemObj;
 	}
 
-	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {	
+	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {
 		cellObject.select=()=>this.#selectExpansionCell(cellObject);
 		cellObject.el=parentEl;
 		this.#updateExpansionCell(cellObject,rowData);
@@ -1767,6 +1835,8 @@ class Tablance {
 		input.addEventListener("blur",()=>setTimeout(this.#exitEditMode.bind(this,true)));
 		input.addEventListener("change",()=>this.#inputVal=input.value);
 		input.value=this.#selectedCellVal??"";
+		if (this.#activeStruct.input.format)
+			this.#applyInputFormat(input,this.#activeStruct.input.format);
 		input.focus();
 		if (this.#activeStruct.input.maxLength)
 			input.maxLength=this.#activeStruct.input.maxLength;

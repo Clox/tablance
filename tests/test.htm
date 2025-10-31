@@ -31,6 +31,8 @@
 					,selectInputPlaceholder:"Sök/Skapa"}}
 				,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"}}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
+			{type:"field",title:"Format field"
+				,input:{type:"text", format:{ blocks: [8, 4], delimiter: "-", numericOnly: true }}},
 			{type:"context",id:"hemadress",title:"Hemadress",entry: 
 					{type:"group",multiEdit:true,entries:
 						[{type:"field",title:"Gata",id:"home_street",input:{type:"text",

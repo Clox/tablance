@@ -1,0 +1,22 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"type": "chrome",
+			"request": "launch",
+			"name": "Debug Tablance Tests (Live Server)",
+			"url": "http://127.0.0.1:5500/tests/test.htm",
+			"webRoot": "${workspaceFolder}",
+			"sourceMaps": true
+		  },
+	  {
+		"type": "chrome",
+		"request": "attach",
+		"name": "Attach to existing Chrome",
+		"port": 9222,
+		"webRoot": "${workspaceFolder}",
+		"url": "http://127.0.0.1:5500/tests/test.htm",
+
+	}
+	]
+  }
