@@ -704,51 +704,125 @@ class Tablance {
 	}
 
 	#applyInputFormat(el, format) {
+		// set defaults for date-type
+		if (format.date) {
+			if (typeof format.blocks === "undefined") format.blocks = [4, 2, 2];
+			if (typeof format.delimiter === "undefined") format.delimiter = "-";
+			if (typeof format.numericOnly === "undefined") format.numericOnly = true;
+		}
+		// prevent non-digits before they appear
+		if (format.numericOnly) {
+			el.addEventListener("beforeinput", e => {
+				if (e.data && /\D/.test(e.data)) e.preventDefault();
+			});
+			el.setAttribute("inputmode", "numeric");
+		}
+
+		// --- NEW: handle backspace over delimiters ---
+		el.addEventListener("keydown", e => {
+			if (e.key !== "Backspace" || !format.delimiter) return;
+
+			const pos = el.selectionStart;
+			if (pos > 0 && el.value[pos - 1] === format.delimiter) {
+				e.preventDefault(); // stop normal backspace
+				let val = el.value;
+
+				// remove delimiter and char before it
+				const newVal = val.slice(0, pos - 2) + val.slice(pos);
+				const newPos = pos - 2;
+
+				el.value = newVal;
+				el.setSelectionRange(newPos, newPos);
+
+				// trigger reformat (simulate normal flow)
+				el.dispatchEvent(new Event("input"));
+			}
+		});
+
+		// --- normal input handling ---
 		el.addEventListener("input", () => {
 			let val = el.value;
-	
-			// numericOnly: keep only digits
-			if (format.numericOnly)
-				val = val.replace(/\D/g, "");
-	
-			// date-specific logic
+			if (format.numericOnly) val = val.replace(/\D/g, "");
+
+			// ============ DATE MODE ============
 			if (format.date) {
-				const y = val.slice(0, 4);
-				let m = val.slice(4, 6);
-				let d = val.slice(6, 8);
-	
-				// clamp month
-				if (m) {
-					let mm = +m;
-					if (mm < 1) mm = 1;
-					if (mm > 12) mm = 12;
-					m = mm.toString().padStart(2, "0");
+				let digits = val;
+
+				// --- clamp/pad month smartly ---
+				if (digits.length >= 5) {
+					const y = digits.slice(0, 4);
+					let m = digits.slice(4, 6);
+
+					if (m.length === 1) {
+						const first = +m;
+						if (first > 1) m = "0" + first; 
+					} else if (m.length === 2) {
+						let mm = +m;
+						if (mm < 1) mm = 1;
+						if (mm > 12) mm = 12;
+						m = String(mm).padStart(2, "0");
+					}
+
+					digits = y + m + digits.slice(6);
 				}
-	
-				// clamp day based on month + leap year
-				if (d && y && m) {
-					let dd = +d;
-					const max = daysInMonth(+y, +m);
-					if (dd < 1) dd = 1;
-					if (dd > max) dd = max;
-					d = dd.toString().padStart(2, "0");
+
+				// --- clamp/pad day smartly ---
+				if (digits.length >= 7) {
+					const yNum = +digits.slice(0, 4);
+					const mNum = +digits.slice(4, 6);
+					let d = digits.slice(6, 8);
+
+					if (d.length === 1) {
+						const first = +d;
+						if (first > 3) d = "0" + first;
+					} else if (d.length === 2) {
+						let dd = +d;
+						const max = new Date(yNum, mNum, 0).getDate(); //get max (numbers of days in month)
+						if (dd < 1) dd = 1;
+						if (dd > max) dd = max;
+						d = String(dd).padStart(2, "0");
+					}
+
+					digits = digits.slice(0, 6) + d + digits.slice(8);
 				}
-	
-				let parts = [y, m, d].filter(Boolean);
-				el.value = parts.join(format.delimiter || "-");
+
+				// --- rebuild visual output ---
+				let out = "";
+				let i = 0;
+				const blocks = format.blocks || [4, 2, 2];
+				const delimiter = format.delimiter ?? "-";
+				for (let b = 0; b < blocks.length; b++) {
+					const blockLen = blocks[b];
+					const part = digits.slice(i, i + blockLen);
+					out += part;
+					i += part.length;
+					if (part.length === blockLen && b < blocks.length - 1 && delimiter)
+						out += delimiter;
+				}
+
+				el.value = out;
 				return;
 			}
-	
-			// generic block formatting
-			let out = "";
-			let i = 0;
-			for (const block of format.blocks) {
-				if (val.length <= i) break;
-				if (out && format.delimiter) out += format.delimiter;
-				out += val.slice(i, i + block);
-				i += block;
+
+			// ============ GENERIC BLOCK MODE ============
+			if (Array.isArray(format.blocks) && format.blocks.length) {
+				let out = "";
+				let i = 0;
+				const delimiter = format.delimiter ?? "";
+				for (let b = 0; b < format.blocks.length; b++) {
+					const blockLen = format.blocks[b];
+					const part = val.slice(i, i + blockLen);
+					out += part;
+					i += part.length;
+					if (part.length === blockLen && b < format.blocks.length - 1 && delimiter)
+						out += delimiter;
+				}
+				el.value = out;
+				return;
 			}
-			el.value = out;
+
+			// fallback: only numeric filtering
+			el.value = val;
 		});
 	}
 	
@@ -1615,6 +1689,7 @@ class Tablance {
 		let pika,pikaContainer;
 		//this.#input.type="date";//using Pikaday instead which I find more user-friendly. Calendar can be opened
 								//up right away and typing manualy is still permitted
+		this.#applyInputFormat(input,{date:true});
 		if (!Pikaday)
 			console.warn("Pikaday-library not found");
 		else {
@@ -1648,7 +1723,7 @@ class Tablance {
 			input.addEventListener("input",onInput.bind(this));
 			input.addEventListener("change",()=>this.#inputVal=input.value);
 		}
-		new Cleave(input,{date: true,delimiter: '-',datePattern: ['Y', 'm', 'd']});
+		
 		this.#cellCursor.appendChild(input);
 		input.value=this.#selectedCellVal??"";
 		input.placeholder=this.#activeStruct.input.placeholder??this.#opts.lang?.datePlaceholder??"YYYY-MM-DD";
@@ -1843,8 +1918,6 @@ class Tablance {
 		if (this.#activeStruct.input.maxLength)
 			input.maxLength=this.#activeStruct.input.maxLength;
 		input.placeholder=this.#activeStruct.input.placeholder??"";
-		if (this.#activeStruct.input.cleave)
-			new Cleave(input,this.#activeStruct.input.cleave);
 	}
 
 	#mapAdd(map,key,val) {

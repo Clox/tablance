@@ -1,5 +1,4 @@
 <head>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/cleave.js/1.0.2/cleave.min.js" integrity="sha512-SvgzybymTn9KvnNGu0HxXiGoNeOi0TTK7viiG0EGn2Qbeu/NFi3JdWrJs2JHiGA1Lph+dxiDv5F9gDlcgBzjfA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 	<script src="../src/tablance.js"></script>
 	<link rel="stylesheet" href="../styles/tablance.min.css">
 
@@ -32,7 +31,7 @@
 				,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"}}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
 			{type:"field",title:"Format field"
-				,input:{type:"text", format:{ blocks: [8, 4], delimiter: "-", numericOnly: true }}},
+				,input:{type:"text", format:{ blocks: [4, 2,2], delimiter: "-", numericOnly: true }}},
 			{type:"context",id:"hemadress",title:"Hemadress",entry: 
 					{type:"group",multiEdit:true,entries:
 						[{type:"field",title:"Gata",id:"home_street",input:{type:"text",
@@ -128,8 +127,8 @@
 				{type:"list",title:"Baz entries",titlesColWidth:"6em",entries:[
 					{type:"field",title:"Baz One",id:"baz1"},
 					{type:"field",title:"Baz Two",id:"baz2"},
-					{type:"field",title:"Cleave-datum",id:"cleaveDate",
-						input:{cleave:{date: true,delimiter: '-',datePattern: ['Y','m','d']},placeholder:"ÅÅÅÅ-MM-DD"}},
+					{type:"field",title:"datum",id:"formatdate",
+						input:{format:{date: true},placeholder:"ÅÅÅÅ-MM-DD"}},
 					{type:"field",title:"Anteckningar",id:"notes",maxHeight:150,input:{type:"textarea"}},
 				]},
 			]};
