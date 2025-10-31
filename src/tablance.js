@@ -259,6 +259,12 @@ class Tablance {
 	 * 						format object When defined, Tablance automatically applies the specified pattern to 
 	 * 							the <input> element as the user types. It can enforce numeric-only input, insert
 	 * 							delimiters, and handle smart date validation.
+	 * 							Supported properties:
+	 * 							 - blocks:        			Array of block lengths to group the input (e.g. [4,2,2])
+	 * 							 - delimiter:     			String inserted between blocks (default: none)
+	 * 							 - numericOnly:   			Boolean, removes all non-digit characters
+	 * 							 - date:          			Boolean, enables smart date validation
+	 * 							 - stripDelimiterOnSave:	Boolean, if true delimiters are excluded in the saved data
 	 * 							Examples:
 	 * 							// Personnummer: 19900218-9999
 	 * 							input: {
@@ -270,11 +276,7 @@ class Tablance {
 	 * 								type: "text",
 	 * 								format: { date: true, blocks: [4, 2, 2], delimiter: "-", numericOnly: true }
 	 * 							}
-	 * 							Supported properties:
-	 * 							 - blocks:        Array of block lengths to group the input (e.g. [4,2,2])
-	 * 							 - delimiter:     String inserted between blocks (default: none)
-	 * 							 - numericOnly:   Boolean, removes all non-digit characters
-	 * 							 - date:          Boolean, enables smart date validation (month/day limits + leap years)
+	 * 							
 	 * 						maxLength int Sets max-length for the string							
 	 * 					----Properties specific to input "textarea"----
 	 * 						maxHeight int Sets the max-height in pixels that it should be able to be resized to
@@ -703,9 +705,10 @@ class Tablance {
 				-(this.#searchInput?.offsetHeight??0)-this.#multiRowArea.offsetHeight+"px";
 	}
 
-	#applyInputFormat(el, format) {
+	attachInputFormatter(el, format) {
 		// set defaults for date-type
 		if (format.date) {
+			format={...format};
 			if (typeof format.blocks === "undefined") format.blocks = [4, 2, 2];
 			if (typeof format.delimiter === "undefined") format.delimiter = "-";
 			if (typeof format.numericOnly === "undefined") format.numericOnly = true;
@@ -740,7 +743,7 @@ class Tablance {
 		});
 
 		// --- normal input handling ---
-		el.addEventListener("input", this.#applyInputFormat);
+		el.addEventListener("input", applyInputFormatting);
 		applyInputFormatting();//also call it once right away in case the data isn't formatted properly from the start
 
 		function applyInputFormatting() {
@@ -1692,7 +1695,7 @@ class Tablance {
 		let pika,pikaContainer;
 		//this.#input.type="date";//using Pikaday instead which I find more user-friendly. Calendar can be opened
 								//up right away and typing manualy is still permitted
-		this.#applyInputFormat(input,{date:true});
+		this.attachInputFormatter(input,{date:true});
 		if (!Pikaday)
 			console.warn("Pikaday-library not found");
 		else {
@@ -1916,7 +1919,7 @@ class Tablance {
 		input.addEventListener("change",()=>this.#inputVal=input.value);
 		input.value=this.#selectedCellVal??"";
 		if (this.#activeStruct.input.format)
-			this.#applyInputFormat(input,this.#activeStruct.input.format);
+			this.attachInputFormatter(input,this.#activeStruct.input.format);
 		input.focus();
 		if (this.#activeStruct.input.maxLength)
 			input.maxLength=this.#activeStruct.input.maxLength;
@@ -2202,10 +2205,10 @@ class Tablance {
 		}
 	}
 
-	#validateInput() {
+	#validateInput(newVal) {
 		let message;
 		const input=this.#cellCursor.querySelector("input");
-		const doCommit=this.#activeStruct.input.validation(input.value,m=>message=m,this.#activeStruct
+		const doCommit=this.#activeStruct.input.validation(newVal,m=>message=m,this.#activeStruct
 												,this.#cellCursorDataObj,this.#mainRowIndex,this.#activeExpCell);
 		if (doCommit)
 			return true;
@@ -2227,11 +2230,19 @@ class Tablance {
 
 	#exitEditMode(save) {
 		if (!this.#inEditMode)
-			return true;	
-		if (this.#activeStruct.input.validation&&save&&!this.#validateInput())
+			return true;
+		const input=this.#cellCursor.querySelector("input");
+		let newVal=input.value;
+		if (this.#activeStruct.input.format?.stripDelimiterOnSave&&this.#activeStruct.input.format.delimiter)
+			newVal=newVal.replaceAll(this.#activeStruct.input.format.delimiter, "");
+		if (this.#activeStruct.input.validation&&save&&!this.#validateInput(newVal))
 			return false;
 		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
 		this.container.focus({preventScroll:true});//so that #inputVal gets updated
+
+		this.#inputVal=newVal;//these are not necesarilly the same because delimiters could have been stripped if 
+									//this.#activeStruct.input.format.delimiter
+
 		this.#inEditMode=false;
 		this.#cellCursor.classList.remove("edit-mode");
 		if (save&&this.#inputVal!=this.#selectedCellVal) {
