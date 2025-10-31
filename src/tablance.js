@@ -740,7 +740,10 @@ class Tablance {
 		});
 
 		// --- normal input handling ---
-		el.addEventListener("input", () => {
+		el.addEventListener("input", this.#applyInputFormat);
+		applyInputFormatting();//also call it once right away in case the data isn't formatted properly from the start
+
+		function applyInputFormatting() {
 			let val = el.value;
 			if (format.numericOnly) val = val.replace(/\D/g, "");
 
@@ -823,7 +826,7 @@ class Tablance {
 
 			// fallback: only numeric filtering
 			el.value = val;
-		});
+		}
 	}
 	
 	#setupSearchbar() {
