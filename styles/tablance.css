@@ -313,6 +313,7 @@
   display: none;
 }
 .tablance .tooltip {
+  opacity: 1;
   pointer-events: none;
   visibility: hidden;
   position: absolute;
