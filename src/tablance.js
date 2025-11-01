@@ -1711,6 +1711,8 @@ class Tablance {
 				container:pikaContainer,
 				firstDay:1,//week starts on monday
 				showWeekNumber:true,
+				defaultDate: this.#selectedCellVal ? new Date(this.#selectedCellVal) : undefined,
+				setDefaultDate:true,
 				i18n: {
 					previousMonth : 'Tidigare Månad',
 					nextMonth     : 'Nästa Månad',
