@@ -2230,18 +2230,18 @@ class Tablance {
 
 	#exitEditMode(save) {
 		if (!this.#inEditMode)
-			return true;
-		const input=this.#cellCursor.querySelector("input");
-		let newVal=input.value;
-		if (this.#activeStruct.input.format?.stripDelimiterOnSave&&this.#activeStruct.input.format.delimiter)
-			newVal=newVal.replaceAll(this.#activeStruct.input.format.delimiter, "");
-		if (this.#activeStruct.input.validation&&save&&!this.#validateInput(newVal))
+			return true;	
+		if (this.#activeStruct.input.format?.stripDelimiterOnSave&&this.#activeStruct.input.format.delimiter) {
+			const input=this.#cellCursor.querySelector("input");
+			input.value=input.value.replaceAll(this.#activeStruct.input.format.delimiter, "");
+		}
+		if (this.#activeStruct.input.validation&&save&&!this.#validateInput())
 			return false;
 		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
 		this.container.focus({preventScroll:true});//so that #inputVal gets updated
+		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
+		this.container.focus({preventScroll:true});//so that #inputVal gets updated
 
-		this.#inputVal=newVal;//these are not necesarilly the same because delimiters could have been stripped if 
-									//this.#activeStruct.input.format.delimiter
 
 		this.#inEditMode=false;
 		this.#cellCursor.classList.remove("edit-mode");
