@@ -1696,7 +1696,7 @@ class Tablance {
 		//this.#input.type="date";//using Pikaday instead which I find more user-friendly. Calendar can be opened
 								//up right away and typing manualy is still permitted
 		this.attachInputFormatter(input,{date:true});
-		if (!Pikaday)
+		if (!window.Pikaday)
 			console.warn("Pikaday-library not found");
 		else {
 			pikaContainer=this.#cellCursor.parentElement.appendChild(document.createElement("div"));
