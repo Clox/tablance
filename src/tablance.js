@@ -2249,8 +2249,9 @@ class Tablance {
 		this.#cellCursor.classList.remove("edit-mode");
 		if (save&&this.#inputVal!=this.#selectedCellVal) {
 			let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
+			const inputVal=this.#activeStruct.input.type==="select"?this.#inputVal.value:this.#inputVal;
 				this.#activeStruct.input.onChange?.({preventDefault:()=>doUpdate=false},this.#activeStruct.id,
-						this.#inputVal,this.#selectedCellVal
+						inputVal,this.#selectedCellVal
 						,this.#multiCellSelected?this.#selectedRows:this.#cellCursorDataObj
 						,this.#activeStruct,this.#activeExpCell);
 			if (doUpdate) {
