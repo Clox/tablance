@@ -1,18 +1,42 @@
 {
-  "name": "tablance",
-  "version": "0.2.0",
-  "description": "A library used for creating highly interactive tables that can handle large amounts of data and which spreadsheet-capabilities, meaning cells can be marked as editable. Also, rows can be expanded if needed, revealing more data can be structured with components and navigated through.",
-  "main": "src/tablance.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [
-    "table",
-    "interactive",
-    "spreadsheet",
-    "data",
-    "large"
-  ],
-  "author": "Oscar Jonsson (oscar@spadrig.se)",
-  "license": "ISC"
+	"name": "tablance",
+	"version": "1.1.0",
+	"description": "TABLe advANCE - A fast, virtualized table component with expandable rows, spreadsheet navigation, and inline editing.",
+	"main": "dist/tablance.umd.js",
+	"module": "dist/tablance.esm.js",
+	"style": "dist/tablance.css",
+	"files": ["dist"],
+	"scripts": {
+		"build": "rollup -c",
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Clox/tablance.git"
+	},
+	"keywords": [
+		"table",
+		"virtualized",
+		"datagrid",
+		"expandable",
+		"spreadsheet",
+		"ui-components",
+		"interactive",
+		"data",
+		"large"
+	],
+	"author": "Oscar Jonsson <oscar@spadrig.se>",
+	"license": "MIT",
+	"bugs": {
+		"url": "https://github.com/Clox/tablance/issues"
+	},
+	"homepage": "https://github.com/Clox/tablance#readme",
+	"peerDependencies": {
+		"pikaday": "^1.8.2"
+	},
+	"devDependencies": {
+		"rollup": "^4.0.0",
+		"@rollup/plugin-terser": "^0.4.3",
+		"rollup-plugin-import-css": "^3.1.0"
+	}
 }
