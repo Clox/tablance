@@ -991,7 +991,7 @@ class Tablance {
 	}
 
 	#selectAdjacentExpansionCell(cellObj,isGoingDown) {
-		let cell=this.#getAdjacentExpansionCell(cellObj,isGoingDown);//repeat this line until a visible cell is found?
+		let cell=this.#getAdjacentExpansionCell(cellObj,isGoingDown);//repeat this line until a valid cell is found?
 		if (cell)
 			return this.#selectExpansionCell(cell);
 		if (!this.#onlyExpansion)
@@ -2233,11 +2233,10 @@ class Tablance {
 	#exitEditMode(save) {
 		if (!this.#inEditMode)
 			return true;	
-		if (this.#activeStruct.input.format?.stripDelimiterOnSave&&this.#activeStruct.input.format.delimiter) {
-			const input=this.#cellCursor.querySelector("input");
+		const input=this.#cellCursor.querySelector("input");
+		if (this.#activeStruct.input.format?.stripDelimiterOnSave&&this.#activeStruct.input.format.delimiter)
 			input.value=input.value.replaceAll(this.#activeStruct.input.format.delimiter, "");
-		}
-		if (this.#activeStruct.input.validation&&save&&!this.#validateInput())
+		if (this.#activeStruct.input.validation&&save&&!this.#validateInput(input.value))
 			return false;
 		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
 		this.container.focus({preventScroll:true});//so that #inputVal gets updated
