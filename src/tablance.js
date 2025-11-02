@@ -991,7 +991,7 @@ class Tablance {
 	}
 
 	#selectAdjacentExpansionCell(cellObj,isGoingDown) {
-		let cell=this.#getAdjacentExpansionCell(cellObj,isGoingDown);
+		let cell=this.#getAdjacentExpansionCell(cellObj,isGoingDown);//repeat this line until a visible cell is found?
 		if (cell)
 			return this.#selectExpansionCell(cell);
 		if (!this.#onlyExpansion)
@@ -2579,7 +2579,8 @@ class Tablance {
 		if (!sortCols.length)
 			return false;
 		this.#data.sort(compare.bind(this));
-		this.#mainRowIndex=this.#data.indexOf(this.#cellCursorDataObj);
+		if (this.#mainRowIndex>=0)//if there is a selected row
+			this.#mainRowIndex=this.#data.indexOf(this.#cellCursorDataObj);//then find it's new pos
 		return true;
 		
 		function compare(a,b) {
