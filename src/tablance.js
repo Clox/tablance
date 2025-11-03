@@ -134,6 +134,8 @@ class Tablance {
 					//instances of the same animation can't run. Value is the end-time in ms since epoch.
 	#onlyExpansion;//See constructor-param onlyExpansion
 	#tooltip;//reference to html-element used as tooltip
+	#colIndicesByCellId;//map from cellId (or id if cellId isn't set) to column-index in main table.
+	#dependenciesById ;//map from cellId (or id if cellId isn't set) to array of cellIds that depend on it.
 							
 
 	/**
@@ -509,6 +511,7 @@ class Tablance {
 			this.#updateHeaderSortHtml();
 		} else
 			this.#setupSpreadsheet(true);
+		this.#buildDependencyGraph();
 	}
 
 	addData(data, highlight=false) {
@@ -700,12 +703,68 @@ class Tablance {
 		this.#selectFirstSelectableExpansionCell(this.#openExpansions[0],top);
 	}
 
+	/**
+	 * Build column and dependency maps used for reactive updates.
+	 *
+	 * This runs once during table initialization and prepares:
+	 *  - #colIndicesByCellId → maps each column's cellId (or id) to its column index.
+	 *  - #dependenciesById → maps each dependency source to the cells that depend on it.
+	 */
+	#buildDependencyGraph() {
+		this.#colIndicesByCellId = {};
+		this.#dependenciesById = {};
+
+		// Temporary maps for column cellIds
+		const colIdsExplicit = {}; // columns with explicit cellId
+		const colIdsImplicit = {}; // columns with only id (implicit fallback)
+
+		// Pass 1: build column → index mapping
+		for (const [colI, colStruct] of this.#colStructs.entries()) {
+			if (colStruct.cellId)
+				// Explicit cellId overrides implicit ones
+				colIdsExplicit[colStruct.cellId] = colI;
+			else if (colStruct.id)
+				// Implicit id used if no explicit cellId exists
+				colIdsImplicit[colStruct.id] = colI;
+		}
+
+		// Merge implicit first so explicit takes precedence
+		this.#colIndicesByCellId = { ...colIdsImplicit, ...colIdsExplicit };
+
+		// Traverse *all* structures:
+		//  - main column structures
+		//  - expansion structures
+		const structStack = [...this.#colStructs,...this.#expansion.entries1];
+
+		while (structStack.length) {
+			const struct = structStack.pop();
+
+			
+			if (struct.dependsOn) {// Register dependencies for this structure, if any
+				
+				// Normalize to array (allow dependsOn: "A" or ["A", "B"])
+				const deps = Array.isArray(struct.dependsOn) ? struct.dependsOn : [struct.dependsOn];
+
+				// For each dependency, record that this struct depends on it
+				for (const dep of deps)
+					// Example result: dependenciesById["A"] = ["B", "C"]
+					(this.#dependenciesById[dep] ??= []).push(struct.cellId ?? struct.id);
+			}
+
+			if (struct.entry)
+				structStack.push(struct.entry);
+			else if (struct.entries)
+				structStack.push(...struct.entries);
+		}
+	}
+
+
 	#updateViewportHeight=()=>{
 		this.#scrollBody.style.height=this.container.clientHeight-this.#headerTable.offsetHeight
 				-(this.#searchInput?.offsetHeight??0)-this.#multiRowArea.offsetHeight+"px";
 	}
 
-	attachInputFormatter(el, format) {
+	#attachInputFormatter(el, format) {
 		// set defaults for date-type
 		if (format.date) {
 			format={...format};
@@ -1695,7 +1754,7 @@ class Tablance {
 		let pika,pikaContainer;
 		//this.#input.type="date";//using Pikaday instead which I find more user-friendly. Calendar can be opened
 								//up right away and typing manualy is still permitted
-		this.attachInputFormatter(input,{date:true});
+		this.#attachInputFormatter(input,{date:true});
 		if (!window.Pikaday)
 			console.warn("Pikaday-library not found");
 		else {
@@ -1921,7 +1980,7 @@ class Tablance {
 		input.addEventListener("change",()=>this.#inputVal=input.value);
 		input.value=this.#selectedCellVal??"";
 		if (this.#activeStruct.input.format)
-			this.attachInputFormatter(input,this.#activeStruct.input.format);
+			this.#attachInputFormatter(input,this.#activeStruct.input.format);
 		input.focus();
 		if (this.#activeStruct.input.maxLength)
 			input.maxLength=this.#activeStruct.input.maxLength;
