@@ -134,8 +134,9 @@ class Tablance {
 					//instances of the same animation can't run. Value is the end-time in ms since epoch.
 	#onlyExpansion;//See constructor-param onlyExpansion
 	#tooltip;//reference to html-element used as tooltip
-	#colIndicesByCellId;//map from cellId (or id if cellId isn't set) to column-index in main table.
-	#dependenciesById ;//map from cellId (or id if cellId isn't set) to array of cellIds that depend on it.
+	#colIndicesByAutoId;//map from autoId to column-index in main table.
+	#dependenciesByAutoId;//map from autoId to array of cellIds that depend on it.
+	#fieldsByCellId;//map from cellId (or id if cellId isn't set) to cellObject for fields in expansion
 							
 
 	/**
@@ -704,57 +705,90 @@ class Tablance {
 	}
 
 	/**
-	 * Build column and dependency maps used for reactive updates.
+	 * Build a complete dependency graph and assign internal autoIds.
 	 *
-	 * This runs once during table initialization and prepares:
-	 *  - #colIndicesByCellId → maps each column's cellId (or id) to its column index.
-	 *  - #dependenciesById → maps each dependency source to the cells that depend on it.
+	 * After this runs:
+	 *  - Every struct (columns and expansion entries) has a unique numeric `autoId` (immutable thereafter).
+	 *  - Dependencies are expressed purely as autoId → autoId[] in #dependenciesByAutoId.
+	 *  - Developer names (`cellId` / `id`) are only used here to resolve dependsOn, then ignored for deps.
+	 *  - Column lookup is #colIndicesByAutoId: autoId → columnIndex (columns only).
 	 */
 	#buildDependencyGraph() {
-		this.#colIndicesByCellId = {};
-		this.#dependenciesById = {};
+		// reset
+		this.#dependenciesByAutoId = {};  // autoId -> autoId[]
+		this.#colIndicesByAutoId = {};    // autoId -> colIndex
 
-		// Temporary maps for column cellIds
-		const colIdsExplicit = {}; // columns with explicit cellId
-		const colIdsImplicit = {}; // columns with only id (implicit fallback)
+		// ---------- PASS 1: assign autoIds + collect name->autoId + cache raw dependsOn ----------
+		let autoIdCounter = 0;
+		const nameToAutoId = Object.create(null); // { cellId|id : autoId }
 
-		// Pass 1: build column → index mapping
-		for (const [colI, colStruct] of this.#colStructs.entries()) {
-			if (colStruct.cellId)
-				// Explicit cellId overrides implicit ones
-				colIdsExplicit[colStruct.cellId] = colI;
-			else if (colStruct.id)
-				// Implicit id used if no explicit cellId exists
-				colIdsImplicit[colStruct.id] = colI;
-		}
+		const stack = [...this.#colStructs, this.#expansion];
 
-		// Merge implicit first so explicit takes precedence
-		this.#colIndicesByCellId = { ...colIdsImplicit, ...colIdsExplicit };
+		while (stack.length) {
+			const struct = stack.pop();
 
-		// Traverse *all* structures:
-		//  - main column structures
-		//  - expansion structures
-		const structStack = [...this.#colStructs,...this.#expansion.entries1];
+			// assign permanent internal id
+			struct.autoId = ++autoIdCounter;
 
-		while (structStack.length) {
-			const struct = structStack.pop();
-
-			
-			if (struct.dependsOn) {// Register dependencies for this structure, if any
-				
-				// Normalize to array (allow dependsOn: "A" or ["A", "B"])
-				const deps = Array.isArray(struct.dependsOn) ? struct.dependsOn : [struct.dependsOn];
-
-				// For each dependency, record that this struct depends on it
-				for (const dep of deps)
-					// Example result: dependenciesById["A"] = ["B", "C"]
-					(this.#dependenciesById[dep] ??= []).push(struct.cellId ?? struct.id);
+			// if struct is named (cellId preferred, else id), register name -> autoId (and guard duplicates)
+			const name = struct.cellId ?? struct.id;
+			if (name != null) {
+				if (nameToAutoId[name] != null)
+					throw new Error(`Duplicate struct name "${name}" detected (cellId/id must be unique).`);
+				nameToAutoId[name] = struct.autoId;
 			}
 
-			if (struct.entry)
-				structStack.push(struct.entry);
-			else if (struct.entries)
-				structStack.push(...struct.entries);
+			if (struct.entries)
+				stack.push(...struct.entries);
+			else if (struct.entry)
+				stack.push(struct.entry);
+		}
+
+		// ---------- PASS 2: resolve dependsOn names -> autoIds and fill dependenciesByAutoId ----------
+		// reuse the same const stack by refilling it
+		stack.push(...this.#colStructs, ...this.#expansion);
+
+		while (stack.length) {
+			const struct = stack.pop();
+			if (struct.dependsOn)
+				for (const depName of Array.isArray(struct.dependsOn)? struct.dependsOn: [struct.dependsOn]) {
+					const depAutoId = nameToAutoId[depName];
+					if (depAutoId != null)
+						(this.#dependenciesByAutoId[depAutoId] ??= []).push(struct.autoId);
+				}
+
+
+			if (struct.entries)
+				stack.push(...struct.entries);
+			else if (struct.entry)
+				stack.push(struct.entry);
+		}
+
+		for (let i = 0; i < this.#colStructs.length; i++)
+			this.#colIndicesByAutoId[this.#colStructs[i].autoId] = i;//map autoId -> colIndex
+	}
+
+
+
+
+	/**
+	 * Build lookup maps of cell objects of all created fields keyed by their cellIds.
+	 * Creates new contexts for repeated structures so that their descendants
+	 * have independent lookup scopes.
+	 */
+	#buildCellObjectIndex(cellObject, context) {
+		for (const cell of structs) {
+			if (cell.cellId)
+				context[cell.cellId] = cell;
+
+			if (cell.type === "repeated") {
+				const newContext = {};
+				cell.cellObjectsByCellIds = newContext;
+				if (cell.children)
+					this.#buildCellObjectIndex(cell.children, newContext);
+			} else if (cell.children) {
+				this.#buildCellObjectIndex(cell.children, context);
+			}
 		}
 	}
 
@@ -1277,6 +1311,7 @@ class Tablance {
 		shadowLine.className="expansion-shadow";
 		const cellObject=this.#openExpansions[rowIndex]={};
 		this.#generateExpansionContent(this.#expansion,rowIndex,cellObject,expansionDiv,[],this.#data[rowIndex]);
+		this.#buildCellObjectIndex(cellObject)
 		cellObject.rowIndex=rowIndex;
 		return expansionRow;
 	}
@@ -1302,17 +1337,24 @@ class Tablance {
 	}
 
 	/**
-	 * 
-	 * @param {*} struct 
-	 * @param {*} data 
-	 * @param {*} cellObject 
-	 * @param {*} parentEl 
-	 * @param []int path Keeps track of the "path" by adding and removing index-numbers from the array when going
-	 * 				in and out of nesting. This path is then added as a data-attribute to the cells that can be
-	 * 				interacted with and this data is then read from and the cell-object can then be retrieved from it.*/
-	#generateExpansionContent(struct,dataIndex,cellObject,parentEl,path,rowData,notYetCreated) {
+	 * Creates expansion content based on the provided structure.
+	 *
+	 * @param {object} struct Structure object defining what to create.
+	 * @param {number} mainIndex Index of the main data row that this expansion belongs to.
+	 * @param {object} cellObject The object representing the cell that is being created.
+	 * @param {HTMLElement} parentEl The parent element to which the created elements should be appended.
+	 * @param {number[]} path Keeps track of the "path" by adding and removing index numbers when entering and leaving 
+	 * 		nesting levels. This path is added as a data attribute to interactive cells so that the corresponding cell
+	 * 		object can later be retrieved.
+	 * @param {object} rowData The actual data object that this expansion is representing.
+	 * @param {boolean} notYetCreated True if the cellObj points to data within objects that do not yet exist.
+	 * 		This happens when the context points to a data object that will be created when the user adds data.
+	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
+	 * 		struct with no create option).
+	 */
+	#generateExpansionContent(struct,mainIndex,cellObject,parentEl,path,rowData,notYetCreated) {
 		if (!path.length)
-			cellObject.rowIndex=dataIndex;
+			cellObject.rowIndex=mainIndex;
 		cellObject.path=[...path];
 		cellObject.dataObj=rowData;
 		cellObject.struct=struct;
@@ -1349,24 +1391,31 @@ class Tablance {
 		this.#repeatInsert(groupObject.parent,true,groupObject.parent.dataObj[groupObject.parent.dataObj.length]={});
 	}
 
-
-	/**This is supposed to get called when a repeated-struct is found however in #generateExpansionList,
+	/**
+	 * This is "supposed" to get called when a repeated-struct is found however in #generateExpansionList,
 	 * repeated-structs are looked for and handled by that method instead so that titles can be added to the list
 	 * which isn't handled by #generateExpansionContent but by the list-method itself
-	 * @param {*} struct 
-	 * @param {*} dataIndex 
-	 * @param {*} cellObj 
-	 * @param {*} parentEl 
-	 * @param {*} path 
-	 * @param {*} rowData 
-	 * @returns */
-	#generateExpansionRepeated(struct,dataIndex,cellObj,parentEl,path,rowData) {
+	 *
+	 * @param {object} repeatedStruct Structure object defining what to create.
+	 * @param {number} mainIndex Index of the main data row that this expansion belongs to.
+	 * @param {object} cellObject The object representing the cell that is being created.
+	 * @param {HTMLElement} parentEl The parent element to which the created elements should be appended.
+	 * @param {number[]} path Keeps track of the "path" by adding and removing index numbers when entering and leaving 
+	 * 		nesting levels. This path is added as a data attribute to interactive cells so that the corresponding cell
+	 * 		object can later be retrieved.
+	 * @param {object} rowData The actual data object that this expansion is representing.
+	 * @param {boolean} notYetCreated True if the cellObj points to data within objects that do not yet exist.
+	 * 		This happens when the context points to a data object that will be created when the user adds data.
+	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
+	 * 		struct with no create option).
+	 */
+	#generateExpansionRepeated(repeatedStruct,mainIndex,cellObject,parentEl,path,rowData,notYetCreated) {
 		cellObj.children=[];
-		let repeatData=cellObj.dataObj=rowData[struct.id]??(rowData[struct.id]=[]);
+		let repeatData=cellObj.dataObj=rowData[repeatedStruct.id]??(rowData[repeatedStruct.id]=[]);
 		cellObj.insertionPoint=parentEl.appendChild(document.createComment("repeated-insert"));
-		struct.create&&this.#generateRepeatedCreator(cellObj);
+		repeatedStruct.create&&this.#generateRepeatedCreator(cellObj);
 		repeatData?.forEach(repeatData=>this.#repeatInsert(cellObj,false,repeatData));
-		return !!repeatData?.length||struct.create;
+		return !!repeatData?.length||repeatedStruct.create;
 	}
 
 	/**For repeated-structs with create set to true, meaning that the user can create more entries via a user-interface,
@@ -1424,45 +1473,93 @@ class Tablance {
 		return true;
 	}
 
-	#generateExpansionGroup(groupStructure,dataIndex,groupObj,parentEl,path,rowData,notYetCreated) {
-		groupObj.select=()=>this.#selectExpansionCell(groupObj);
+		/**
+	 * Creates expansion content based on the provided structure.
+	 *
+	 * @param {object} groupStruct Structure object defining what to create.
+	 * @param {number} mainIndex Index of the main data row that this expansion belongs to.
+	 * @param {object} cellObject The object representing the cell that is being created.
+	 * @param {HTMLElement} parentEl The parent element to which the created elements should be appended.
+	 * @param {number[]} path Keeps track of the "path" by adding and removing index numbers when entering and leaving 
+	 * 		nesting levels. This path is added as a data attribute to interactive cells so that the corresponding cell
+	 * 		object can later be retrieved.
+	 * @param {object} rowData The actual data object that this expansion is representing.
+	 * @param {boolean} notYetCreated True if the cellObj points to data within objects that do not yet exist.
+	 * 		This happens when the context points to a data object that will be created when the user adds data.
+	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
+	 * 		struct with no create option).
+	 */
+	#generateExpansionGroup(groupStruct,mainIndex,cellObj,parentEl,path,rowData,notYetCreated) {
+		cellObj.select=()=>this.#selectExpansionCell(cellObj);
 		const groupTable=parentEl.appendChild(document.createElement("table"));
-		const tbody=groupObj.containerEl=groupTable.appendChild(document.createElement("tbody"));
+		const tbody=cellObj.containerEl=groupTable.appendChild(document.createElement("tbody"));
 		groupTable.dataset.path=path.join("-");
 		parentEl.classList.add("group-cell");
-		groupObj.el=groupTable;//so that the whole group-table can be selectedf
+		cellObj.el=groupTable;//so that the whole group-table can be selectedf
 		if (notYetCreated)
-			groupObj.creating=true;
-		groupTable.className="expansion-group "+(groupStructure.cssClass??"");
-		this.#generateExpansionCollection(groupStructure,dataIndex,groupObj,parentEl,path,rowData);
-		if (groupStructure.closedRender) {
+			cellObj.creating=true;
+		groupTable.className="expansion-group "+(groupStruct.cssClass??"");
+		this.#generateExpansionCollection(groupStruct,mainIndex,cellObj,parentEl,path,rowData);
+		if (groupStruct.closedRender) {
 			groupTable.classList.add("closed-render");
 			const renderRow=tbody.insertRow();
 			renderRow.dataset.path=path.join("-");
 			renderRow.className="group-render";
 			const renderCell=renderRow.insertCell();
-			renderCell.innerText=groupStructure.closedRender(rowData);
+			renderCell.innerText=groupStruct.closedRender(rowData);
 		}
 		return true;
 	}
 
-	#generateExpansionList(containerStruct,mainIndex,collectionObj,parentEl,path,rowData) {
+		/**
+	 * Creates expansion content based on the provided structure.
+	 *
+	 * @param {object} listStruct Structure object defining what to create.
+	 * @param {number} mainIndex Index of the main data row that this expansion belongs to.
+	 * @param {object} cellObj The object representing the cell that is being created.
+	 * @param {HTMLElement} parentEl The parent element to which the created elements should be appended.
+	 * @param {number[]} path Keeps track of the "path" by adding and removing index numbers when entering and leaving 
+	 * 		nesting levels. This path is added as a data attribute to interactive cells so that the corresponding cell
+	 * 		object can later be retrieved.
+	 * @param {object} rowData The actual data object that this expansion is representing.
+	 * @param {boolean} notYetCreated True if the cellObj points to data within objects that do not yet exist.
+	 * 		This happens when the context points to a data object that will be created when the user adds data.
+	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
+	 * 		struct with no create option).
+	 */
+	#generateExpansionList(listStruct,mainIndex,cellObj,parentEl,path,rowData,notYetCreated) {
 		const listTable=parentEl.appendChild(document.createElement("table"));
-		collectionObj.containerEl=listTable.appendChild(document.createElement("tbody"));
+		cellObj.containerEl=listTable.appendChild(document.createElement("tbody"));
 		listTable.className="expansion-list";
-		if (containerStruct.titlesColWidth!=false) {
+		if (listStruct.titlesColWidth!=false) {
 			let titlesCol=document.createElement("col");
 			listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
-			if (containerStruct.titlesColWidth!=null)
-				titlesCol.style.width=containerStruct.titlesColWidth;
+			if (listStruct.titlesColWidth!=null)
+				titlesCol.style.width=listStruct.titlesColWidth;
 		}
-		return this.#generateExpansionCollection(containerStruct,mainIndex,collectionObj,parentEl,path,rowData);
+		return this.#generateExpansionCollection(listStruct,mainIndex,cellObj,parentEl,path,rowData);
 	}
 
-	#generateExpansionLineup(containerStruct,mainIndex,collectionObj,parentEl,path,rowData) {
-		collectionObj.containerEl=parentEl.appendChild(document.createElement("div"));
-		collectionObj.containerEl.classList.add("lineup","collection",...containerStruct.cssClass?.split(" ")??[]);
-		return this.#generateExpansionCollection(containerStruct,mainIndex,collectionObj,parentEl,path,rowData);
+	/**
+	 * Creates expansion content based on the provided structure.
+	 *
+	 * @param {object} lineupStruct Structure object defining what to create.
+	 * @param {number} mainIndex Index of the main data row that this expansion belongs to.
+	 * @param {object} cellObject The object representing the cell that is being created.
+	 * @param {HTMLElement} parentEl The parent element to which the created elements should be appended.
+	 * @param {number[]} path Keeps track of the "path" by adding and removing index numbers when entering and leaving 
+	 * 		nesting levels. This path is added as a data attribute to interactive cells so that the corresponding cell
+	 * 		object can later be retrieved.
+	 * @param {object} rowData The actual data object that this expansion is representing.
+	 * @param {boolean} notYetCreated True if the cellObj points to data within objects that do not yet exist.
+	 * 		This happens when the context points to a data object that will be created when the user adds data.
+	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
+	 * 		struct with no create option).
+	 */
+	#generateExpansionLineup(lineupStruct,mainIndex,cellObj,parentEl,path,rowData,notYetCreated) {
+		cellObj.containerEl=parentEl.appendChild(document.createElement("div"));
+		cellObj.containerEl.classList.add("lineup","collection",...lineupStruct.cssClass?.split(" ")??[]);
+		return this.#generateExpansionCollection(lineupStruct,mainIndex,cellObj,parentEl,path,rowData);
 	}
 
 	/**
@@ -1470,21 +1567,26 @@ class Tablance {
 	 * A context entry does not produce its own visible container but instead
 	 * changes the data scope to a nested object on the current row.
 	 * Its child entries are then generated using this nested object as their data source.
-	 * @param {Object} containerStruct The context-structure definition.
-	 * @param {Number} mainIndex The main index of the parent row.
-	 * @param {Object} collectionObj The current collection object.
-	 * @param {HTMLElement} parentEl The element that receives rendered content.
-	 * @param {Array<int>} path Array describing current nesting path.
-	 * @param {Object} rowData The full record for the current row.
-	 * @param {Boolean} notYetCreated If the cellObj point to data within objects that not yet exist
+	 * @param {object} contextStruct Structure object defining what to create.
+	 * @param {number} mainIndex Index of the main data row that this expansion belongs to.
+	 * @param {object} cellObject The object representing the cell that is being created.
+	 * @param {HTMLElement} parentEl The parent element to which the created elements should be appended.
+	 * @param {number[]} path Keeps track of the "path" by adding and removing index numbers when entering and leaving 
+	 * 		nesting levels. This path is added as a data attribute to interactive cells so that the corresponding cell
+	 * 		object can later be retrieved.
+	 * @param {object} rowData The actual data object that this expansion is representing.
+	 * @param {boolean} notYetCreated True if the cellObj points to data within objects that do not yet exist.
+	 * 		This happens when the context points to a data object that will be created when the user adds data.
+	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
+	 * 		struct with no create option).
 	 */
-	#generateContext(containerStruct, mainIndex, collectionObj, parentEl, path, rowData,notYetCreated) {
-		if (!rowData[containerStruct.id]) {//if the structure point to data within objects that doesn't yet exist
+	#generateContext(contextStruct,mainIndex,cellObject,parentEl,path,rowData,notYetCreated) {
+		if (!rowData[contextStruct.id]) {//if the structure point to data within objects that doesn't yet exist
 			notYetCreated=true;
-			rowData[containerStruct.id]={};
+			rowData[contextStruct.id]={};
 		}
-		return this.#generateExpansionContent
-			(containerStruct.entry, mainIndex, collectionObj, parentEl, path,rowData[containerStruct.id],notYetCreated);
+		return this.#generateExpansionContent(contextStruct.entry, mainIndex, cellObject, parentEl, path
+			,rowData[contextStruct.id],notYetCreated);
 	}
 	
 
@@ -1578,7 +1680,7 @@ class Tablance {
 		return itemObj;
 	}
 
-	#generateField(fieldStructure,mainIndex,cellObject,parentEl,path,rowData) {
+	#generateField(fieldStruct,mainIndex,cellObject,parentEl,path,rowData) {
 		cellObject.select=()=>this.#selectExpansionCell(cellObject);
 		cellObject.el=parentEl;
 		this.#updateExpansionCell(cellObject,rowData);
