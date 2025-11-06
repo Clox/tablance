@@ -136,7 +136,6 @@ class Tablance {
 	#tooltip;//reference to html-element used as tooltip
 	#colIndicesByAutoId;//map from autoId to column-index in main table.
 	#dependenciesByAutoId;//map from autoId to array of cellIds that depend on it.
-	#fieldsByCellId;//map from cellId (or id if cellId isn't set) to cellObject for fields in expansion
 							
 
 	/**
@@ -710,63 +709,65 @@ class Tablance {
 	 * After this runs:
 	 *  - Every struct (columns and expansion entries) has a unique numeric `autoId` (immutable thereafter).
 	 *  - Dependencies are expressed purely as autoId → autoId[] in #dependenciesByAutoId.
-	 *  - Developer names (`cellId` / `id`) are only used here to resolve dependsOn, then ignored for deps.
+	 *  - Developer IDs (`cellId` / `id`) are used only here to resolve dependsOn, then ignored for deps.
 	 *  - Column lookup is #colIndicesByAutoId: autoId → columnIndex (columns only).
+	 *  - Explicit cellIds always override implicit ids with the same name.
 	 */
 	#buildDependencyGraph() {
-		// reset
-		this.#dependenciesByAutoId = {};  // autoId -> autoId[]
-		this.#colIndicesByAutoId = {};    // autoId -> colIndex
+		this.#dependenciesByAutoId = {};  // autoId -> [autoId, autoId, ...]
+		this.#colIndicesByAutoId = {};    // autoId -> columnIndex
 
-		// ---------- PASS 1: assign autoIds + collect name->autoId + cache raw dependsOn ----------
+		// ---------- PASS 1: assign autoIds + collect id→autoId mappings ----------
 		let autoIdCounter = 0;
-		const nameToAutoId = Object.create(null); // { cellId|id : autoId }
+		const explicitIdsToAutoId = Object.create(null); // { cellId : autoId }
+		const implicitIdsToAutoId = Object.create(null); // { id : autoId }
+		const seenCellIds = Object.create(null);         // for duplicate explicit cellId check
 
-		const stack = [...this.#colStructs, this.#expansion];
+		const stack = [...this.#colStructs, ...this.#expansion.entries];
 
-		while (stack.length) {
-			const struct = stack.pop();
-
+		for (let struct; struct=stack.pop();) {
 			// assign permanent internal id
 			struct.autoId = ++autoIdCounter;
 
-			// if struct is named (cellId preferred, else id), register name -> autoId (and guard duplicates)
-			const name = struct.cellId ?? struct.id;
-			if (name != null) {
-				if (nameToAutoId[name] != null)
-					throw new Error(`Duplicate struct name "${name}" detected (cellId/id must be unique).`);
-				nameToAutoId[name] = struct.autoId;
-			}
+			// detect duplicate explicit cellIds
+			if (struct.cellId != null) {
+				if (seenCellIds[struct.cellId])
+					throw new Error(`Duplicate explicit cellId "${struct.cellId}" detected.`);
+				seenCellIds[struct.cellId] = true;
+				explicitIdsToAutoId[struct.cellId] = struct.autoId;
+			} else if (struct.id != null && !(struct.id in implicitIdsToAutoId))// implicit duplicates allowed; keep first
+				implicitIdsToAutoId[struct.id] = struct.autoId;
 
-			if (struct.entries)
-				stack.push(...struct.entries);
-			else if (struct.entry)
-				stack.push(struct.entry);
+			// descend into nested structures
+			stack.push(...(struct.entries ?? [struct.entry]));
 		}
 
-		// ---------- PASS 2: resolve dependsOn names -> autoIds and fill dependenciesByAutoId ----------
-		// reuse the same const stack by refilling it
-		stack.push(...this.#colStructs, ...this.#expansion);
+		// Merge implicit and explicit IDs; explicit always overrides implicit
+		const resolvedIdsToAutoId = Object.assign(Object.create(null),implicitIdsToAutoId,explicitIdsToAutoId);
 
-		while (stack.length) {
-			const struct = stack.pop();
+		// ---------- PASS 2: resolve dependsOn -> autoIds and fill dependenciesByAutoId ----------
+		stack.push(...this.#colStructs, ...this.#expansion.entries);
+
+		for (let struct; struct=stack.pop();) {
 			if (struct.dependsOn)
-				for (const depName of Array.isArray(struct.dependsOn)? struct.dependsOn: [struct.dependsOn]) {
-					const depAutoId = nameToAutoId[depName];
+				for (const depName of Array.isArray(struct.dependsOn) ? struct.dependsOn : [struct.dependsOn]) {
+					const depAutoId = resolvedIdsToAutoId[depName];
 					if (depAutoId != null)
 						(this.#dependenciesByAutoId[depAutoId] ??= []).push(struct.autoId);
+					// optionally warn if depName not found:
+					else console.warn(`Unknown dependency "${depName}" in struct`, struct);
 				}
 
-
-			if (struct.entries)
-				stack.push(...struct.entries);
-			else if (struct.entry)
-				stack.push(struct.entry);
+				stack.push(...(struct.entries ?? [struct.entry]));
 		}
 
-		for (let i = 0; i < this.#colStructs.length; i++)
-			this.#colIndicesByAutoId[this.#colStructs[i].autoId] = i;//map autoId -> colIndex
+		// build column autoId -> columnIndex map (columns only) ----------
+		for (let i = 0, col; col=this.#colStructs[i]; i++)
+			this.#colIndicesByAutoId[col.autoId] = i;
 	}
+
+
+
 
 
 
@@ -776,18 +777,20 @@ class Tablance {
 	 * Creates new contexts for repeated structures so that their descendants
 	 * have independent lookup scopes.
 	 */
-	#buildCellObjectIndex(cellObject, context) {
-		for (const cell of structs) {
-			if (cell.cellId)
-				context[cell.cellId] = cell;
+	#buildCellLookup(cellObject, context) {//build autoIds -> cellObject. when a field is changed, check if it exists in dependenciesByAutoId. If it does it should be an array of autoIds that depend on the changed field. iterate each one and call update()
+		if (!cellObject.parent)
+			context=cellObject.cellObjectsByCellIds=new Object.create(null);
+		for (const cell of cellObject.children) {
 
-			if (cell.type === "repeated") {
+			if (cell.struct.type==="field")
+				context[cell.struct.autoId] = cell;
+			else if (cell.struct.type === "repeated") {
 				const newContext = {};
 				cell.cellObjectsByCellIds = newContext;
 				if (cell.children)
-					this.#buildCellObjectIndex(cell.children, newContext);
+					this.#buildCellLookup(cell.children, newContext);
 			} else if (cell.children) {
-				this.#buildCellObjectIndex(cell.children, context);
+				this.#buildCellLookup(cell.children, context);
 			}
 		}
 	}
@@ -1311,7 +1314,7 @@ class Tablance {
 		shadowLine.className="expansion-shadow";
 		const cellObject=this.#openExpansions[rowIndex]={};
 		this.#generateExpansionContent(this.#expansion,rowIndex,cellObject,expansionDiv,[],this.#data[rowIndex]);
-		this.#buildCellObjectIndex(cellObject)
+		this.#buildCellLookup(cellObject);
 		cellObject.rowIndex=rowIndex;
 		return expansionRow;
 	}
