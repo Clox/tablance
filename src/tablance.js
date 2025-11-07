@@ -714,8 +714,8 @@ class Tablance {
 	 *  - Explicit cellIds always override implicit ids with the same name.
 	 */
 	#buildDependencyGraph() {
-		this.#dependenciesByAutoId = {};  // autoId -> [autoId, autoId, ...]
-		this.#colIndicesByAutoId = {};    // autoId -> columnIndex
+		this.#dependenciesByAutoId = Object.create(null);  // autoId -> [autoId, autoId, ...]
+		this.#colIndicesByAutoId = Object.create(null);    // autoId -> columnIndex
 
 		// ---------- PASS 1: assign autoIds + collect id→autoId mappings ----------
 		let autoIdCounter = 0;
@@ -724,7 +724,6 @@ class Tablance {
 		const seenCellIds = Object.create(null);         // for duplicate explicit cellId check
 
 		const stack = [...this.#colStructs, ...this.#expansion.entries];
-
 		for (let struct; struct=stack.pop();) {
 			// assign permanent internal id
 			struct.autoId = ++autoIdCounter;
@@ -735,11 +734,11 @@ class Tablance {
 					throw new Error(`Duplicate explicit cellId "${struct.cellId}" detected.`);
 				seenCellIds[struct.cellId] = true;
 				explicitIdsToAutoId[struct.cellId] = struct.autoId;
-			} else if (struct.id != null && !(struct.id in implicitIdsToAutoId))// implicit duplicates allowed; keep first
+			} else if (struct.id != null)
 				implicitIdsToAutoId[struct.id] = struct.autoId;
 
 			// descend into nested structures
-			stack.push(...(struct.entries ?? [struct.entry]));
+			stack.push(...(struct.entries ?? (struct.entry ? [struct.entry] : [])));
 		}
 
 		// Merge implicit and explicit IDs; explicit always overrides implicit
@@ -754,12 +753,11 @@ class Tablance {
 					const depAutoId = resolvedIdsToAutoId[depName];
 					if (depAutoId != null)
 						(this.#dependenciesByAutoId[depAutoId] ??= []).push(struct.autoId);
-					// optionally warn if depName not found:
 					else console.warn(`Unknown dependency "${depName}" in struct`, struct);
 				}
 
-				stack.push(...(struct.entries ?? [struct.entry]));
-		}
+				stack.push(...(struct.entries ?? (struct.entry ? [struct.entry] : [])));
+			}
 
 		// build column autoId -> columnIndex map (columns only) ----------
 		for (let i = 0, col; col=this.#colStructs[i]; i++)
@@ -777,22 +775,14 @@ class Tablance {
 	 * Creates new contexts for repeated structures so that their descendants
 	 * have independent lookup scopes.
 	 */
-	#buildCellLookup(cellObject, context) {//build autoIds -> cellObject. when a field is changed, check if it exists in dependenciesByAutoId. If it does it should be an array of autoIds that depend on the changed field. iterate each one and call update()
-		if (!cellObject.parent)
-			context=cellObject.cellObjectsByCellIds=new Object.create(null);
-		for (const cell of cellObject.children) {
-
+	#buildCellLookup(cellObject, scope) {
+		if (!cellObject.parent||cellObject.parent.struct.type==="repeated")
+			scope=Object.create(scope??null);
+		for (const cell of cellObject.children)
 			if (cell.struct.type==="field")
-				context[cell.struct.autoId] = cell;
-			else if (cell.struct.type === "repeated") {
-				const newContext = {};
-				cell.cellObjectsByCellIds = newContext;
-				if (cell.children)
-					this.#buildCellLookup(cell.children, newContext);
-			} else if (cell.children) {
-				this.#buildCellLookup(cell.children, context);
-			}
-		}
+				cell.cellObjectsByAutoId=scope;
+			else if (cell.children?.length)
+				this.#buildCellLookup(cell, scope);
 	}
 
 
@@ -2394,6 +2384,16 @@ class Tablance {
 		multiCell.classList.remove("mixed");
 	}
 
+	#updateDependents(changedCellAutoId) {
+		for (const dependentAutoId of this.#dependenciesByAutoId[changedCellAutoId]) {
+			const colIndex=this.#colIndicesByAutoId[dependentAutoId];
+			if (colIndex>=0) {
+				const tr=this.#mainTbody.querySelector(`[data-data-row-index="${this.#mainRowIndex}"]:not(.expansion)`);
+				this.#updateMainRowCell(tr.cells[colIndex],this.#colStructs[colIndex]);
+			}
+		}		
+	}
+
 	#exitEditMode(save) {
 		if (!this.#inEditMode)
 			return true;	
@@ -2450,6 +2450,7 @@ class Tablance {
 						this.#unsortCol(this.#activeStruct.id);
 					}
 				}
+				this.#updateDependents(this.#activeStruct.autoId);
 			} else
 				this.#inputVal=this.#selectedCellVal;
 			this.#selectedCellVal=this.#inputVal;

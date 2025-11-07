@@ -28,9 +28,10 @@
 				,{id:"food",title:"Food",width:"120px",input:{multiCellWidth:100,type:"select"
 					,options:foods,minOptsFilter:100,allowCreateNew:true,allowSelectEmpty:true
 					,selectInputPlaceholder:"Sök/Skapa"}}
-				,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"}}];
+				,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"}}, 
+				{title:"numtwice", render:(val,dataRow)=>dataRow.num*2, dependsOn:"num"}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
-
+				{type:"field",title:"num",id:"num", input:{type:"text"}},
 			{type:"field",title:"Format field",id:"myFormattedData"
 				,input:{type:"text", format:{ blocks: [8, 4], delimiter: "-", numericOnly: true , 
 				stripDelimiterOnSave:true}}},
@@ -155,7 +156,7 @@
 			for (let i=0; i<3; i++) {
 				data=[];
 				for (let ii=0; ii<1000; ii++) {
-					data.push({myFormattedData:123456789123,desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,descLetter:String.fromCharCode(ii)
+					data.push({num:55,myFormattedData:123456789123,desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,descLetter:String.fromCharCode(ii)
 						,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
 						,hello:"Hallå",world:"Världen",innergrejer:{foo:1337}
 						,addresses:[{street:"kaplan",zip:9999,city:"skara"},{street:"kaplan",zip:8999,city:"skara"}]
