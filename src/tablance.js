@@ -765,24 +765,18 @@ class Tablance {
 	}
 
 
-
-
-
-
-
 	/**
-	 * Build lookup maps of cell objects of all created fields keyed by their cellIds.
-	 * Creates new contexts for repeated structures so that their descendants
-	 * have independent lookup scopes.
+	 * Build lookup map of cell objects of all created fields, keyed by their autoIds.
+	 * @param {cellObject to recursively traverse} cell 
+	 * @param {outer-most cell-object} expansion 
 	 */
-	#buildCellLookup(cellObject, scope) {
-		if (!cellObject.parent||cellObject.parent.struct.type==="repeated")
-			scope=Object.create(scope??null);
-		for (const cell of cellObject.children)
-			if (cell.struct.type==="field")
-				cell.cellObjectsByAutoId=scope;
-			else if (cell.children?.length)
-				this.#buildCellLookup(cell, scope);
+	#buildCellLookup(cell, mapObject) {
+		for (const cellChild of cell.children)
+			if (cellChild.struct.type==="field")
+				(mapObject[cellChild.struct.autoId]??=[]).push(cellChild);
+			else if (cellChild.children?.length)
+				this.#buildCellLookup(cellChild, mapObject);
+		return mapObject;
 	}
 
 
@@ -1304,7 +1298,7 @@ class Tablance {
 		shadowLine.className="expansion-shadow";
 		const cellObject=this.#openExpansions[rowIndex]={};
 		this.#generateExpansionContent(this.#expansion,rowIndex,cellObject,expansionDiv,[],this.#data[rowIndex]);
-		this.#buildCellLookup(cellObject);
+		cellObject.cellObjectsByAutoId=this.#buildCellLookup(cellObject,Object.create(null));
 		cellObject.rowIndex=rowIndex;
 		return expansionRow;
 	}
@@ -2385,12 +2379,16 @@ class Tablance {
 	}
 
 	#updateDependents(changedCellAutoId) {
-		for (const dependentAutoId of this.#dependenciesByAutoId[changedCellAutoId]) {
+		const expansion=this.#openExpansions[this.#mainRowIndex];
+		for (const dependentAutoId of this.#dependenciesByAutoId[changedCellAutoId]??[]) {
 			const colIndex=this.#colIndicesByAutoId[dependentAutoId];
-			if (colIndex>=0) {
+			if (colIndex>=0) {//if main-row cell
 				const tr=this.#mainTbody.querySelector(`[data-data-row-index="${this.#mainRowIndex}"]:not(.expansion)`);
 				this.#updateMainRowCell(tr.cells[colIndex],this.#colStructs[colIndex]);
-			}
+			} else if (expansion)//if expansion-cell
+				//iterate the cell(s) pointed to by dependentAutoId. Might be multiple ones if inside repeated struct
+				for (const cellToUpdate of expansion.cellObjectsByAutoId[dependentAutoId])
+					this.#updateExpansionCell(cellToUpdate);
 		}		
 	}
 

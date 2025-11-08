@@ -31,6 +31,8 @@
 				,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"}}, 
 				{title:"numtwice", render:(val,dataRow)=>dataRow.num*2, dependsOn:"num"}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
+				{type:"field",title:"amount+10",id:"num",render:(val,rowData)=>Number(rowData.amount)+10
+					, dependsOn:"amount"},
 				{type:"field",title:"num",id:"num", input:{type:"text"}},
 			{type:"field",title:"Format field",id:"myFormattedData"
 				,input:{type:"text", format:{ blocks: [8, 4], delimiter: "-", numericOnly: true , 
