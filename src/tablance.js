@@ -764,22 +764,6 @@ class Tablance {
 			this.#colIndicesByAutoId[col.autoId] = i;
 	}
 
-
-	/**
-	 * Build lookup map of cell objects of all created fields, keyed by their autoIds.
-	 * @param {cellObject to recursively traverse} cell 
-	 * @param {outer-most cell-object} expansion 
-	 */
-	#buildCellLookup(cell, mapObject) {
-		for (const cellChild of cell.children)
-			if (cellChild.struct.type==="field")
-				(mapObject[cellChild.struct.autoId]??=[]).push(cellChild);
-			else if (cellChild.children?.length)
-				this.#buildCellLookup(cellChild, mapObject);
-		return mapObject;
-	}
-
-
 	#updateViewportHeight=()=>{
 		this.#scrollBody.style.height=this.container.clientHeight-this.#headerTable.offsetHeight
 				-(this.#searchInput?.offsetHeight??0)-this.#multiRowArea.offsetHeight+"px";
@@ -1298,7 +1282,6 @@ class Tablance {
 		shadowLine.className="expansion-shadow";
 		const cellObject=this.#openExpansions[rowIndex]={};
 		this.#generateExpansionContent(this.#expansion,rowIndex,cellObject,expansionDiv,[],this.#data[rowIndex]);
-		cellObject.cellObjectsByAutoId=this.#buildCellLookup(cellObject,Object.create(null));
 		cellObject.rowIndex=rowIndex;
 		return expansionRow;
 	}
@@ -2378,18 +2361,62 @@ class Tablance {
 		multiCell.classList.remove("mixed");
 	}
 
-	#updateDependents(changedCellAutoId) {
-		const expansion=this.#openExpansions[this.#mainRowIndex];
-		for (const dependentAutoId of this.#dependenciesByAutoId[changedCellAutoId]??[]) {
-			const colIndex=this.#colIndicesByAutoId[dependentAutoId];
-			if (colIndex>=0) {//if main-row cell
+	/**
+	 * Updates dependent cells when a cell's value changes.
+	 *
+	 * This method propagates changes from a modified cell to its dependent cells,
+	 * ensuring that the dependent cells are updated accordingly. It traverses the
+	 * hierarchical structure of cells and updates both expansion cells and main-row
+	 * cells as needed.
+	 *
+	 * @param {string} changedCellAutoId - The unique identifier (autoId) of the cell that was changed.
+	 * @param {Object} [editedCellObj] - The object representing the edited cell. This is used to determine
+	 *                                   the closest scope for dependency updates.
+	 */
+	#updateDependentCells(changedCellAutoId, editedCellObj) {
+		//NOTE this function could be improved because the relationship between the cells are already known before.
+		//So rather than traversing the hierarchy each time a cell changes, the init could build a map of dependencies
+		//in a smarter way. But for now this will do.
+
+		const dependents = this.#dependenciesByAutoId[changedCellAutoId];// Retrieve list of dependent cells
+		if (!dependents) // If there are no dependents, exit early
+			return;
+
+		const expansion = this.#openExpansions[this.#mainRowIndex];// Get the current expansion object for the main row
+		let closestScope = expansion;
+
+		// Determine the closest scope for dependency updates. Scope in this context refers to eithet the expansion-root
+		//or the closest ancestor that is an instance of repeated struct. The reason is that if a cell ic changed
+		//inside such an instance, only cells within that instance should be update because cells further up can't
+		//depend on those further down.
+		if (editedCellObj)
+			for (closestScope=editedCellObj.parent; closestScope.parent; closestScope = closestScope.parent)
+				if (closestScope.parent.struct.type === "repeated")// Stop if the parent is a repeated structure
+					break;
+
+		// Traverse the hierarchy of cells within the closest scope
+		const stack = [...closestScope.children];
+		for (let currentCell; currentCell = stack.pop();)
+			if (dependents.includes(currentCell.struct.autoId))// If current cell is a dependent, update its content
+				this.#updateExpansionCell(currentCell);
+			else if (currentCell.children)// If current cell has children, add them to the stack for further traversal
+				stack.push(...currentCell.children);
+
+		// If the closest scope is not the top-level expansion, stop here
+		if (closestScope != expansion)
+			return;
+
+		// If we are at the top-level expansion or main-row, update main-row cells
+		for (const dependentAutoId of this.#dependenciesByAutoId[changedCellAutoId] ?? []) {
+			// Get the column index for the dependent cell in the main table
+			const colIndex = this.#colIndicesByAutoId[dependentAutoId];
+			if (colIndex >= 0) { // If the dependent is a main-row cell
+				// Find the corresponding table row for the main data row
 				const tr=this.#mainTbody.querySelector(`[data-data-row-index="${this.#mainRowIndex}"]:not(.expansion)`);
-				this.#updateMainRowCell(tr.cells[colIndex],this.#colStructs[colIndex]);
-			} else if (expansion)//if expansion-cell
-				//iterate the cell(s) pointed to by dependentAutoId. Might be multiple ones if inside repeated struct
-				for (const cellToUpdate of expansion.cellObjectsByAutoId[dependentAutoId])
-					this.#updateExpansionCell(cellToUpdate);
-		}		
+				// Update the content of the dependent cell in the main table
+				this.#updateMainRowCell(tr.cells[colIndex], this.#colStructs[colIndex]);
+			}
+		}
 	}
 
 	#exitEditMode(save) {
@@ -2448,7 +2475,7 @@ class Tablance {
 						this.#unsortCol(this.#activeStruct.id);
 					}
 				}
-				this.#updateDependents(this.#activeStruct.autoId);
+				this.#updateDependentCells(this.#activeStruct.autoId,this.#activeExpCell);
 			} else
 				this.#inputVal=this.#selectedCellVal;
 			this.#selectedCellVal=this.#inputVal;
