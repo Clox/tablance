@@ -708,27 +708,32 @@ class Tablance {
 	 *
 	 * After this runs:
 	 *  - Every struct (columns and expansion entries) has a unique numeric `autoId` (immutable thereafter).
-	 *  - Dependencies are expressed purely as autoId → autoId[] in #dependenciesByAutoId.
-	 *  - Developer IDs (`cellId` / `id`) are used only here to resolve dependsOn, then ignored for deps.
+	 *  - Dependencies are expressed as autoId → [autoId, autoId, ...] in #dependenciesByAutoId.
+	 *  - Each dependee struct has dependencyPaths[dependentAutoId] = pathArray.
+	 *    Path format always begins with one of:
+	 *       ["m", colIndex]                - absolute main-column path
+	 *       ["r", "p", 2, 0]              - relative path inside same expansion scope
+	 *       ["e", 0, 1, ...]              - absolute path from expansion root
 	 *  - Column lookup is #colIndicesByAutoId: autoId → columnIndex (columns only).
 	 *  - Explicit cellIds always override implicit ids with the same name.
 	 */
 	#buildDependencyGraph() {
-		this.#dependenciesByAutoId = Object.create(null);  // autoId -> [autoId, autoId, ...]
-		this.#colIndicesByAutoId = Object.create(null);    // autoId -> columnIndex
+		this.#dependenciesByAutoId = Object.create(null);
+		this.#colIndicesByAutoId   = Object.create(null);
 
 		// ---------- PASS 1: assign autoIds + collect id→autoId mappings ----------
 		let autoIdCounter = 0;
-		const explicitIdsToAutoId = Object.create(null); // { cellId : autoId }
-		const implicitIdsToAutoId = Object.create(null); // { id : autoId }
-		const seenCellIds = Object.create(null);         // for duplicate explicit cellId check
+		const explicitIdsToAutoId = Object.create(null);
+		const implicitIdsToAutoId = Object.create(null);
+		const seenCellIds         = Object.create(null);
+		const structByAutoId      = Object.create(null);
 
 		const stack = [...this.#colStructs, ...this.#expansion.entries];
-		for (let struct; struct=stack.pop();) {
-			// assign permanent internal id
+		for (let struct; struct = stack.pop();) {
 			struct.autoId = ++autoIdCounter;
+			structByAutoId[struct.autoId] = struct;
 
-			// detect duplicate explicit cellIds
+			// shared ID logic
 			if (struct.cellId != null) {
 				if (seenCellIds[struct.cellId])
 					throw new Error(`Duplicate explicit cellId "${struct.cellId}" detected.`);
@@ -737,32 +742,87 @@ class Tablance {
 			} else if (struct.id != null)
 				implicitIdsToAutoId[struct.id] = struct.autoId;
 
-			// descend into nested structures
-			stack.push(...(struct.entries ?? (struct.entry ? [struct.entry] : [])));
+			const children = Array.isArray(struct.entries) ? struct.entries :
+				struct.entry ? [struct.entry] : [];
+			stack.push(...children);
 		}
 
-		// Merge implicit and explicit IDs; explicit always overrides implicit
-		const resolvedIdsToAutoId = Object.assign(Object.create(null),implicitIdsToAutoId,explicitIdsToAutoId);
+		const resolvedIdsToAutoId = Object.assign(Object.create(null), implicitIdsToAutoId, explicitIdsToAutoId);
 
-		// ---------- PASS 2: resolve dependsOn -> autoIds and fill dependenciesByAutoId ----------
-		stack.push(...this.#colStructs, ...this.#expansion.entries);
+		// ---------- PASS 2: assign _path ----------
+		function assignPaths(struct, path = []) {
+			struct._path = path;
+			const children = Array.isArray(struct.entries) ? struct.entries :
+				struct.entry ? [struct.entry] : [];
+			for (let i = 0; i < children.length; i++)
+				assignPaths(children[i], [...path, i]);
+		}
+		for (let i = 0; i < this.#expansion.entries.length; i++)
+			assignPaths(this.#expansion.entries[i], [i]);		
+		for (let i = 0; i < this.#colStructs.length; i++)
+			this.#colStructs[i]._path = ["m", i];
 
-		for (let struct; struct=stack.pop();) {
-			if (struct.dependsOn)
-				for (const depName of Array.isArray(struct.dependsOn) ? struct.dependsOn : [struct.dependsOn]) {
-					const depAutoId = resolvedIdsToAutoId[depName];
-					if (depAutoId != null)
-						(this.#dependenciesByAutoId[depAutoId] ??= []).push(struct.autoId);
-					else console.warn(`Unknown dependency "${depName}" in struct`, struct);
-				}
+		// ---------- helper: compute path between dependee/ dependent ----------
+		function computeDependencyPath(dependee, dependent) {
+			const fromPath = dependee._path;
+			const toPath   = dependent._path;
 
-				stack.push(...(struct.entries ?? (struct.entry ? [struct.entry] : [])));
+			// main → main
+			if (fromPath?.[0] === "m" && toPath?.[0] === "m")
+				return ["m", toPath[1]];
+
+			// expansion → main
+			if (fromPath?.[0] !== "m" && toPath?.[0] === "m")
+				return ["m", toPath[1]];
+
+			// main → expansion (absolute in expansion)
+			if (fromPath?.[0] === "m" && toPath?.[0] !== "m")
+				return ["e", ...toPath];
+
+			// expansion → expansion (relative inside expansion tree)
+			if (Array.isArray(fromPath) && Array.isArray(toPath)) {
+				let common = 0;
+				while (common < fromPath.length && common < toPath.length && fromPath[common] === toPath[common])
+					common++;
+				const up = Array(fromPath.length - common).fill("p");
+				const down = toPath.slice(common);
+				return ["r", ...up, ...down];
 			}
 
-		// build column autoId -> columnIndex map (columns only) ----------
-		for (let i = 0, col; col=this.#colStructs[i]; i++)
+			console.warn("Unhandled path relation between", dependee, dependent);
+			return null;
+		}
+
+		// ---------- PASS 3: resolve dependsOn + dependencyPaths ----------
+		stack.push(...this.#colStructs, ...this.#expansion.entries);
+		for (let struct; struct = stack.pop();) {
+			if (struct.dependsOn) {
+				const deps = Array.isArray(struct.dependsOn) ? struct.dependsOn : [struct.dependsOn];
+				for (const depName of deps) {
+					const depAutoId = resolvedIdsToAutoId[depName];
+					if (depAutoId == null) {
+						console.warn(`Unknown dependency "${depName}" in struct`, struct);
+						continue;
+					}
+					(this.#dependenciesByAutoId[depAutoId] ??= []).push(struct.autoId);
+
+					const dependee = structByAutoId[depAutoId];
+					(dependee.dependencyPaths ??= []).push(computeDependencyPath(dependee, struct));
+				}
+			}
+			const children = Array.isArray(struct.entries) ? struct.entries :
+				struct.entry ? [struct.entry] : [];
+			stack.push(...children);
+		}
+
+		// ---------- PASS 4: build column autoId → columnIndex ----------
+		for (let i = 0, col; col = this.#colStructs[i]; i++)
 			this.#colIndicesByAutoId[col.autoId] = i;
 	}
+
+
+
+
 
 	#updateViewportHeight=()=>{
 		this.#scrollBody.style.height=this.container.clientHeight-this.#headerTable.offsetHeight
@@ -2369,52 +2429,26 @@ class Tablance {
 	 * hierarchical structure of cells and updates both expansion cells and main-row
 	 * cells as needed.
 	 *
-	 * @param {string} changedCellAutoId - The unique identifier (autoId) of the cell that was changed.
+	 * @param {string} editedCellStruct - The unique identifier (autoId) of the cell that was edited.
 	 * @param {Object} [editedCellObj] - The object representing the edited cell. This is used to determine
 	 *                                   the closest scope for dependency updates.
 	 */
-	#updateDependentCells(changedCellAutoId, editedCellObj) {
-		//NOTE this function could be improved because the relationship between the cells are already known before.
-		//So rather than traversing the hierarchy each time a cell changes, the init could build a map of dependencies
-		//in a smarter way. But for now this will do.
-
-		const dependents = this.#dependenciesByAutoId[changedCellAutoId];// Retrieve list of dependent cells
-		if (!dependents) // If there are no dependents, exit early
-			return;
-
-		const expansion = this.#openExpansions[this.#mainRowIndex];// Get the current expansion object for the main row
-		let closestScope = expansion;
-
-		// Determine the closest scope for dependency updates. Scope in this context refers to eithet the expansion-root
-		//or the closest ancestor that is an instance of repeated struct. The reason is that if a cell ic changed
-		//inside such an instance, only cells within that instance should be update because cells further up can't
-		//depend on those further down.
-		if (editedCellObj)
-			for (closestScope=editedCellObj.parent; closestScope.parent; closestScope = closestScope.parent)
-				if (closestScope.parent.struct.type === "repeated")// Stop if the parent is a repeated structure
-					break;
-
-		// Traverse the hierarchy of cells within the closest scope
-		const stack = [...closestScope.children];
-		for (let currentCell; currentCell = stack.pop();)
-			if (dependents.includes(currentCell.struct.autoId))// If current cell is a dependent, update its content
-				this.#updateExpansionCell(currentCell);
-			else if (currentCell.children)// If current cell has children, add them to the stack for further traversal
-				stack.push(...currentCell.children);
-
-		// If the closest scope is not the top-level expansion, stop here
-		if (closestScope != expansion)
-			return;
-
-		// If we are at the top-level expansion or main-row, update main-row cells
-		for (const dependentAutoId of this.#dependenciesByAutoId[changedCellAutoId] ?? []) {
-			// Get the column index for the dependent cell in the main table
-			const colIndex = this.#colIndicesByAutoId[dependentAutoId];
-			if (colIndex >= 0) { // If the dependent is a main-row cell
+	#updateDependentCells(editedCellStruct, editedCellObj) {
+		for (const depPath of editedCellStruct.dependencyPaths) {
+			if (depPath[0]==="m") {
 				// Find the corresponding table row for the main data row
 				const tr=this.#mainTbody.querySelector(`[data-data-row-index="${this.#mainRowIndex}"]:not(.expansion)`);
 				// Update the content of the dependent cell in the main table
-				this.#updateMainRowCell(tr.cells[colIndex], this.#colStructs[colIndex]);
+				this.#updateMainRowCell(tr.cells[depPath[1]], this.#colStructs[depPath[1]]);
+			} else { 
+				let cell=depPath[0]==="r"?editedCellObj:this.#openExpansions[this.#mainRowIndex];
+				
+				for (let step=1; step<depPath.length; step++)
+					if (depPath[step]==="p")
+						cell = cell.parent;
+					else 
+						cell=cell.children[depPath[step]];
+				this.#updateExpansionCell(cell);
 			}
 		}
 	}
@@ -2475,7 +2509,7 @@ class Tablance {
 						this.#unsortCol(this.#activeStruct.id);
 					}
 				}
-				this.#updateDependentCells(this.#activeStruct.autoId,this.#activeExpCell);
+				this.#updateDependentCells(this.#activeStruct,this.#activeExpCell);
 			} else
 				this.#inputVal=this.#selectedCellVal;
 			this.#selectedCellVal=this.#inputVal;
