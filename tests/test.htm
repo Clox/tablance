@@ -59,9 +59,14 @@
 									,allowCreateNew:true,allowSelectEmpty:true,selectInputPlaceholder:"Sök/Skapa"}},
 				{type:"repeated",id:"addresses",sortCompare:(a,b)=>a.zip>b.zip?1:-1,entry:{type:"group",title:"Adress"
 					,entries:
-					[{type:"field",title:"Gata",id:"street"},{type:"field",title:"Postnummer",id:"zip"}
-						,{type:"field",title:"Ort",id:"city",input:{type:"text"}},{type:"field",title:"Ort i versaler"
-						,render:(val,rowVals)=>rowVals.city.toUpperCase(),dependsOn:"city"}]}},
+					[{type:"field",title:"Gata",id:"street"},
+					{type:"field",title:"Postnummer",id:"zip"},
+					{type:"field",title:"Ort",id:"city",input:{type:"text"}},
+					{type:"field",title:"Ort i versaler"
+						,render:(val,rowVals)=>rowVals.city.toUpperCase(),dependsOn:"city"},
+						{type:"field",title:"test1", render:(val,rowData, struct, mainIndex)=>myTablance._allData[mainIndex].amount, 
+						dependsOn:"amount"}
+					]}},
 				
 				
 				{type:"field",title:"Date",id:"date",input:{type:"date",onChange:(...args)=>console.log(args)}},

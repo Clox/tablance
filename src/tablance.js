@@ -2434,23 +2434,33 @@ class Tablance {
 	 *                                   the closest scope for dependency updates.
 	 */
 	#updateDependentCells(editedCellStruct, editedCellObj) {
-		for (const depPath of editedCellStruct.dependencyPaths) {
+		for (const depPath of editedCellStruct.dependencyPaths)
 			if (depPath[0]==="m") {
 				// Find the corresponding table row for the main data row
 				const tr=this.#mainTbody.querySelector(`[data-data-row-index="${this.#mainRowIndex}"]:not(.expansion)`);
 				// Update the content of the dependent cell in the main table
 				this.#updateMainRowCell(tr.cells[depPath[1]], this.#colStructs[depPath[1]]);
 			} else { 
-				let cell=depPath[0]==="r"?editedCellObj:this.#openExpansions[this.#mainRowIndex];
-				
-				for (let step=1; step<depPath.length; step++)
-					if (depPath[step]==="p")
-						cell = cell.parent;
-					else 
-						cell=cell.children[depPath[step]];
-				this.#updateExpansionCell(cell);
+				//cells is an array that potentially can hold more than 1 cell. The reason is that when going into
+				//repeated structures, it "splits" into multiple cells if there are multiple repeated-entries/instances
+				let cells=depPath[0]==="r"?[editedCellObj]:[this.#openExpansions[this.#mainRowIndex]];
+
+				for (var step=1; depPath[step]==="p"; step++)//if there are any, iterate all the p's (parent-steps)
+					cells[0] = cells[0].parent;//go up one level per p. At this point cells will only have one cell
+
+				for (; step<depPath.length; step++) {//iterate the steps
+					if (cells[0].parent?.struct.type==="repeated") {
+						const newCells=[];//will hold the new set of cells after this step
+						for (const cell of cells)
+							newCells.push(...cell.parent.children);//add all repeated-children of current cell
+						cells=newCells;//set cells to the new set of cells
+					}
+					for (let cellI=0; cellI<cells.length; cellI++)//iterate the cell(s)
+						cells[cellI]=cells[cellI].children[depPath[step]];//and do the step
+				}
+				for (const cell of cells)//iterate the cell(s) again
+					this.#updateExpansionCell(cell);//and do the actual update
 			}
-		}
 	}
 
 	#exitEditMode(save) {
