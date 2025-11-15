@@ -29,9 +29,9 @@
 					,options:foods,minOptsFilter:100,allowCreateNew:true,allowSelectEmpty:true
 					,selectInputPlaceholder:"Sök/Skapa"}}
 				,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"}}, 
-				{title:"numtwice", render:(val,dataRow)=>dataRow.num*2, dependsOn:"num"}];
+				{title:"numtwice", render:num=>num*2, dependsOn:"num"}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
-				{type:"field",title:"amount+10",render:(val,rowData)=>(Number(rowData.amount)+10).toFixed(2)
+				{type:"field",title:"amount+10",render:amount=>(Number(amount)+10).toFixed(2)
 					, dependsOn:"amount"},
 				{type:"field",title:"num",id:"num", input:{type:"text"}},
 			{type:"field",title:"Format field",id:"myFormattedData"
@@ -63,7 +63,12 @@
 					{type:"field",title:"Postnummer",id:"zip"},
 					{type:"field",title:"Ort",id:"city",input:{type:"text"}},
 					{type:"field",title:"Ort i versaler"
-						,render:(val,rowVals)=>rowVals.city.toUpperCase(),dependsOn:"city"},
+						,render:city=>{
+							console.log(city);
+							console.log(city);
+							return city.toUpperCase();
+
+						},dependsOn:"city"},
 						{type:"field",title:"test1", render:(val,rowData, struct, mainIndex)=>myTablance._allData[mainIndex].amount, 
 						dependsOn:"amount"}
 					]}},

@@ -704,121 +704,199 @@ class Tablance {
 	}
 
 	/**
-	 * Build a complete dependency graph and assign internal autoIds.
-	 *
-	 * After this runs:
-	 *  - Every struct (columns and expansion entries) has a unique numeric `autoId` (immutable thereafter).
-	 *  - Dependencies are expressed as autoId → [autoId, autoId, ...] in #dependenciesByAutoId.
-	 *  - Each dependee struct has dependencyPaths[dependentAutoId] = pathArray.
-	 *    Path format always begins with one of:
-	 *       ["m", colIndex]                - absolute main-column path
-	 *       ["r", "p", 2, 0]              - relative path inside same expansion scope
-	 *       ["e", 0, 1, ...]              - absolute path from expansion root
-	 *  - Column lookup is #colIndicesByAutoId: autoId → columnIndex (columns only).
-	 *  - Explicit cellIds always override implicit ids with the same name.
-	 */
-	#buildDependencyGraph() {
-		this.#dependenciesByAutoId = Object.create(null);
-		this.#colIndicesByAutoId   = Object.create(null);
+ * Build a complete dependency graph and assign internal autoIds.
+ *
+ * After this runs:
+ *  - Each struct gets a unique autoId.
+ *  - #dependenciesByAutoId: autoId → [dependentAutoIds].
+ *  - dependee.dependencyPaths: UI-relative path arrays to dependents.
+ *  - struct._path: full UI path.
+ *  - struct._dataContextPath: array of inherited data keys (e.g. ["address"]).
+ *  - struct.dataPath: array of keys for value-producing cells:
+ *        - cells with id → own data (["address","street"])
+ *        - cells with dependsOn → inherited dependee data (same array)
+ */
+#buildDependencyGraph() {
+	// --------------------------------------
+	// PASS 1: Assign autoIds + collect ID→autoId maps
+	// --------------------------------------
+	this.#dependenciesByAutoId = Object.create(null);
+	this.#colIndicesByAutoId   = Object.create(null);
 
-		// ---------- PASS 1: assign autoIds + collect id→autoId mappings ----------
-		let autoIdCounter = 0;
-		const explicitIdsToAutoId = Object.create(null);
-		const implicitIdsToAutoId = Object.create(null);
-		const seenCellIds         = Object.create(null);
-		const structByAutoId      = Object.create(null);
+	let autoIdCounter = 0;
+	const explicitIdsToAutoId = Object.create(null);
+	const implicitIdsToAutoId = Object.create(null);
+	const seenCellIds         = Object.create(null);
+	const structByAutoId      = Object.create(null);
 
-		const stack = [...this.#colStructs, ...this.#expansion.entries];
-		for (let struct; struct = stack.pop();) {
-			struct.autoId = ++autoIdCounter;
-			structByAutoId[struct.autoId] = struct;
+	const stack = [...this.#colStructs, ...this.#expansion.entries];
+	for (let struct; struct = stack.pop();) {
+		struct.autoId = ++autoIdCounter;
+		structByAutoId[struct.autoId] = struct;
 
-			// shared ID logic
-			if (struct.cellId != null) {
-				if (seenCellIds[struct.cellId])
-					throw new Error(`Duplicate explicit cellId "${struct.cellId}" detected.`);
-				seenCellIds[struct.cellId] = true;
-				explicitIdsToAutoId[struct.cellId] = struct.autoId;
-			} else if (struct.id != null)
-				implicitIdsToAutoId[struct.id] = struct.autoId;
-
-			const children = Array.isArray(struct.entries) ? struct.entries :
-				struct.entry ? [struct.entry] : [];
-			stack.push(...children);
+		if (struct.cellId != null) {
+			if (seenCellIds[struct.cellId])
+				throw new Error(`Duplicate explicit cellId "${struct.cellId}".`);
+			seenCellIds[struct.cellId] = true;
+			explicitIdsToAutoId[struct.cellId] = struct.autoId;
+		} else if (struct.id != null) {
+			implicitIdsToAutoId[struct.id] = struct.autoId;
 		}
 
-		const resolvedIdsToAutoId = Object.assign(Object.create(null), implicitIdsToAutoId, explicitIdsToAutoId);
-
-		// ---------- PASS 2: assign _path ----------
-		function assignPaths(struct, path = []) {
-			struct._path = path;
-			const children = Array.isArray(struct.entries) ? struct.entries :
-				struct.entry ? [struct.entry] : [];
-			for (let i = 0; i < children.length; i++)
-				assignPaths(children[i], [...path, i]);
-		}
-		for (let i = 0; i < this.#expansion.entries.length; i++)
-			assignPaths(this.#expansion.entries[i], [i]);		
-		for (let i = 0; i < this.#colStructs.length; i++)
-			this.#colStructs[i]._path = ["m", i];
-
-		// ---------- helper: compute path between dependee/ dependent ----------
-		function computeDependencyPath(dependee, dependent) {
-			const fromPath = dependee._path;
-			const toPath   = dependent._path;
-
-			// main → main
-			if (fromPath?.[0] === "m" && toPath?.[0] === "m")
-				return ["m", toPath[1]];
-
-			// expansion → main
-			if (fromPath?.[0] !== "m" && toPath?.[0] === "m")
-				return ["m", toPath[1]];
-
-			// main → expansion (absolute in expansion)
-			if (fromPath?.[0] === "m" && toPath?.[0] !== "m")
-				return ["e", ...toPath];
-
-			// expansion → expansion (relative inside expansion tree)
-			if (Array.isArray(fromPath) && Array.isArray(toPath)) {
-				let common = 0;
-				while (common < fromPath.length && common < toPath.length && fromPath[common] === toPath[common])
-					common++;
-				const up = Array(fromPath.length - common).fill("p");
-				const down = toPath.slice(common);
-				return ["r", ...up, ...down];
-			}
-
-			console.warn("Unhandled path relation between", dependee, dependent);
-			return null;
-		}
-
-		// ---------- PASS 3: resolve dependsOn + dependencyPaths ----------
-		stack.push(...this.#colStructs, ...this.#expansion.entries);
-		for (let struct; struct = stack.pop();) {
-			if (struct.dependsOn) {
-				const deps = Array.isArray(struct.dependsOn) ? struct.dependsOn : [struct.dependsOn];
-				for (const depName of deps) {
-					const depAutoId = resolvedIdsToAutoId[depName];
-					if (depAutoId == null) {
-						console.warn(`Unknown dependency "${depName}" in struct`, struct);
-						continue;
-					}
-					(this.#dependenciesByAutoId[depAutoId] ??= []).push(struct.autoId);
-
-					const dependee = structByAutoId[depAutoId];
-					(dependee.dependencyPaths ??= []).push(computeDependencyPath(dependee, struct));
-				}
-			}
-			const children = Array.isArray(struct.entries) ? struct.entries :
-				struct.entry ? [struct.entry] : [];
-			stack.push(...children);
-		}
-
-		// ---------- PASS 4: build column autoId → columnIndex ----------
-		for (let i = 0, col; col = this.#colStructs[i]; i++)
-			this.#colIndicesByAutoId[col.autoId] = i;
+		const children = Array.isArray(struct.entries)
+			? struct.entries
+			: struct.entry ? [struct.entry] : [];
+		stack.push(...children);
 	}
+
+	const resolvedIdsToAutoId = Object.assign(
+		Object.create(null),
+		implicitIdsToAutoId,
+		explicitIdsToAutoId
+	);
+
+	// Helper: join array context + a child key
+	const joinPath = (ctxArray, key) =>
+		key == null ? ctxArray : [...ctxArray, key];
+
+	// --------------------------------------
+	// PASS 2: Assign _path, _dataContextPath, and dataPath (array-based)
+	// --------------------------------------
+	//
+	//  _path:
+	//    UI-tree structural location (["m",0], [0,1], etc.)
+	//  _dataContextPath:
+	//    Array of path segments for nested data contexts (["address"])
+	//    Only needed during build; kept for debugging.
+	//  dataPath:
+	//    Final array path used at runtime (["address","street"])
+	// --------------------------------------
+	function assignPathsAndData(struct, uiPath, parentCtxPath = []) {
+		// UI path
+		struct._path = uiPath;
+
+		// Data context (array)
+		const hasCtx = (typeof struct.context === "string" && struct.context.length);
+		const myCtxPath = hasCtx
+			? [...parentCtxPath, struct.context]
+			: parentCtxPath;
+
+		struct._dataContextPath = myCtxPath;
+
+		// dataPath for own id
+		if (struct.id != null)
+			struct.dataPath = [...myCtxPath, String(struct.id)];
+
+		// Recurse
+		const children = Array.isArray(struct.entries)
+			? struct.entries
+			: struct.entry ? [struct.entry] : [];
+
+		for (let i = 0; i < children.length; i++)
+			assignPathsAndData(children[i], [...uiPath, i], myCtxPath);
+	}
+
+	// Expansion roots
+	for (let i = 0; i < this.#expansion.entries.length; i++)
+		assignPathsAndData(this.#expansion.entries[i], [i], []);
+
+	// Main columns
+	for (let i = 0; i < this.#colStructs.length; i++)
+		assignPathsAndData(this.#colStructs[i], ["m", i], []);
+
+	// --------------------------------------
+	// PASS 3: Compute UI-relative dependency paths
+	// (unchanged)
+	// --------------------------------------
+	function computeDependencyPath(dependee, dependent) {
+		const from = dependee._path;
+		const to   = dependent._path;
+
+		// main → main
+		if (from[0] === "m" && to[0] === "m")
+			return ["m", to[1]];
+
+		// expansion → main
+		if (from[0] !== "m" && to[0] === "m")
+			return ["m", to[1]];
+
+		// main → expansion
+		if (from[0] === "m" && to[0] !== "m")
+			return ["e", ...to];
+
+		// expansion → expansion (relative)
+		let common = 0;
+		while (common < from.length && common < to.length && from[common] === to[common])
+			common++;
+
+		const up   = Array(from.length - common).fill("p");
+		const down = to.slice(common);
+		return ["r", ...up, ...down];
+	}
+
+	// --------------------------------------
+	// PASS 4: Resolve dependsOn + assign dependsOnDataPath (array-based)
+	// --------------------------------------
+	stack.push(...this.#colStructs, ...this.#expansion.entries);
+
+	for (let struct; struct = stack.pop();) {
+		if (struct.id != null && struct.dependsOn != null)
+			throw new Error(`Cell cannot define both 'id' and 'dependsOn'.`);
+
+		if (struct.dependsOn) {
+			const deps = Array.isArray(struct.dependsOn)
+				? struct.dependsOn
+				: [struct.dependsOn];
+
+			const dataPaths = [];
+
+			for (const depName of deps) {
+				const depAutoId = resolvedIdsToAutoId[depName];
+				if (depAutoId == null) {
+					console.warn(`Unknown dependsOn target "${depName}".`, struct);
+					continue;
+				}
+
+				const dependee = structByAutoId[depAutoId];
+
+				// Record dependent
+				(this.#dependenciesByAutoId[depAutoId] ??= []).push(struct.autoId);
+
+				// UI-relative dependency path
+				(dependee.dependencyPaths ??= [])
+					.push(computeDependencyPath(dependee, struct));
+
+				// Array-based dataPath
+				if (!dependee.dataPath)
+					console.warn(`Dependee "${depName}" has no dataPath.`, dependee);
+				else
+					dataPaths.push(dependee.dataPath);
+			}
+
+			if (dataPaths.length) {
+				struct.dependsOnDataPaths = dataPaths;
+				if (dataPaths.length === 1)
+					struct.dependsOnDataPath = dataPaths[0];
+			}
+		}
+
+		// dependsOn-only → inherit dataPath
+		if (!struct.dataPath && struct.dependsOnDataPath)
+			struct.dataPath = struct.dependsOnDataPath;
+
+		const children = Array.isArray(struct.entries)
+			? struct.entries
+			: struct.entry ? [struct.entry] : [];
+		stack.push(...children);
+	}
+
+	// --------------------------------------
+	// PASS 5: Column autoId → column index
+	// --------------------------------------
+	for (let i = 0; i < this.#colStructs.length; i++)
+		this.#colIndicesByAutoId[this.#colStructs[i].autoId] = i;
+}
+
 
 
 
@@ -3456,11 +3534,11 @@ class Tablance {
 
 		//define all the file-meta-props
 		const lang=this.#opts.lang??{};
-		let metaEntries=[{type:"field",title:lang.fileName??"Filename",id:"name"},
-			{type:"field",title:lang.fileLastModified??"Last Modified",id:"lastModified",render:date=>
+		let metaEntries=[{type:"field",title:lang.fileName??"Filename",dataPath:["name"]},
+			{type:"field",title:lang.fileLastModified??"Last Modified",dataPath:["lastModified"],render:date=>
 			new Date(date).toISOString().slice(0, 16).replace('T', ' ')},
-			{type:"field",title:lang.fileSize??"Size",id:"size",render:size=>this.#humanFileSize(size)},
-			{type:"field",title:lang.fileType??"Type",id:"type"}];
+			{type:"field",title:lang.fileSize??"Size",dataPath:["size"],render:size=>this.#humanFileSize(size)},
+			{type:"field",title:lang.fileType??"Type",dataPath:["type"]}];
 		for (let metaI=-1,metaName; metaName=["filename","lastModified","size","type"][++metaI];)
 			if(!(fileStruct.input.fileMetasToShow?.[metaName]??this.#opts.defaultFileMetasToShow?.[metaName]??true))
 				metaEntries.splice(metaI,1);//potentially remove (some of) them
@@ -3524,13 +3602,22 @@ class Tablance {
 		}
 	}
 
+	#getValueByPath(obj, path) {
+		let cur = obj;
+		for (const key of path) {
+			if (cur == null) return undefined;
+			cur = cur[key];
+		}
+		return cur;
+	}
+
 	#updateCell(struct,el,selEl,rowData,mainIndex,cellObj=null) {
 		if (struct.input?.type==="button") {
 			this.#generateButton(struct,mainIndex,el,rowData,cellObj);
 		} else {
 			let newCellContent;
 			if (struct.render||struct.input?.type!="select") {
-				newCellContent=rowData[struct.id];
+				newCellContent=this.#getValueByPath(rowData,struct.dataPath);
 				if (struct.render)
 					newCellContent=struct.render(newCellContent,rowData,struct,mainIndex,cellObj);
 			} else { //if (struct.input?.type==="select") {
