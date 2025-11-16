@@ -27,6 +27,11 @@
 	"liveSassCompile.settings.autoprefix": [
 		"> 1%",
 		"last 2 versions"
+	],
+	"eslint.validate": [
+		"javascript",
+		"javascriptreact",
+		"typescript",
+		"typescriptreact"
 	]
-	
 }

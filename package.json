@@ -5,7 +5,9 @@
 	"main": "dist/tablance.umd.js",
 	"module": "dist/tablance.esm.js",
 	"style": "dist/tablance.css",
-	"files": ["dist"],
+	"files": [
+		"dist"
+	],
 	"scripts": {
 		"build": "rollup -c",
 		"test": "echo \"Error: no test specified\" && exit 1"
@@ -35,8 +37,9 @@
 		"pikaday": "^1.8.2"
 	},
 	"devDependencies": {
-		"rollup": "^4.0.0",
 		"@rollup/plugin-terser": "^0.4.3",
+		"eslint": "^9.39.1",
+		"rollup": "^4.0.0",
 		"rollup-plugin-import-css": "^3.1.0"
 	}
 }
