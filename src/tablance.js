@@ -1773,18 +1773,13 @@ export class Tablance {
 		const itemObj={parent:collectionOrRepeated,index:index??collectionOrRepeated.children.length};
 		if (collection.struct.type=="list") {
 			outerContainerEl=document.createElement("tr");
-			if (collection.struct.titlesColWidth!=false) {
-				const titleTd=outerContainerEl.insertCell();
-				titleTd.className="title";
-				titleTd.innerText=struct.title??"";
-			}
+			if (collection.struct.titlesColWidth!=false)
+				Object.assign(outerContainerEl.insertCell(),{className:"title",innerText:struct.title??""});
 			containerEl=outerContainerEl.insertCell();
 		} else if (collection.struct.type=="lineup") {
 			outerContainerEl=document.createElement("span");
-			if (struct.title) {
-				const header=outerContainerEl.appendChild(document.createElement("h4"));
-				header.innerHTML=struct.title;
-			}
+			if (struct.title)
+				outerContainerEl.appendChild(document.createElement("h4")).innerHTML=struct.title;
 			containerEl=itemObj.selEl=outerContainerEl.appendChild(document.createElement("div"));
 		} else if (collection.struct.type=="group") {
 			outerContainerEl=document.createElement("tr");
@@ -1825,7 +1820,7 @@ export class Tablance {
 					(collectionOrRepeated.insertionPoint.nextSibling?.rowIndex??collectionOrRepeated.children.length)
 																		-collectionOrRepeated.children.length+index];
 			collectionEl.insertBefore(outerContainerEl
-										,siblingAfter?.el.closest(".collection>*")??collectionOrRepeated.insertionPoint);
+									,siblingAfter?.el.closest(".collection>*")??collectionOrRepeated.insertionPoint);
 			collectionOrRepeated.children.splice(index??Infinity,0,itemObj);
 			if (struct.cssClass)
 				outerContainerEl.className+=" "+struct.cssClass;
@@ -2596,63 +2591,64 @@ export class Tablance {
 		if (this.#activeStruct.input.validation&&save&&!this.#validateInput(input.value))
 			return false;
 		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
-		this.container.focus({preventScroll:true});//so that #inputVal gets updated
-		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
-		this.container.focus({preventScroll:true});//so that #inputVal gets updated
+		this.container.focus({preventScroll:true});//so that #inputVal gets updated-
 
 
 		this.#inEditMode=false;
 		this.#cellCursor.classList.remove("edit-mode");
 		if (save&&this.#inputVal!=this.#selectedCellVal) {
-			let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
-			const inputVal=this.#activeStruct.input.type==="select"?this.#inputVal.value:this.#inputVal;
-				this.#activeStruct.input.onChange?.({preventDefault:()=>doUpdate=false},this.#activeStruct.id,
-						inputVal,this.#selectedCellVal
-						,this.#multiCellSelected?this.#selectedRows:this.#cellCursorDataObj
-						,this.#activeStruct,this.#activeExpCell);
-			if (doUpdate) {
-				const checked=this.#selectedRows.indexOf(this.#cellCursorDataObj)!=-1;
-				if (this.#multiCellSelected) {
-					this.#multiRowCellEdited();
-				} else {	
-					this.#cellCursorDataObj[this.#activeStruct.id]=this.#inputVal;
-					if (this.#activeExpCell){
-						const doHeightUpdate=this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj);
-						if (doHeightUpdate&&!this.#onlyExpansion)
-							this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"));
-						for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)
-							if (cell.struct.closedRender)//found a group with a closed-group-render func
-								cell.updateRenderOnClose=true;//update closed-group-render
-						if (checked) {
-							for (const multiStruct of this.#multiRowStructs) {
-								if (multiStruct.entries) {
-									for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)
-										if (cell.struct==multiStruct.origStruct) {
-											this.#updateMultiCellVals([multiStruct]);
-											break;
-										}
-								} else
-									if (this.#activeStruct==multiStruct)
-										this.#updateMultiCellVals([multiStruct]);
-							}
-						}
-					} else {
-						if (checked)
-							this.#updateMultiCellVals([this.#activeStruct]);
-						this.#updateMainRowCell(this.#selectedCell,this.#activeStruct);
-						this.#unsortCol(this.#activeStruct.id);
-					}
-				}
-				this.#updateDependentCells(this.#activeStruct,this.#activeExpCell);
-			} else
-				this.#inputVal=this.#selectedCellVal;
-			this.#selectedCellVal=this.#inputVal;
+			this.#doEditSave();
 		}
 		this.#cellCursor.innerHTML="";
 		//if (this.#activeStruct.input.type==="textarea")//also needed for file..
 		this.#adjustCursorPosSize(this.#selectedCell);
 		this.#highlightOnFocus=false;
 		return true;
+	}
+
+	#doEditSave() {
+		let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
+		const inputVal=this.#activeStruct.input.type==="select"?this.#inputVal.value:this.#inputVal;
+			this.#activeStruct.input.onChange?.({preventDefault:()=>doUpdate=false},this.#activeStruct.id,
+				inputVal,this.#selectedCellVal,this.#multiCellSelected?this.#selectedRows:this.#cellCursorDataObj
+				,this.#activeStruct,this.#activeExpCell);
+		if (doUpdate) {
+			const checked=this.#selectedRows.indexOf(this.#cellCursorDataObj)!=-1;
+			if (this.#multiCellSelected) {
+				this.#multiRowCellEdited();
+			} else {	
+				this.#cellCursorDataObj[this.#activeStruct.id]=this.#inputVal;
+				if (this.#activeExpCell){
+					const doHeightUpdate=this.#updateExpansionCell(this.#activeExpCell,this.#cellCursorDataObj);
+					if (doHeightUpdate&&!this.#onlyExpansion)
+						this.#updateExpansionHeight(this.#selectedCell.closest("tr.expansion"));
+					for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)
+						if (cell.struct.closedRender)//found a group with a closed-group-render func
+							cell.updateRenderOnClose=true;//update closed-group-render
+					if (checked) {
+						for (const multiStruct of this.#multiRowStructs) {
+							if (multiStruct.entries) {
+								for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)
+									if (cell.struct==multiStruct.origStruct) {
+										this.#updateMultiCellVals([multiStruct]);
+										break;
+									}
+							} else
+								if (this.#activeStruct==multiStruct)
+									this.#updateMultiCellVals([multiStruct]);
+						}
+					}
+				} else {
+					if (checked)
+						this.#updateMultiCellVals([this.#activeStruct]);
+					this.#updateMainRowCell(this.#selectedCell,this.#activeStruct);
+					this.#unsortCol(this.#activeStruct.id);
+				}
+			}
+			this.#updateDependentCells(this.#activeStruct,this.#activeExpCell);
+		} else
+			this.#inputVal=this.#selectedCellVal;
+		this.#selectedCellVal=this.#inputVal;
 	}
 
 	#showTooltip(message,target=this.#cellCursor) {
