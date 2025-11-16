@@ -1,5 +1,4 @@
 <head>
-	<script src="../src/tablance.js"></script>
 	<link rel="stylesheet" href="../styles/tablance.min.css">
 
 	<script src="https://cdn.jsdelivr.net/npm/pikaday/pikaday.js"></script>
@@ -7,7 +6,8 @@
 	<style>
 		body {background-color: powderblue;}
 		</style>
-	<script>
+	<script type="module">
+		import { Tablance } from "../src/tablance.js";
 		document.addEventListener("DOMContentLoaded", ()=>{
 			function descFunc(value, dataRow,col,rowIndex) {
 				return `fo<u>ob</u>ar ${rowIndex} - ${dataRow.descLetter}`

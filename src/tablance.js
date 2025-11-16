@@ -1,4 +1,4 @@
-class Tablance {
+export class Tablance {
 	container;//Readonly, container-element for table
 	neighbourTables;//Object of other Tablance-instances. Possible keys are "up" and "down". If any of these are set
 				//then if one keeps pressing up/down until there are no more cells then one will get o the next table.
@@ -481,7 +481,7 @@ class Tablance {
 		this.#opts=opts??{};
 		this.#onlyExpansion=onlyExpansion;
 		container.classList.add("tablance");
-		const allowedColProps=["id","title","width","input","type","render","html"];
+		//const allowedColProps=["id","title","width","input","type","render","html"];//should we really do filtering?
 		if (!onlyExpansion){
 			for (let col of columns) {
 				let processedCol={};
@@ -631,7 +631,7 @@ class Tablance {
 		if (cellObjToUpdate.struct.type=="field")
 			this.#updateExpansionCell(cellObjToUpdate);
 		if (scrollTo) {
-			newEl.scrollIntoView({behavior:'smooth',block:"center"});
+			cellObjToUpdate.el.scrollIntoView({behavior:'smooth',block:"center"});
 			this.#highlightElements([updatedEl,...updatedEl.getElementsByTagName('*')]);
 		}
 		this.#adjustCursorPosSize(this.#selectedCell,true);
@@ -758,32 +758,14 @@ class Tablance {
 		// PASS 2: Assign _path, _dataContextPath, and dataPath (absolute)
 		// NOTE: dataPath is only structural metadata now.
 		// --------------------------------------
-		function assignPathsAndData(struct, uiPath, parentCtx = []) {
-			struct._path = uiPath;
-	
-			const hasCtx = (typeof struct.context === "string" && struct.context.length);
-			const myCtx  = hasCtx ? [...parentCtx, struct.context] : parentCtx;
-	
-			struct._dataContextPath = myCtx;
-	
-			if (struct.id != null)
-				struct.dataPath = [...myCtx, String(struct.id)];
-	
-			const children = Array.isArray(struct.entries)
-				? struct.entries
-				: struct.entry ? [struct.entry] : [];
-	
-			for (let i = 0; i < children.length; i++)
-				assignPathsAndData(children[i], [...uiPath, i], myCtx);
-		}
 	
 		// Expansion roots
 		for (let i = 0; i < this.#expansion.entries.length; i++)
-			assignPathsAndData(this.#expansion.entries[i], [i], []);
+			this.#assignPathsAndData(this.#expansion.entries[i], [i], []);
 	
 		// Main columns
 		for (let i = 0; i < this.#colStructs.length; i++)
-			assignPathsAndData(this.#colStructs[i], ["m", i], []);
+			this.#assignPathsAndData(this.#colStructs[i], ["m", i], []);
 	
 		// --------------------------------------
 		// HELPERS: Dependency path computations
@@ -791,7 +773,8 @@ class Tablance {
 		function computeDependencyPath(dependee, dependent) {
 			const from = dependee._path;
 			const to   = dependent._path;
-			if (!from || !to) return null;
+			if (!from || !to) 
+				return null;
 	
 			// main → main
 			if (from[0] === "m" && to[0] === "m")
@@ -834,6 +817,7 @@ class Tablance {
 	
 			const up   = Array(a.length - common).fill("..");
 			const down = b.slice(common);
+
 	
 			return [...up, ...down];
 		}
@@ -926,6 +910,25 @@ class Tablance {
 		for (let i = 0; i < this.#colStructs.length; i++)
 			this.#colIndicesByAutoId[this.#colStructs[i].autoId] = i;
 	}
+
+	#assignPathsAndData(struct, uiPath, parentCtx = []) {
+		struct._path = uiPath;
+
+		const hasCtx = (typeof struct.context === "string" && struct.context.length);
+		const myCtx  = hasCtx ? [...parentCtx, struct.context] : parentCtx;
+
+		struct._dataContextPath = myCtx;
+
+		if (struct.id != null)
+			struct.dataPath = [...myCtx, String(struct.id)];
+
+		const children = Array.isArray(struct.entries)
+			? struct.entries
+			: struct.entry ? [struct.entry] : [];
+
+		for (let i = 0; i < children.length; i++)
+			this.#assignPathsAndData(children[i], [...uiPath, i], myCtx);
+	}
 	
 
 
@@ -943,21 +946,26 @@ class Tablance {
 		// set defaults for date-type
 		if (format.date) {
 			format={...format};
-			if (typeof format.blocks === "undefined") format.blocks = [4, 2, 2];
-			if (typeof format.delimiter === "undefined") format.delimiter = "-";
-			if (typeof format.numericOnly === "undefined") format.numericOnly = true;
+			if (typeof format.blocks === "undefined")
+				format.blocks = [4, 2, 2];
+			if (typeof format.delimiter === "undefined")
+				format.delimiter = "-";
+			if (typeof format.numericOnly === "undefined")
+				format.numericOnly = true;
 		}
 		// prevent non-digits before they appear
 		if (format.numericOnly) {
 			el.addEventListener("beforeinput", e => {
-				if (e.data && /\D/.test(e.data)) e.preventDefault();
+				if (e.data && /\D/.test(e.data))
+					e.preventDefault();
 			});
 			el.setAttribute("inputmode", "numeric");
 		}
 
 		// --- NEW: handle backspace over delimiters ---
 		el.addEventListener("keydown", e => {
-			if (e.key !== "Backspace" || !format.delimiter) return;
+			if (e.key !== "Backspace" || !format.delimiter)
+				return;
 
 			const pos = el.selectionStart;
 			if (pos > 0 && el.value[pos - 1] === format.delimiter) {
@@ -979,10 +987,12 @@ class Tablance {
 		// --- normal input handling ---
 		el.addEventListener("input", applyInputFormatting);
 		applyInputFormatting();//also call it once right away in case the data isn't formatted properly from the start
+	
 
 		function applyInputFormatting() {
 			let val = el.value;
-			if (format.numericOnly) val = val.replace(/\D/g, "");
+			if (format.numericOnly)
+				val = val.replace(/\D/g, "");
 
 			// ============ DATE MODE ============
 			if (format.date) {
@@ -995,11 +1005,14 @@ class Tablance {
 
 					if (m.length === 1) {
 						const first = +m;
-						if (first > 1) m = "0" + first; 
+						if (first > 1)
+							m = "0" + first; 
 					} else if (m.length === 2) {
 						let mm = +m;
-						if (mm < 1) mm = 1;
-						if (mm > 12) mm = 12;
+						if (mm < 1)
+							mm = 1;
+						if (mm > 12)
+							mm = 12;
 						m = String(mm).padStart(2, "0");
 					}
 
@@ -1014,12 +1027,15 @@ class Tablance {
 
 					if (d.length === 1) {
 						const first = +d;
-						if (first > 3) d = "0" + first;
+						if (first > 3)
+							d = "0" + first;
 					} else if (d.length === 2) {
 						let dd = +d;
 						const max = new Date(yNum, mNum, 0).getDate(); //get max (numbers of days in month)
-						if (dd < 1) dd = 1;
-						if (dd > max) dd = max;
+						if (dd < 1)
+							dd = 1;
+						if (dd > max)
+							dd = max;
 						d = String(dd).padStart(2, "0");
 					}
 
@@ -1073,7 +1089,7 @@ class Tablance {
 		this.#searchInput.addEventListener("input",e=>this.#onSearchInput(e));
 	}
 
-	#onSearchInput(e) {
+	#onSearchInput(_e) {
 		this.#filterData(this.#searchInput.value);
 	}
 
@@ -1120,7 +1136,7 @@ class Tablance {
 		return val;
 	}
 
-	#spreadsheetOnFocus(e) {
+	#spreadsheetOnFocus(_e) {
 		const tabbedTo=this.#highlightOnFocus;
 		if (this.#mainRowIndex==null&&this.#mainColIndex==null&&this.#data.length&&tabbedTo)
 				if (this.#onlyExpansion)
@@ -1144,7 +1160,7 @@ class Tablance {
 			this.#scrollToCursor();
 	}
 
-	#spreadsheetOnBlur(e) {
+	#spreadsheetOnBlur(_e) {
 		setTimeout(()=>{
 			if (!this.container.contains(document.activeElement)||this.#multiRowArea?.contains(document.activeElement)) {
 				this.#highlightOnFocus=true;
@@ -1229,8 +1245,8 @@ class Tablance {
 		if (cell)
 			return this.#selectExpansionCell(cell);
 		if (!this.#onlyExpansion)
-			this.#selectMainTableCell(this.#mainTbody.querySelector
-				(`[data-data-row-index="${this.#mainRowIndex+isGoingDown}"]`)?.cells[this.#mainColIndex]);
+			this.#selectMainTableCell(this.#mainTbody.querySelector(
+				`[data-data-row-index="${this.#mainRowIndex+isGoingDown}"]`)?.cells[this.#mainColIndex]);
 		else {
 			const nextTable=this.neighbourTables?.[isGoingDown?"down":"up"];
 			if (nextTable) {
@@ -1261,8 +1277,8 @@ class Tablance {
 		const newCellObj=this.#getFirstSelectableExpansionCell(cellObj,isGoingDown,onlyGetChild);
 		if (newCellObj)
 			return this.#selectExpansionCell(newCellObj);
-		this.#selectMainTableCell(this.#mainTbody.querySelector
-				(`[data-data-row-index="${this.#mainRowIndex+(isGoingDown||-1)}"]`)?.cells[this.#mainColIndex]);
+		this.#selectMainTableCell(this.#mainTbody.querySelector(
+				`[data-data-row-index="${this.#mainRowIndex+(isGoingDown||-1)}"]`)?.cells[this.#mainColIndex]);
 	}
 
 	/**Given a cell-object, like the expansion of a row or any of its sub-containers, it will return the first
@@ -1356,14 +1372,12 @@ class Tablance {
 	}
 
 	#insertAtCursor(myField, myValue) {
-		//IE support
-		if (document.selection) {
+		
+		if (document.selection) {//IE support
 			myField.focus();
-			sel = document.selection.createRange();
+			const sel = document.selection.createRange();
 			sel.text = myValue;
-		}
-		//MOZILLA and others
-		else if (myField.selectionStart || myField.selectionStart == '0') {
+		} else if (myField.selectionStart || myField.selectionStart == '0') {//MOZILLA and others
 			var startPos = myField.selectionStart;
 			var endPos = myField.selectionEnd;
 			myField.value = myField.value.substring(0, startPos)
@@ -1492,7 +1506,7 @@ class Tablance {
 	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
 	 * 		struct with no create option).
 	 */
-	#generateExpansionContent(struct,mainIndex,cellObject,parentEl,path,rowData,notYetCreated) {
+	#generateExpansionContent(struct,mainIndex,cellObject,parentEl,path,rowData,_notYetCreated) {
 		if (!path.length)
 			cellObject.rowIndex=mainIndex;
 		cellObject.path=[...path];
@@ -1549,12 +1563,12 @@ class Tablance {
 	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
 	 * 		struct with no create option).
 	 */
-	#generateExpansionRepeated(repeatedStruct,mainIndex,cellObject,parentEl,path,rowData,notYetCreated) {
-		cellObj.children=[];
-		let repeatData=cellObj.dataObj=rowData[repeatedStruct.id]??(rowData[repeatedStruct.id]=[]);
-		cellObj.insertionPoint=parentEl.appendChild(document.createComment("repeated-insert"));
-		repeatedStruct.create&&this.#generateRepeatedCreator(cellObj);
-		repeatData?.forEach(repeatData=>this.#repeatInsert(cellObj,false,repeatData));
+	#generateExpansionRepeated(repeatedStruct,mainIndex,cellObject,parentEl,path,rowData,_notYetCreated) {
+		cellObject.children=[];
+		let repeatData=cellObject.dataObj=rowData[repeatedStruct.id]??(rowData[repeatedStruct.id]=[]);
+		cellObject.insertionPoint=parentEl.appendChild(document.createComment("repeated-insert"));
+		repeatedStruct.create&&this.#generateRepeatedCreator(cellObject);
+		repeatData?.forEach(repeatData=>this.#repeatInsert(cellObject,false,repeatData));
 		return !!repeatData?.length||repeatedStruct.create;
 	}
 
@@ -1667,7 +1681,7 @@ class Tablance {
 	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
 	 * 		struct with no create option).
 	 */
-	#generateExpansionList(listStruct,mainIndex,cellObj,parentEl,path,rowData,notYetCreated) {
+	#generateExpansionList(listStruct,mainIndex,cellObj,parentEl,path,rowData,_notYetCreated) {
 		const listTable=parentEl.appendChild(document.createElement("table"));
 		cellObj.containerEl=listTable.appendChild(document.createElement("tbody"));
 		listTable.className="expansion-list";
@@ -1696,7 +1710,7 @@ class Tablance {
 	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
 	 * 		struct with no create option).
 	 */
-	#generateExpansionLineup(lineupStruct,mainIndex,cellObj,parentEl,path,rowData,notYetCreated) {
+	#generateExpansionLineup(lineupStruct,mainIndex,cellObj,parentEl,path,rowData,_notYetCreated) {
 		cellObj.containerEl=parentEl.appendChild(document.createElement("div"));
 		cellObj.containerEl.classList.add("lineup","collection",...lineupStruct.cssClass?.split(" ")??[]);
 		return this.#generateExpansionCollection(lineupStruct,mainIndex,cellObj,parentEl,path,rowData);
@@ -2038,7 +2052,7 @@ class Tablance {
 		input.placeholder=this.#activeStruct.input.placeholder??this.#opts.lang?.datePlaceholder??"YYYY-MM-DD";
 		input.focus();
 		
-		function onInput(e) {
+		function onInput(_e) {
 			const inputVal=input.value;
 			pika.setDate(input.value);
 			//the above line will change the text above by guessing where there should be zeroes and such so prevent
@@ -2262,8 +2276,8 @@ class Tablance {
 		dropDiv.classList.add("drop");
 		fileDiv.addEventListener("keydown",keydown);
 		fileDiv.addEventListener("click",openFileBrowser);
-		fileDiv.addEventListener("dragenter",e=>dropDiv.style.display="block");
-		dropDiv.addEventListener("dragleave",e=>dropDiv.style.display="none");
+		fileDiv.addEventListener("dragenter",_e=>dropDiv.style.display="block");
+		dropDiv.addEventListener("dragleave",_e=>dropDiv.style.display="none");
 		dropDiv.addEventListener("dragover",dragOver);//needed for drop-event to work
 		fileDiv.addEventListener("drop",fileDrop);
 		fileInput.addEventListener("change",fileChange);
@@ -2294,7 +2308,7 @@ class Tablance {
 			});
 			self.#activeStruct.input.fileUploadHandler?.
 						(xhr,file,self.#activeStruct,self.#cellCursorDataObj,self.#mainRowIndex,self.#activeExpCell);
-			xhr?.addEventListener("load",e=>{
+			xhr?.addEventListener("load",_e=>{
 				self.#mapRemove(self.#filesMeta,file);//can get rid of our metadata now
 				for (const bar of fileMeta.bars) {
 					if (bar.isConnected) {
@@ -2310,7 +2324,7 @@ class Tablance {
 			self.#exitEditMode(true);
 			self.#selectExpansionCell(self.#activeExpCell);
 		}
-		function openFileBrowser(e) {
+		function openFileBrowser(_e) {
 			fileInput.click();
 		}
 		function fileChange(e) {
@@ -2337,7 +2351,7 @@ class Tablance {
 		textarea.value=this.#selectedCellVal??"";
 		textarea.addEventListener("keydown",keydown.bind(this));
 		textarea.focus();
-		textarea.addEventListener("change",e=>this.#inputVal=textarea.value);
+		textarea.addEventListener("change",_e=>this.#inputVal=textarea.value);
 		if (this.#activeStruct.input.maxLength)
 			textarea.maxLength=this.#activeStruct.input.maxLength;
 		textarea.placeholder=this.#activeStruct.input.placeholder??"";
@@ -2424,7 +2438,7 @@ class Tablance {
 			return foundSelected;
 		}
 
-		function inputInput(e) {
+		function inputInput(_e) {
 			canCreate=!!input.value;
 			if (!input.value.includes(filterText)||!filterText)//unless text was added to beginning or end
 				looseOpts.splice(0,Infinity,...strctInp.options);//start off with all options there are
@@ -2963,7 +2977,7 @@ class Tablance {
 		this.#mainTable=this.#tableSizer.appendChild(document.createElement("table"));
 		this.#mainTable.className="main-table";
 		this.#mainTbody=this.#mainTable.appendChild(document.createElement("tbody"));
-		for (let colStruct of this.#colStructs) {
+		for (let i = 0; i < this.#colStructs.length; i++) {
 			let col=document.createElement("col");
 			this.#cols.push(col);
 			this.#mainTable.appendChild(document.createElement("colgroup")).appendChild(col);
@@ -3092,8 +3106,7 @@ class Tablance {
 							const copies=newRepeatedObjects[dataKey]=[];
 							while (copies.push(structuredClone(data[dataKey]))<self.#selectedRows.length);
 							origStruct.onCreate?.(copies,self.#selectedRows,origStruct,true);
-						}
-						else
+						} else
 							origStruct.input.onChange?.(()=>delete data[dataKey],data[dataKey]
 																				,null,self.#selectedRows,origStruct);
 						break;
@@ -3134,7 +3147,7 @@ class Tablance {
 		inputDiv.appendChild(header).innerText=struct.title;
 		inputDiv.classList.add("col");
 		inputDiv.style.width=struct.input?.multiCellWidth??
-									(/\d+\%/.test(struct.width)?struct.width:header.offsetWidth+30)+"px";
+									(/\d+%/.test(struct.width)?struct.width:header.offsetWidth+30)+"px";
 		const cellDiv=inputDiv.appendChild(document.createElement("div"));
 		this.#multiCells.push(cellDiv);
 		cellDiv.classList.add("cell");
@@ -3194,7 +3207,7 @@ class Tablance {
 	#updateColsWidths() {
 		if (this.container.offsetWidth>this.#containerWidth) {
 			let areaWidth=this.#tableSizer.offsetWidth;
-			const percentageWidthRegex=/\d+\%/;
+			const percentageWidthRegex=/\d+%/;
 			let totalFixedWidth=0;
 			let numUndefinedWidths=0;
 			for (let col of this.#colStructs)
@@ -3324,7 +3337,7 @@ class Tablance {
 		this.#refreshTableSizerNoExpansions();
 	}
 
-	#onScrollStaticRowHeightExpansion(e) {
+	#onScrollStaticRowHeightExpansion(_e) {
 		const newScrY=Math.max(this.#scrollBody.scrollTop-this.#scrollMarginPx,0);
 		if (newScrY>parseInt(this.#scrollY)) {//if scrolling down
 			while (newScrY-parseInt(this.#tableSizer.style.top)
@@ -3637,7 +3650,8 @@ class Tablance {
 	#getValueByPath(obj, path) {
 		let cur = obj;
 		for (const key of path) {
-			if (cur == null) return undefined;
+			if (cur == null)
+				return undefined;
 			cur = cur[key];
 		}
 		return cur;

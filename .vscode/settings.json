@@ -6,6 +6,14 @@
 	"editor.insertSpaces": false,
 	"editor.wordSeparators": "`~!@#%^&*()-=+[{]}\\|;:'\",.<>/?",
 	"editor.bracketPairColorization.enabled": true,
+
+	"workbench.colorCustomizations": {
+		"editorWarning.foreground": "#FFFF0015",
+		"editorWarning.border": "#00000000",
+		"editorWarning.background": "#00000000"
+	},
+	"editor.diagnostics.warning": false,//to remove the yellow squiggly lines covering functions that are too long. 
+											//they become so hard to read and fix with the squigglies there
 	"liveSassCompile.settings.formats": [
 		{
 			"format": "expanded",
@@ -33,5 +41,5 @@
 		"javascriptreact",
 		"typescript",
 		"typescriptreact"
-	]
+	],
 }
