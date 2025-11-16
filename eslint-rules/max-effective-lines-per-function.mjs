@@ -33,6 +33,15 @@ export default {
             return name && ignoreNames.includes(name);
         }
 
+		function isPureDeclarationLine(trimmed) {
+			 // Matches:
+            // let x;
+            // const y;
+            // var z, k;
+			return /^(let|const|var)\s+[A-Za-z_$][A-Za-z0-9_$]*(\s*,\s*[A-Za-z_$][A-Za-z0-9_$]*)*\s*;?\s*(\/\/.*)?$/.test(trimmed);
+		}
+		
+
         function check(node) {
             if (!node.loc) return;
             if (shouldIgnore(node)) return;
@@ -45,10 +54,13 @@ export default {
             for (const line of lines) {
                 const trimmed = line.trim();
 
-                if (!trimmed) continue;                          // blank line
-                if (trimmed.startsWith("//")) continue;          // single-line comment
-                if (trimmed.startsWith("/*")) continue;          // block comment
-                if (/^[{};]+$/.test(trimmed)) continue;          // braces-only or punctuation
+                if (!trimmed) continue;                      // blank line
+                if (trimmed.startsWith("//")) continue;      // single-line comment
+                if (trimmed.startsWith("/*")) continue;      // block comment
+                if (/^[{};]+$/.test(trimmed)) continue;      // braces-only or punctuation
+
+                // NEW RULE: Skip pure declarations without assignment
+                if (isPureDeclarationLine(trimmed)) continue;
 
                 effective++;
             }
@@ -62,42 +74,40 @@ export default {
             }
         }
 
-		return {
+        return {
+            // Free-standing functions
+            FunctionDeclaration: check,
 
-			// Free-standing functions
-			FunctionDeclaration: check,
-		
-			// Class & object methods
-			MethodDefinition(node) {
-				if (node.value) check(node.value);
-			},
-		
-			Property(node) {
-				// Object literal methods: foo() { ... }
-				if (node.value && (node.value.type === "FunctionExpression" || node.value.type === "ArrowFunctionExpression")) {
-					check(node.value);
-				}
-			},
-		
-			// Arrow functions and function expressions NOT inside methods
-			FunctionExpression(node) {
-				if (
-					node.parent.type !== "MethodDefinition" &&
-					node.parent.type !== "Property"
-				) {
-					check(node);
-				}
-			},
-		
-			ArrowFunctionExpression(node) {
-				if (
-					node.parent.type !== "MethodDefinition" &&
-					node.parent.type !== "Property"
-				) {
-					check(node);
-				}
-			}
-		};
-		
+            // Class & object methods
+            MethodDefinition(node) {
+                if (node.value) check(node.value);
+            },
+
+            Property(node) {
+                // Object literal methods: foo() { ... }
+                if (node.value && (node.value.type === "FunctionExpression" || node.value.type === "ArrowFunctionExpression")) {
+                    check(node.value);
+                }
+            },
+
+            // Arrow functions and function expressions NOT inside methods
+            FunctionExpression(node) {
+                if (
+                    node.parent.type !== "MethodDefinition" &&
+                    node.parent.type !== "Property"
+                ) {
+                    check(node);
+                }
+            },
+
+            ArrowFunctionExpression(node) {
+                if (
+                    node.parent.type !== "MethodDefinition" &&
+                    node.parent.type !== "Property"
+                ) {
+                    check(node);
+                }
+            }
+        };
     }
 };

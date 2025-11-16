@@ -557,7 +557,7 @@ export class Tablance {
 	updateData(dataRow_or_mainIndex,dataPath,newData,scrollTo=false,onlyRefresh=false) {
 		let dataRow;//simply an element from #data, e.g. a whole dataset for a row of the maintable.
 		let mainIndx;//the index of dataRow
-		let updatedEl;
+		let updatedEls=[];
 		if (!isNaN(dataRow_or_mainIndex))
 			dataRow=this.#data[mainIndx=dataRow_or_mainIndex];
 		else //if (typeof dataRow_or_mainIndex=="object")
@@ -572,9 +572,9 @@ export class Tablance {
 				//key is now either property-name, string-int for index, or empty string for pushing
 				if (i==dataPath.length-1)//if last step
 					dataPortion[key||dataPortion.length]=newData;//assign the data
-				else if (!key) {//not last step and empty string, meaning push
+				else if (!key)//not last step and empty string, meaning push
 					dataPortion=dataPortion[dataPortion.length]={};//do push
-				} else//not last step and key is index or property-name
+				else//not last step and key is index or property-name
 					dataPortion=dataPortion[key]??(dataPortion[key]=i%2?[]:{});
 			}
 		}
@@ -583,14 +583,13 @@ export class Tablance {
 			return;//the row to be updated is outside of view. It'll be updated automatically if scrolled into view
 		
 		//is it a column of the main-table?
-		if (dataPath.length==1) {//it's possible only if the path is a single id-key..
+		if (dataPath.length==1) //it's possible only if the path is a single id-key..
 			for (let colI=-1,colStruct;colStruct=this.#colStructs[++colI];)
 				if (colStruct.id==dataPath[0]) {//if true then yes, it was a column of main-table
 					dataRow[colStruct.id]=newData;//update the actual data
 					const tr=this.#mainTbody.querySelector(`[data-data-row-index="${mainIndx}"]:not(.expansion)`);
 					return this.#updateMainRowCell(tr.cells[colI],colStruct);//update it and be done with this
 				}
-		}
 
 		//The data is somewhere in expansion
 		
@@ -605,7 +604,7 @@ export class Tablance {
 		//pathIndex would be set to the index of the last element in dataPath
 		for (let i=0,cellObjId; cellObjId=dataPath[i]; i+=2) {
 			const arrayIndex=dataPath[i+1]?.replace(/^\[|\]$/g,"");
-			cellObjToUpdate=findCellObj(cellObjToUpdate,cellObjId);
+			cellObjToUpdate=this.#findDescendantOfIdInCellObj(cellObjToUpdate,cellObjId);
 			if (cellObjToUpdate.struct.type=="repeated") {//should be true until possibly last iteration
 				if (i==dataPath.length-1) {//final array-index not specified. replace all of the data in repeated
 
@@ -617,12 +616,12 @@ export class Tablance {
 
 					//insert all the new data
 					cellObjToUpdate.dataObj=cellObjToUpdate.parent.dataObj[cellObjToUpdate.struct.id];
-					cellObjToUpdate.dataObj.forEach(dataEntry=>this.#repeatInsert(cellObjToUpdate,false,dataEntry));
+					cellObjToUpdate.dataObj.forEach(dataEntry=>updatedEls.push(this.#repeatInsert(cellObjToUpdate,false,dataEntry)));
 					break;
 				} else if (arrayIndex) {//index pointing at existing repeated-child
 					cellObjToUpdate=cellObjToUpdate.children[arrayIndex];
 				} else {//[] - insert new
-					this.#repeatInsert(cellObjToUpdate,false,cellObjToUpdate.dataObj.at(-1));
+					updatedEls.push(this.#repeatInsert(cellObjToUpdate,false,cellObjToUpdate.dataObj.at(-1)));
 					break;
 				}
 			}
@@ -632,21 +631,20 @@ export class Tablance {
 			this.#updateExpansionCell(cellObjToUpdate);
 		if (scrollTo) {
 			cellObjToUpdate.el.scrollIntoView({behavior:'smooth',block:"center"});
-			this.#highlightElements([updatedEl,...updatedEl.getElementsByTagName('*')]);
+			updatedEls.forEach(el=>this.#highlightElements([el,...el.getElementsByTagName('*')]));
 		}
 		this.#adjustCursorPosSize(this.#selectedCell,true);
-		return this;
+	}
 
-		function findCellObj(searchInObj,idToFind) {
-			for (const child of searchInObj.children)
-				if (child.struct.id==idToFind)//if true then its the repeated-obj we're looking for
-					return child;
-				else if (child.children) {//if container-obj
-					const result=findCellObj(child,idToFind);
-					if (result)
-						return result;
-				}
-		}
+	#findDescendantOfIdInCellObj(searchInObj,idToFind) {
+		for (const child of searchInObj.children)
+			if (child.struct.id==idToFind)//if true then its the repeated-obj we're looking for
+				return child;
+			else if (child.children) {//if container-obj
+				const result=this.#findDescendantOfIdInCellObj(child,idToFind);
+				if (result)
+					return result;
+			}
 	}
 
 	/**Expands a row and returns the expansion-object.
