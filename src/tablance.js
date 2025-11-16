@@ -980,17 +980,9 @@ export class Tablance {
 	}
 
 	#attachInputFormatter(el, format) {
-		// set defaults for date-type
-		if (format.date) {
-			format={...format};
-			if (typeof format.blocks === "undefined")
-				format.blocks = [4, 2, 2];
-			if (typeof format.delimiter === "undefined")
-				format.delimiter = "-";
-			if (typeof format.numericOnly === "undefined")
-				format.numericOnly = true;
-		}
-		// prevent non-digits before they appear
+		format = this.#normalizeInputFormat(format);
+	
+		// Numeric filtering
 		if (format.numericOnly) {
 			el.addEventListener("beforeinput", e => {
 				if (e.data && /\D/.test(e.data))
@@ -998,126 +990,121 @@ export class Tablance {
 			});
 			el.setAttribute("inputmode", "numeric");
 		}
-
-		// --- NEW: handle backspace over delimiters ---
+	
+		// Backspace over delimiter
 		el.addEventListener("keydown", e => {
 			if (e.key !== "Backspace" || !format.delimiter)
 				return;
-
+	
 			const pos = el.selectionStart;
 			if (pos > 0 && el.value[pos - 1] === format.delimiter) {
-				e.preventDefault(); // stop normal backspace
-				let val = el.value;
-
-				// remove delimiter and char before it
-				const newVal = val.slice(0, pos - 2) + val.slice(pos);
-				const newPos = pos - 2;
-
-				el.value = newVal;
-				el.setSelectionRange(newPos, newPos);
-
-				// trigger reformat (simulate normal flow)
+				e.preventDefault();
+				el.value = el.value.slice(0, pos - 2) + el.value.slice(pos);
+				el.setSelectionRange(pos - 2, pos - 2);
 				el.dispatchEvent(new Event("input"));
 			}
 		});
-
-		// --- normal input handling ---
-		el.addEventListener("input", applyInputFormatting);
-		applyInputFormatting();//also call it once right away in case the data isn't formatted properly from the start
 	
-
-		function applyInputFormatting() {
-			let val = el.value;
-			if (format.numericOnly)
-				val = val.replace(/\D/g, "");
-
-			// ============ DATE MODE ============
-			if (format.date) {
-				let digits = val;
-
-				// --- clamp/pad month smartly ---
-				if (digits.length >= 5) {
-					const y = digits.slice(0, 4);
-					let m = digits.slice(4, 6);
-
-					if (m.length === 1) {
-						const first = +m;
-						if (first > 1)
-							m = "0" + first; 
-					} else if (m.length === 2) {
-						let mm = +m;
-						if (mm < 1)
-							mm = 1;
-						if (mm > 12)
-							mm = 12;
-						m = String(mm).padStart(2, "0");
-					}
-
-					digits = y + m + digits.slice(6);
-				}
-
-				// --- clamp/pad day smartly ---
-				if (digits.length >= 7) {
-					const yNum = +digits.slice(0, 4);
-					const mNum = +digits.slice(4, 6);
-					let d = digits.slice(6, 8);
-
-					if (d.length === 1) {
-						const first = +d;
-						if (first > 3)
-							d = "0" + first;
-					} else if (d.length === 2) {
-						let dd = +d;
-						const max = new Date(yNum, mNum, 0).getDate(); //get max (numbers of days in month)
-						if (dd < 1)
-							dd = 1;
-						if (dd > max)
-							dd = max;
-						d = String(dd).padStart(2, "0");
-					}
-
-					digits = digits.slice(0, 6) + d + digits.slice(8);
-				}
-
-				// --- rebuild visual output ---
-				let out = "";
-				let i = 0;
-				const blocks = format.blocks || [4, 2, 2];
-				const delimiter = format.delimiter ?? "-";
-				for (let b = 0; b < blocks.length; b++) {
-					const blockLen = blocks[b];
-					const part = digits.slice(i, i + blockLen);
-					out += part;
-					i += part.length;
-					if (part.length === blockLen && b < blocks.length - 1 && delimiter)
-						out += delimiter;
-				}
-
-				el.value = out;
-				return;
-			}
-
-			// ============ GENERIC BLOCK MODE ============
-			if (Array.isArray(format.blocks) && format.blocks.length) {
-				let out = "";
-				let i = 0;
-				const delimiter = format.delimiter ?? "";
-				for (let b = 0; b < format.blocks.length; b++) {
-					const blockLen = format.blocks[b];
-					const part = val.slice(i, i + blockLen);
-					out += part;
-					i += part.length;
-					if (part.length === blockLen && b < format.blocks.length - 1 && delimiter)
-						out += delimiter;
-				}
-				el.value = out;
-				return;
-			}
-
-			// fallback: only numeric filtering
-			el.value = val;
-		}
+		// Main formatting
+		const apply = () => {
+			el.value = this.#applyInputFormatting(el.value, format);
+		};
+	
+		el.addEventListener("input", apply);
+		apply();
 	}
+	
+	#normalizeInputFormat(format) {
+		if (!format.date)
+			return format;
+	
+		format = { ...format };
+	
+		if (format.blocks === undefined)
+			format.blocks = [4, 2, 2];
+		if (format.delimiter === undefined)
+			format.delimiter = "-";
+		if (format.numericOnly === undefined)
+			format.numericOnly = true;
+	
+		return format;
+	}
+
+	#applyInputFormatting(value, format) {
+		if (format.numericOnly)
+			value = value.replace(/\D/g, "");
+	
+		// Date mode
+		if (format.date)
+			return this.#formatDateValue(value, format);
+	
+		// Generic block formatting
+		if (Array.isArray(format.blocks)) {
+			let out = "", i = 0;
+			const delim = format.delimiter ?? "";
+			for (const block of format.blocks) {
+				const part = value.slice(i, i + block);
+				out += part;
+				i += part.length;
+				if (part.length === block && delim)
+					out += delim;
+			}
+			return out;
+		}
+	
+		return value;
+	}
+
+	#formatDateValue(digits, format) {
+		// --- clamp month ---
+		if (digits.length >= 5) {
+			const y = digits.slice(0, 4);
+			let m = digits.slice(4, 6);
+	
+			if (m.length === 1 && +m > 1)
+				m = "0" + m;
+			else if (m.length === 2) {
+				let mm = Math.min(Math.max(+m, 1), 12);
+				m = String(mm).padStart(2, "0");
+			}
+			digits = y + m + digits.slice(6);
+		}
+	
+		// --- clamp day ---
+		if (digits.length >= 7) {
+			const y = +digits.slice(0, 4);
+			const m = +digits.slice(4, 6);
+			let d = digits.slice(6, 8);
+	
+			if (d.length === 1 && +d > 3)
+				d = "0" + d;
+			else if (d.length === 2) {
+				let dd = +d;
+				const max = new Date(y, m, 0).getDate();
+				d = String(Math.min(Math.max(dd, 1), max)).padStart(2, "0");
+			}
+			digits = digits.slice(0, 6) + d + digits.slice(8);
+		}
+	
+		// --- rebuild output ---
+		const blocks = format.blocks;
+		const delim  = format.delimiter ?? "-";
+		let out = "", i = 0;
+	
+		for (let b = 0; b < blocks.length; b++) {
+			const part = digits.slice(i, i + blocks[b]);
+			out += part;
+			i += part.length;
+			if (part.length === blocks[b] && b < blocks.length - 1)
+				out += delim;
+		}
+	
+		return out;
+	}
+	
+	
+	
+		
 	
 	#setupSearchbar() {
 		this.#searchInput=this.container.appendChild(document.createElement("input"));
