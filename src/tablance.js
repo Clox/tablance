@@ -1374,7 +1374,7 @@ export class Tablance {
 						return requestAnimationFrame(()=>this.#toggleRowExpanded(this.#selectedCell.parentElement));
 					if (this.#activeStruct.type=="select")
 						return this.#rowCheckboxChange(this.#selectedCell,e.shiftKey);
-					if (e.code==="Enter"||this.#activeStruct.input?.type==="button") {
+					if (e.code.endsWith("Enter")||this.#activeStruct.input?.type==="button") {
 						e.preventDefault();//prevent newline from being entered into textareas
 						return this.#enterCell(e);
 					}
