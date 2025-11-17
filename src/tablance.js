@@ -776,11 +776,7 @@ export class Tablance {
 		}
 
 		// Id/cellId → autoId lookup
-		ctx.autoIdByName = Object.assign(
-			Object.create(null),
-			ctx.implicitIdToAutoId,
-			ctx.explicitIdToAutoId
-		);
+		ctx.autoIdByName = Object.assign(Object.create(null), ctx.implicitIdToAutoId, ctx.explicitIdToAutoId);
 
 		return ctx;
 	}
@@ -819,23 +815,15 @@ export class Tablance {
 					// UI-forward dependency path
 					const fwd = this.#computeDependencyPath(dependee, struct);
 
-					if (fwd) {
-
-						if (!dependee.dependencyPaths)
-							dependee.dependencyPaths = [];
-
-						dependee.dependencyPaths.push(fwd);
-					}
+					if (fwd)
+						(dependee.dependencyPaths ??= []).push(fwd);
 
 					// classify dependency type
 					if (dependentIsExp && dependeeIsExp) {
-
 						const rev = this.#computeReversePath(struct, dependee);
-
 						if (rev && rev.length)
 							cellPaths.push(rev);
 					} else {
-
 						if (dependee._dataPath)
 							dataPaths.push(dependee._dataPath);
 						else if (dependee.id != null || dependee.cellId != null)
@@ -2577,8 +2565,8 @@ export class Tablance {
 	 *                                   the closest scope for dependency updates.
 	 */
 	#updateDependentCells(editedCellStruct, editedCellObj) {
-		for (const depPath of editedCellStruct.dependencyPaths)
-			if (depPath[0]==="m") {
+		for (const depPath of editedCellStruct.dependencyPaths??[])
+			if (depPath[0]==="m") {//if cell is in main row cell
 				// Find the corresponding table row for the main data row
 				const tr=this.#mainTbody.querySelector(`[data-data-row-index="${this.#mainRowIndex}"]:not(.expansion)`);
 				// Update the content of the dependent cell in the main table
