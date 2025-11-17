@@ -2583,7 +2583,7 @@ export class Tablance {
 				const tr=this.#mainTbody.querySelector(`[data-data-row-index="${this.#mainRowIndex}"]:not(.expansion)`);
 				// Update the content of the dependent cell in the main table
 				this.#updateMainRowCell(tr.cells[depPath[1]], this.#colStructs[depPath[1]]);
-			} else { 
+			} else if (this.#openExpansions[this.#mainRowIndex]) {//if cell is in expansion and expansion is open
 				//cells is an array that potentially can hold more than 1 cell. The reason is that when going into
 				//repeated structures, it "splits" into multiple cells if there are multiple repeated-entries/instances
 				let cells=depPath[0]==="r"?[editedCellObj]:[this.#openExpansions[this.#mainRowIndex]];
