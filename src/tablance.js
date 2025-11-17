@@ -789,9 +789,8 @@ export class Tablance {
 
 		for (let struct; struct = stack.pop();) {
 
-			if (struct.id != null && struct.dependsOn != null) {
+			if (struct.id != null && struct.dependsOn != null)
 				throw new Error(`Cell cannot define both 'id' and 'dependsOn'.`);
-			}
 
 			if (struct.dependsOn) {
 				const deps = Array.isArray(struct.dependsOn) ? struct.dependsOn : [struct.dependsOn];
@@ -2267,85 +2266,143 @@ export class Tablance {
 		map.vals.splice(index,1);
 	}
 
-	#openFileEdit() {
-		const self=this;
-		window.getSelection().empty();
-		const fileDiv=this.#cellCursor.appendChild(document.createElement("div"));
-		fileDiv.classList.add("file");
-		fileDiv.tabIndex="0";
-		fileDiv.focus();
-		const fileInput=fileDiv.appendChild(document.createElement("input"));
-		fileInput.type="file";
 
-		fileDiv.innerHTML=this.#opts.lang?.fileChooseOrDrag??"<b>Press to choose a file</b> or drag it here";
-		const dropDiv=fileDiv.appendChild(document.createElement("div"));
-		dropDiv.innerHTML=this.#opts.lang?.fileDropToUpload??"Drop to upload";
+	/**
+	 * Enter "file edit mode" for a file-input cell.
+	 *
+	 * This method is called when the user activates a file-input cell
+	 * (via Enter, double-click, etc). It temporarily replaces the cell
+	 * contents with an interactive file-drop zone that supports:
+	 *
+	 *   - Clicking or pressing Enter/Space to open the system file picker.
+	 *   - Drag-and-drop of a file directly onto the cell.
+	 *   - Visual feedback while dragging a file over the target.
+	 *
+	 * During this mode:
+	 *   - The cell is replaced with a small UI component containing
+	 *     a text prompt and a hidden <input type="file">.
+	 *   - Once a file is selected or dropped, the event is forwarded to
+	 *     #processFileUpload(), which performs the actual upload logic.
+	 *
+	 * After a file is chosen, the edit mode automatically exits and
+	 * the expansion cell is re-selected.
+	 */
+	#openFileEdit() {
+		window.getSelection().empty();
+	
+		const fileDiv = this.#cellCursor.appendChild(document.createElement("div"));
+		fileDiv.classList.add("file");
+		fileDiv.tabIndex = 0;
+		fileDiv.focus();
+	
+		const fileInput = fileDiv.appendChild(document.createElement("input"));
+		fileInput.type = "file";
+	
+		fileDiv.innerHTML = this.#opts.lang?.fileChooseOrDrag ?? "<b>Press to choose a file</b> or drag it here";
+	
+		const dropDiv = fileDiv.appendChild(document.createElement("div"));
 		dropDiv.classList.add("drop");
-		fileDiv.addEventListener("keydown",keydown);
-		fileDiv.addEventListener("click",openFileBrowser);
-		fileDiv.addEventListener("dragenter",_e=>dropDiv.style.display="block");
-		dropDiv.addEventListener("dragleave",_e=>dropDiv.style.display="none");
-		dropDiv.addEventListener("dragover",dragOver);//needed for drop-event to work
-		fileDiv.addEventListener("drop",fileDrop);
-		fileInput.addEventListener("change",fileChange);
-		function keydown(e) {
-			if (e.key==="Escape")
-				return;//let the main keydown-handler of Tablance handle this instead
+		dropDiv.innerHTML = this.#opts.lang?.fileDropToUpload ?? "Drop to upload";
+	
+		// Local small handler
+		const keydown = e => {
+			if (e.key === "Escape")
+				return; // let Tablance handle it
+			
 			e.stopPropagation();
-			if (e.key.slice(0,5)=="Arrow")
-				e.preventDefault();//prevent native arrow-scrolling
-			else if (e.key==="Enter"||e.key===" ") {
-				e.preventDefault();//prevent native space-scrolling
-				openFileBrowser();
+	
+			if (e.key.startsWith("Arrow"))
+				e.preventDefault();
+			else if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				fileInput.click();
 			}
-		}
-		function handleFile(file) {
-			self.#inputVal=file;
-			const fileMeta={uploadedBytes:0,bars:[]};
-			self.#mapAdd(self.#filesMeta,file,fileMeta)
-			const xhr = new XMLHttpRequest();
-			xhr.upload.addEventListener("progress",e=>{
-				for (let barI=-1,bar; bar=fileMeta.bars[++barI];) {
-					if (bar.isConnected) {
-						fileMeta.uploadedBytes=e.loaded;
-						bar.style.width=bar.firstChild.innerText=parseInt(e.loaded/e.total*100)+"%";
-					} else
-						fileMeta.bars.splice(barI--,1);
-				}
-			});
-			self.#activeStruct.input.fileUploadHandler?.
-						(xhr,file,self.#activeStruct,self.#cellCursorDataObj,self.#mainRowIndex,self.#activeExpCell);
-			xhr?.addEventListener("load",_e=>{
-				self.#mapRemove(self.#filesMeta,file);//can get rid of our metadata now
-				for (const bar of fileMeta.bars) {
-					if (bar.isConnected) {
-						bar.parentElement.classList.remove("active");
-						bar.firstChild.innerText=self.#opts.lang?.fileUploadDone??"Done!";
-					}
-						
-				}
-			});
-			const formData = new FormData();
-			formData.append("file", file);
-			xhr.send(formData);
-			self.#exitEditMode(true);
-			self.#selectExpansionCell(self.#activeExpCell);
-		}
-		function openFileBrowser(_e) {
-			fileInput.click();
-		}
-		function fileChange(e) {
-			handleFile(e.target.files[0]);
-		}
-		function dragOver(e) {
-			e.preventDefault();//without this the drop-event wont even fire
-		}
-		function fileDrop(e) {
-			e.stopPropagation();
+		};
+	
+		// Bind handleFile to preserve `this`
+		const handleFile = this.#processFileUpload.bind(this);
+	
+		// Events
+		fileDiv.addEventListener("keydown", keydown);
+		fileDiv.addEventListener("click", () => fileInput.click());
+		fileDiv.addEventListener("dragenter", () => dropDiv.style.display = "block");
+		dropDiv.addEventListener("dragleave", () => dropDiv.style.display = "none");
+		dropDiv.addEventListener("dragover", e => e.preventDefault());
+		fileDiv.addEventListener("drop", e => {
 			e.preventDefault();
+			e.stopPropagation();
 			handleFile(e.dataTransfer.files[0]);
-		}
+		});
+		fileInput.addEventListener("change", e => handleFile(e.target.files[0]));
 	}
+
+	/**
+	 * Called by #openFileEdit() after the user selects or drops a file.
+	 * Handle the actual upload of a selected file.
+	 *
+	 * This method:
+	 *
+	 *   1. Stores the file as the cell's input value.
+	 *   2. Creates and registers a metadata object for tracking:
+	 *        - uploadedBytes (updated during upload)
+	 *        - progress bars currently displayed for this file
+	 *   3. Initiates an XMLHttpRequest upload and wires up:
+	 *        - upload progress events (to update progress bars)
+	 *        - final load event (to mark completion and clean up metadata)
+	 *   4. Invokes the user-defined fileUploadHandler attached to the
+	 *      cell’s struct, allowing full customization of how the file
+	 *      is handled on the server side.
+	 *   5. Sends the file using multipart/form-data via FormData.
+	 *
+	 * After initiating the upload:
+	 *   - The cell exits edit mode.
+	 *   - The original expansion cell is automatically re-selected.
+	 *
+	 * This method does not handle UI creation — only the upload workflow
+	 * and progress bookkeeping.
+	 */
+	#processFileUpload(file) {
+		this.#inputVal = file;
+	
+		const meta = Object.assign(Object.create(null), {uploadedBytes: 0,bars: []});
+		this.#mapAdd(this.#filesMeta, file, meta);
+	
+		const xhr = new XMLHttpRequest();
+	
+		xhr.upload.addEventListener("progress", e => {
+			for (let i = 0; i < meta.bars.length; i++) {
+				const bar = meta.bars[i];
+				if (!bar.isConnected) {
+					meta.bars.splice(i--, 1);
+					continue;
+				}
+				meta.uploadedBytes = e.loaded;
+				const pct = parseInt(e.loaded / e.total * 100);
+				bar.style.width = bar.firstChild.innerText = pct + "%";
+			}
+		});
+	
+		this.#activeStruct.input.fileUploadHandler?.(xhr,file,this.#activeStruct,this.#cellCursorDataObj,
+			this.#mainRowIndex,this.#activeExpCell);
+	
+		xhr.addEventListener("load", () => {
+			this.#mapRemove(this.#filesMeta, file);
+			for (const bar of meta.bars)
+				if (bar.isConnected) {
+					bar.parentElement.classList.remove("active");
+					bar.firstChild.innerText = this.#opts.lang?.fileUploadDone ?? "Done!";
+				}
+		});
+	
+		const formData = new FormData();
+		formData.append("file", file);
+		xhr.send(formData);
+	
+		this.#exitEditMode(true);
+		this.#selectExpansionCell(this.#activeExpCell);
+	}
+	
+	
 
 	#openTextAreaEdit() {
 		const textarea=this.#cellCursor.appendChild(document.createElement("textarea"));
@@ -2374,60 +2431,15 @@ export class Tablance {
 		}
 	}
 
-	#openSelectEdit() {
-		const self=this;//to have access to this(tablance-instance) inside closures
-		let highlightLiIndex,highlightUlIndex;
-		let filterText="";
-		const strctInp=this.#activeStruct.input;
-		this.#inputVal=this.#cellCursorDataObj[this.#activeStruct.id];
-		const selectContainer=document.createElement("div");
-		const pinnedOpts=[];//all the opts that have pinned=true and also the creation-option
-		const looseOpts=[];//all opts that have pinned=false
-		const inputWrapper=selectContainer.appendChild(document.createElement("div"));//used to give the input margins
-		const input=inputWrapper.appendChild(document.createElement("input"));
-		let canCreate=false;//whether the create-button is currently available.This firstly depends on input.allowCreate
-					//but also the current value of the input and if there already is an option matching that exactly
-		inputWrapper.classList.add("input-wrapper");//input-element a margin. Can't put padding in container because
-							//that would cause the highlight-box of selected options not to go all the way to the sides
-		const ulDiv=selectContainer.appendChild(document.createElement("div"));
-		this.#cellCursor.style.backgroundColor="transparent";//make current value visible and not coered by bg
-		for (const opt of strctInp.options)
-			(opt.pinned?pinnedOpts:looseOpts).push(opt);
-		if (strctInp.allowCreateNew||looseOpts.length>=(strctInp.minOptsFilter??this.#opts.defaultMinOptsFilter??5)) {
-			input.addEventListener("input",inputInput);//filtering is allowed, add listener to the input
-		} else//else hide the input. still want to keep it to recieve focus and listening to keystrokes. tried focusing
-			inputWrapper.classList.add("hide");//container-divs instead of input but for some reason it messed up scroll
-		input.addEventListener("keydown",inputKeyDown);
-		input.placeholder=strctInp.selectInputPlaceholder??"";
-		input.addEventListener("blur",input.focus)
-		const pinnedUl=ulDiv.appendChild(document.createElement("ul"));
-		pinnedUl.classList.add("pinned");
-		const mainUl=ulDiv.appendChild(document.createElement("ul"));
-		mainUl.classList.add("main");
-		for (let i=-1,ul;ul=[pinnedUl,mainUl][++i];) {
-			ul.dataset.ulIndex=i;
-			ul.addEventListener("mousemove",ulMouseMove);//using mousemove rather than mouseover because mouseover
-				//triggers when mouse is over ul while scrolling which is a problem if keyboard-navigating
-			ul.addEventListener("click",ulClick);
-		}
-		let creationLi;
-		if (strctInp.allowCreateNew) {
-			creationLi=document.createElement("li");
-			creationLi.dataset.type="create";
-		}
-		renderOpts(pinnedUl,pinnedOpts,this.#inputVal);
-		renderOpts(mainUl,looseOpts,this.#inputVal);
-		const noResults=selectContainer.appendChild(document.createElement("div"));
-		noResults.innerHTML=strctInp.noResultsText??this.#opts.lang?.selectNoResultsFound??"No results found";
-		noResults.className="no-results";
-		
-		this.#cellCursor.parentElement.appendChild(selectContainer);
-		selectContainer.className="tablance-select-container";
-		this.#alignDropdown(selectContainer);
-		window.addEventListener("mousedown",windowMouseDown);
-		input.focus();
-
-		function renderOpts(ul,opts,selectedVal) {
+		/**
+	 * Render all select options into a given <ul> and update highlighted indices if the selected value is found.
+	 * @param {HTMLUListElement} ul
+	 * @param {Array} opts
+	 * @param {*} selectedVal
+	 * @param {Object} ctx
+	 * @returns {boolean} true if the selected option was found among opts
+	 */
+		#renderSelectOptions(ul,opts,selectedVal,ctx) {
 			let foundSelected=false;
 			ul.innerHTML="";
 			for (const opt of opts) {
@@ -2438,96 +2450,247 @@ export class Tablance {
 				if ((selectedVal==opt.value)||selectedVal==opt) {
 					foundSelected=true;
 					li.classList.add("selected","highlighted");
-					highlightLiIndex=ul.children.length-1;
-					highlightUlIndex=parseInt(ul.dataset.ulIndex);
+					ctx.highlightLiIndex=ul.children.length-1;
+					ctx.highlightUlIndex=parseInt(ul.dataset.ulIndex);
 				}
 			}
 			return foundSelected;
 		}
-
-		function inputInput(_e) {
-			canCreate=!!input.value;
-			if (!input.value.includes(filterText)||!filterText)//unless text was added to beginning or end
-				looseOpts.splice(0,Infinity,...strctInp.options);//start off with all options there are
-			for (let i=-1,opt; opt=looseOpts[++i];)
-				if (!opt.text.includes(input.value)||opt.pinned)//if searchstring not found in this opt or it's pinned
-				looseOpts.splice(i--,1);//then remove it from view
-				else if (opt.text.toLowerCase()==input.value.toLowerCase())
-					canCreate=false;
-			if (canCreate)
-				pinnedUl.appendChild(creationLi);
-			else
-				pinnedUl.removeChild(creationLi);
-			if (renderOpts(mainUl,looseOpts,self.#inputVal))//found selected opt
-				pinnedUl.querySelector(".highlighted")?.classList.remove("highlighted");
-			else//did not find selected opt
-				if (highlightUlIndex)//...and empty is not selected
-					if (looseOpts.length)//there are visible opts
-						highlightOpt(1,0);//select first among the filtered ones
-					else if (pinnedUl.children.length)
-						highlightOpt(0,0);
-			noResults.style.display=looseOpts.length?"none":"block";
-			creationLi.innerText=`Create [${filterText=input.value}]`;
-		}
-		function ulMouseMove(e) {
-			const ulIndex=parseInt(e.target.closest("ul").dataset.ulIndex);
-			const liIndex=[...e.target.parentNode.children].indexOf(e.target)
-			highlightOpt(ulIndex,liIndex);
-		}
-		function windowMouseDown(e) {
-			for (var el=e.target; el!=selectContainer&&(el=el.parentElement););//go up until container or root is found
-			if (!el) {//click was outside select-container
-				close();
-				self.#exitEditMode(false);
-			}
-		}
-		function close(e) {
-			if (!highlightUlIndex&&pinnedUl.children[highlightLiIndex].dataset.type=="create") {
-					strctInp.options.push(self.#inputVal={text:filterText});
-					strctInp.createNewOptionHandler?.(self.#inputVal,e,self.#cellCursorDataObj,self.#mainRowIndex
-																			,self.#activeStruct,self.#activeExpCell);
-			} else
-				self.#inputVal=(highlightUlIndex?looseOpts:pinnedOpts)[highlightLiIndex];
-			selectContainer.remove();
-			window.removeEventListener("mousedown",windowMouseDown);
-		}
-		function highlightOpt(ulIndex,liIndex,keyboardNavigating) {
-			ulDiv.getElementsByClassName("highlighted")[0]?.classList.remove("highlighted");
-			const ul=ulDiv.children[highlightUlIndex=ulIndex];
-			const li=ul.children[highlightLiIndex=liIndex];
+	
+		/**
+		 * Highlight a specific option in one of the ULs and optionally scroll it into view when keyboard navigating.
+		 * @param {Object} ctx
+		 * @param {number} ulIndex 0 for pinned, 1 for main
+		 * @param {number} liIndex index within the selected UL
+		 * @param {boolean} keyboardNavigating whether the change came from arrow keys
+		 */
+		#highlightSelectOption(ctx,ulIndex,liIndex,keyboardNavigating) {
+			const highlighted=ctx.ulDiv.getElementsByClassName("highlighted")[0];
+			if (highlighted)
+				highlighted.classList.remove("highlighted");
+			const ul=ctx.ulDiv.children[ctx.highlightUlIndex=ulIndex];
+			const li=ul.children[ctx.highlightLiIndex=liIndex];
+			if (!li)
+				return;
 			li.classList.add("highlighted");
-			if (ulIndex&&keyboardNavigating)//if main-section (not pinned section) and selection was done by up/down-key
+			if (ulIndex&&keyboardNavigating)
 				ul.scrollTop=li.offsetTop-ul.offsetTop+li.offsetHeight/2-ul.offsetHeight/2;
 		}
-		function inputKeyDown(e) {
-			if (["ArrowDown","ArrowUp"].includes(e.key)){
-				e.preventDefault();//prevents moving the textcursor when pressing up or down
-				const newIndex=highlightLiIndex==null?0:highlightLiIndex+(e.key==="ArrowDown"?1:-1);
-				if (highlightUlIndex??true) {//currently somewhere in the main ul
-					if (looseOpts.length&&newIndex<looseOpts.length&&newIndex>=0)//moving within main
-						highlightOpt(1,newIndex,true);
-					else if (newIndex==-1&&pinnedUl.children.length)//moving into pinned
-						highlightOpt(0,pinnedUl.children.length-1,true);
-				} else if (newIndex>=0&&newIndex<pinnedUl.children.length)//moving within pinned
-					highlightOpt(0,newIndex,true);
-				else if (newIndex>=pinnedUl.children.length&&looseOpts.length) //moving from pinned to main
-					highlightOpt(1,0,true);
+	
+		/**
+		 * Filter loose options based on the current input value and update rendered lists and create-option state.
+		 * @param {Object} ctx
+		 */
+		#handleSelectInputChange(ctx) {
+			const value=ctx.input.value;
+			const hadFilter=!!ctx.filterText;
+			const filterChangedAtEdges=!value.includes(ctx.filterText)||!hadFilter;
+			ctx.canCreate=!!value;
+			if (filterChangedAtEdges)
+				ctx.looseOpts.splice(0,Infinity,...ctx.strctInp.options);
+			for (let i=-1,opt; opt=ctx.looseOpts[++i];)
+				if (!opt.text.includes(value)||opt.pinned)
+					ctx.looseOpts.splice(i--,1);
+				else if (opt.text.toLowerCase()==value.toLowerCase())
+					ctx.canCreate=false;
+			this.#updateCreateOptionVisibility(ctx);
+			const foundSelected=this.#renderSelectOptions(ctx.mainUl,ctx.looseOpts,this.#inputVal,ctx);
+			if (foundSelected)
+				ctx.pinnedUl.querySelector(".highlighted")?.classList.remove("highlighted");
+			else if (ctx.highlightUlIndex) {
+				if (ctx.looseOpts.length)
+					this.#highlightSelectOption(ctx,1,0,true);
+				else if (ctx.pinnedUl.children.length)
+					this.#highlightSelectOption(ctx,0,0,true);
+			}
+			ctx.noResults.style.display=ctx.looseOpts.length?"none":"block";
+			ctx.filterText=value;
+			if (ctx.creationLi)
+				ctx.creationLi.innerText=`Create [${ctx.filterText}]`;
+		}
+	
+		/**
+		 * Show or hide the "create new option" list item depending on ctx.canCreate and current DOM state.
+		 * @param {Object} ctx
+		 */
+		#updateCreateOptionVisibility(ctx) {
+			if (!ctx.creationLi)
+				return;
+			if (ctx.canCreate) {
+				if (ctx.creationLi.parentElement!=ctx.pinnedUl)
+					ctx.pinnedUl.appendChild(ctx.creationLi);
+			} else if (ctx.creationLi.parentElement==ctx.pinnedUl)
+				ctx.pinnedUl.removeChild(ctx.creationLi);
+		}
+	
+		/**
+		 * Handle keyboard navigation and selection inside the open select dropdown.
+		 * @param {KeyboardEvent} e
+		 * @param {Object} ctx
+		 */
+		#handleSelectKeyDown(e,ctx) {
+			if (e.key==="ArrowDown"||e.key==="ArrowUp") {
+				e.preventDefault();
+				const direction=e.key==="ArrowDown"?1:-1;
+				const currentIndex=ctx.highlightLiIndex==null?0:ctx.highlightLiIndex;
+				const newIndex=currentIndex+direction;
+				if (ctx.highlightUlIndex??true) {
+					if (ctx.looseOpts.length&&newIndex<ctx.looseOpts.length&&newIndex>=0)
+						this.#highlightSelectOption(ctx,1,newIndex,true);
+					else if (newIndex==-1&&ctx.pinnedUl.children.length)
+						this.#highlightSelectOption(ctx,0,ctx.pinnedUl.children.length-1,true);
+				} else if (newIndex>=0&&newIndex<ctx.pinnedUl.children.length)
+					this.#highlightSelectOption(ctx,0,newIndex,true);
+				else if (newIndex>=ctx.pinnedUl.children.length&&ctx.looseOpts.length)
+					this.#highlightSelectOption(ctx,1,0,true);
 			} else if (e.key==="Enter") {
-				close(e);
-				self.#moveCellCursor(0,e.shiftKey?-1:1);
+				this.#closeSelectDropdown(ctx,e);
+				this.#moveCellCursor(0,e.shiftKey?-1:1);
 				e.stopPropagation();
 			} else if (e.key==="Escape")
-				close(e);
+				this.#closeSelectDropdown(ctx,e);
 		}
-		function ulClick(e) {
-			if (e.target.tagName.toLowerCase()=="li") {//not sure if ul could be the target? check here to make sure
-				highlightUlIndex=parseInt(e.currentTarget.dataset.ulIndex);
-				highlightLiIndex=Array.prototype.indexOf.call(e.currentTarget.children, e.target);
-				close();
-				self.#exitEditMode(true);
+	
+		/**
+		 * Handle mouse movement over list items by updating the highlighted option.
+		 * @param {MouseEvent} e
+		 * @param {Object} ctx
+		 */
+		#handleSelectMouseMove(e,ctx) {
+			const li=e.target.closest("li");
+			if (!li)
+				return;
+			const ul=li.parentNode;
+			const ulIndex=parseInt(ul.dataset.ulIndex);
+			const liIndex=[...ul.children].indexOf(li);
+			this.#highlightSelectOption(ctx,ulIndex,liIndex,false);
+		}
+	
+		/**
+		 * Handle mouse click on a list item: select it, close the dropdown and exit edit mode.
+		 * @param {MouseEvent} e
+		 * @param {Object} ctx
+		 */
+		#handleSelectClick(e,ctx) {
+			const li=e.target.closest("li");
+			if (!li)
+				return;
+			const ul=e.currentTarget;
+			ctx.highlightUlIndex=parseInt(ul.dataset.ulIndex);
+			ctx.highlightLiIndex=Array.prototype.indexOf.call(ul.children,li);
+			this.#closeSelectDropdown(ctx,e);
+			this.#exitEditMode(true);
+		}
+	
+		/**
+		 * Create base DOM structure and context object for the select dropdown.
+		 * Splits options into pinned/loose arrays and prepares elements but does not attach listeners.
+		 * @param {Object} strctInp the input-definition object from the active cell struct
+		 * @returns {Object} ctx a state container for the open select dropdown
+		 */
+		#createSelectDropdownContext(strctInp) {
+			const selectContainer=document.createElement("div");
+			const pinnedOpts=[];
+			const looseOpts=[];
+			const inputWrapper=selectContainer.appendChild(document.createElement("div"));
+			const input=inputWrapper.appendChild(document.createElement("input"));
+			inputWrapper.classList.add("input-wrapper");
+			const ulDiv=selectContainer.appendChild(document.createElement("div"));
+			const pinnedUl=ulDiv.appendChild(document.createElement("ul"));
+			pinnedUl.classList.add("pinned");
+			const mainUl=ulDiv.appendChild(document.createElement("ul"));
+			mainUl.classList.add("main");
+			const noResults=selectContainer.appendChild(document.createElement("div"));
+			noResults.innerHTML=strctInp.noResultsText??this.#opts.lang?.selectNoResultsFound??"No results found";
+			noResults.className="no-results";
+			for (const opt of strctInp.options)
+				(opt.pinned?pinnedOpts:looseOpts).push(opt);
+			const ctx=Object.assign(Object.create(null),{
+				strctInp,
+				selectContainer,
+				inputWrapper,
+				input,
+				ulDiv,
+				pinnedUl,
+				mainUl,
+				noResults,
+				pinnedOpts,
+				looseOpts,
+				creationLi:null,
+				canCreate:false,
+				filterText:"",
+				highlightLiIndex:null,
+				highlightUlIndex:null,
+				windowMouseDown:null
+			});
+			return ctx;
+		}
+	
+		/**
+		 * Close the select dropdown, update the current value (including create-new if applicable) and clean up listeners.
+		 * @param {Object} ctx
+		 * @param {Event} e the event that triggered the close (click, keydown, etc.)
+		 */
+		#closeSelectDropdown(ctx,e) {
+			if (!ctx.selectContainer.parentElement)
+				return;
+			if (!ctx.highlightUlIndex&&ctx.pinnedUl.children[ctx.highlightLiIndex]?.dataset.type=="create") {
+				ctx.filterText=ctx.filterText??ctx.input.value;
+				this.#inputVal={text:ctx.filterText};
+				ctx.strctInp.options.push(this.#inputVal);
+				ctx.strctInp.createNewOptionHandler?.(this.#inputVal,e,this.#cellCursorDataObj,this.#mainRowIndex
+																,this.#activeStruct,this.#activeExpCell);
+			} else
+				this.#inputVal=(ctx.highlightUlIndex?ctx.looseOpts:ctx.pinnedOpts)[ctx.highlightLiIndex];
+			ctx.selectContainer.remove();
+			if (ctx.windowMouseDown)
+				window.removeEventListener("mousedown",ctx.windowMouseDown);
+		}
+	
+		/**
+		 * Open edit mode for a cell that uses a select-input: creates the dropdown UI,
+		 * wires up filtering, keyboard navigation and mouse interaction, and focuses the input.
+		 */
+		#openSelectEdit() {
+			const strctInp=this.#activeStruct.input;
+			this.#inputVal=this.#cellCursorDataObj[this.#activeStruct.id];
+			const ctx=this.#createSelectDropdownContext(strctInp);
+			this.#cellCursor.style.backgroundColor="transparent";
+			if (strctInp.allowCreateNew||ctx.looseOpts.length>=(strctInp.minOptsFilter??this.#opts.defaultMinOptsFilter??5))
+				ctx.input.addEventListener("input",()=>this.#handleSelectInputChange(ctx));
+			else
+				ctx.inputWrapper.classList.add("hide");
+			ctx.input.addEventListener("keydown",e=>this.#handleSelectKeyDown(e,ctx));
+			ctx.input.placeholder=strctInp.selectInputPlaceholder??"";
+			ctx.input.addEventListener("blur",ctx.input.focus);
+			for (let i=-1,ul;ul=[ctx.pinnedUl,ctx.mainUl][++i];) {
+				ul.dataset.ulIndex=i;
+				ul.addEventListener("mousemove",e=>this.#handleSelectMouseMove(e,ctx));
+				ul.addEventListener("click",e=>this.#handleSelectClick(e,ctx));
 			}
+			if (strctInp.allowCreateNew) {
+				ctx.creationLi=document.createElement("li");
+				ctx.creationLi.dataset.type="create";
+			}
+			this.#renderSelectOptions(ctx.pinnedUl,ctx.pinnedOpts,this.#inputVal,ctx);
+			this.#renderSelectOptions(ctx.mainUl,ctx.looseOpts,this.#inputVal,ctx);
+			this.#cellCursor.parentElement.appendChild(ctx.selectContainer);
+			ctx.selectContainer.className="tablance-select-container";
+			this.#alignDropdown(ctx.selectContainer);
+			const windowMouseDown=e=>{
+				let el=e.target;
+				while (el&&el!=ctx.selectContainer)
+					el=el.parentElement;
+				if (!el) {
+					this.#closeSelectDropdown(ctx,e);
+					this.#exitEditMode(false);
+				}
+			};
+			ctx.windowMouseDown=windowMouseDown;
+			window.addEventListener("mousedown",windowMouseDown);
+			ctx.input.focus();
 		}
-	}
+	
 
 	#validateInput(newVal) {
 		let message;
