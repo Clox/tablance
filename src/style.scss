@@ -470,30 +470,8 @@
 			>.pages {
 				.tablance {
 					margin-top: 10px;
-				}
-				>.main {
-					display: none;
-					.col {
-						display: inline-block;
-						overflow: hidden;//No idea why but going into edit-mode without overflow:hidden 
-										//makes all siblings shift down
-						padding: 1px 5px;
-						h3 {
-							margin: 5px 0;
-							font-weight: bold;
-							font-size: medium;
-						}
-						.cell {
-							height: 25px;
-							border: 1px solid #ddd;
-							padding: 4px;
-							overflow: hidden;
-							cursor: cell;
-							position: relative;//for position of cell-cursor to work correctly
-							&.mixed {
-								font-style: italic;
-							}
-						}
+					.input-cell {
+						cursor:cell;
 					}
 				}
 			}

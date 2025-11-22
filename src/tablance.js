@@ -1322,8 +1322,8 @@ export class Tablance {
 	}
 	
 	#spreadsheetKeyDown(e) {
-		//prevent this from running if an inner tablance is selected
-		if (this.#bulkEditArea?.contains(document.activeElement)&&this.#multiRowAreaActivePage!=-1)
+		//prevent this from running if an inner Tablance-instance is selected
+		if (this.#bulkEditArea?.contains(document.activeElement))
 			return;
 		this.#tooltip.style.visibility="hidden";
 		if (this.#inEditMode&&this.#activeStruct.input.type==="date") {
@@ -3194,12 +3194,11 @@ export class Tablance {
 		containerApplyBtn.innerText="Apply";
 		containerApplyBtn.addEventListener("click",this.#bulkEditAreaContainerApply);
 
-		const tableContainer=bulkContent.appendChild(document.createElement("div"));
-
 		const pagesDiv=bulkContent.appendChild(document.createElement("div"));//for having multiple pages
 		pagesDiv.classList.add("pages");										//which is needed if having groups in it
 		
 		const mainPage=pagesDiv.appendChild(document.createElement("div"));
+		const tableContainer=mainPage.appendChild(document.createElement("div"));
 		this.#multiRowAreaActivePage=-1;//keeps track of current page. main is -1, rest is index of their inputs in main
 		mainPage.classList.add("main");
 		mainPage.style.display="block";

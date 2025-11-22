@@ -432,29 +432,8 @@
 .tablance .multi-row-area > div > .pages .tablance {
   margin-top: 10px;
 }
-.tablance .multi-row-area > div > .pages > .main {
-  display: none;
-}
-.tablance .multi-row-area > div > .pages > .main .col {
-  display: inline-block;
-  overflow: hidden;
-  padding: 1px 5px;
-}
-.tablance .multi-row-area > div > .pages > .main .col h3 {
-  margin: 5px 0;
-  font-weight: bold;
-  font-size: medium;
-}
-.tablance .multi-row-area > div > .pages > .main .col .cell {
-  height: 25px;
-  border: 1px solid #ddd;
-  padding: 4px;
-  overflow: hidden;
+.tablance .multi-row-area > div > .pages .tablance .input-cell {
   cursor: cell;
-  position: relative;
-}
-.tablance .multi-row-area > div > .pages > .main .col .cell.mixed {
-  font-style: italic;
 }
 
 .pika-container {
