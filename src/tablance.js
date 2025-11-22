@@ -1272,6 +1272,8 @@ export class Tablance {
 	}
 	
 	#getAdjacentExpansionCell (cellObj,isGoingDown) {
+		if (!cellObj.parent)//parent is null if the class-instance is in the bulk-edit-area
+			return;
 		const siblings=cellObj.parent.children;
 		const index=cellObj.index;
 		for (let i=index+(isGoingDown||-1); i>=0&&i<siblings.length; i+=isGoingDown||-1) {
