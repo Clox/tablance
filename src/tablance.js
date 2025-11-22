@@ -28,15 +28,18 @@ export class Tablance {
 				//"true" height of the table so that the scrollbar reflects all the data that can be scrolled through
 	#mainTable;//the actual main-table that contains the actual data. Resides inside #tableSizer
 	#mainTbody;//tbody of #mainTable
-	#multiRowArea;//a div displayed under #scrollBody if rows are selected/checked using select-column. This 
+
+	#bulkEditArea;//a div displayed under #scrollBody if rows are selected/checked using select-column. This 
 						//section is used to edit multiple rows at once
-	#multiRowAreaOpen=false;//whether the section is currently open or not
-	#multiRowStructs;//Array of structs with inputs that are present in the multi-row-area
+	#bulkEditAreaOpen=false;//whether the section is currently open or not
+	#bulkEditStructs;//Array of structs with inputs that are present in the bulk-edit-area
+
 	#multiCellSelected=false;//whether or not a cell inside #multiRowArea is currently selected
-	#multiCells;//the multi-edit-cells in multiRowArea, in the same order as in #multiCellIds. 
+	#multiCells;//the multi-edit-cells in bulk-edit-area, in the same order as in #multiCellIds. 
 	#multiCellsDataObj;//used to store values of the multi-cells so the inputs can get set correctly initially on edit
-	#multiCellInputIndex;//the index of the currently active input-element in the multi-row-area
+	#multiCellInputIndex;//the index of the currently active input-element in the bulk-edit-area
 	#multiRowAreaActivePage;//currently active page(there are pages for cells that are containers and can be entered)
+
 	#numberOfRowsSelectedSpan;//resides in #multiRowArea. Should be set to the number of rows selected
 	#borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
@@ -174,12 +177,12 @@ export class Tablance {
 	 * 				onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
 	 * 				multiEdit Bool Besides setting multiEdit on input of fields it can also be set on containers which
-	 * 							will add the container to the multi-row-area. Any input-fields in the container that
+	 * 							will add the container to the bulk-edit-area. Any input-fields in the container that
 	 * 							have multiEdit true will appear in the container there. Remember that both the container
 	 * 							and input of fields have to have true multiEdit for this to work. These can also be
 	 * 							nested so if there's another group in the group where both have true multiEdit and the
 	 * 							inner group has inputs with true multiEdit as well then multi-level groups will be 
-	 * 							added to the multi-row-area. Containers in the multi-row-area appear as a normal cell
+	 * 							added to the bulk-edit-area. Containers in the bulk-edit-area appear as a normal cell
 	 * 							at first but by entering it a page dedicated to that container is changed to.
 	 *			}
 	 *			{	
@@ -191,12 +194,12 @@ export class Tablance {
 	 * 				onBlur Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
 	 * 				multiEdit Bool Besides setting multiEdit on input of fields it can also be set on containers which
-	 * 							will add the container to the multi-row-area. Any input-fields in the container that
+	 * 							will add the container to the bulk-edit-area. Any input-fields in the container that
 	 * 							have multiEdit true will appear in the container there. Remember that both the container
 	 * 							and input of fields have to have true multiEdit for this to work. These can also be
 	 * 							nested so if there's another group in the group where both have true multiEdit and the
 	 * 							inner group has inputs with true multiEdit as well then multi-level groups will be 
-	 * 							added to the multi-row-area. Containers in the multi-row-area appear as a normal cell
+	 * 							added to the bulk-edit-area. Containers in the bulk-edit-area appear as a normal cell
 	 * 							at first but by entering it a page dedicated to that container is changed to.
 	 *	 		}
 	 *			{
@@ -234,11 +237,11 @@ export class Tablance {
 	 * 							first argument. If it the validation didn't go through then this string will be
 	 * 							displayed to the user. 3:struct, 4:rowData, 5:mainIndex, 6:cellObject(if expansion-cell)
 	 * 						title String String displayed title if placed in a container which displays the title
-	 * 						multiEdit Bool Whether this input should be editable via multi-row-area, the section that 
+	 * 						multiEdit Bool Whether this input should be editable via bulk-edit-area, the section that 
 	 * 							appears when selecting/checking multiple rows using the select-col. Default is true if
 	 * 							not in expansion, or false if in expansion.
-	 * 							Containers can too be added to the multi-row-area by setting multiEdit on the container.
-	 * 						multiCellWidth Int For inputs that are present in the multi-row-area. This property can be 
+	 * 							Containers can too be added to the bulk-edit-area by setting multiEdit on the container.
+	 * 						multiCellWidth Int For inputs that are present in the bulk-edit-area. This property can be 
 	 * 							used to specify the number of pixels in width of the cell in that section.
 	 * 						onChange Function Callback fired when the user has changed the value of the input.
 	 * 							It will get passed arguments:
@@ -341,7 +344,7 @@ export class Tablance {
 	 * 					"create" is true. It is considered committed when the cell-cursor has left the repeat-row after
 	 * 					having created it. It will normally get passed arguments: 1:new data,2:rowData,3:repeatedStruct
 	 * 					,4:cellObject
-	 * 					However if in the multi-row-area by setting "multiEdit" to true then it will get passed
+	 * 					However if in the bulk-edit-area by setting "multiEdit" to true then it will get passed
 	 * 					1:new data, 2:array of rowData, 3:repeatedStruct, 4:true (to easily check for multi-row edit)
 	 * 				onCreateOpen Function If the entry of the repeated is group and "create" is set to true, then this
 	 * 					callback-function will be called when a new group is added, i.e. when the user interacts with
@@ -367,7 +370,7 @@ export class Tablance {
 	 * 					Default is "Yes". Can also be set via param opts->lang->deleteAreYouSureYes
 	 * 				areYouSureNoText String Used if "create" is true. Text of cancel-button for delete. Default is "No"
 	 * 					Can also be set via param opts->lang->deleteAreYouSureNo
-	 * 				multiEdit Bool If set to true then this will appear in the multi-row-area which allows editing
+	 * 				multiEdit Bool If set to true then this will appear in the bulk-edit-area which allows editing
 	 * 					repeated data for multiple data-rows at once. Applying the data does not append the data but it
 	 * 					replaces it meaning the repeated rows already present in the selected rows are removed.
   	 * 			}
@@ -388,12 +391,12 @@ export class Tablance {
 	 * 									displayed to the user.
 	 * 								2:struct, 3:rowData(all the entered data of the group), 4:mainIndex, 5:cellObject
 	 * 				multiEdit Bool Besides setting multiEdit on input of fields it can also be set on containers which
-	 * 							will add the container to the multi-row-area. Any input-fields in the container that
+	 * 							will add the container to the bulk-edit-area. Any input-fields in the container that
 	 * 							have multiEdit true will appear in the container there. Remember that both the container
 	 * 							and input of fields have to have true multiEdit for this to work. These can also be
 	 * 							nested so if there's another group in the group where both have true multiEdit and the
 	 * 							inner group has inputs with true multiEdit as well then multi-level groups will be 
-	 * 							added to the multi-row-area. Containers in the multi-row-area appear as a normal cell
+	 * 							added to the bulk-edit-area. Containers in the bulk-edit-area appear as a normal cell
 	 * 							at first but by entering it a page dedicated to that container is changed to.
 	 * 				onOpen Function Function that fires when the group is opened, before it has been rendered.
 	 * 					Gets passed the following arguments:
@@ -506,9 +509,9 @@ export class Tablance {
 				opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
 			this.#updateHeaderSortHtml();
+			this.#buildDependencyGraph();
 		} else
 			this.#setupSpreadsheet(true);
-		this.#buildDependencyGraph();
 	}
 
 	addData(data, highlight=false) {
@@ -963,7 +966,7 @@ export class Tablance {
 
 	#updateViewportHeight=()=>{
 		this.#scrollBody.style.height=this.container.clientHeight-this.#headerTable.offsetHeight
-				-(this.#searchInput?.offsetHeight??0)-this.#multiRowArea.offsetHeight+"px";
+				-(this.#searchInput?.offsetHeight??0)-this.#bulkEditArea.offsetHeight+"px";
 	}
 
 	#attachInputFormatter(el, format) {
@@ -1110,7 +1113,7 @@ export class Tablance {
 		this.#cellCursor.className="cell-cursor";
 		this.#cellCursor.style.display="none";
 		if (!onlyExpansion) {
-			this.#createMultiRowArea();
+			this.#createBulkEditArea();
 			//remove any border-spacing beacuse if spacing is clicked the target-element will be the table itself and
 			//no cell will be selected which is bad user experience. Set it to 0 for headerTable too in order to match
 			this.#mainTable.style.borderSpacing=this.#headerTable.style.borderSpacing=this.#borderSpacingY=0;
@@ -1163,7 +1166,7 @@ export class Tablance {
 		else
 			this.container.style.outline="none";
 		
-		//why is this needed? it messes things up when cellcursor is in mainpage of multirowarea but hidden because
+		//why is this needed? it messes things up when cellcursor is in mainpage of bulk-edit-area but hidden because
 		//other page is open, and the tablance gets focus because then it will be visible through the active page
 		//this.#cellCursor.style.display="block";
 		
@@ -1173,7 +1176,7 @@ export class Tablance {
 
 	#spreadsheetOnBlur(_e) {
 		setTimeout(()=>{
-			if (!this.container.contains(document.activeElement)||this.#multiRowArea?.contains(document.activeElement)) {
+			if (!this.container.contains(document.activeElement)||this.#bulkEditArea?.contains(document.activeElement)) {
 				this.#highlightOnFocus=true;
 				//if (this.neighbourTables&&Object.values(this.neighbourTables).filter(Boolean).length)
 					this.#cellCursor.style.display="none";
@@ -1320,7 +1323,7 @@ export class Tablance {
 	
 	#spreadsheetKeyDown(e) {
 		//prevent this from running if an inner tablance is selected
-		if (this.#multiRowArea?.contains(document.activeElement)&&this.#multiRowAreaActivePage!=-1)
+		if (this.#bulkEditArea?.contains(document.activeElement)&&this.#multiRowAreaActivePage!=-1)
 			return;
 		this.#tooltip.style.visibility="hidden";
 		if (this.#inEditMode&&this.#activeStruct.input.type==="date") {
@@ -1849,7 +1852,7 @@ export class Tablance {
 	}
 
 	#scrollToCursor() {
-		if (this.#cellCursor.closest(".tablance .multi-row-area"))//don't scroll if this is a sub-table in multirowarea 
+		if (this.#cellCursor.closest(".tablance .multi-row-area"))//don't scroll if this is a sub-table in bulk-edit-area 
 			return;
 		if (this.#onlyExpansion)
 			return this.#cellCursor.scrollIntoView({block: "center"});
@@ -1949,7 +1952,7 @@ export class Tablance {
 		}
 		this.#numberOfRowsSelectedSpan.innerText=this.#numRowsSelected;
 		this.#updateNumRowsSelectionState();
-		this.#updateMultiCellVals();
+		//this.#updateMultiCellVals();
 	}
 
 	#updateNumRowsSelectionState() {
@@ -1959,9 +1962,9 @@ export class Tablance {
 			checkbox.checked=this.#numRowsInViewSelected;
 		} else
 			checkbox.indeterminate=true;
-		if (this.#numRowsSelected^this.#multiRowAreaOpen) {
-			this.#multiRowAreaOpen=!!this.#numRowsSelected;
-			this.#setMultiRowAreaPage(this.#multiRowAreaOpen);
+		if (this.#numRowsSelected^this.#bulkEditAreaOpen) {
+			this.#bulkEditAreaOpen=!!this.#numRowsSelected;
+			this.#setMultiRowAreaPage(this.#bulkEditAreaOpen);
 		}
 	}
 
@@ -2078,7 +2081,7 @@ export class Tablance {
 			alignmentContainer=this.container.parentElement.closest(".tablance");
 		alignmentPos=this.#getElPos(target,alignmentContainer);
 		
-		//if target-element is below middle of viewport or if in multi-row-area
+		//if target-element is below middle of viewport or if in bulk-edit-area
 		dropdown.classList.remove("above","below","left","right");
 		if (alignmentPos.y+target.clientHeight/2>alignmentContainer.scrollTop+alignmentContainer.clientHeight/2) {
 			//then place dropdown above target-element
@@ -2132,15 +2135,15 @@ export class Tablance {
 		
 	}
 
-	/**Input-fields in the multi-row-area may be container-structs in which case if they are entered, the multi-row-area
+	/**Input-fields in the bulk-edit-area may be container-structs in which case if they are entered, the bulk-edit-area
 	 * changes page to one that represents that container. This function populates the requested page and changes to it.
 	 * @param {*} containerStruct The struct-object of the container-entry*/
 	#openMultiRowAreaContainer(containerStruct) {
 		this.#cellCursor.style.display="none";
-		this.#multiRowArea.querySelector(".main").style.display="none";
+		this.#bulkEditArea.querySelector(".main").style.display="none";
 		this.#cellCursor.style.display="none";
 		if (!containerStruct.page) {
-			containerStruct.page=this.#multiRowArea.querySelector(".pages").appendChild(document.createElement("div"));
+			containerStruct.page=this.#bulkEditArea.querySelector(".pages").appendChild(document.createElement("div"));
 			if (containerStruct.type=="group") {
 				containerStruct.type="list";//make it into a list so it doesn't have to be opened
 				containerStruct.titlesColWidth="25%";//auto(default) renders it at almost 70% for some reason
@@ -2151,7 +2154,7 @@ export class Tablance {
 
 			this.#getFirstSelectableExpansionCell(containerStruct.tablance.expandRow(0),true).select();
 		}
-		this.#multiRowArea.querySelector(".container-controllers").style.display="block";
+		this.#bulkEditArea.querySelector(".container-controllers").style.display="block";
 		this.#setMultiRowAreaPage(true,this.#multiCellInputIndex);
 		containerStruct.page.focus();
 	}
@@ -2710,7 +2713,7 @@ export class Tablance {
 		for (const selectedTr of this.#mainTbody.querySelectorAll("tr.selected"))
 			this.updateData(selectedTr.dataset.dataRowIndex,this.#activeStruct.id,this.#inputVal,false,true);
 		this.#multiCellsDataObj[this.#activeStruct.id]=this.#inputVal;
-		const multiCell=this.#multiCells[this.#multiRowStructs.indexOf(this.#activeStruct)];
+		const multiCell=this.#multiCells[this.#bulkEditStructs.indexOf(this.#activeStruct)];
 		multiCell.innerText=this.#inputVal?.text??this.#inputVal??"";
 		multiCell.classList.remove("mixed");
 	}
@@ -2801,7 +2804,7 @@ export class Tablance {
 						if (cell.struct.closedRender)//found a group with a closed-group-render func
 							cell.updateRenderOnClose=true;//update closed-group-render
 					if (checked) {
-						for (const multiStruct of this.#multiRowStructs) {
+						for (const multiStruct of this.#bulkEditStructs) {
 							if (multiStruct.entries) {
 								for (let cell=this.#activeExpCell.parent; cell; cell=cell.parent)
 									if (cell.struct==multiStruct.origStruct) {
@@ -2945,12 +2948,12 @@ export class Tablance {
 	#selectMultiCell(cell) {
 		if (!cell||!this.#exitEditMode(true)||!this.#closeActiveExpCell())
 			return;
-		this.#selectCell(true,cell,this.#multiRowStructs[this.#multiCellInputIndex=cell.dataset.inputIndex]
+		this.#selectCell(true,cell,this.#bulkEditStructs[this.#multiCellInputIndex=cell.dataset.inputIndex]
 																							,this.#multiCellsDataObj);
 		this.#mainRowIndex=null;
 		
 		const cellPos=cell.getBoundingClientRect();
-		const parentBR=this.#multiRowArea.firstChild.getBoundingClientRect();
+		const parentBR=this.#bulkEditArea.firstChild.getBoundingClientRect();
 		this.#cellCursor.style.height=cellPos.height+"px";
 		this.#cellCursor.style.width=cellPos.width+"px";
 		this.#cellCursor.style.top=cellPos.top-parentBR.top+"px";
@@ -2964,7 +2967,7 @@ export class Tablance {
 			this.#adjustCursorPosSize(cellEl);
 		this.#cellCursor.classList.toggle("expansion",cellEl.closest(".expansion"));
 		this.#cellCursor.classList.toggle("disabled",cellEl.classList.contains("disabled"));
-		(isMultiCell?this.#multiRowArea.firstChild:this.#scrollingContent??this.container)
+		(isMultiCell?this.#bulkEditArea.firstChild:this.#scrollingContent??this.container)
 																						.appendChild(this.#cellCursor);
 		this.#selectedCell=cellEl;
 		this.#activeStruct=struct;
@@ -2979,7 +2982,7 @@ export class Tablance {
 	#getElPos(el,container) {
 		const cellPos=el.getBoundingClientRect();
 		if (!container)
-			container=this.#multiCellSelected?this.#multiRowArea.firstChild:this.#tableSizer??this.container;
+			container=this.#multiCellSelected?this.#bulkEditArea.firstChild:this.#tableSizer??this.container;
 		const contPos=container.getBoundingClientRect();
 		return {x:cellPos.x-contPos.x, y:cellPos.y-contPos.y+(this.#tableSizer?.offsetTop??0)}
 	}
@@ -3157,180 +3160,191 @@ export class Tablance {
 	}
 
 	#updateMultiRowAreaHeight(open) {
-		this.#multiRowArea.style.height=open?this.#multiRowArea.firstChild.offsetHeight+"px":0;
+		this.#bulkEditArea.style.height=open?this.#bulkEditArea.firstChild.offsetHeight+"px":0;
 		this.#animate(this.#updateViewportHeight,Infinity,"adjustViewportHeight");
 	}
 
-	#createMultiRowArea() {
-		const self=this;
-		const updateHeight=this.#updateMultiRowAreaHeight.bind(this,true);
-		this.#multiRowArea=this.container.appendChild(document.createElement("div"));
-		this.#multiRowArea.classList.add("multi-row-area");
-		this.#multiRowArea.style.height=0;
-		this.#multiRowArea.addEventListener("transitionend",()=>{
+	#createBulkEditArea() {
+		this.#bulkEditArea=this.container.appendChild(document.createElement("div"));
+		this.#bulkEditArea.classList.add("multi-row-area");//TODO prob remove later..
+		this.#bulkEditArea.style.height=0;//start at height 0 before expanded
+		this.#bulkEditArea.addEventListener("transitionend",()=>{
 			delete this.#animations["adjustViewportHeight"];
-			if (this.#multiRowArea.style.height!="0px")
-			this.#multiRowArea.style.overflow="visible";//hade to shift between hidden/visible because hidden is needed
+			if (this.#bulkEditArea.style.height!="0px")
+			this.#bulkEditArea.style.overflow="visible";//have to shift between hidden/visible because hidden is needed
 									//for animation but visible is needed for dropdowns to be able to go outside of area
 		});
 
 		//extra div needed for having padding while also being able to animate height all the way to 0
-		const multiRowAreaContent=this.#multiRowArea.appendChild(document.createElement("div"));
+		const bulkContent=this.#bulkEditArea.appendChild(document.createElement("div"));
 
-		const numberOfRowsSelectedDiv=multiRowAreaContent.appendChild(document.createElement("div"));
+		const numberOfRowsSelectedDiv=bulkContent.appendChild(document.createElement("div"));
 		numberOfRowsSelectedDiv.innerText="Number of selected rows: ";
 		this.#numberOfRowsSelectedSpan=numberOfRowsSelectedDiv.appendChild(document.createElement("span"));
-		const cellMouseDown=e=>{
-			e.preventDefault();//prevent selection of the cell-content on dbl-click
-			this.#selectMultiCell(e.target)
-		};
-		const containerControllers=multiRowAreaContent.appendChild(document.createElement("div"));
+		
+		//when entering a group-entry in the bulk-edit-area, a new view opens where there are buttons "cancel" and
+		//"apply". These reside inside this div
+		const containerControllers=bulkContent.appendChild(document.createElement("div"));
 		containerControllers.classList.add("container-controllers");
+		//buttons for above container
 		const containerCancelBtn=containerControllers.appendChild(document.createElement("button"));
 		containerCancelBtn.innerText="Cancel";
 		containerCancelBtn.addEventListener("click",containerCancel)
 		const containerApplyBtn=containerControllers.appendChild(document.createElement("button"));
 		containerApplyBtn.innerText="Apply";
-		containerApplyBtn.addEventListener("click",containerApply)
+		containerApplyBtn.addEventListener("click",this.#bulkEditAreaContainerApply);
 
-		const pagesDiv=multiRowAreaContent.appendChild(document.createElement("div"));//for having multiple pages
+		const tableContainer=bulkContent.appendChild(document.createElement("div"));
+
+		const pagesDiv=bulkContent.appendChild(document.createElement("div"));//for having multiple pages
 		pagesDiv.classList.add("pages");										//which is needed if having groups in it
 		
 		const mainPage=pagesDiv.appendChild(document.createElement("div"));
-		this.#multiRowAreaActivePage=-1;//keeps track of current page. main is -1, the rest is index of their inputs
+		this.#multiRowAreaActivePage=-1;//keeps track of current page. main is -1, rest is index of their inputs in main
 		mainPage.classList.add("main");
 		mainPage.style.display="block";
-		this.#multiCells=[];
-		this.#multiCellsDataObj={};
-		this.#multiRowStructs=[];
-		for (let colI=-1,colStruct; colStruct=this.#colStructs[++colI];)
-			buildStruct(colStruct)
-		if (this.#expansion)
-			buildStruct(this.#expansion,true);
-		//now, having built structures via buildStruct we just need to add them to the multi-row-area
-		for (let i=-1,struct; struct=this.#multiRowStructs[++i];)
-			this.#addStructToMultiRowArea(i,struct,mainPage,cellMouseDown);
+		
+		this.#multiCellsDataObj=Object.create(null);
+		this.#bulkEditStructs=[];
 
-		/**Given a struct like expansion or column, will add inputs to this.#multiRowStructs which later is iterated
-		 * and the contents added to the multi-row-area. 
-		 * @param {*} struct Should be expansion or column when called from outside, but it calls itself recursively
-		 * 						when hitting upon containers which then are passed to this param
-		 * @param {*} isExpa Whether the struct is in expansion or not.
-		 * 							Used to determine default for adding input or not to multi-row-area
-		 * @param {*} containerStruct Used when the function calls itself reursively and it has found a container with
-		 * 						multiEdit which means the container-struct should be maintained in the multi-row-area.
-		 * @returns */
-		function buildStruct(struct,isExpa,containerStruct) {
-			let structToAdd;
-			if (struct.type=="repeated") {
-				if (struct.multiEdit&&struct.create) {
-					//create copy of the repeated-container. and set it to structToAdd so it gets added at the end of
-					//this function. Set onCreate to null so that any function for onCreate set at the implementation
-					//of Tablance wont get fired because we don't want that in the multirowarea
-					structToAdd={...struct,vals:{},entry:{...struct.entry,multiEdit:true},onCreate:null};
-					//update height of multirowarea whenever entries are added or removed
-					structToAdd.onCreateOpen=structToAdd.onCreateCancel=structToAdd.onDelete=updateHeight;
-					//call this function again recursively for the entry of repeated which is the actual repeated data
-					buildStruct(structToAdd.entry,true,structToAdd);
-				}
-			} else if (struct.entries?.length) {
-				if (struct.multiEdit) {
-					structToAdd={...struct,entries:[],vals:{},origStruct:struct};
-					if (struct.type=="group"&&containerStruct)
-						structToAdd.onOpenAfter=structToAdd.onClose=updateHeight;
-				}
-				//still call buildStruct for containers without multiEdit,entries may still have it
-				struct.entries.forEach(entryStruct=>buildStruct(entryStruct,true,structToAdd));
-				if (containerStruct&&structToAdd)
-					Object.assign(containerStruct.vals,structToAdd.vals);
-			} else if (struct.input&&((!isExpa&&struct.input.multiEdit!=false)||(isExpa&&struct.input.multiEdit))) {
-				structToAdd={...struct,input:{...struct.input,onChange:null}};//prevent onChange-event in multiRowArea
-				if (containerStruct)
-					containerStruct.vals[struct.id]=null;//properties are added to the base-structs of 
-						//this.#multiRowStructs if they are containers and are used later when assigning the
-						//container-vals to selected rows so that also unchanged fields with null values are assigned.
-			}
-			if (structToAdd)
-				if (!containerStruct||containerStruct.entries)
-					(containerStruct?.entries??self.#multiRowStructs).push(structToAdd);
-				else
-					containerStruct.entry=structToAdd;
-		}
+		const bulkEditStructs=[];
+
+		//Build structs for bulk-edit-area based on columns and expansion. They will get placed in this.#bulkEditStructs
+		//and later used to create the actual inputs in the bulk-edit-area
+		for (const struct of [...this.#colStructs,this.#expansion])
+			bulkEditStructs.push(...this.#buildBulkEditStruct(struct));
+
+		const testExpansionStruct={type:"lineup",entries:[{type:"field",edit:"text", title:"foobar"}]};
+
+		const bulkStructTree={type:"lineup",entries:bulkEditStructs};
+
+
+		/** @type {typeof Tablance} */
+		const classConstructor = this.constructor;
+		const bulkEditTable
+			=new classConstructor(tableContainer,{},null,true,bulkStructTree,null,true);
+		bulkEditTable.addData([{amount:69}]);
+		console.log(bulkEditTable)
+
+		//callback for the cancel button that is visible when inside a group-entry in bulk-edit-area
 		function containerCancel() {
-			self.#setMultiRowAreaPage(true,-1);
-			self.container.focus();
-			self.#cellCursor.style.display="block";
-		}
-		function containerApply() {
-			const multiRowStruct=self.#multiRowStructs[self.#multiCellInputIndex];
-			const data=multiRowStruct.tablance._allData[0];
-
-			//for repeated structs, when the data is actually commited we want separate instances of these objects so
-			//that they can be edites eparately like adding an id to them or whatever. So copies will be created and
-			//then stored in here. Key is field-id and value is array of all the copied objects
-			const newRepeatedObjects={};
-			
-			for (const dataKey of Object.keys(data))
-				for (const origStruct of multiRowStruct.origStruct.entries)
-					if (origStruct.id===dataKey) {
-						if (origStruct.type=="repeated") {
-							const copies=newRepeatedObjects[dataKey]=[];
-							while (copies.push(structuredClone(data[dataKey]))<self.#selectedRows.length);
-							origStruct.onCreate?.(copies,self.#selectedRows,origStruct,true);
-						} else
-							origStruct.input.onChange?.(()=>delete data[dataKey],data[dataKey]
-																				,null,self.#selectedRows,origStruct);
-						break;
-					}
-			if (Object.keys(data).length) {//if not all fields were prevented
-				for (let rowData,selectedRowI=-1; rowData=self.#selectedRows[++selectedRowI];) {
-					for (const copiesKey of Object.keys(newRepeatedObjects))
-						data[copiesKey]=newRepeatedObjects[copiesKey][selectedRowI];
-					Object.assign(rowData,data);
-				}
-				for (const selectedTr of self.#mainTbody.querySelectorAll("tr.selected.expanded"))
-					Object.keys(data).forEach(id=>self.updateData(selectedTr.dataset.dataRowIndex,id,null,false,true));
-				self.#multiCells[self.#multiCellInputIndex].innerText="(Same)";
-			}
+			this.#setMultiRowAreaPage(true,-1);
+			this.container.focus();
+			this.#cellCursor.style.display="block";
 		}
 	}
+
+	// When inside a group-entry in bulk-edit-area, this function is called when clicking "apply" button
+	#bulkEditAreaContainerApply() {
+		const multiRowStruct=this.#bulkEditStructs[this.#multiCellInputIndex];
+		const data=multiRowStruct.tablance._allData[0];
+
+		//for repeated structs, when the data is actually commited we want separate instances of these objects so
+		//that they can be edites eparately like adding an id to them or whatever. So copies will be created and
+		//then stored in here. Key is field-id and value is array of all the copied objects
+		const newRepeatedObjects={};
+		
+		for (const dataKey of Object.keys(data))
+			for (const origStruct of multiRowStruct.origStruct.entries)
+				if (origStruct.id===dataKey) {
+					if (origStruct.type=="repeated") {
+						const copies=newRepeatedObjects[dataKey]=[];
+						while (copies.push(structuredClone(data[dataKey]))<this.#selectedRows.length);
+						origStruct.onCreate?.(copies,this.#selectedRows,origStruct,true);
+					} else
+						origStruct.input.onChange?.(()=>delete data[dataKey],data[dataKey]
+																			,null,this.#selectedRows,origStruct);
+					break;
+				}
+		if (Object.keys(data).length) {//if not all fields were prevented
+			for (let rowData,selectedRowI=-1; rowData=this.#selectedRows[++selectedRowI];) {
+				for (const copiesKey of Object.keys(newRepeatedObjects))
+					data[copiesKey]=newRepeatedObjects[copiesKey][selectedRowI];
+				Object.assign(rowData,data);
+			}
+			for (const selectedTr of this.#mainTbody.querySelectorAll("tr.selected.expanded"))
+				Object.keys(data).forEach(id=>this.updateData(selectedTr.dataset.dataRowIndex,id,null,false,true));
+			this.#multiCells[this.#multiCellInputIndex].innerText="(Same)";
+		}
+	}
+
+	/**Given a struct like expansion or column, will add inputs to this.#bulkEditStructs which later is iterated
+	 * and the contents added to the bulk-edit-area. 
+	 * @param {*} struct Should be expansion or column when called from outside, but it calls itself recursively
+	 * 						when hitting upon containers which then are passed to this param
+	 * @param {*} containerStruct Used when the function calls itself recursively and it has found a container with
+	 * 						multiEdit which means the container-struct should be maintained in the bulk-edit-area.
+	 * @returns */
+	#buildBulkEditStruct(struct,containerStruct) {
+		const main=this.#colStructs.includes(struct);//Whether the struct is in expansion or not.
+		const result=[];
+		if (main&&struct.multiEdit) {
+			const structCopy=Object.assign(Object.create(null), struct);
+			structCopy.type="field";
+
+			result.push(structCopy);
+		}
+		return result;
+
+		/* let structToAdd;
+		if (struct.type=="repeated") {
+			if (struct.multiEdit&&struct.create) {
+				//create copy of the repeated-container. and set it to structToAdd so it gets added at the end of
+				//this function. Set onCreate to null so that any function for onCreate set at the implementation
+				//of Tablance wont get fired because we don't want that in the bulk-edit-area
+				structToAdd={...struct,vals:{},entry:{...struct.entry,multiEdit:true},onCreate:null};
+				//update height of bulk-edit-area whenever entries are added or removed
+				structToAdd.onCreateOpen=structToAdd.onCreateCancel=structToAdd.onDelete
+						=()=>this.#updateMultiRowAreaHeight(true);
+				//call this function again recursively for the entry of repeated which is the actual repeated data
+				this.#buildBulkEditStruct(structToAdd.entry,structToAdd);
+			}
+		} else if (struct.entries?.length) {
+			if (struct.multiEdit) {
+				structToAdd={...struct,entries:[],vals:{},origStruct:struct};
+				if (struct.type=="group"&&containerStruct)
+					structToAdd.onOpenAfter=structToAdd.onClose=()=>this.#updateMultiRowAreaHeight(true);
+			}
+			//still call buildStruct for containers without multiEdit,entries may still have it
+			struct.entries.forEach(entryStruct=>this.#buildBulkEditStruct(entryStruct,structToAdd));
+			if (containerStruct&&structToAdd)
+				Object.assign(containerStruct.vals,structToAdd.vals);
+		} else if (struct.input&&((main&&struct.input.multiEdit!=false)||(!main&&struct.input.multiEdit))) {
+			structToAdd={...struct,input:{...struct.input,onChange:null}};//prevent onChange-event in bulk-edit-area
+			if (containerStruct)
+				containerStruct.vals[struct.id]=null;//properties are added to the base-structs of 
+					//this.#bulkEditStructs if they are containers and are used later when assigning the
+					//container-vals to selected rows so that also unchanged fields with null values are assigned.
+		}
+		if (structToAdd)
+			if (!containerStruct||containerStruct.entries)
+				(containerStruct?.entries??this.#bulkEditStructs).push(structToAdd);
+			else
+				containerStruct.entry=structToAdd; */
+		}
 
 	#setMultiRowAreaPage(open,index=null) {
 		if (index!=null) {//changing page
 			this.#multiRowAreaActivePage=index;
 			if (this.#multiCellInputIndex)
-				this.#multiRowStructs[this.#multiCellInputIndex].page.style.display="none";
+				this.#bulkEditStructs[this.#multiCellInputIndex].page.style.display="none";
 			if (index==-1)
-				this.#multiRowArea.querySelector(".main").style.display="block";
+				this.#bulkEditArea.querySelector(".main").style.display="block";
 			else
-				this.#multiRowStructs[this.#multiCellInputIndex].page.style.display="block";
-			this.#multiRowArea.querySelector(".container-controllers").style.display=index==-1?"none":"block";
+				this.#bulkEditStructs[this.#multiCellInputIndex].page.style.display="block";
+			this.#bulkEditArea.querySelector(".container-controllers").style.display=index==-1?"none":"block";
 		}
 
-		this.#multiRowArea.style.overflow="hidden";//have to shift between hidden/visible because hidden is needed for 
+		this.#bulkEditArea.style.overflow="hidden";//have to shift between hidden/visible because hidden is needed for 
 			//animation but visible is needed for dropdowns to be able to go outside of area
 		this.#updateMultiRowAreaHeight(open);
 	}
 
-	#addStructToMultiRowArea(index,struct,inputsDiv,cellMouseDown) {
-		const inputDiv=inputsDiv.appendChild(document.createElement("div"));
-		const header=document.createElement("h3");
-		inputDiv.appendChild(header).innerText=struct.title;
-		inputDiv.classList.add("col");
-		inputDiv.style.width=struct.input?.multiCellWidth??
-									(/\d+%/.test(struct.width)?struct.width:header.offsetWidth+30)+"px";
-		const cellDiv=inputDiv.appendChild(document.createElement("div"));
-		this.#multiCells.push(cellDiv);
-		cellDiv.classList.add("cell");
-		cellDiv.dataset.inputIndex=index;
-		cellDiv.addEventListener("mousedown",cellMouseDown);
-	}
-
 	/**Updates the displayed values in #multiRowArea* */
-	#updateMultiCellVals(structsToUpdateCellsFor=this.#multiRowStructs) {
+	#updateMultiCellVals(structsToUpdateCellsFor=this.#bulkEditStructs) {
 		const mixedText="(Mixed)";
 		for (let multiCellI=-1, multiCellStruct; multiCellStruct=structsToUpdateCellsFor[++multiCellI];) {
-			const cellIndex=this.#multiRowStructs.indexOf(multiCellStruct);
+			const cellIndex=this.#bulkEditStructs.indexOf(multiCellStruct);
 			let mixed=false;
 			if (!multiCellStruct.entries) {//if this cell/col is simple single val
 				let val,lastVal;
@@ -3790,7 +3804,6 @@ export class Tablance {
 	 * 	group-rows as well as toggling the empty-class of them. Reports back whether visibility has been changed.
 	 * @param {*} cellObj */
 	#updateExpansionCell(cellObj,rowData=null) {
-		for (let otherCellObj=cellObj; !(rowData=otherCellObj.dataObj); otherCellObj=otherCellObj.parent);
 		let cellEl=cellObj.el;
 		if (cellObj.struct.maxHeight) {//if there's a maxHeight stated, which is used for textareas
 			cellEl.innerHTML="";//empty the cell, otherwise multiple calls to this would add more and more content to it
@@ -3854,7 +3867,7 @@ export class Tablance {
 					if (cellObj)
 						for (var root=cellObj; root.parent; root=root.parent,rowData=root.dataObj);
 					newCellContent=this.#getValueByPath(rowData,struct.dependsOnDataPath);
-				} else {//if (struct.dependsOnCellPaths) {
+				} else if (struct.dependsOnCellPaths) {
 					const dependee=this.#resolveCellPaths(cellObj,struct.dependsOnCellPaths[0]);
 					newCellContent=dependee.dataObj[dependee.struct.id];
 				}

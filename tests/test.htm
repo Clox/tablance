@@ -24,11 +24,11 @@
 					e.preventDefault();
 					console.log(args)
 				},type:"text",maxLength:5,placeholder:"placeholder",enabled:()=>Math.random()>.5},render:descFunc}
-				,{id:"amount",title:"Amount",width:"85px",input:true},{id:"balance",title:"Balance",width:"85px"}
+				,{id:"amount",title:"Amount",width:"85px",input:true,multiEdit:true},{id:"balance",title:"Balance",width:"85px"}
 				,{id:"food",title:"Food",width:"120px",input:{multiCellWidth:100,type:"select"
 					,options:foods,minOptsFilter:100,allowCreateNew:true,allowSelectEmpty:true
-					,selectInputPlaceholder:"Sök/Skapa"}}
-				,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"}}, 
+					,selectInputPlaceholder:"Sök/Skapa"},multiEdit:true}
+				,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"},multiEdit:true}, 
 				{title:"numtwice", render:num=>num*2, dependsOn:"num"}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
 				{type:"field",title:"amount+10",render:amount=>(Number(amount)+10).toFixed(2)

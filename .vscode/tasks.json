@@ -29,7 +29,20 @@
 		"runOptions": {
 		  "runOn": "folderOpen"
 		}
-	  }
+	  },
+	  {
+		"label": "Start Static Server (serve .)",
+		"type": "shell",
+		"command": "npx serve .",
+		"problemMatcher": [],
+		"options": {
+			"cwd": "${workspaceFolder}"
+		},
+		"presentation": {
+			"reveal": "always",
+			"panel": "new"
+		}
+	},
 	]
   }
   
