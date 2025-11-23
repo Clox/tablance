@@ -31,6 +31,7 @@ export class Tablance {
 
 	#bulkEditArea;//a div displayed under #scrollBody if rows are selected/checked using select-column. This 
 						//section is used to edit multiple rows at once
+	#bulkEditTable;//this holds another instance of the Tablance class which is used inside the bulk-edit-area
 	#bulkEditAreaOpen=false;//whether the section is currently open or not
 	#bulkEditStructs;//Array of structs with inputs that are present in the bulk-edit-area
 
@@ -1954,7 +1955,7 @@ export class Tablance {
 		}
 		this.#numberOfRowsSelectedSpan.innerText=this.#numRowsSelected;
 		this.#updateNumRowsSelectionState();
-		//this.#updateMultiCellVals();
+		this.#updateMultiCellVals();
 	}
 
 	#updateNumRowsSelectionState() {
@@ -3206,7 +3207,6 @@ export class Tablance {
 		mainPage.style.display="block";
 		
 		this.#multiCellsDataObj=Object.create(null);
-		this.#bulkEditStructs=[];
 
 		const bulkEditStructs=[];
 
@@ -3215,18 +3215,16 @@ export class Tablance {
 		for (const struct of [...this.#colStructs,this.#expansion])
 			bulkEditStructs.push(...this.#buildBulkEditStruct(struct));
 
-		const testExpansionStruct={type:"lineup",entries:[{type:"field",edit:"text", title:"foobar"}]};
-
 		const bulkStructTree={type:"lineup",entries:bulkEditStructs};
 
 
 		/** @type {typeof Tablance} */
 		const classConstructor = this.constructor;
-		const bulkEditTable
-			=new classConstructor(tableContainer,{},null,true,bulkStructTree,null,true);
-		bulkEditTable.addData([{amount:69}]);
-		console.log(bulkEditTable)
 
+		
+		this.#bulkEditTable=new classConstructor(tableContainer,{},null,true,bulkStructTree,null,true);
+		this.#bulkEditTable.addData([{amount:69}]);
+		
 		//callback for the cancel button that is visible when inside a group-entry in bulk-edit-area
 		function containerCancel() {
 			this.#setMultiRowAreaPage(true,-1);
@@ -3282,7 +3280,7 @@ export class Tablance {
 		if (main&&struct.multiEdit) {
 			const structCopy=Object.assign(Object.create(null), struct);
 			structCopy.type="field";
-
+			structCopy.minWidth="100px";
 			result.push(structCopy);
 		}
 		return result;
@@ -3342,10 +3340,9 @@ export class Tablance {
 	}
 
 	/**Updates the displayed values in #multiRowArea* */
-	#updateMultiCellVals(structsToUpdateCellsFor=this.#bulkEditStructs) {
+	#updateMultiCellVals(structsToUpdateCellsFor=this.#bulkEditTable.#expansion.entries) {
 		const mixedText="(Mixed)";
 		for (let multiCellI=-1, multiCellStruct; multiCellStruct=structsToUpdateCellsFor[++multiCellI];) {
-			const cellIndex=this.#bulkEditStructs.indexOf(multiCellStruct);
 			let mixed=false;
 			if (!multiCellStruct.entries) {//if this cell/col is simple single val
 				let val,lastVal;
@@ -3357,8 +3354,11 @@ export class Tablance {
 					}
 					lastVal=val;
 				}
-				this.#multiCellsDataObj[multiCellStruct.id]=mixed?"":val;
-				this.#multiCells[cellIndex].innerText=mixed?mixedText:val?.text??val??"";
+				//update both the data and the dom
+				this.#bulkEditTable.updateData(0,multiCellStruct.id,mixed?mixedText:val?.text??val??"");
+				const el=this.#bulkEditTable.#openExpansions[0].children[multiCellI].el;
+				el.innerText=mixed?mixedText:val?.text??val??"";
+				this.#bulkEditTable.#data[0][multiCellStruct.id]=mixed?"":val;
 			} else {
 				const fieldKeys=Object.keys(multiCellStruct.vals);
 				for (let field,fieldI=0;!mixed&&(field=fieldKeys[fieldI]);fieldI++) {
@@ -3371,7 +3371,6 @@ export class Tablance {
 				}
 				this.#multiCells[cellIndex].innerText=mixed?mixedText:"(Same)";
 			}
-			this.#multiCells[cellIndex].classList.toggle("mixed",mixed);
 		}
 	}
 

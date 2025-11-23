@@ -20,7 +20,7 @@
 						{text:"another set of grapes",value:13},{text:"another melon",value:14},
 						{text:"another pineapple",value:15},{text:"another carrot",value:13}];
 			const myTablanceCols=[{type:"select"},{type:"expand"}
-				,{id:"desc",title:"Descriptionn",dffdfdfd:69,html:true,input:{multiEdit:false,onChange:(e,...args)=>{
+				,{id:"desc",title:"Description",width:"150px",html:true,input:{multiEdit:false,onChange:(e,...args)=>{
 					e.preventDefault();
 					console.log(args)
 				},type:"text",maxLength:5,placeholder:"placeholder",enabled:()=>Math.random()>.5},render:descFunc}
@@ -168,7 +168,8 @@
 			for (let i=0; i<3; i++) {
 				data=[];
 				for (let ii=0; ii<1000; ii++) {
-					data.push({num:55,myFormattedData:123456789123,desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,descLetter:String.fromCharCode(ii)
+					data.push({num:55,myFormattedData:123456789123,desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,
+						descLetter:String.fromCharCode(ii+33)
 						,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
 						,hello:"Hallå",world:"Världen",innergrejer:{foo:1337}
 						,addresses:[{street:"kaplan",zip:9999,city:"skara"},{street:"kaplan",zip:8999,city:"skara"}]

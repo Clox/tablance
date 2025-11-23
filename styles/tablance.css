@@ -214,6 +214,8 @@
 .tablance .expansion .lineup > span {
   display: inline-block;
   padding: 0.4em;
+  text-align: center;
+  min-width: 50px;
 }
 .tablance .expansion .lineup > span > div {
   padding: 4px;
