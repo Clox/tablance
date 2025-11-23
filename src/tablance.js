@@ -1822,6 +1822,8 @@ export class Tablance {
 			containerEl.classList.add("input-cell");
 		
 		containerEl.classList.add("value");
+		if (struct.input)
+			outerContainerEl.classList.add((struct.input.type??"text")+"-container");
 		
 		if (index<collectionOrRepeated.children.length)
 			for (let siblingI=index-1,sibling; sibling=collectionOrRepeated.children[++siblingI];)

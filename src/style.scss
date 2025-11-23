@@ -187,6 +187,13 @@
 				}
 			}
 		}
+		.lineup {
+			>.date-container {
+				min-width: 12ch;//Give date-fields enough space from the start to hold YYYY-MM-DD even if currently
+								//empty. Use min-width rather than width because if date somehow got larger the field
+								//will expand rather than wrap
+			}
+		}
 		.disabled {
 			background-color: #f2f2f2;
 		}
