@@ -1186,6 +1186,7 @@ export class Tablance {
 	}
 
 	#moveCellCursor(hSign,vSign,e) {
+		const prevSelectedCell=this.#selectedCell;
 		if (this.#mainRowIndex==null&&this.#mainColIndex==null)//if table has focus but no cell is selected.
 			return;//can happen if table is clicked but not on a cell
 		e?.preventDefault();//to prevent native scrolling when pressing arrow-keys. Needed if #onlyExpansion==true but
@@ -1217,6 +1218,10 @@ export class Tablance {
 		}
 		if (this.#onlyExpansion&&this.#mainRowIndex!=null)
 			this.#scrollToCursor();
+		
+		//if active cell is still the same. this happens for example when pressing enter when at the bottom
+		if (prevSelectedCell==this.#selectedCell)
+			this.#exitEditMode(true);
 	}
 
 	#moveInsideLineup(numCols,numRows) {
@@ -1325,7 +1330,7 @@ export class Tablance {
 	}
 	
 	#spreadsheetKeyDown(e) {
-		//prevent this from running if an inner Tablance-instance is selected
+		//prevent this from running in outer Tablance if an inner Tablance-instance is selected
 		if (this.#bulkEditArea?.contains(document.activeElement))
 			return;
 		this.#tooltip.style.visibility="hidden";
