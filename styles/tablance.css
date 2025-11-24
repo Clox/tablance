@@ -235,13 +235,13 @@
 .tablance .expansion .lineup.delete-controls .no {
   margin-right: -2em;
 }
-.tablance .expansion .lineup.delete-controls .no h4 {
+.tablance .expansion .lineup.delete-controls .no span.title {
   color: red;
 }
 .tablance .expansion table.expansion-group > tbody > tr > td {
   padding: 0;
 }
-.tablance .expansion table.expansion-group > tbody > tr > td:first-child > h4 {
+.tablance .expansion table.expansion-group > tbody > tr > td:first-child > span.title {
   margin-top: 5px;
 }
 .tablance .expansion table.expansion-group > tbody > tr > td > div {
@@ -273,13 +273,14 @@
 .tablance .expansion table.expansion-list > tbody > tr:last-child > td.value {
   border-bottom: 1px solid #ddd;
 }
-.tablance .expansion h4 {
-  margin-top: 5px;
+.tablance .expansion span.title {
+  margin-top: 0px;
   color: #787878;
-  line-height: 2px;
   font-size: 13px;
-  margin-bottom: 8px;
+  line-height: 0.9;
+  margin-bottom: 3px;
   font-weight: 500;
+  display: block;
 }
 .tablance .group-cell {
   padding: 4px;

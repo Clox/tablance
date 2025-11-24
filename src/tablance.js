@@ -1780,73 +1780,140 @@ export class Tablance {
 		return true;
 	}
 
-	#generateCollectionItem(struct,mainIndex,collectionOrRepeated,path,data,index=null) {
-		const collection=collectionOrRepeated.struct.type=="repeated"?collectionOrRepeated.parent:collectionOrRepeated;
-		const collectionEl=collection.containerEl;
-		index??=collectionOrRepeated.children.length;
-		
-		let containerEl;//is the element that the content will be added to
-		let outerContainerEl;//is the outermost element that belongs exclusevily to this item
-		const itemObj={parent:collectionOrRepeated,index:index??collectionOrRepeated.children.length};
-		if (collection.struct.type=="list") {
+	/**
+	 * Build correct DOM structure for a collection item depending on collection type.
+	 * Returns both outermost element (outerContainerEl) and the inner element (containerEl)
+	 * where the content will be placed.
+	 * 
+	 * Also sets special properties on itemObj for group items.
+	 */
+	#buildCollectionItemDOM(struct,collection,itemObj,title) {
+		let outerContainerEl,containerEl;
+		const type=collection.struct.type;
+
+		// LIST: Each item is a <tr> with title cell optionally + value cell
+		if (type=="list") {
 			outerContainerEl=document.createElement("tr");
-			if (collection.struct.titlesColWidth!=false)
-				Object.assign(outerContainerEl.insertCell(),{className:"title",innerText:struct.title??""});
+			if (collection.struct.titlesColWidth!=false) {
+				const td=outerContainerEl.insertCell();
+				td.className="title";
+				td.innerText=struct.title??"";
+			}
 			containerEl=outerContainerEl.insertCell();
-		} else if (collection.struct.type=="lineup") {
+		} else if (type=="lineup") {// LINEUP: Items rendered inline, outerContainerEl wraps title + inner content
 			outerContainerEl=document.createElement("span");
-			if (struct.title)
-				outerContainerEl.appendChild(document.createElement("h4")).innerHTML=struct.title;
+			if (title)
+				outerContainerEl.appendChild(title);
 			containerEl=itemObj.selEl=outerContainerEl.appendChild(document.createElement("div"));
-		} else if (collection.struct.type=="group") {
+		} else if (type=="group") {//GROUP: More complex <tr> with special rules for empty/hiding and more
 			outerContainerEl=document.createElement("tr");
-			outerContainerEl.className="empty";	//start as empty to hide when closed.updateCell() will remove it if 
-												//a cell is non-empty
+			outerContainerEl.className="empty";		// Will be hidden while group is closed until content becomes non-empty
+
 			const td=outerContainerEl.insertCell();
-			td.classList.toggle("disabled",struct.type=="field"&&!struct.input)
+			td.classList.toggle("disabled",struct.type=="field"&&!struct.input);
+
+			// Add separator for non-group members
 			if (struct.type!="group")
 				td.appendChild(document.createElement("hr")).className="separator";
-			if (struct.title)
-				td.appendChild(document.createElement("h4")).innerText=struct.title;	
+
+			if (title)
+				td.appendChild(title);
+
 			containerEl=td.appendChild(document.createElement("div"));
 
-			//create cell-object for group-member. nonEmptyDescentants keeps track of how many descendant-cells that are
-			//non-empty in order to mark group-rows as empty to hide them while group is closed
-			//selEl is set and will be what the cell-cursor highlights. We do want to highlight the whole td but still
-			//it can't be used as the normal el and therefore get its innerText set when editing it because it also
-			//contains a header-element
-			Object.assign(itemObj,{nonEmptyDescentants:0,grpTr:outerContainerEl,selEl:td});
+			// Track non-empty descendants so empty group rows can hide visually
+			Object.assign(itemObj,{
+				nonEmptyDescentants:0,
+				grpTr:outerContainerEl,
+				selEl:td
+			});
 		} else
 			outerContainerEl=containerEl=document.createElement("div");
+
+		return {outerContainerEl,containerEl};
+	}
+
+	/**
+	 * Insert the newly generated collection item into the DOM, either at end or at a precise insert position.
+	 * Handles "repeated" collections where insertion point is not always end of list.
+	 */
+	#insertCollectionItem(struct,index,itemObj,outerContainerEl,collectionOrRepeated,collectionEl) {
+		let siblingAfter=null;
+
+		// For repeated collections: determine the real insertion position based on insertionPoint
+		if (collectionOrRepeated.struct.type=="repeated") {
+			const next=collectionOrRepeated.insertionPoint.nextSibling;
+			const base=collectionOrRepeated.children.length;
+			const pos=(next?.rowIndex??base)-base+index;
+			siblingAfter=collectionOrRepeated.children[pos];
+		}
+
+		// Where to insert in the DOM
+		const beforeEl=siblingAfter?.el.closest(".collection>*")?? collectionOrRepeated.insertionPoint;
+
+		collectionEl.insertBefore(outerContainerEl,beforeEl);
+
+		// Insert into internal children array
+		collectionOrRepeated.children.splice(index,0,itemObj);
+
+		// Extra CSS class if defined in struct
+		if (struct.cssClass)
+			outerContainerEl.className+=" "+struct.cssClass;
+	}
+	
+	
+
+	/**
+	 * Generate one item inside a collection or repeated block.
+	 * Creates DOM, updates indices, generates inner content, and inserts into DOM
+	 * only if expansion content was actually created (e.g., repeated with empty data should not add item).
+	 */
+	#generateCollectionItem(struct,mainIndex,collectionOrRepeated,path,data,index=null) {
+		// Determine actual collection (repeated uses parent collection visually)
+		const collection=collectionOrRepeated.struct.type=="repeated"?collectionOrRepeated.parent:collectionOrRepeated;
+
+		const collectionEl=collection.containerEl;
+		index??=collectionOrRepeated.children.length;
+
+		// Item object (holds metadata for this item)
+		const itemObj=Object.assign(Object.create(null),{parent:collectionOrRepeated,index:index});
+
+		// Optional title element
+		let title;
+		if (struct.title) {
+			title=document.createElement("span");
+			title.className="title";
+			title.innerHTML=struct.title;
+		}
+
+		// Build DOM structure for this item
+		const {outerContainerEl,containerEl}=this.#buildCollectionItemDOM(struct,collection,itemObj,title);
+
+		// Visual CSS classes
 		if (struct.input&&struct.input.type!="button")
 			containerEl.classList.add("input-cell");
-		
 		containerEl.classList.add("value");
 		if (struct.input)
 			outerContainerEl.classList.add((struct.input.type??"text")+"-container");
-		
-		if (index<collectionOrRepeated.children.length)
-			for (let siblingI=index-1,sibling; sibling=collectionOrRepeated.children[++siblingI];)
-				this.#changeCellObjIndex(sibling,siblingI+1);
-		path.push(index??collectionOrRepeated.children.length);
-		if (this.#generateExpansionContent(struct,mainIndex,itemObj,containerEl,path,data)) {//generate content
-			//and add it to dom if condition falls true, e.g. content was actually created. it might not be if it is
-			//a repeated and there was no data for it add
 
-			let siblingAfter;
-			if (collectionOrRepeated.struct.type=="repeated")
-				siblingAfter=collectionOrRepeated.children[
-					(collectionOrRepeated.insertionPoint.nextSibling?.rowIndex??collectionOrRepeated.children.length)
-																		-collectionOrRepeated.children.length+index];
-			collectionEl.insertBefore(outerContainerEl
-									,siblingAfter?.el.closest(".collection>*")??collectionOrRepeated.insertionPoint);
-			collectionOrRepeated.children.splice(index??Infinity,0,itemObj);
-			if (struct.cssClass)
-				outerContainerEl.className+=" "+struct.cssClass;
-		}
+		// If inserting in middle: update sibling item indices
+		if (index<collectionOrRepeated.children.length)
+			for (let i=index-1,sibling; sibling=collectionOrRepeated.children[++i];)
+				this.#changeCellObjIndex(sibling,i+1);
+
+		path.push(index);
+
+		// Expand inner content; may return false if nothing should be rendered
+		const generated=this.#generateExpansionContent(struct,mainIndex,itemObj,containerEl,path,data);
+
+		// Only insert if it actually has content (important for sparse repeated arrays)
+		if (generated)
+			this.#insertCollectionItem(struct,index,itemObj,outerContainerEl,collectionOrRepeated,collectionEl);
+
 		path.pop();
 		return itemObj;
 	}
+
 
 	#generateField(fieldStruct,mainIndex,cellObject,parentEl,path,rowData) {
 		cellObject.select=()=>this.#selectExpansionCell(cellObject);
