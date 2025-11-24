@@ -235,8 +235,10 @@
 			>span {
 				display: inline-block;
 				padding: .4em;
-				text-align: center;//when the field is larger than the title, the title should be centered
 				min-width: 50px;
+				>span.title {
+					text-align: center;//when the field is larger than the title, the title should be centered
+				}
 				>div {
 					padding: 4px;
 					&.input-cell {
