@@ -34,7 +34,6 @@ export class Tablance {
 	#bulkEditTable;//this holds another instance of the Tablance class which is used inside the bulk-edit-area
 	#bulkEditAreaOpen=false;//whether the section is currently open or not
 	#bulkEditStructs;//Array of structs with inputs that are present in the bulk-edit-area
-
 	#multiCellSelected=false;//whether or not a cell inside #multiRowArea is currently selected
 	#multiCells;//the multi-edit-cells in bulk-edit-area, in the same order as in #multiCellIds. 
 	#multiCellsDataObj;//used to store values of the multi-cells so the inputs can get set correctly initially on edit
@@ -2784,15 +2783,11 @@ export class Tablance {
 			this.#showTooltip(message);
 	}
 
-	#multiRowCellEdited() {
+	#multiRowCellEdited(tablanceEvent, propertyName, newValue, oldValue, rowData, struct, cellObject) {
 		for (const selectedRow of this.#selectedRows)
-			selectedRow[this.#activeStruct.id]=this.#inputVal;
+			selectedRow[struct.id]=newValue;
 		for (const selectedTr of this.#mainTbody.querySelectorAll("tr.selected"))
-			this.updateData(selectedTr.dataset.dataRowIndex,this.#activeStruct.id,this.#inputVal,false,true);
-		this.#multiCellsDataObj[this.#activeStruct.id]=this.#inputVal;
-		const multiCell=this.#multiCells[this.#bulkEditStructs.indexOf(this.#activeStruct)];
-		multiCell.innerText=this.#inputVal?.text??this.#inputVal??"";
-		multiCell.classList.remove("mixed");
+			this.updateData(selectedTr.dataset.dataRowIndex,struct.id,newValue,false,true);
 	}
 
 	/**
@@ -3341,6 +3336,10 @@ export class Tablance {
 		}
 	}
 
+	#isObject(val) {
+		return val&&typeof val==="object"&&!Array.isArray(val);
+	}
+
 	/**Given a struct like expansion or column, will add inputs to this.#bulkEditStructs which later is iterated
 	 * and the contents added to the bulk-edit-area. 
 	 * @param {*} struct Should be expansion or column when called from outside, but it calls itself recursively
@@ -3353,8 +3352,10 @@ export class Tablance {
 		const result=[];
 		if (main&&struct.multiEdit) {
 			const structCopy=Object.assign(Object.create(null), struct);
-			structCopy.type="field";
-			structCopy.minWidth="100px";
+			structCopy.type="field";//struct of columns don't need to specify this, but it's needed in expansion
+			if (!this.#isObject(structCopy.input))//input kay also be a truthy value like true
+				structCopy.input={};
+			structCopy.input.onChange=this.#multiRowCellEdited.bind(this);
 			result.push(structCopy);
 		}
 		return result;
