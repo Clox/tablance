@@ -3344,19 +3344,20 @@ export class Tablance {
 	 * and the contents added to the bulk-edit-area. 
 	 * @param {*} struct Should be expansion or column when called from outside, but it calls itself recursively
 	 * 						when hitting upon containers which then are passed to this param
-	 * @param {*} containerStruct Used when the function calls itself recursively and it has found a container with
-	 * 						multiEdit which means the container-struct should be maintained in the bulk-edit-area.
 	 * @returns */
-	#buildBulkEditStruct(struct,containerStruct) {
+	#buildBulkEditStruct(struct) {
 		const main=this.#colStructs.includes(struct);//Whether the struct is in expansion or not.
 		const result=[];
-		if (main&&struct.multiEdit) {
+		if ((main||struct.type=="field")&&struct.multiEdit) {
 			const structCopy=Object.assign(Object.create(null), struct);
 			structCopy.type="field";//struct of columns don't need to specify this, but it's needed in expansion
 			if (!this.#isObject(structCopy.input))//input kay also be a truthy value like true
 				structCopy.input={};
 			structCopy.input.onChange=this.#multiRowCellEdited.bind(this);
 			result.push(structCopy);
+		} else if ((struct.multiEdit||struct==this.#expansion)&&struct.entries?.length) {
+			for (const entryStruct of struct.entries)
+				result.push(...this.#buildBulkEditStruct(entryStruct));
 		}
 		return result;
 
