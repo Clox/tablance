@@ -544,11 +544,11 @@ export class Tablance {
 	 * @param {int|object} dataRow_or_mainIndex Either the actual data-object that should be updated, or its index in
 	 * 											the current view
 	 * @param {string|string[]} dataPath The path to the data-value that should be updated or added to. For a value in
-	 * 				the base which is not nested within repeated-containers it should simply be the id of the property.
-	 * 				It can either be a string of keys separated by dots(.) or a array where each element is a key.
-	 * 				For repeated-arrays which data should be added to "[]" can be used similiar to how it's done in PHP.
-	 * 				For instance the path could be "foo[]" or "foo[].bar". Objects/arrays will be created recursively
-	 * 				if they don't yet exist.
+	 * 			the base which is not nested within repeated-containers it should simply be the id of the property.
+	 * 			It can either be a string of keys separated by dots(.) or an array where each element is a key.
+	 * 			For repeated-arrays which data should be added to, "[]" can be used similiar to how it's done in PHP.
+	 * 			For instance the path could be "foo[]" or "foo[].bar". Objects/arrays will be created recursively
+	 * 			if they don't yet exist.
 	 * @param {*} newData The actual data to be replaced with or added
 	 * @param {bool} scrollTo Whether the modified/added data should be scrolled to and highlighted.
 	 * @param {bool} onlyRefresh If true then no new data will be written and argument "data" will be ignored.
@@ -564,7 +564,7 @@ export class Tablance {
 			mainIndx=this.#data.indexOf(dataRow=dataRow_or_mainIndex);
 		dataPath=typeof dataPath=="string"?dataPath.split(/\.|(?=\[\d*\])/):dataPath;
 
-		if (!onlyRefresh) {
+		if (!onlyRefresh) {//if we're not only refreshing the cell but actually modifying/adding data
 			//update the actual data, deal with the dom later
 			let dataPortion=dataRow;//object that is going to have a property updated, or array that will be pushed to
 			for (let i=0; i<dataPath.length; i++) {
@@ -583,7 +583,7 @@ export class Tablance {
 			return;//the row to be updated is outside of view. It'll be updated automatically if scrolled into view
 		
 		//is it a column of the main-table?
-		if (dataPath.length==1) //it's possible only if the path is a single id-key..
+		if (dataPath.length==1) //it's possible only if the path is a single id-key. (but still not guaranteed)
 			for (let colI=-1,colStruct;colStruct=this.#colStructs[++colI];)
 				if (colStruct.id==dataPath[0]) {//if true then yes, it was a column of main-table
 					dataRow[colStruct.id]=newData;//update the actual data
@@ -628,7 +628,7 @@ export class Tablance {
 		}
 
 		if (cellObjToUpdate.struct.type=="field")
-			this.#updateExpansionCell(cellObjToUpdate);
+			this.#updateExpansionCell(cellObjToUpdate,dataRow);
 		if (scrollTo) {
 			cellObjToUpdate.el.scrollIntoView({behavior:'smooth',block:"center"});
 			updatedEls.forEach(el=>this.#highlightElements([el,...el.getElementsByTagName('*')]));
