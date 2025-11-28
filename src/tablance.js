@@ -1,4 +1,8 @@
-export class Tablance {
+/** 
+ * Base class providing shared table logic, structure management,
+ * data handling, and rendering helpers etc used by both Tablance and TablanceBulk.
+ */
+class TablanceBase {
 	container;//Readonly, container-element for table
 	neighbourTables;//Object of other Tablance-instances. Possible keys are "up" and "down". If any of these are set
 				//then if one keeps pressing up/down until there are no more cells then one will get o the next table.
@@ -2785,13 +2789,6 @@ export class Tablance {
 			this._showTooltip(message);
 	}
 
-	_multiRowCellEdited(tablanceEvent, propertyName, newValue, oldValue, rowData, struct, cellObject) {
-		for (const selectedRow of this._selectedRows)
-			selectedRow[struct.id]=newValue;
-		for (const selectedTr of this._mainTbody.querySelectorAll("tr.selected"))
-			this.updateData(selectedTr.dataset.dataRowIndex,struct.id,newValue,false,true);
-	}
-
 	/**
 	 * Updates dependent cells when a cell's value changes.
 	 *
@@ -2856,51 +2853,6 @@ export class Tablance {
 		this._adjustCursorPosSize(this._selectedCell);
 		this._highlightOnFocus=false;
 		return true;
-	}
-
-	_doEditSave() {
-		let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
-		const inputVal=this._activeStruct.input.type==="select"?this._inputVal.value:this._inputVal;
-			this._activeStruct.input.onChange?.({preventDefault:()=>doUpdate=false},this._activeStruct.id,
-				inputVal,this._selectedCellVal,this._multiCellSelected?this._selectedRows:this._cellCursorDataObj
-				,this._activeStruct,this._activeExpCell);
-		if (doUpdate) {
-			const checked=this._selectedRows.indexOf(this._cellCursorDataObj)!=-1;
-			if (this._multiCellSelected) {
-				this._multiRowCellEdited();
-			} else {	
-				this._cellCursorDataObj[this._activeStruct.id]=this._inputVal;
-				if (this._activeExpCell){
-					const doHeightUpdate=this._updateExpansionCell(this._activeExpCell,this._cellCursorDataObj);
-					if (doHeightUpdate&&!this._onlyExpansion)
-						this._updateExpansionHeight(this._selectedCell.closest("tr.expansion"));
-					for (let cell=this._activeExpCell.parent; cell; cell=cell.parent)
-						if (cell.struct.closedRender)//found a group with a closed-group-render func
-							cell.updateRenderOnClose=true;//update closed-group-render
-					if (checked) {
-						for (const multiStruct of this._bulkEditStructs) {
-							if (multiStruct.entries) {
-								for (let cell=this._activeExpCell.parent; cell; cell=cell.parent)
-									if (cell.struct==multiStruct.origStruct) {
-										this._updateMultiCellVals([multiStruct]);
-										break;
-									}
-							} else
-								if (this._activeStruct==multiStruct)
-									this._updateMultiCellVals([multiStruct]);
-						}
-					}
-				} else {
-					if (checked)
-						this._updateMultiCellVals([this._activeStruct]);
-					this._updateMainRowCell(this._selectedCell,this._activeStruct);
-					this._unsortCol(this._activeStruct.id);
-				}
-			}
-			this._updateDependentCells(this._activeStruct,this._activeExpCell);
-		} else
-			this._inputVal=this._selectedCellVal;
-		this._selectedCellVal=this._inputVal;
 	}
 
 	_showTooltip(message,target=this._cellCursor) {
@@ -3287,14 +3239,9 @@ export class Tablance {
 			bulkEditStructs.push(...this._buildBulkEditStruct(struct));
 
 		const bulkStructTree={type:"lineup",entries:bulkEditStructs};
-
-
-		/** @type {typeof Tablance} */
-		const classConstructor = this.constructor;
-
-		
-		this._bulkEditTable=new classConstructor(tableContainer,{},null,true,bulkStructTree,null,true);
-		this._bulkEditTable.addData([{amount:69}]);
+		this._bulkEditTable=new TablanceBulk(tableContainer,{},null,true,bulkStructTree,null,true);
+		this._bulkEditTable.mainInstance=this;
+		this._bulkEditTable.addData([{}]);
 		
 		//callback for the cancel button that is visible when inside a group-entry in bulk-edit-area
 		function containerCancel() {
@@ -3353,9 +3300,6 @@ export class Tablance {
 		if ((main||struct.type=="field")&&struct.multiEdit) {
 			const structCopy=Object.assign(Object.create(null), struct);
 			structCopy.type="field";//struct of columns don't need to specify this, but it's needed in expansion
-			if (!this._isObject(structCopy.input))//input kay also be a truthy value like true
-				structCopy.input={};
-			structCopy.input.onChange=this._multiRowCellEdited.bind(this);
 			result.push(structCopy);
 		} else if ((struct.multiEdit||struct==this._expansion)&&struct.entries?.length) {
 			for (const entryStruct of struct.entries)
@@ -3437,17 +3381,6 @@ export class Tablance {
 				const el=this._bulkEditTable._openExpansions[0].children[multiCellI].el;
 				el.innerText=mixed?mixedText:val?.text??val??"";
 				this._bulkEditTable._data[0][multiCellStruct.id]=mixed?"":val;
-			} else {
-				const fieldKeys=Object.keys(multiCellStruct.vals);
-				for (let field,fieldI=0;!mixed&&(field=fieldKeys[fieldI]);fieldI++) {
-					for (let rowI=0,row; row=this._selectedRows[++rowI];) {
-						if (row[field]!=this._selectedRows[0][field]) {
-							mixed=true;
-							break;
-						}
-					}
-				}
-				this._multiCells[cellIndex].innerText=mixed?mixedText:"(Same)";
 			}
 		}
 	}
@@ -4003,3 +3936,70 @@ export class Tablance {
 		});
 	}
 }
+
+/**
+ * Secondary Tablance used for the bulk-edit area.
+ * Reflects and updates selected rows in the main Tablance instance.
+ */
+class TablanceBulk extends TablanceBase {
+
+	/** @type {Tablance} main tablance owning this bulk instance */
+	mainInstance;
+
+	_doEditSave() {
+		const inputVal=this._activeStruct.input.type==="select"?this._inputVal.value:this._inputVal;
+		this._cellCursorDataObj[this._activeStruct.id]=this._inputVal;
+		for (const selectedRow of this.mainInstance._selectedRows)
+			selectedRow[this._activeStruct.id]=inputVal;
+		for (const selectedTr of this.mainInstance._mainTbody.querySelectorAll("tr.selected"))
+			this.mainInstance.updateData(selectedTr.dataset.dataRowIndex,this._activeStruct.id,inputVal,false,true);
+		this._updateExpansionCell(this._activeExpCell,this._cellCursorDataObj);
+	}
+}
+
+/**
+ * Primary Tablance component representing the main interactive table.
+ * Handles full data display, user interaction, editing, expansion, and rendering.
+ */
+export default class Tablance extends TablanceBase {
+	_doEditSave() {
+		let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
+		const inputVal=this._activeStruct.input.type==="select"?this._inputVal.value:this._inputVal;
+		this._activeStruct.input.onChange?.({preventDefault:()=>doUpdate=false},this._activeStruct.id,
+				inputVal,this._selectedCellVal,this._cellCursorDataObj,this._activeStruct,this._activeExpCell);
+		if (doUpdate) {
+			const checked=this._selectedRows.indexOf(this._cellCursorDataObj)!=-1;
+			this._cellCursorDataObj[this._activeStruct.id]=this._inputVal;
+			if (this._activeExpCell){
+				const doHeightUpdate=this._updateExpansionCell(this._activeExpCell,this._cellCursorDataObj);
+				if (doHeightUpdate&&!this._onlyExpansion)
+					this._updateExpansionHeight(this._selectedCell.closest("tr.expansion"));
+				for (let cell=this._activeExpCell.parent; cell; cell=cell.parent)
+					if (cell.struct.closedRender)//found a group with a closed-group-render func
+						cell.updateRenderOnClose=true;//update closed-group-render
+				if (checked) {
+					for (const multiStruct of this._bulkEditStructs) {
+						if (multiStruct.entries) {
+							for (let cell=this._activeExpCell.parent; cell; cell=cell.parent)
+								if (cell.struct==multiStruct.origStruct) {
+									this._updateMultiCellVals([multiStruct]);
+									break;
+								}
+						} else
+							if (this._activeStruct==multiStruct)
+								this._updateMultiCellVals([multiStruct]);
+					}
+				}
+			} else {
+				if (checked)
+					this._updateMultiCellVals([this._activeStruct]);
+				this._updateMainRowCell(this._selectedCell,this._activeStruct);
+				this._unsortCol(this._activeStruct.id);
+			}
+			this._updateDependentCells(this._activeStruct,this._activeExpCell);
+		} else
+			this._inputVal=this._selectedCellVal;
+		this._selectedCellVal=this._inputVal;
+	}
+}
+
