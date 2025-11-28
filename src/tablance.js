@@ -39,7 +39,6 @@ class TablanceBase {
 	_bulkEditAreaOpen=false;//whether the section is currently open or not
 	_bulkEditStructs;//Array of structs with inputs that are present in the bulk-edit-area
 	_multiCellSelected=false;//whether or not a cell inside #multiRowArea is currently selected
-	_multiCells;//the multi-edit-cells in bulk-edit-area, in the same order as in #multiCellIds. 
 	_multiCellsDataObj;//used to store values of the multi-cells so the inputs can get set correctly initially on edit
 	_multiCellInputIndex;//the index of the currently active input-element in the bulk-edit-area
 	_multiRowAreaActivePage;//currently active page(there are pages for cells that are containers and can be entered)
@@ -1200,11 +1199,7 @@ class TablanceBase {
 		if (!this._onlyExpansion)
 			this._scrollToCursor();//need this first to make sure adjacent cell is even rendered
 
-		if (this._multiCellSelected) {
-			if (this._multiRowAreaActivePage==-1)//if on the main-page
-				this._selectMultiCell(hSign?this._selectedCell.parentNode[(hSign>0?"next":"previous")+"Sibling"]
-																		?.querySelector(".cell"):this._selectedCell);
-		} else if (this._activeExpCell?.parent?.struct.type==="lineup")
+		if (this._activeExpCell?.parent?.struct.type==="lineup")
 			this._moveInsideLineup(hSign,vSign);
 		else if (vSign) {//moving up or down
 			let newColIndex=this._mainColIndex;
@@ -2046,7 +2041,7 @@ class TablanceBase {
 			checkbox.indeterminate=true;
 		if (this._numRowsSelected^this._bulkEditAreaOpen) {
 			this._bulkEditAreaOpen=!!this._numRowsSelected;
-			this._setMultiRowAreaPage(this._bulkEditAreaOpen);
+			this._updateMultiRowAreaHeight(this._bulkEditAreaOpen);
 		}
 	}
 
@@ -2215,30 +2210,6 @@ class TablanceBase {
 		this._selectExpansionCell(this._getFirstSelectableExpansionCell(groupObj,true,true));
 		groupObj.struct.onOpenAfter?.(groupObj);
 		
-	}
-
-	/**Input-fields in the bulk-edit-area may be container-structs in which case if they are entered, the bulk-edit-area
-	 * changes page to one that represents that container. This function populates the requested page and changes to it.
-	 * @param {*} containerStruct The struct-object of the container-entry*/
-	_openMultiRowAreaContainer(containerStruct) {
-		this._cellCursor.style.display="none";
-		this._bulkEditArea.querySelector(".main").style.display="none";
-		this._cellCursor.style.display="none";
-		if (!containerStruct.page) {
-			containerStruct.page=this._bulkEditArea.querySelector(".pages").appendChild(document.createElement("div"));
-			if (containerStruct.type=="group") {
-				containerStruct.type="list";//make it into a list so it doesn't have to be opened
-				containerStruct.titlesColWidth="25%";//auto(default) renders it at almost 70% for some reason
-			}
-			containerStruct.tablance=new Tablance(containerStruct.page,null,null,true,containerStruct,null,true);
-			containerStruct.tablance.addData([containerStruct.vals]);//containerStruct.vals are all keys with null vals
-				//Needed so fields that haven't been changed and therefore are null too are applied to selected rows.
-
-			this._getFirstSelectableExpansionCell(containerStruct.tablance.expandRow(0),true).select();
-		}
-		this._bulkEditArea.querySelector(".container-controllers").style.display="block";
-		this._setMultiRowAreaPage(true,this._multiCellInputIndex);
-		containerStruct.page.focus();
 	}
 
 	_closeGroup(groupObject) {
@@ -2971,21 +2942,6 @@ class TablanceBase {
 		return cellObj;
 	}
 
-	_selectMultiCell(cell) {
-		if (!cell||!this._exitEditMode(true)||!this._closeActiveExpCell())
-			return;
-		this._selectCell(true,cell,this._bulkEditStructs[this._multiCellInputIndex=cell.dataset.inputIndex]
-																							,this._multiCellsDataObj);
-		this._mainRowIndex=null;
-		
-		const cellPos=cell.getBoundingClientRect();
-		const parentBR=this._bulkEditArea.firstChild.getBoundingClientRect();
-		this._cellCursor.style.height=cellPos.height+"px";
-		this._cellCursor.style.width=cellPos.width+"px";
-		this._cellCursor.style.top=cellPos.top-parentBR.top+"px";
-		this._cellCursor.style.left=cellPos.left-parentBR.left+"px";
-	}
-
 	_selectCell(isMultiCell,cellEl,struct,dataObj,adjustCursorPosSize=true) {
 		this.container.focus({preventScroll:true});
 		this._multiCellSelected=isMultiCell;
@@ -3251,40 +3207,6 @@ class TablanceBase {
 		}
 	}
 
-	// When inside a group-entry in bulk-edit-area, this function is called when clicking "apply" button
-	_bulkEditAreaContainerApply() {
-		const multiRowStruct=this._bulkEditStructs[this._multiCellInputIndex];
-		const data=multiRowStruct.tablance._allData[0];
-
-		//for repeated structs, when the data is actually commited we want separate instances of these objects so
-		//that they can be edites eparately like adding an id to them or whatever. So copies will be created and
-		//then stored in here. Key is field-id and value is array of all the copied objects
-		const newRepeatedObjects={};
-		
-		for (const dataKey of Object.keys(data))
-			for (const origStruct of multiRowStruct.origStruct.entries)
-				if (origStruct.id===dataKey) {
-					if (origStruct.type=="repeated") {
-						const copies=newRepeatedObjects[dataKey]=[];
-						while (copies.push(structuredClone(data[dataKey]))<this._selectedRows.length);
-						origStruct.onCreate?.(copies,this._selectedRows,origStruct,true);
-					} else
-						origStruct.input.onChange?.(()=>delete data[dataKey],data[dataKey]
-																			,null,this._selectedRows,origStruct);
-					break;
-				}
-		if (Object.keys(data).length) {//if not all fields were prevented
-			for (let rowData,selectedRowI=-1; rowData=this._selectedRows[++selectedRowI];) {
-				for (const copiesKey of Object.keys(newRepeatedObjects))
-					data[copiesKey]=newRepeatedObjects[copiesKey][selectedRowI];
-				Object.assign(rowData,data);
-			}
-			for (const selectedTr of this._mainTbody.querySelectorAll("tr.selected.expanded"))
-				Object.keys(data).forEach(id=>this.updateData(selectedTr.dataset.dataRowIndex,id,null,false,true));
-			this._multiCells[this._multiCellInputIndex].innerText="(Same)";
-		}
-	}
-
 	_isObject(val) {
 		return val&&typeof val==="object"&&!Array.isArray(val);
 	}
@@ -3343,23 +3265,6 @@ class TablanceBase {
 			else
 				containerStruct.entry=structToAdd; */
 		}
-
-	_setMultiRowAreaPage(open,index=null) {
-		if (index!=null) {//changing page
-			this._multiRowAreaActivePage=index;
-			if (this._multiCellInputIndex)
-				this._bulkEditStructs[this._multiCellInputIndex].page.style.display="none";
-			if (index==-1)
-				this._bulkEditArea.querySelector(".main").style.display="block";
-			else
-				this._bulkEditStructs[this._multiCellInputIndex].page.style.display="block";
-			this._bulkEditArea.querySelector(".container-controllers").style.display=index==-1?"none":"block";
-		}
-
-		this._bulkEditArea.style.overflow="hidden";//have to shift between hidden/visible because hidden is needed for 
-			//animation but visible is needed for dropdowns to be able to go outside of area
-		this._updateMultiRowAreaHeight(open);
-	}
 
 	/**Updates the displayed values in #multiRowArea* */
 	_updateMultiCellVals(structsToUpdateCellsFor=this._bulkEditTable._expansion.entries) {
@@ -3977,19 +3882,6 @@ export default class Tablance extends TablanceBase {
 				for (let cell=this._activeExpCell.parent; cell; cell=cell.parent)
 					if (cell.struct.closedRender)//found a group with a closed-group-render func
 						cell.updateRenderOnClose=true;//update closed-group-render
-				if (checked) {
-					for (const multiStruct of this._bulkEditStructs) {
-						if (multiStruct.entries) {
-							for (let cell=this._activeExpCell.parent; cell; cell=cell.parent)
-								if (cell.struct==multiStruct.origStruct) {
-									this._updateMultiCellVals([multiStruct]);
-									break;
-								}
-						} else
-							if (this._activeStruct==multiStruct)
-								this._updateMultiCellVals([multiStruct]);
-					}
-				}
 			} else {
 				if (checked)
 					this._updateMultiCellVals([this._activeStruct]);
