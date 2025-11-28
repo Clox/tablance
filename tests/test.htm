@@ -157,12 +157,12 @@
 								,filterPlaceholder:"Sök"
 							};
 
-			const onlyExpansion=false;
 			const tablanceContainer=document.getElementById("tablanceContainer1");
-			tablanceContainer.classList.toggle("only-expansion",onlyExpansion);
 			const myTablance=window.myTablance=new Tablance(tablanceContainer,myTablanceCols,true,true
-				,myExpansion,{defaultFileMetasToShow:{filename:false},lang:lang},onlyExpansion);
+				,myExpansion,{defaultFileMetasToShow:{filename:false},lang:lang},false);
 			window.tablance=myTablance;//to play with public methods via console
+
+
 
 			let data;
 			for (let i=0; i<3; i++) {
@@ -188,15 +188,11 @@
 			}
 			myTablance._allData[0].file={lastModified:1669981639918,name:"foo.txt",size:1337,type: "text"};
 
-			if (onlyExpansion) {
-				const myTablance2=new Tablance(document.getElementById("tablanceContainer2"),null,true,true
+
+			const tablanceContainer2=document.getElementById("tablanceContainer2");
+			const myTablance2=new Tablance(document.getElementById("tablanceContainer2"),null,true,true
 				,myExpansion,null,true);
 				myTablance2.addData(data);
-				const myTablance3=new Tablance(document.getElementById("tablanceContainer3"),null,true,true
-				,myExpansion,null,true);
-				myTablance3.addData(data);
-				myTablance.chainTables(myTablance2,myTablance3);
-			}
 		});
 
 		function btnClickHandler(e,dataObject,mainIndex,struct,cellObject) {
