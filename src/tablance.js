@@ -38,12 +38,7 @@ class TablanceBase {
 	_bulkEditTable;//this holds another instance of the Tablance class which is used inside the bulk-edit-area
 	_bulkEditAreaOpen=false;//whether the section is currently open or not
 	_bulkEditStructs;//Array of structs with inputs that are present in the bulk-edit-area
-	_multiCellSelected=false;//whether or not a cell inside #multiRowArea is currently selected
-	_multiCellsDataObj;//used to store values of the multi-cells so the inputs can get set correctly initially on edit
-	_multiCellInputIndex;//the index of the currently active input-element in the bulk-edit-area
-	_multiRowAreaActivePage;//currently active page(there are pages for cells that are containers and can be entered)
-
-	_numberOfRowsSelectedSpan;//resides in #multiRowArea. Should be set to the number of rows selected
+	_numberOfRowsSelectedSpan;//resides in the bulk-edit-area. Should be set to the number of rows selected
 	_borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
 	_rowHeight=0;//the height of (non expanded) rows with #borderSpacingY included. Assume 0 first until first row added
@@ -253,7 +248,7 @@ class TablanceBase {
 	 * 							It will get passed arguments:
 	 * 							1:TablanceEvent. It has a method with key "preventDefault" which if called prevents the
 	 * 							data/cell from actually being changed. ,2:property-name (id) of edited value
-	 * 							,3:newValue,4:oldValue,5:rowData or rowData[] if multi-row-cell was edited,6:struct
+	 * 							,3:newValue,4:oldValue,5:rowData or rowData[] if bulk-edit-cell was edited,6:struct
 	 * 							,7:cellObject of the input if in expansion,null if not inside expansion
 	 * 						onBlur Function Callback fired when cellcursor goes from being inside the container
 	 * 							to outside. It will get passed arguments 1:cellObject, 2:mainIndex
@@ -351,7 +346,7 @@ class TablanceBase {
 	 * 					having created it. It will normally get passed arguments: 1:new data,2:rowData,3:repeatedStruct
 	 * 					,4:cellObject
 	 * 					However if in the bulk-edit-area by setting "multiEdit" to true then it will get passed
-	 * 					1:new data, 2:array of rowData, 3:repeatedStruct, 4:true (to easily check for multi-row edit)
+	 * 					1:new data, 2:array of rowData, 3:repeatedStruct,4:true (to easily check for bulk-edit-row edit)
 	 * 				onCreateOpen Function If the entry of the repeated is group and "create" is set to true, then this
 	 * 					callback-function will be called when a new group is added, i.e. when the user interacts with
 	 * 					insertNew-cell, not when the data is actually created, that triggers "onCreate".
@@ -1420,55 +1415,6 @@ class TablanceBase {
 			}
 	}
 
-	_expandRow(tr,animate=true) {
-		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
-		if (!this._expansion||this._rowMetaGet(dataRowIndex)?.h>0)
-			return;
-		const expRow=this._renderExpansion(tr,dataRowIndex);
-		const expHeight=this._rowMetaSet(dataRowIndex,"h",this._rowHeight+expRow.offsetHeight+this._borderSpacingY);
-		const contentDiv=expRow.querySelector(".content");
-		if (!this._expBordersHeight)//see declarataion of _expansionTopBottomBorderWidth
-			this._expBordersHeight=expHeight-contentDiv.offsetHeight;
-		this._tableSizer.style.height=parseInt(this._tableSizer.style.height)//adjust scroll-height reflect change...
-			+expHeight-this._rowHeight+"px";//...in height of the table
-		if (animate) {
-			this._unsortCol(null,"expand");
-			contentDiv.style.transition="";
-			contentDiv.style.height="0px";//start at 0
-			setTimeout(()=>contentDiv.style.height=expHeight-this._expBordersHeight+"px");
-			this._animate(()=>this._adjustCursorPosSize(this._selectedCell,true),500,"cellCursor");
-		} else {
-			contentDiv.style.transition="none";
-			contentDiv.style.height=expHeight-this._expBordersHeight+"px";
-		}
-		return expHeight;
-	}
-
-	_contractRow(tr) {
-		if (tr.classList.contains("expansion"))
-			tr=tr.previousSibling;
-		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
-		if (dataRowIndex==this._mainRowIndex&&this._activeExpCell)
-			this._exitEditMode(false);//cancel out of edit-mode so field-validation doesn't cause problems
-		if (!this._expansion||!this._rowMetaGet(dataRowIndex)?.h)
-			return;
-		this._unsortCol(null,"expand");
-		if (this._mainRowIndex==dataRowIndex&&this._activeExpCell) {//if cell-cursor is inside the expansion
-			this._selectMainTableCell(tr.cells[this._mainColIndex]);//then move it out
-			this._scrollToCursor();
-		}
-		const contentDiv=tr.nextSibling.querySelector(".content");
-		if (contentDiv.style.height==="auto") {//if fully expanded
-			contentDiv.style.height=this._rowMetaGet(dataRowIndex).h-this._expBordersHeight+"px";
-			setTimeout(()=>contentDiv.style.height=0);
-		} else if (parseInt(contentDiv.style.height)==0)//if previous closing-animation has reached 0 but transitionend 
-		//hasn't been called yet which happens easily, for instance by selecting expand-button and holding space/enter
-			contentDiv.dispatchEvent(new Event('transitionend'));
-		else//if in the middle of animation, either expanding or contracting. make it head towards 0
-			contentDiv.style.height=0;
-		this._animate(()=>this._adjustCursorPosSize(this._selectedCell,true),500,"cellCursor");
-	}
-
 	/**Creates the actual content of a expanded row. When the user expands a row #expandRow is first called which in
 	 * turn calls this one. When scrolling and already expanded rows are found only this one needs to be called.
 	 * @param {*} tr 
@@ -1928,34 +1874,6 @@ class TablanceBase {
 		cellObject[cellObject.selEl?"selEl":"el"].dataset.path=path.join("-");
 		return true;
 	}
-
-	_scrollToCursor() {
-		if (this._cellCursor.closest(".tablance .multi-row-area"))//don't scroll if this is a sub-table in bulk-edit-area 
-			return;
-		if (this._onlyExpansion)
-			return this._cellCursor.scrollIntoView({block: "center"});
-		const distanceRatioDeadzone=.5;//when moving the cellcursor within this distance from center of view no 
-										//scrolling will be done. 0.5 is half of view, 1 is entire height of view
-		const distanceRatioCenteringTollerance=1;//if moving the cellcursor within this ratio, but outside of 
-					//distanceRatioDeadzone then minimum scrolling will occur only to get within distanceRatioDeadzone
-		const scrollPos=this._scrollBody.scrollTop;
-		const scrollHeight=this._scrollBody.offsetHeight;
-		const cursorY=parseInt(this._cellCursor.style.top);
-		const cursorHeight=this._cellCursor.offsetHeight;
-		const distanceFromCenter=cursorY+cursorHeight/2-scrollPos-scrollHeight/2;
-		const distanceFromCenterRatio=Math.abs(distanceFromCenter/scrollHeight);
-		if (distanceFromCenterRatio>distanceRatioDeadzone/2) {
-			if (distanceFromCenterRatio>distanceRatioCenteringTollerance/2)
-				this._scrollBody.scrollTop=cursorY-scrollHeight/2+this._rowHeight/2;
-			else
-				this._scrollBody.scrollTop=cursorY-scrollHeight/2+cursorHeight/2
-								+(distanceFromCenter<0?1:-1)*scrollHeight*distanceRatioDeadzone/2;
-		}
-		//need to call this manually so that elements that are expected to exist after scroll are guaranteed to do so.
-		//changing this._scrollBody.scrollTop actually calls this method anyway but not until all other code as hun.
-		//This will cause it to run it twice but it's not a big deal.
-		this._scrollMethod();
-	}
 	
 	_spreadsheetMouseDown(e) {
 		this._highlightOnFocus=false;//see decleration
@@ -2151,7 +2069,7 @@ class TablanceBase {
 	/**Aligns dropdowns like select and date-picker correctly by the cellcursor or any other target-element specified */
 	_alignDropdown(dropdown,target=this._cellCursor) {
 
-		const alignmentContainer=this._dropdownAlignmentContainer;	//container of the dropdown
+		const alignmentContainer=this._dropdownAlignmentContainer;//container of the dropdown
 		const alignmentPos=this._getElPos(target);//and its position inside
 		
 		//if target-element is below middle of viewport or if in bulk-edit-area
@@ -2890,7 +2808,7 @@ class TablanceBase {
 		const mainRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);//save it here rather than setting it 
 					//directly because we do not want it to change if #selectCell returns false, preventing the select
 		if (this._exitEditMode(true)&&this._closeActiveExpCell()) {
-			this._selectCell(false,cell,this._colStructs[this._mainColIndex],this._data[mainRowIndex]);
+			this._selectCell(cell,this._colStructs[this._mainColIndex],this._data[mainRowIndex]);
 			this._mainRowIndex=mainRowIndex;
 		}
 	}
@@ -2925,7 +2843,7 @@ class TablanceBase {
 							oldParnt.struct.onBlur?.(oldParnt,mainRowIndex);
 					}
 				}
-		this._selectCell(false,cellObj.selEl??cellObj.el,cellObj.struct,cellObj.dataObj,false);
+		this._selectCell(cellObj.selEl??cellObj.el,cellObj.struct,cellObj.dataObj,false);
 		this._mainRowIndex=mainRowIndex;
 
 		//in case this was called through cellObject.select() it might be necessary to make sure parent-groups are open
@@ -2938,15 +2856,13 @@ class TablanceBase {
 		return cellObj;
 	}
 
-	_selectCell(isMultiCell,cellEl,struct,dataObj,adjustCursorPosSize=true) {
+	_selectCell(cellEl,struct,dataObj,adjustCursorPosSize=true) {
 		this.container.focus({preventScroll:true});
-		this._multiCellSelected=isMultiCell;
 		if (adjustCursorPosSize)
 			this._adjustCursorPosSize(cellEl);
 		this._cellCursor.classList.toggle("expansion",cellEl.closest(".expansion"));
 		this._cellCursor.classList.toggle("disabled",cellEl.classList.contains("disabled"));
-		(isMultiCell?this._bulkEditArea.firstChild:this._scrollingContent??this.container)
-																						.appendChild(this._cellCursor);
+		(this._scrollingContent??this.container).appendChild(this._cellCursor);
 		this._selectedCell=cellEl;
 		this._activeStruct=struct;
 		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
@@ -2960,7 +2876,7 @@ class TablanceBase {
 	_getElPos(el,container) {
 		const cellPos=el.getBoundingClientRect();
 		if (!container)
-			container=this._multiCellSelected?this._bulkEditArea.firstChild:this._tableSizer??this.container;
+			container=this._tableSizer??this.container;
 		const contPos=container.getBoundingClientRect();
 		return {x:cellPos.x-contPos.x, y:cellPos.y-contPos.y+(this._tableSizer?.offsetTop??0)}
 	}
@@ -3177,12 +3093,8 @@ class TablanceBase {
 		
 		const mainPage=pagesDiv.appendChild(document.createElement("div"));
 		const tableContainer=mainPage.appendChild(document.createElement("div"));
-		this._multiRowAreaActivePage=-1;//keeps track of current page. main is -1, rest is index of their inputs in main
 		mainPage.classList.add("main");
 		mainPage.style.display="block";
-		
-		this._multiCellsDataObj=Object.create(null);
-
 		const bulkEditStructs=[];
 
 		//Build structs for bulk-edit-area based on columns and expansion. They will get placed in this._bulkEditStructs
@@ -3862,6 +3774,8 @@ class TablanceBulk extends TablanceBase {
 			this.mainInstance.updateData(selectedTr.dataset.dataRowIndex,this._activeStruct.id,inputVal,false,true);
 		this._updateExpansionCell(this._activeExpCell,this._cellCursorDataObj);
 	}
+
+	_scrollToCursor(){}//override to do nothing since bulk-edit tablance has no scrolling
 }
 
 /**
@@ -3872,10 +3786,6 @@ export default class Tablance extends TablanceBase {
 	constructor() {
 		super(...arguments);
 		this._dropdownAlignmentContainer=this._onlyExpansion?this.container:this._scrollBody;
-
-
-		// if (target.parentElement.closest(".tablance .multi-row-area")&&!this._multiCellSelected)//if in inner tablance
-		// 	alignmentContainer=this.container.parentElement.closest(".tablance");
 	}
 	
 	_doEditSave() {
@@ -3903,6 +3813,81 @@ export default class Tablance extends TablanceBase {
 		} else
 			this._inputVal=this._selectedCellVal;
 		this._selectedCellVal=this._inputVal;
+	}
+
+	_scrollToCursor() {
+		if (this._onlyExpansion)
+			return this._cellCursor.scrollIntoView({block: "center"});
+		const distanceRatioDeadzone=.5;//when moving the cellcursor within this distance from center of view no 
+										//scrolling will be done. 0.5 is half of view, 1 is entire height of view
+		const distanceRatioCenteringTollerance=1;//if moving the cellcursor within this ratio, but outside of 
+					//distanceRatioDeadzone then minimum scrolling will occur only to get within distanceRatioDeadzone
+		const scrollPos=this._scrollBody.scrollTop;
+		const scrollHeight=this._scrollBody.offsetHeight;
+		const cursorY=parseInt(this._cellCursor.style.top);
+		const cursorHeight=this._cellCursor.offsetHeight;
+		const distanceFromCenter=cursorY+cursorHeight/2-scrollPos-scrollHeight/2;
+		const distanceFromCenterRatio=Math.abs(distanceFromCenter/scrollHeight);
+		if (distanceFromCenterRatio>distanceRatioDeadzone/2) {
+			if (distanceFromCenterRatio>distanceRatioCenteringTollerance/2)
+				this._scrollBody.scrollTop=cursorY-scrollHeight/2+this._rowHeight/2;
+			else
+				this._scrollBody.scrollTop=cursorY-scrollHeight/2+cursorHeight/2
+								+(distanceFromCenter<0?1:-1)*scrollHeight*distanceRatioDeadzone/2;
+		}
+		//need to call this manually so that elements that are expected to exist after scroll are guaranteed to do so.
+		//changing this._scrollBody.scrollTop actually calls this method anyway but not until all other code as hun.
+		//This will cause it to run it twice but it's not a big deal.
+		this._scrollMethod();
+	}
+
+	_expandRow(tr,animate=true) {
+		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
+		if (!this._expansion||this._rowMetaGet(dataRowIndex)?.h>0)
+			return;
+		const expRow=this._renderExpansion(tr,dataRowIndex);
+		const expHeight=this._rowMetaSet(dataRowIndex,"h",this._rowHeight+expRow.offsetHeight+this._borderSpacingY);
+		const contentDiv=expRow.querySelector(".content");
+		if (!this._expBordersHeight)//see declarataion of _expansionTopBottomBorderWidth
+			this._expBordersHeight=expHeight-contentDiv.offsetHeight;
+		this._tableSizer.style.height=parseInt(this._tableSizer.style.height)//adjust scroll-height reflect change...
+			+expHeight-this._rowHeight+"px";//...in height of the table
+		if (animate) {
+			this._unsortCol(null,"expand");
+			contentDiv.style.transition="";
+			contentDiv.style.height="0px";//start at 0
+			setTimeout(()=>contentDiv.style.height=expHeight-this._expBordersHeight+"px");
+			this._animate(()=>this._adjustCursorPosSize(this._selectedCell,true),500,"cellCursor");
+		} else {
+			contentDiv.style.transition="none";
+			contentDiv.style.height=expHeight-this._expBordersHeight+"px";
+		}
+		return expHeight;
+	}
+
+	_contractRow(tr) {
+		if (tr.classList.contains("expansion"))
+			tr=tr.previousSibling;
+		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
+		if (dataRowIndex==this._mainRowIndex&&this._activeExpCell)
+			this._exitEditMode(false);//cancel out of edit-mode so field-validation doesn't cause problems
+		if (!this._expansion||!this._rowMetaGet(dataRowIndex)?.h)
+			return;
+		this._unsortCol(null,"expand");
+		if (this._mainRowIndex==dataRowIndex&&this._activeExpCell) {//if cell-cursor is inside the expansion
+			this._selectMainTableCell(tr.cells[this._mainColIndex]);//then move it out
+			this._scrollToCursor();
+		}
+		const contentDiv=tr.nextSibling.querySelector(".content");
+		if (contentDiv.style.height==="auto") {//if fully expanded
+			contentDiv.style.height=this._rowMetaGet(dataRowIndex).h-this._expBordersHeight+"px";
+			setTimeout(()=>contentDiv.style.height=0);
+		} else if (parseInt(contentDiv.style.height)==0)//if previous closing-animation has reached 0 but transitionend 
+		//hasn't been called yet which happens easily, for instance by selecting expand-button and holding space/enter
+			contentDiv.dispatchEvent(new Event('transitionend'));
+		else//if in the middle of animation, either expanding or contracting. make it head towards 0
+			contentDiv.style.height=0;
+		this._animate(()=>this._adjustCursorPosSize(this._selectedCell,true),500,"cellCursor");
 	}
 }
 
