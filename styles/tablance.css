@@ -416,7 +416,7 @@
   max-height: 300px;
   overflow-y: auto;
 }
-.tablance .multi-row-area {
+.tablance .bulk-edit-area {
   overflow: hidden;
   width: 100%;
   position: absolute;
@@ -424,23 +424,23 @@
   transition: height 0.15s ease-out;
   background-color: white;
 }
-.tablance .multi-row-area > div {
+.tablance .bulk-edit-area > div {
   border-top: 1px solid black;
   padding: 4px;
 }
-.tablance .multi-row-area > div > .container-controllers {
+.tablance .bulk-edit-area > div > .container-controllers {
   display: none;
   position: absolute;
   right: 5px;
   top: 5px;
 }
-.tablance .multi-row-area > div > .container-controllers > button {
+.tablance .bulk-edit-area > div > .container-controllers > button {
   margin-left: 5px;
 }
-.tablance .multi-row-area > div > .pages .tablance {
+.tablance .bulk-edit-area > div > .pages .tablance {
   margin-top: 10px;
 }
-.tablance .multi-row-area > div > .pages .tablance .input-cell {
+.tablance .bulk-edit-area > div > .pages .tablance .input-cell {
   cursor: cell;
 }
 

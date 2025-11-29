@@ -177,12 +177,12 @@ class TablanceBase {
 	 * 					Default is null which enables setting the width via css.Setting 0/false turns it off completely.
 	 * 				onBlur: Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
-	 * 				multiEdit Bool Besides setting multiEdit on input of fields it can also be set on containers which
+	 * 				bulkEdit Bool Besides setting bulkEdit on input of fields it can also be set on containers which
 	 * 							will add the container to the bulk-edit-area. Any input-fields in the container that
-	 * 							have multiEdit true will appear in the container there. Remember that both the container
-	 * 							and input of fields have to have true multiEdit for this to work. These can also be
-	 * 							nested so if there's another group in the group where both have true multiEdit and the
-	 * 							inner group has inputs with true multiEdit as well then multi-level groups will be 
+	 * 							have bulkEdit true will appear in the container there. Remember that both the container
+	 * 							and input of fields have to have true bulkEdit for this to work. These can also be
+	 * 							nested so if there's another group in the group where both have true bulkEdit and the
+	 * 							inner group has inputs with true bulkEdit as well then multi-level groups will be 
 	 * 							added to the bulk-edit-area. Containers in the bulk-edit-area appear as a normal cell
 	 * 							at first but by entering it a page dedicated to that container is changed to.
 	 *			}
@@ -194,12 +194,12 @@ class TablanceBase {
 	 * 				cssClass String Css-classes to be added to the lineup-div
 	 * 				onBlur Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 					It will get passed arguments 1:cellObject, 2:mainIndex
-	 * 				multiEdit Bool Besides setting multiEdit on input of fields it can also be set on containers which
+	 * 				bulkEdit Bool Besides setting bulkEdit on input of fields it can also be set on containers which
 	 * 							will add the container to the bulk-edit-area. Any input-fields in the container that
-	 * 							have multiEdit true will appear in the container there. Remember that both the container
-	 * 							and input of fields have to have true multiEdit for this to work. These can also be
-	 * 							nested so if there's another group in the group where both have true multiEdit and the
-	 * 							inner group has inputs with true multiEdit as well then multi-level groups will be 
+	 * 							have bulkEdit true will appear in the container there. Remember that both the container
+	 * 							and input of fields have to have true bulkEdit for this to work. These can also be
+	 * 							nested so if there's another group in the group where both have true bulkEdit and the
+	 * 							inner group has inputs with true bulkEdit as well then multi-level groups will be 
 	 * 							added to the bulk-edit-area. Containers in the bulk-edit-area appear as a normal cell
 	 * 							at first but by entering it a page dedicated to that container is changed to.
 	 *	 		}
@@ -238,10 +238,10 @@ class TablanceBase {
 	 * 							first argument. If it the validation didn't go through then this string will be
 	 * 							displayed to the user. 3:struct, 4:rowData, 5:mainIndex, 6:cellObject(if expansion-cell)
 	 * 						title String String displayed title if placed in a container which displays the title
-	 * 						multiEdit Bool Whether this input should be editable via bulk-edit-area, the section that 
+	 * 						bulkEdit Bool Whether this input should be editable via bulk-edit-area, the section that 
 	 * 							appears when selecting/checking multiple rows using the select-col. Default is true if
 	 * 							not in expansion, or false if in expansion.
-	 * 							Containers can too be added to the bulk-edit-area by setting multiEdit on the container.
+	 * 							Containers can too be added to the bulk-edit-area by setting bulkEdit on the container.
 	 * 						multiCellWidth Int For inputs that are present in the bulk-edit-area. This property can be 
 	 * 							used to specify the number of pixels in width of the cell in that section.
 	 * 						onChange Function Callback fired when the user has changed the value of the input.
@@ -345,7 +345,7 @@ class TablanceBase {
 	 * 					"create" is true. It is considered committed when the cell-cursor has left the repeat-row after
 	 * 					having created it. It will normally get passed arguments: 1:new data,2:rowData,3:repeatedStruct
 	 * 					,4:cellObject
-	 * 					However if in the bulk-edit-area by setting "multiEdit" to true then it will get passed
+	 * 					However if in the bulk-edit-area by setting "bulkEdit" to true then it will get passed
 	 * 					1:new data, 2:array of rowData, 3:repeatedStruct,4:true (to easily check for bulk-edit-row edit)
 	 * 				onCreateOpen Function If the entry of the repeated is group and "create" is set to true, then this
 	 * 					callback-function will be called when a new group is added, i.e. when the user interacts with
@@ -371,7 +371,7 @@ class TablanceBase {
 	 * 					Default is "Yes". Can also be set via param opts->lang->deleteAreYouSureYes
 	 * 				areYouSureNoText String Used if "create" is true. Text of cancel-button for delete. Default is "No"
 	 * 					Can also be set via param opts->lang->deleteAreYouSureNo
-	 * 				multiEdit Bool If set to true then this will appear in the bulk-edit-area which allows editing
+	 * 				bulkEdit Bool If set to true then this will appear in the bulk-edit-area which allows editing
 	 * 					repeated data for multiple data-rows at once. Applying the data does not append the data but it
 	 * 					replaces it meaning the repeated rows already present in the selected rows are removed.
   	 * 			}
@@ -391,12 +391,12 @@ class TablanceBase {
 	 * 									argument. If it the validation didn't go through then this string will be
 	 * 									displayed to the user.
 	 * 								2:struct, 3:rowData(all the entered data of the group), 4:mainIndex, 5:cellObject
-	 * 				multiEdit Bool Besides setting multiEdit on input of fields it can also be set on containers which
+	 * 				bulkEdit Bool Besides setting bulkEdit on input of fields it can also be set on containers which
 	 * 							will add the container to the bulk-edit-area. Any input-fields in the container that
-	 * 							have multiEdit true will appear in the container there. Remember that both the container
-	 * 							and input of fields have to have true multiEdit for this to work. These can also be
-	 * 							nested so if there's another group in the group where both have true multiEdit and the
-	 * 							inner group has inputs with true multiEdit as well then multi-level groups will be 
+	 * 							have bulkEdit true will appear in the container there. Remember that both the container
+	 * 							and input of fields have to have true bulkEdit for this to work. These can also be
+	 * 							nested so if there's another group in the group where both have true bulkEdit and the
+	 * 							inner group has inputs with true bulkEdit as well then multi-level groups will be 
 	 * 							added to the bulk-edit-area. Containers in the bulk-edit-area appear as a normal cell
 	 * 							at first but by entering it a page dedicated to that container is changed to.
 	 * 				onOpen Function Function that fires when the group is opened, before it has been rendered.
@@ -1948,7 +1948,7 @@ class TablanceBase {
 		}
 		this._numberOfRowsSelectedSpan.innerText=this._numRowsSelected;
 		this._updateNumRowsSelectionState();
-		this._updateMultiCellVals();
+		this._updateBulkEditAreaCells();
 	}
 
 	_updateNumRowsSelectionState() {
@@ -1960,7 +1960,8 @@ class TablanceBase {
 			checkbox.indeterminate=true;
 		if (this._numRowsSelected^this._bulkEditAreaOpen) {
 			this._bulkEditAreaOpen=!!this._numRowsSelected;
-			this._updateMultiRowAreaHeight(this._bulkEditAreaOpen);
+			this._bulkEditArea.style.height=this._bulkEditAreaOpen?this._bulkEditArea.firstChild.offsetHeight+"px":0;
+			this._animate(this._updateViewportHeight,Infinity,"adjustViewportHeight");
 		}
 	}
 
@@ -2108,8 +2109,6 @@ class TablanceBase {
 			this._cellCursor.classList.add("edit-mode");
 			({textarea:this._openTextAreaEdit,date:this._openDateEdit,select:this._openSelectEdit
 				,file:this._openFileEdit}[this._activeStruct.input.type]??this._openTextEdit).call(this,e);
-		} else if (this._multiCellSelected) {
-			this._openMultiRowAreaContainer(this._activeStruct);
 		} else if (this._activeStruct.type==="group") {
 			this._openGroup(this._activeExpCell);
 		}
@@ -2750,15 +2749,7 @@ class TablanceBase {
 		return true;
 	}
 
-	_scrollElementIntoView(element) {
-		if (this._cellCursor.closest(".tablance .multi-row-area"))//don't scroll if this is a sub-table in multirowarea 
-			if (!this._onlyExpansion) {
-				const pos=this._getElPos(element);
-				this._scrollBody.scrollTop=pos.y+element.offsetHeight/2-this._scrollBody.offsetHeight/2;
-				this._scrollMethod();
-			} else
-				this._tooltip.scrollIntoView({behavior:'smooth',block:"center"});
-	}
+	_scrollElementIntoView(){}//default is to do nothing. Tablance (main) overrides this.
 
 	_closeRepeatedInsertion(repeatEntry) {
 		if (Object.values(repeatEntry.dataObj).filter(x=>x!=null).length) {
@@ -3053,14 +3044,9 @@ class TablanceBase {
 		this._borderSpacingY=parseInt(window.getComputedStyle(this._mainTable)['border-spacing'].split(" ")[1]);
 	}
 
-	_updateMultiRowAreaHeight(open) {
-		this._bulkEditArea.style.height=open?this._bulkEditArea.firstChild.offsetHeight+"px":0;
-		this._animate(this._updateViewportHeight,Infinity,"adjustViewportHeight");
-	}
-
 	_createBulkEditArea() {
 		this._bulkEditArea=this.container.appendChild(document.createElement("div"));
-		this._bulkEditArea.classList.add("multi-row-area");//TODO prob remove later..
+		this._bulkEditArea.classList.add("bulk-edit-area");
 		this._bulkEditArea.style.height=0;//start at height 0 before expanded
 		this._bulkEditArea.addEventListener("transitionend",()=>{
 			delete this._animations["adjustViewportHeight"];
@@ -3075,18 +3061,6 @@ class TablanceBase {
 		const numberOfRowsSelectedDiv=bulkContent.appendChild(document.createElement("div"));
 		numberOfRowsSelectedDiv.innerText="Number of selected rows: ";
 		this._numberOfRowsSelectedSpan=numberOfRowsSelectedDiv.appendChild(document.createElement("span"));
-		
-		//when entering a group-entry in the bulk-edit-area, a new view opens where there are buttons "cancel" and
-		//"apply". These reside inside this div
-		const containerControllers=bulkContent.appendChild(document.createElement("div"));
-		containerControllers.classList.add("container-controllers");
-		//buttons for above container
-		const containerCancelBtn=containerControllers.appendChild(document.createElement("button"));
-		containerCancelBtn.innerText="Cancel";
-		containerCancelBtn.addEventListener("click",containerCancel)
-		const containerApplyBtn=containerControllers.appendChild(document.createElement("button"));
-		containerApplyBtn.innerText="Apply";
-		containerApplyBtn.addEventListener("click",this._bulkEditAreaContainerApply);
 
 		const pagesDiv=bulkContent.appendChild(document.createElement("div"));//for having multiple pages
 		pagesDiv.classList.add("pages");										//which is needed if having groups in it
@@ -3106,13 +3080,6 @@ class TablanceBase {
 		this._bulkEditTable=new TablanceBulk(tableContainer,{},null,true,bulkStructTree,null,true);
 		this._bulkEditTable.mainInstance=this;
 		this._bulkEditTable.addData([{}]);
-		
-		//callback for the cancel button that is visible when inside a group-entry in bulk-edit-area
-		function containerCancel() {
-			this._setMultiRowAreaPage(true,-1);
-			this.container.focus();
-			this._cellCursor.style.display="block";
-		}
 	}
 
 	_isObject(val) {
@@ -3127,55 +3094,19 @@ class TablanceBase {
 	_buildBulkEditStruct(struct) {
 		const main=this._colStructs.includes(struct);//Whether the struct is in expansion or not.
 		const result=[];
-		if ((main||struct.type=="field")&&struct.multiEdit) {
+		if ((main||struct.type=="field")&&struct.bulkEdit) {
 			const structCopy=Object.assign(Object.create(null), struct);
 			structCopy.type="field";//struct of columns don't need to specify this, but it's needed in expansion
 			result.push(structCopy);
-		} else if ((struct.multiEdit||struct==this._expansion)&&struct.entries?.length) {
+		} else if ((struct.bulkEdit||struct==this._expansion)&&struct.entries?.length) {
 			for (const entryStruct of struct.entries)
 				result.push(...this._buildBulkEditStruct(entryStruct));
 		}
 		return result;
+	}
 
-		/* let structToAdd;
-		if (struct.type=="repeated") {
-			if (struct.multiEdit&&struct.create) {
-				//create copy of the repeated-container. and set it to structToAdd so it gets added at the end of
-				//this function. Set onCreate to null so that any function for onCreate set at the implementation
-				//of Tablance wont get fired because we don't want that in the bulk-edit-area
-				structToAdd={...struct,vals:{},entry:{...struct.entry,multiEdit:true},onCreate:null};
-				//update height of bulk-edit-area whenever entries are added or removed
-				structToAdd.onCreateOpen=structToAdd.onCreateCancel=structToAdd.onDelete
-						=()=>this._updateMultiRowAreaHeight(true);
-				//call this function again recursively for the entry of repeated which is the actual repeated data
-				this._buildBulkEditStruct(structToAdd.entry,structToAdd);
-			}
-		} else if (struct.entries?.length) {
-			if (struct.multiEdit) {
-				structToAdd={...struct,entries:[],vals:{},origStruct:struct};
-				if (struct.type=="group"&&containerStruct)
-					structToAdd.onOpenAfter=structToAdd.onClose=()=>this._updateMultiRowAreaHeight(true);
-			}
-			//still call buildStruct for containers without multiEdit,entries may still have it
-			struct.entries.forEach(entryStruct=>this._buildBulkEditStruct(entryStruct,structToAdd));
-			if (containerStruct&&structToAdd)
-				Object.assign(containerStruct.vals,structToAdd.vals);
-		} else if (struct.input&&((main&&struct.input.multiEdit!=false)||(!main&&struct.input.multiEdit))) {
-			structToAdd={...struct,input:{...struct.input,onChange:null}};//prevent onChange-event in bulk-edit-area
-			if (containerStruct)
-				containerStruct.vals[struct.id]=null;//properties are added to the base-structs of 
-					//this._bulkEditStructs if they are containers and are used later when assigning the
-					//container-vals to selected rows so that also unchanged fields with null values are assigned.
-		}
-		if (structToAdd)
-			if (!containerStruct||containerStruct.entries)
-				(containerStruct?.entries??this._bulkEditStructs).push(structToAdd);
-			else
-				containerStruct.entry=structToAdd; */
-		}
-
-	/**Updates the displayed values in #multiRowArea* */
-	_updateMultiCellVals(structsToUpdateCellsFor=this._bulkEditTable._expansion.entries) {
+	/**Updates the displayed values in the bulk-edit-area */
+	_updateBulkEditAreaCells(structsToUpdateCellsFor=this._bulkEditTable._expansion.entries) {
 		const mixedText="(Mixed)";
 		for (let multiCellI=-1, multiCellStruct; multiCellStruct=structsToUpdateCellsFor[++multiCellI];) {
 
@@ -3808,8 +3739,8 @@ export default class Tablance extends TablanceBase {
 				this._updateMainRowCell(this._selectedCell,this._activeStruct);
 				this._unsortCol(this._activeStruct.id);
 			}
-			if (this._selectedRows.indexOf(this._cellCursorDataObj)!=-1)//if edited row is checked
-				this._updateMultiCellVals([this._activeStruct]);
+			if (this._selectedRows.indexOf(this._cellCursorDataObj)!=-1)//if edited row is checked/selected
+				this._updateBulkEditAreaCells([this._activeStruct]);
 			this._updateDependentCells(this._activeStruct,this._activeExpCell);
 		} else
 			this._inputVal=this._selectedCellVal;
@@ -3889,6 +3820,15 @@ export default class Tablance extends TablanceBase {
 		else//if in the middle of animation, either expanding or contracting. make it head towards 0
 			contentDiv.style.height=0;
 		this._animate(()=>this._adjustCursorPosSize(this._selectedCell,true),500,"cellCursor");
+	}
+
+	_scrollElementIntoView(element) {
+		if (!this._onlyExpansion) {
+			const pos=this._getElPos(element);
+			this._scrollBody.scrollTop=pos.y+element.offsetHeight/2-this._scrollBody.offsetHeight/2;
+			this._scrollMethod();
+		} else
+			this._tooltip.scrollIntoView({behavior:'smooth',block:"center"});
 	}
 }
 
