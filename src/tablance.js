@@ -141,7 +141,8 @@ class TablanceBase {
 	_animations={};//keeps tracks of animations. Key is a unique id-string, identifying the animation so multiple
 					//instances of the same animation can't run. Value is the end-time in ms since epoch.
 	_onlyExpansion;//See constructor-param onlyExpansion
-	_tooltip;//reference to html-element used as tooltip							
+	_tooltip;//reference to html-element used as tooltip
+	_dropdownAlignmentContainer;						
 
 	/**
 	 * @param {HTMLElement} container An element which the table is going to be added to
@@ -2150,34 +2151,29 @@ class TablanceBase {
 	/**Aligns dropdowns like select and date-picker correctly by the cellcursor or any other target-element specified */
 	_alignDropdown(dropdown,target=this._cellCursor) {
 
-		//container of the dropdown
-		const placementCont=this._onlyExpansion||this._multiCellSelected?this.container:this._scrollBody;
-		const placementPos=this._getElPos(target);//and its position inside
-		let alignmentContainer=placementCont,alignmentPos;//used to determine alignment but not actual pos
-		if (target.parentElement.closest(".tablance .multi-row-area")&&!this._multiCellSelected)//if in inner tablance
-			alignmentContainer=this.container.parentElement.closest(".tablance");
-		alignmentPos=this._getElPos(target,alignmentContainer);
+		const alignmentContainer=this._dropdownAlignmentContainer;	//container of the dropdown
+		const alignmentPos=this._getElPos(target);//and its position inside
 		
 		//if target-element is below middle of viewport or if in bulk-edit-area
 		dropdown.classList.remove("above","below","left","right");
 		if (alignmentPos.y+target.clientHeight/2>alignmentContainer.scrollTop+alignmentContainer.clientHeight/2) {
 			//then place dropdown above target-element
-			dropdown.style.top=placementPos.y-dropdown.offsetHeight+"px";
+			dropdown.style.top=alignmentPos.y-dropdown.offsetHeight+"px";
 			dropdown.classList.add("above");
 		} else {
 			//else place dropdown below target-element
-			dropdown.style.top=placementPos.y+target.clientHeight+"px";
+			dropdown.style.top=alignmentPos.y+target.clientHeight+"px";
 			dropdown.classList.add("below");
 		}
 
 		//if there's enough space to the right of target-element
 		if (alignmentContainer.clientWidth-alignmentPos.x>dropdown.offsetWidth) {
 			//then align the left of the dropdown with the left of the target-element
-			dropdown.style.left=placementPos.x+"px";
+			dropdown.style.left=alignmentPos.x+"px";
 			dropdown.classList.add("left");
 		} else {
 			//otherwise align the right of the dropdown with the right of the target-element
-			dropdown.style.left=placementPos.x-(dropdown.offsetWidth-target.offsetWidth)+"px";
+			dropdown.style.left=alignmentPos.x-(dropdown.offsetWidth-target.offsetWidth)+"px";
 			dropdown.classList.add("right");
 		}
 	}
@@ -3850,6 +3846,12 @@ class TablanceBulk extends TablanceBase {
 
 	/** @type {Tablance} main tablance owning this bulk instance */
 	mainInstance;
+	_dropdownAlignmentContainer=this.container;
+	constructor() {
+		super(...arguments);
+	}
+
+	
 
 	_doEditSave() {
 		const inputVal=this._activeStruct.input.type==="select"?this._inputVal.value:this._inputVal;
@@ -3867,6 +3869,15 @@ class TablanceBulk extends TablanceBase {
  * Handles full data display, user interaction, editing, expansion, and rendering.
  */
 export default class Tablance extends TablanceBase {
+	constructor() {
+		super(...arguments);
+		this._dropdownAlignmentContainer=this._onlyExpansion?this.container:this._scrollBody;
+
+
+		// if (target.parentElement.closest(".tablance .multi-row-area")&&!this._multiCellSelected)//if in inner tablance
+		// 	alignmentContainer=this.container.parentElement.closest(".tablance");
+	}
+	
 	_doEditSave() {
 		let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
 		const inputVal=this._activeStruct.input.type==="select"?this._inputVal.value:this._inputVal;
