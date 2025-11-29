@@ -3178,23 +3178,25 @@ class TablanceBase {
 	_updateMultiCellVals(structsToUpdateCellsFor=this._bulkEditTable._expansion.entries) {
 		const mixedText="(Mixed)";
 		for (let multiCellI=-1, multiCellStruct; multiCellStruct=structsToUpdateCellsFor[++multiCellI];) {
+
+			//work out if there are mixed values for this cell among the selected rows, or if all are same
 			let mixed=false;
-			if (!multiCellStruct.entries) {//if this cell/col is simple single val
-				let val,lastVal;
-				for (let rowI=-1,row; row=this._selectedRows[++rowI];) {
-					val=row[multiCellStruct.id];
-					if (rowI&&val!=lastVal) {
-						mixed=true;
-						break;
-					}
-					lastVal=val;
+			let val,lastVal;
+			for (let rowI=-1,row; row=this._selectedRows[++rowI];) {
+				val=row[multiCellStruct.id];
+				if (rowI&&val!=lastVal) {
+					mixed=true;
+					break;
 				}
-				//update both the data and the dom
-				this._bulkEditTable.updateData(0,multiCellStruct.id,mixed?mixedText:val?.text??val??"");
-				const el=this._bulkEditTable._openExpansions[0].children[multiCellI].el;
-				el.innerText=mixed?mixedText:val?.text??val??"";
-				this._bulkEditTable._data[0][multiCellStruct.id]=mixed?"":val;
+				lastVal=val;
 			}
+
+
+			//update both the data and the dom
+			this._bulkEditTable.updateData(0,multiCellStruct.id,mixed?mixedText:val?.text??val??"");
+			const el=this._bulkEditTable._openExpansions[0].children[multiCellI].el;
+			el.innerText=mixed?mixedText:val?.text??val??"";
+			this._bulkEditTable._data[0][multiCellStruct.id]=mixed?"":val;
 		}
 	}
 
@@ -3748,6 +3750,8 @@ class TablanceBase {
 			}
 		});
 	}
+
+	_scrollToCursor(){}//default is to do nothing. Tablance (main) overrides this.
 }
 
 /**
@@ -3774,8 +3778,6 @@ class TablanceBulk extends TablanceBase {
 			this.mainInstance.updateData(selectedTr.dataset.dataRowIndex,this._activeStruct.id,inputVal,false,true);
 		this._updateExpansionCell(this._activeExpCell,this._cellCursorDataObj);
 	}
-
-	_scrollToCursor(){}//override to do nothing since bulk-edit tablance has no scrolling
 }
 
 /**
@@ -3794,7 +3796,6 @@ export default class Tablance extends TablanceBase {
 		this._activeStruct.input.onChange?.({preventDefault:()=>doUpdate=false},this._activeStruct.id,
 				inputVal,this._selectedCellVal,this._cellCursorDataObj,this._activeStruct,this._activeExpCell);
 		if (doUpdate) {
-			const checked=this._selectedRows.indexOf(this._cellCursorDataObj)!=-1;
 			this._cellCursorDataObj[this._activeStruct.id]=this._inputVal;
 			if (this._activeExpCell){
 				const doHeightUpdate=this._updateExpansionCell(this._activeExpCell,this._cellCursorDataObj);
@@ -3804,11 +3805,11 @@ export default class Tablance extends TablanceBase {
 					if (cell.struct.closedRender)//found a group with a closed-group-render func
 						cell.updateRenderOnClose=true;//update closed-group-render
 			} else {
-				if (checked)
-					this._updateMultiCellVals([this._activeStruct]);
 				this._updateMainRowCell(this._selectedCell,this._activeStruct);
 				this._unsortCol(this._activeStruct.id);
 			}
+			if (this._selectedRows.indexOf(this._cellCursorDataObj)!=-1)//if edited row is checked
+				this._updateMultiCellVals([this._activeStruct]);
 			this._updateDependentCells(this._activeStruct,this._activeExpCell);
 		} else
 			this._inputVal=this._selectedCellVal;
