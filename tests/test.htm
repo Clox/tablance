@@ -32,7 +32,7 @@
 				{title:"numtwice", render:num=>num*2, dependsOn:"num"}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
 				{type:"field",title:"amount+10",render:amount=>(Number(amount)+10).toFixed(2)
-					, dependsOn:"amount",visibleIf:()=>false},
+					, dependsOn:"amount",/* visibleIf:()=>false */},
 				{type:"field",title:"num",id:"num", input:{type:"text"},bulkEdit:true},
 			{type:"field",title:"Format field",id:"myFormattedData"
 				,input:{type:"text", format:{ blocks: [8, 4], delimiter: "-", numericOnly: true , 
@@ -88,9 +88,15 @@
 						{type:"group",closedRender:data=>`${data.type?.text} sedan ${data.date}`,entries:[
 								{type:"field",title:"Datum",id:"date",input:{type:"date",bulkEdit:true}},
 								{type:"field",title:"Typ av ställföreträdarskap",id:"type",input:{type:"select",
-									options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"}]
+									options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"},
+									{text:"Avslut",value:"end"}]
 									,bulkEdit:true
-								}}],
+								}},
+								{type:"field",title:"Förvalta egendom",id:"administrationOfProperty"
+									,input:{type:"select",
+									options:[{text:"Ja",value:true},{text:"Nej",value:false}]
+								},dependsOn:"type",visibleIf:typeVal=>typeVal!="end"}
+							],
 							creationValidation:(message,struct,data,index,cellObj)=>{
 								message("Both fields are mandatory. Enter the data or delete to cancel.");
 								return data.date&&data.type;
@@ -122,7 +128,7 @@
 				]},
 				{type:"lineup",title:"Bunch ",entries:[
 					{type:"field",title:"First thing",id:"first"},
-					{type:"field",title:"Second thing",id:"second",visibleIf:()=>false},
+					{type:"field",title:"Second thing",id:"second",/* visibleIf:()=>false */},
 					{type:"field",title:"Third thing",id:"third"},
 					{type:"field",input:{type:"button",btnText:"My button"}},
 					{type:"field",title:"Fourth thing",id:"fourth"},

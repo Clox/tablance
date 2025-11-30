@@ -150,9 +150,13 @@ class TablanceBase {
 	 * 				have been accounted for.
 	 * 			input: See param expansion -> input. This is the same as that one except textareas are only valid for
 	 * 												expansion-cells and not directly in a maintable-cell
-	 * 			render Function pass in a callback-function here and what it returns will be used as value for the
-	 * 				cells. It gets passed the following arguments:
-	 * 				1: The value from data pointed to by "id", 2:data-row, 3:column-struct, 4:main-index, 
+	 * 			render Function Function that can be set to render the content of the cell. The return-value is what
+	 * 					will be displayed in the cell. Similiarly to columns->render it gets passed the following:
+	 * 					1: The value from data pointed to by "id". If id is not set but dependsOn is then this will 
+	 * 						instead get passed the value that the id of the depended cell points to, 
+	 * 					2: data-row, 
+	 * 					3: struct,
+	 * 					4: main-index 
 	 * 			html Bool Default is false. If true then the content of the cell will be rendered as html
 	 * 1: The value from data pointed to by "id", 2: data-row, 3: struct,4: main-index, 5: Cell-object
 	 * 			type String The default is "data". Possible values are:
@@ -238,9 +242,13 @@ class TablanceBase {
   	 * 				id String the key of the property in the data that the row should display
 	 * 				cssClass String Css-classes to be added to the field
 	 * 				render Function Function that can be set to render the content of the cell. The return-value is what
-	 * 					will be written to the cell instead of getting the value with the key specified in "id", from
-	 * 					the data-row. Similiarly to columns->render it gets passed the following arguments:
-	 * 					1: The value from data pointed to by "id", 2: data-row, 3: struct,4: main-index, 5: Cell-object
+	 * 					will be displayed in the cell. Similiarly to columns->render it gets passed the following:
+	 * 					1: The value from data pointed to by "id". If id is not set but dependsOn is then this will 
+	 * 						instead get passed the value that the id of the depended cell points to, 
+	 * 					2: data-row, 
+	 * 					3: struct,
+	 * 					4: main-index, 
+	 * 					5: Cell-object
 	 * 				input Object field is editable if this object is supplied and its "disabled"-prop is not true
 	 * 					{
 	 * 					type String This is mandatory and specifies the type of input. Se further down for properties 
@@ -822,9 +830,6 @@ class TablanceBase {
 
 		for (let struct; struct = stack.pop();) {
 
-			if (struct.id != null && struct.dependsOn != null)
-				throw new Error(`Cell cannot define both 'id' and 'dependsOn'.`);
-
 			if (struct.dependsOn) {
 				const deps = Array.isArray(struct.dependsOn) ? struct.dependsOn : [struct.dependsOn];
 
@@ -874,12 +879,10 @@ class TablanceBase {
 		Helper: Normalize struct children
 	───────────────────────────────────────────────────────────*/
 	_structChildren(struct) {
+		while (struct.entry)
+			struct = struct.entry;
 		if (Array.isArray(struct.entries))
 			return struct.entries;
-
-		if (struct.entry)
-			return [struct.entry];
-
 		return [];
 	}
 
@@ -1251,13 +1254,13 @@ class TablanceBase {
 
 	_moveInsideLineup(numCols,numRows) {
 		const currentCellX=this._activeExpCell.el.offsetLeft;
-		const currentCellTop=this._activeExpCell.el.offsetTop;
-		const currentCellBottom=currentCellTop+this._activeExpCell.el.offsetHeight;
+		const currCelTop=this._activeExpCell.el.offsetTop;
+		const currCelBottom=currCelTop+this._activeExpCell.el.offsetHeight;
 		if (numCols) {//moving left or right
-			for (let i=this._activeExpCell.index,nextCell;nextCell=this._activeExpCell.parent.children[i+=numCols];) {
-				if (nextCell.el.offsetParent != null && (nextCell?.el.offsetLeft>currentCellX)==(numCols>0)) {
-					if (currentCellBottom>nextCell.el.offsetTop&&nextCell.el.offsetTop+nextCell.el.offsetHeight>currentCellTop)//same line
-						this._selectExpansionCell(nextCell);
+			for (let i=this._activeExpCell.index,nextCel;nextCel=this._activeExpCell.parent.children[i+=numCols];) {
+				if (nextCel.el.offsetParent != null && (nextCel?.el.offsetLeft>currentCellX)==(numCols>0)) {
+					if (currCelBottom>nextCel.el.offsetTop&&nextCel.el.offsetTop+nextCel.el.offsetHeight>currCelTop)
+						this._selectExpansionCell(nextCel);
 					break;
 				}
 			}
@@ -1265,8 +1268,8 @@ class TablanceBase {
 			let closestCell,closestCellX;
 			const siblings=this._activeExpCell.parent.children;
 			for (let i=this._activeExpCell.index,otherCell;otherCell=siblings[i+=numRows];) {
-				const skipCell=Math.max(otherCell.el.offsetTop,currentCellTop) <= 					 //cell is on the
-								Math.min(otherCell.el.offsetTop+otherCell.el.offsetHeight,currentCellBottom)//same line
+				const skipCell=Math.max(otherCell.el.offsetTop,currCelTop) <= 					 //cell is on the
+								Math.min(otherCell.el.offsetTop+otherCell.el.offsetHeight,currCelBottom)//same line
 								||otherCell.el.offsetParent == null;//cell is hidden
 				if (skipCell)
 					continue;
@@ -1904,10 +1907,6 @@ class TablanceBase {
 	_generateField(fieldStruct,mainIndex,cellObject,parentEl,path,rowData) {
 		cellObject.select=()=>this._selectExpansionCell(cellObject);
 		cellObject.el=parentEl;
-		if (fieldStruct.title=="num" && this instanceof Tablance) {
-			let stop=true;
-		}
-
 		this._updateExpansionCell(cellObject,rowData);
 		cellObject[cellObject.selEl?"selEl":"el"].dataset.path=path.join("-");
 		return true;
@@ -2735,21 +2734,21 @@ class TablanceBase {
 				//repeated structures, it "splits" into multiple cells if there are multiple repeated-entries/instances
 				let cells=depPath[0]==="r"?[editedCellObj]:[this._openExpansions[this._mainRowIndex]];
 
-				for (var step=1; depPath[step]===".."; step++)//if there are any, iterate all the p's (parent-steps)
-					cells[0] = cells[0].parent;//go up one level per p. At this point cells will only have one cell
+				for (var step=1; depPath[step]===".."; step++)//if there are any, iterate all the ".."
+					cells[0] = cells[0].parent;//go up one level per "..". At this point cells will only have one cell
 
 				for (; step<depPath.length; step++) {//iterate the steps
-					if (cells[0].parent?.struct.type==="repeated") {
+					if (cells[0].struct.type==="repeated") {
 						const newCells=[];//will hold the new set of cells after this step
 						for (const cell of cells)
-							newCells.push(...cell.parent.children);//add all repeated-children of current cell
+							newCells.push(...cell.children);//add all repeated-children of current cell
 						cells=newCells;//set cells to the new set of cells
 					}
 					for (let cellI=0; cellI<cells.length; cellI++)//iterate the cell(s)
 						cells[cellI]=cells[cellI].children[depPath[step]];//and do the step
 				}
 				for (const cell of cells)//iterate the cell(s) again
-					this._updateExpansionCell(cell);//and do the actual update
+					this._updateExpansionCell(cell,cell.dataObj);//and do the actual update
 			}
 	}
 
@@ -3657,18 +3656,19 @@ class TablanceBase {
 	 * @param {*} cellObj 
 	 * @returns 
 	 */
-	_getCellVal(struct, cellObj, rowData=cellObj.dataObj) {
-		if (struct.id)
+	_getTargetVal(idOverDependee,struct, cellObj, rowData=cellObj.dataObj) {
+		if (idOverDependee&&struct.id)
 			return rowData[struct.id];
 		if (struct.dependsOnDataPath) {
 			if (cellObj)
 				for (var root=cellObj; root.parent; root=root.parent,rowData=root.dataObj);
 			 return this._getValueByPath(rowData,struct.dependsOnDataPath);
 		}
-		//if (struct.dependsOnCellPaths) {
-		const dependee=this._resolveCellPaths(cellObj,struct.dependsOnCellPaths[0]);
-		return dependee.dataObj[dependee.struct.id];
-		//}
+		if (struct.dependsOnCellPaths) {
+			const dependee=this._resolveCellPaths(cellObj,struct.dependsOnCellPaths[0]);
+			return dependee.dataObj[dependee.struct.id];
+		}
+		return rowData[struct.id];
 	}
 	
 
@@ -3678,7 +3678,7 @@ class TablanceBase {
 		} else {
 			let newCellContent;
 			if (struct.render||struct.input?.type!="select") {
-				newCellContent=this._getCellVal(struct, cellObj, rowData);
+				newCellContent=this._getTargetVal(true,struct, cellObj, rowData);
 				if (struct.render)
 					newCellContent=struct.render(newCellContent,rowData,struct,mainIndex,cellObj);
 			} else { //if (struct.input?.type==="select") {
@@ -3884,7 +3884,9 @@ export default class Tablance extends TablanceBase {
 	}
 
 	_applyVisibleIf(struct,cellObj,mainIndex) {
-		const val=this._getCellVal(struct,cellObj);
+		let val=this._getTargetVal(false,struct,cellObj);
+		if (struct.input?.type==="select"&&val.value)
+			val=val.value;
 		if (!struct.visibleIf(val,cellObj.dataObj,struct,mainIndex,cellObj)) {//if hide
 			cellObj.hidden=true;
 			cellObj.outerContainerEl.style.display="none";
