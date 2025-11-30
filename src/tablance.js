@@ -1516,7 +1516,7 @@ class TablanceBase {
 		cellObject.dataObj=rowData;
 		cellObject.struct=struct;
 		if (struct.visibleIf)
-			this._applyVisibleIf(struct,cellObject);
+			this._applyVisibleIf(cellObject);
 		switch (struct.type) {
 			case "list": return this._generateExpansionList(...arguments);
 			case "field": return this._generateField(...arguments);
@@ -3611,6 +3611,8 @@ class TablanceBase {
 		if (cellObj.struct.input?.type=="file"&&rowData[cellObj.struct.id]) {
 			this._generateFileCell(cellObj,cellEl,rowData,rootCell.rowIndex);
 		} else {
+			if (cellObj.struct.visibleIf)
+				this._applyVisibleIf(cellObj);
 			this._updateCell(cellObj.struct,cellEl,cellObj.selEl,rowData,rootCell.rowIndex,cellObj);
 			if (cellObj.struct.input?.type!=="button") {
 				const newCellContent=cellEl.innerText;
@@ -3883,7 +3885,8 @@ export default class Tablance extends TablanceBase {
 			this._tooltip.scrollIntoView({behavior:'smooth',block:"center"});
 	}
 
-	_applyVisibleIf(struct,cellObj,mainIndex) {
+	_applyVisibleIf(cellObj,mainIndex) {
+		const struct=cellObj.struct;
 		let val=this._getTargetVal(false,struct,cellObj);
 		if (struct.input?.type==="select"&&val.value)
 			val=val.value;
@@ -3891,6 +3894,7 @@ export default class Tablance extends TablanceBase {
 			cellObj.hidden=true;
 			cellObj.outerContainerEl.style.display="none";
 		}
+		return !cellObj.hidden;
 	}
 }
 
