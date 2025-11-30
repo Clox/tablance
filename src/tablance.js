@@ -167,11 +167,41 @@ class TablanceBase {
 	 * 				keyboard can be used for navigating the cell-selection.
 	 * 	@param	{Object} expansion This allows for having rows that can be expanded to show more data. An "entry"-object
 	 * 			is expected and some of them can hold other entry-objects so that they can be nested.
+	 * 			Properties that are valid for all types of entries:
+	 * 				* title String displayed title if placed in a container which displays the title
+	 *
+	 * 				* visibleIf Function Optional callback that determines whether this entry should be visible.
+	 * 					The function is called whenever the entry is rendered or any of its dependencies
+	 * 					(see `dependsOn`) change. It receives the following arguments:
+	 * 						(1: The value from data pointed to by "id"(or if dependsOn is set the value of that cell)
+	 * 						2: data-row, 3: struct, 4: main-index, 5: Cell-object)
+	 * 					Return `true` to make the entry visible, or `false` to hide it.
+	 *
+	 * 					When hidden:
+	 *   					- The entry’s DOM element is not displayed.
+	 *   					- `render` will not be called for this entry.
+	 *
+	 * 					Visibility state:
+	 *   					- The cellObject receives an internal `hidden` flag when the entry is hidden.
+	 *   					- `hidden` is read-only and should not be modified manually.
+	 *   					- If the entry is visible, no `hidden` property is present.
+	 *
+	 *
+	 * 				* dependsOn String Optional string identifying another entry that this entry depends on.
+	 * 					Whenever the referenced entry is edited, this entry automatically refreshes.
+	 * 					The refresh cycle includes:
+ 	 *						- Re-evaluating `visibleIf` (if provided).
+	 *						- Re-rendering this entry (unless it is hidden).
+	 *
+ 	 *					Targeting rules:
+	 * 						1. If `cellId` is set on the struct of a field, that ID is the identifier of that entry.
+	 * 						2. If `id` is set (and `cellId` is not), the value of `id` becomes the entry’s identifier.
+	 * 						3. `dependsOn` must match the identifier of another entry. If both `id` and `cellId` exist,
+	 * 							`cellId` takes priority.
 	 * 			Types of entries:
 	 * 			{
   	 *				type "list" this is an entry that holds multiple rows laid out vertically, each item in the list 
 	 *							can have a title on the left side by specifying "title" in each item within the list
-	 *				title String displayed title if placed in a container which displays the title
 	 * 				entries Array each element should be another entry
 	 * 				titlesColWidth:String Width of the column with the titles. Don't forget adding the unit.
 	 * 					Default is null which enables setting the width via css.Setting 0/false turns it off completely.
@@ -185,11 +215,11 @@ class TablanceBase {
 	 * 							inner group has inputs with true bulkEdit as well then multi-level groups will be 
 	 * 							added to the bulk-edit-area. Containers in the bulk-edit-area appear as a normal cell
 	 * 							at first but by entering it a page dedicated to that container is changed to.
+	 * 				dependsOn String Can be set up to 
 	 *			}
 	 *			{	
 	 *				type "lineup" similiar to a list but each item is inlined, meaning they will be lined up
 	 *									in a horizontal line and will also wrap to multiple lines if needed
-	 *				title String displayed title if placed in a container which displays the title
 	 * 				entries Array each element should be another entry
 	 * 				cssClass String Css-classes to be added to the lineup-div
 	 * 				onBlur Function Callback fired when cellcursor goes from being inside the container to outside
@@ -205,7 +235,6 @@ class TablanceBase {
 	 *	 		}
 	 *			{
   	 * 				type "field" this is what will display data and which also can be editable by specifying "input"
-  	 * 				title String String displayed title if placed in a container which displays the title
   	 * 				id String the key of the property in the data that the row should display
 	 * 				cssClass String Css-classes to be added to the field
 	 * 				render Function Function that can be set to render the content of the cell. The return-value is what
@@ -237,7 +266,7 @@ class TablanceBase {
 	 * 							1:newValue, 2: message-function - A function that that takes a message-string as its
 	 * 							first argument. If it the validation didn't go through then this string will be
 	 * 							displayed to the user. 3:struct, 4:rowData, 5:mainIndex, 6:cellObject(if expansion-cell)
-	 * 						title String String displayed title if placed in a container which displays the title
+	 *						title String String displayed title if placed in a container which displays the title
 	 * 						bulkEdit Bool Whether this input should be editable via bulk-edit-area, the section that 
 	 * 							appears when selecting/checking multiple rows using the select-col. Default is true if
 	 * 							not in expansion, or false if in expansion.
@@ -1223,14 +1252,14 @@ class TablanceBase {
 	_moveInsideLineup(numCols,numRows) {
 		const currentCellX=this._activeExpCell.el.offsetLeft;
 		const currentCellTop=this._activeExpCell.el.offsetTop;
-		const currentCellBottom=this._activeExpCell.el.offsetTop+this._activeExpCell.el.offsetHeight;
+		const currentCellBottom=currentCellTop+this._activeExpCell.el.offsetHeight;
 		if (numCols) {//moving left or right
 			for (let i=this._activeExpCell.index,nextCell;nextCell=this._activeExpCell.parent.children[i+=numCols];) {
-				if (nextCell.el.offsetParent != null)
-					if ((nextCell?.el.offsetLeft>currentCellX)==(numCols>0)) {
+				if (nextCell.el.offsetParent != null && (nextCell?.el.offsetLeft>currentCellX)==(numCols>0)) {
+					if (currentCellBottom>nextCell.el.offsetTop&&nextCell.el.offsetTop+nextCell.el.offsetHeight>currentCellTop)//same line
 						this._selectExpansionCell(nextCell);
-						break;
-					}
+					break;
+				}
 			}
 		} else {//moving up or down
 			let closestCell,closestCellX;
@@ -1280,6 +1309,8 @@ class TablanceBase {
 		const index=cellObj.index;
 		for (let i=index+(isGoingDown||-1); i>=0&&i<siblings.length; i+=isGoingDown||-1) {
 			const sibling=siblings[i];
+			if (sibling.hidden)
+				continue;
 			if (sibling.el)
 				return sibling;
 			//else if sibling.children
@@ -1321,7 +1352,7 @@ class TablanceBase {
 			startI=chosenCell.index;
 		}
 		for (let childI=startI;childI>=0&&childI<children.length; childI+=isGoingDown||-1)
-			if (children[childI].children||children[childI].select)
+			if (!children[childI].hidden&&(children[childI].children||children[childI].select))
 				 return this._getFirstSelectableExpansionCell(children[childI],isGoingDown);
 	}
 	
@@ -1481,6 +1512,8 @@ class TablanceBase {
 		cellObject.path=[...path];
 		cellObject.dataObj=rowData;
 		cellObject.struct=struct;
+		if (struct.visibleIf)
+			this._applyVisibleIf(struct,cellObject);
 		switch (struct.type) {
 			case "list": return this._generateExpansionList(...arguments);
 			case "field": return this._generateField(...arguments);
@@ -1781,7 +1814,6 @@ class TablanceBase {
 			});
 		} else
 			outerContainerEl=containerEl=document.createElement("div");
-
 		return {outerContainerEl,containerEl};
 	}
 
@@ -1841,6 +1873,7 @@ class TablanceBase {
 		// Build DOM structure for this item
 		const {outerContainerEl,containerEl}=this._buildCollectionItemDOM(struct,collection,itemObj,title);
 
+
 		// Visual CSS classes
 		if (struct.input&&struct.input.type!="button")
 			containerEl.classList.add("input-cell");
@@ -1855,8 +1888,10 @@ class TablanceBase {
 
 		path.push(index);
 
+		itemObj.outerContainerEl=outerContainerEl;//reference to outer-most container belonging exclusively to this item
+
 		// Expand inner content; may return false if nothing should be rendered
-		const generated=this._generateExpansionContent(struct,mainIndex,itemObj,containerEl,path,data);
+		const generated=this._generateExpansionContent(struct,mainIndex,itemObj,containerEl,path,data,outerContainerEl);
 
 		// Only insert if it actually has content (important for sparse repeated arrays)
 		if (generated)
@@ -1866,10 +1901,13 @@ class TablanceBase {
 		return itemObj;
 	}
 
-
 	_generateField(fieldStruct,mainIndex,cellObject,parentEl,path,rowData) {
 		cellObject.select=()=>this._selectExpansionCell(cellObject);
 		cellObject.el=parentEl;
+		if (fieldStruct.title=="num" && this instanceof Tablance) {
+			let stop=true;
+		}
+
 		this._updateExpansionCell(cellObject,rowData);
 		cellObject[cellObject.selEl?"selEl":"el"].dataset.path=path.join("-");
 		return true;
@@ -3610,6 +3648,28 @@ class TablanceBase {
 			target = target.children[path[i]];
 		return target;
 	}
+
+	/**
+	 * Gets the value of a cell, pointed to by its ID, or if it depends on another cell, gets that value. The value
+	 * is the raw data from the data-object, not rendered.
+	 * @param {*} struct 
+	 * @param {*} rowData 
+	 * @param {*} cellObj 
+	 * @returns 
+	 */
+	_getCellVal(struct, cellObj, rowData=cellObj.dataObj) {
+		if (struct.id)
+			return rowData[struct.id];
+		if (struct.dependsOnDataPath) {
+			if (cellObj)
+				for (var root=cellObj; root.parent; root=root.parent,rowData=root.dataObj);
+			 return this._getValueByPath(rowData,struct.dependsOnDataPath);
+		}
+		//if (struct.dependsOnCellPaths) {
+		const dependee=this._resolveCellPaths(cellObj,struct.dependsOnCellPaths[0]);
+		return dependee.dataObj[dependee.struct.id];
+		//}
+	}
 	
 
 	_updateCell(struct,el,selEl,rowData,mainIndex,cellObj=null) {
@@ -3618,16 +3678,7 @@ class TablanceBase {
 		} else {
 			let newCellContent;
 			if (struct.render||struct.input?.type!="select") {
-				if (struct.id)
-					newCellContent=rowData[struct.id];
-				else if (struct.dependsOnDataPath) {
-					if (cellObj)
-						for (var root=cellObj; root.parent; root=root.parent,rowData=root.dataObj);
-					newCellContent=this._getValueByPath(rowData,struct.dependsOnDataPath);
-				} else if (struct.dependsOnCellPaths) {
-					const dependee=this._resolveCellPaths(cellObj,struct.dependsOnCellPaths[0]);
-					newCellContent=dependee.dataObj[dependee.struct.id];
-				}
+				newCellContent=this._getCellVal(struct, cellObj, rowData);
 				if (struct.render)
 					newCellContent=struct.render(newCellContent,rowData,struct,mainIndex,cellObj);
 			} else { //if (struct.input?.type==="select") {
@@ -3683,6 +3734,7 @@ class TablanceBase {
 	}
 
 	_scrollToCursor(){}//default is to do nothing. Tablance (main) overrides this.
+	_applyVisibleIf(){}//default is to do nothing. Tablance (main) overrides this.
 }
 
 /**
@@ -3829,6 +3881,14 @@ export default class Tablance extends TablanceBase {
 			this._scrollMethod();
 		} else
 			this._tooltip.scrollIntoView({behavior:'smooth',block:"center"});
+	}
+
+	_applyVisibleIf(struct,cellObj,mainIndex) {
+		const val=this._getCellVal(struct,cellObj);
+		if (!struct.visibleIf(val,cellObj.dataObj,struct,mainIndex,cellObj)) {//if hide
+			cellObj.hidden=true;
+			cellObj.outerContainerEl.style.display="none";
+		}
 	}
 }
 
