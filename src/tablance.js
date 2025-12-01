@@ -270,7 +270,7 @@ class TablanceBase {
 	 * 						placeholder String adds a placeholder-string to the input-element
 	 * 						validation Function A callback function which can be used to validate the data upon
 	 * 							comitting it. Return true if validation was successfull.
-	 * 							It gets passed the following arhuments:
+	 * 							It gets passed the following arguments:
 	 * 							1:newValue, 2: message-function - A function that that takes a message-string as its
 	 * 							first argument. If it the validation didn't go through then this string will be
 	 * 							displayed to the user. 3:struct, 4:rowData, 5:mainIndex, 6:cellObject(if expansion-cell)
@@ -1218,7 +1218,13 @@ class TablanceBase {
 	}
 
 	_moveCellCursor(hSign,vSign,e) {
-		const prevSelectedCell=this._selectedCell;
+		
+		if (!this._exitEditMode(true))//try to exit-mode and commit any changes.
+			return false;//if exiting edit-mode was denied then do nothing more
+		//it's important to run this here before deciding on the cell to move to, because exiting edit-mode may have
+		//triggered visibleIf changes that may have changed which cells are selectable.
+
+
 		if (this._mainRowIndex==null&&this._mainColIndex==null)//if table has focus but no cell is selected.
 			return;//can happen if table is clicked but not on a cell
 		e?.preventDefault();//to prevent native scrolling when pressing arrow-keys. Needed if #onlyExpansion==true but
@@ -1241,15 +1247,10 @@ class TablanceBase {
 				this._selectMainTableCell(
 					this._selectedCell.parentElement[(vSign>0?"next":"previous")+"Sibling"]?.cells[newColIndex]);
 			}
-		} else if (!this._activeExpCell){
+		} else if (!this._activeExpCell)
 			this._selectMainTableCell(this._selectedCell[(hSign>0?"next":"previous")+"Sibling"]);
-		}
 		if (this._onlyExpansion&&this._mainRowIndex!=null)
 			this._scrollToCursor();
-		
-		//if active cell is still the same. this happens for example when pressing enter when at the bottom
-		if (prevSelectedCell==this._selectedCell)
-			this._exitEditMode(true);
 	}
 
 	_moveInsideLineup(numCols,numRows) {
@@ -2244,7 +2245,11 @@ class TablanceBase {
 
 	_openTextEdit() {
 		const input=this._cellCursor.appendChild(document.createElement("input"));
+
+		//for when blurring by clicking outside of table etc. exit edit-mode and commit the change but keep the cell
+		//selected. not sure why the timeout is needed but it is.
 		input.addEventListener("blur",()=>setTimeout(this._exitEditMode.bind(this,true)));
+		
 		input.addEventListener("change",()=>this._inputVal=input.value);
 		input.value=this._selectedCellVal??"";
 		if (this._activeStruct.input.format)
@@ -2832,25 +2837,27 @@ class TablanceBase {
 	_selectMainTableCell(cell) {
 		if (!cell)	//in case of trying to move up from top row etc,
 			return;
+		if (!this._exitEditMode(true))//try to exit-mode and commit any changes.
+			return false;//if exiting edit-mode was denied then do nothing more
+			
+		
 		this._mainColIndex=cell.cellIndex;
 		const mainRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);//save it here rather than setting it 
 					//directly because we do not want it to change if #selectCell returns false, preventing the select
-		if (this._exitEditMode(true)&&this._closeActiveExpCell()) {
+					
+		if (this._closeActiveExpCell()) {
 			this._selectCell(cell,this._colStructs[this._mainColIndex],this._data[mainRowIndex]);
 			this._mainRowIndex=mainRowIndex;
 		}
 	}
 
 	_selectExpansionCell(cellObj) {
-		if (!cellObj)
-			return;
+		if (!this._exitEditMode(true))//try to exit-mode and commit any changes.
+			return false;//if exiting edit-mode was denied then do nothing more
 
 		const oldExpCell=this._activeExpCell;//need to know the current/old expansion-cell if any for closing groups
 					//etc but we can't just use this._activeExpCell because #selectCell changes it and we do want
 					//to call #selectCell first in order to know if changing cell is being prevented by validation()
-
-		if (!this._exitEditMode(true))
-			return false;
 
 		for (var root=cellObj; root.parent; root=root.parent);
 		const mainRowIndex=root.rowIndex;
