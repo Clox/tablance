@@ -3890,10 +3890,14 @@ export default class Tablance extends TablanceBase {
 		let val=this._getTargetVal(false,struct,cellObj);
 		if (struct.input?.type==="select"&&val.value)
 			val=val.value;
-		if (!struct.visibleIf(val,cellObj.dataObj,struct,mainIndex,cellObj)) {//if hide
-			cellObj.hidden=true;
-			cellObj.outerContainerEl.style.display="none";
+	
+		cellObj.hidden = !!cellObj.hidden;
+	
+		if (struct.visibleIf(val,cellObj.dataObj,struct,mainIndex,cellObj) == cellObj.hidden) {
+			cellObj.hidden=!cellObj.hidden;
+			cellObj.outerContainerEl.style.display=cellObj.hidden?"none":"";
 		}
+	
 		return !cellObj.hidden;
 	}
 }
