@@ -10,9 +10,8 @@ class TablanceBase {
 				//Except for manually this can also be set via chainTables()
 	_containerHeight=0;//height of #container. Used to keep track of if height shrinks or grows
 	_containerWidth=0;//height of #container. Used to keep track of if width shrinks or grows
-	_colStructs=[];//column-objects. See columns-param in constructor for structure.
-		//In addition to that structure these may also contain "sortDiv" reffering to the div with the sorting-html
-																				//(see for example opts->sortAscHtml)
+	_colStructs=[];//column-objects. Essentially the same as schema.main.columns but have been processed an may in
+		// addition contain "sortDiv" reffering to the div with the sorting-html (see for example opts->sortAscHtml)
 	_cols=[];//array of col-elements for each column
 	_headerTr;//the tr for the top header-row
 	_headerTable;//the tabe for the #headerTr. This table only contains that one row.
@@ -78,7 +77,6 @@ class TablanceBase {
 				//keyboard-tabbing, and not when clicking or exiting out of edit-mode which again focuses the table.
 				//By setting this to true in mouseDownEvent we can 
 				//check which input was used last when the focus-method is triggerd
-	_expansion;//the expansion-argument passed to the constructor
 	_expBordersHeight;//when animating expansions for expanding/contracting the height of them fully
 			//expanded needs to be known to know where to animate to and from. This is different from 
 			//#expandedRowIndicesHeights because that is the height of the whole row and not the div inside.
@@ -512,22 +510,20 @@ class TablanceBase {
 	 * 							}
 	 * */
 	constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
-		const columns=schema.main?.columns;
-		const expansion=schema.details;
 		this.hostEl=hostEl;
 		const rootEl=this.rootEl = document.createElement("div");
 		this.hostEl.appendChild(this.rootEl);
 		this._spreadsheet=spreadsheet;
-		this._expansion=expansion;
 		this._staticRowHeight=staticRowHeight;
 		this._opts=opts??{};
 		rootEl.classList.add("tablance");
+		this.schema=schema;
 		//const allowedColProps=["id","title","width","input","type","render","html"];//should we really do filtering?
-		if (!columns) {
+		if (!schema.main?.columns) {
 			this._setupSpreadsheet(true);
 			this._onlyExpansion=true;
 		} else {
-			for (let col of columns) {
+			for (let col of schema.main.columns) {
 				let processedCol={};
 				if ((col.type=="expand"||col.type=="select")&&!col.width)
 					processedCol.width=50;
@@ -629,7 +625,6 @@ class TablanceBase {
 		if (dataPath.length==1) //it's possible only if the path is a single id-key. (but still not guaranteed)
 			for (let colI=-1,colStruct;colStruct=this._colStructs[++colI];)
 				if (colStruct.id==dataPath[0]) {//if true then yes, it was a column of main-table
-					dataRow[colStruct.id]=newData;//update the actual data
 					const tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndx}"]:not(.expansion)`);
 					return this._updateMainRowCell(tr.cells[colI],colStruct);//update it and be done with this
 				}
@@ -659,7 +654,8 @@ class TablanceBase {
 
 					//insert all the new data
 					cellObjToUpdate.dataObj=cellObjToUpdate.parent.dataObj[cellObjToUpdate.struct.id];
-					cellObjToUpdate.dataObj.forEach(dataEntry=>updatedEls.push(this._repeatInsert(cellObjToUpdate,false,dataEntry)));
+					cellObjToUpdate.dataObj.forEach(
+									dataEntry=>updatedEls.push(this._repeatInsert(cellObjToUpdate,false,dataEntry)));
 					break;
 				} else if (arrayIndex) {//index pointing at existing repeated-child
 					cellObjToUpdate=cellObjToUpdate.children[arrayIndex];
@@ -768,8 +764,8 @@ class TablanceBase {
 		const ctx = this._pass1_assignAutoIdsAndMaps();
 
 		//---- PASS 2 — Compute UI path & data paths ----
-		for (let i = 0; i < this._expansion.entries.length; i++)// Expansion roots
-			this._assignPathsAndData(this._expansion.entries[i], [i], []);
+		for (let i = 0; i < this.schema.details.entries.length; i++)// Expansion roots
+			this._assignPathsAndData(this.schema.details.entries[i], [i], []);
 		for (let i = 0; i < this._colStructs.length; i++)// Main columns
 			this._assignPathsAndData(this._colStructs[i], ["m", i], []);
 
@@ -798,7 +794,7 @@ class TablanceBase {
 		ctx.structByAutoId      = Object.create(null);
 		ctx.seenCellIds         = Object.create(null);
 
-		ctx.initialRoots = [...this._colStructs, ...this._expansion.entries];
+		ctx.initialRoots = [...this._colStructs, ...this.schema.details.entries];
 
 		let stack = [...ctx.initialRoots];
 
@@ -1474,7 +1470,7 @@ class TablanceBase {
 		const shadowLine=expansionDiv.appendChild(document.createElement("div"));
 		shadowLine.className="expansion-shadow";
 		const cellObject=this._openExpansions[rowIndex]={};
-		this._generateExpansionContent(this._expansion,rowIndex,cellObject,expansionDiv,[],this._data[rowIndex]);
+		this._generateExpansionContent(this.schema.details,rowIndex,cellObject,expansionDiv,[],this._data[rowIndex]);
 		cellObject.rowIndex=rowIndex;
 		return expansionRow;
 	}
@@ -1801,7 +1797,7 @@ class TablanceBase {
 			containerEl=itemObj.selEl=outerContainerEl.appendChild(document.createElement("div"));
 		} else if (type=="group") {//GROUP: More complex <tr> with special rules for empty/hiding and more
 			outerContainerEl=document.createElement("tr");
-			outerContainerEl.className="empty";		// Will be hidden while group is closed until content becomes non-empty
+			outerContainerEl.className="empty";	// Will be hidden while group is closed until content becomes non-empty
 
 			const td=outerContainerEl.insertCell();
 			td.classList.toggle("disabled",struct.type=="field"&&!struct.input);
@@ -2643,7 +2639,8 @@ class TablanceBase {
 		}
 	
 		/**
-		 * Close the select dropdown, update the current value (including create-new if applicable) and clean up listeners.
+		 * Close the select dropdown, update the current value (including create-new if applicable) 
+		 * and clean up listeners.
 		 * @param {Object} ctx
 		 * @param {Event} e the event that triggered the close (click, keydown, etc.)
 		 */
@@ -2672,7 +2669,8 @@ class TablanceBase {
 			this._inputVal=this._cellCursorDataObj[this._activeStruct.id];
 			const ctx=this._createSelectDropdownContext(strctInp);
 			this._cellCursor.style.backgroundColor="transparent";
-			if (strctInp.allowCreateNew||ctx.looseOpts.length>=(strctInp.minOptsFilter??this._opts.defaultMinOptsFilter??5))
+			const allowCreateNew=strctInp.allowCreateNew;
+			if (allowCreateNew||ctx.looseOpts.length>=(strctInp.minOptsFilter??this._opts.defaultMinOptsFilter??5))
 				ctx.input.addEventListener("input",()=>this._handleSelectInputChange(ctx));
 			else
 				ctx.inputWrapper.classList.add("hide");
@@ -3067,9 +3065,9 @@ class TablanceBase {
 	_createTableBody() {
 		this._scrollBody=this.rootEl.appendChild(document.createElement("div"));
 
-		if (this._staticRowHeight&&!this._expansion)
+		if (this._staticRowHeight&&!this.schema.details)
 			this._scrollMethod=this._onScrollStaticRowHeightNoExpansion;
-		else if (this._staticRowHeight&&this._expansion)
+		else if (this._staticRowHeight&&this.schema.details)
 			this._scrollMethod=this._onScrollStaticRowHeightExpansion;
 		this._scrollBody.addEventListener("scroll",e=>this._scrollMethod(e),{passive:true});
 		this._scrollBody.className="scroll-body";
@@ -3121,7 +3119,7 @@ class TablanceBase {
 
 		//Build structs for bulk-edit-area based on columns and expansion. They will get placed in this._bulkEditStructs
 		//and later used to create the actual inputs in the bulk-edit-area
-		for (const struct of [...this._colStructs,this._expansion])
+		for (const struct of [...this._colStructs,this.schema.details])
 			bulkEditStructs.push(...this._buildBulkEditStruct(struct));
 
 		const bulkStructTree={type:"lineup",entries:bulkEditStructs};
@@ -3149,7 +3147,7 @@ class TablanceBase {
 			const structCopy=Object.assign(Object.create(null), struct);
 			structCopy.type="field";//struct of columns don't need to specify this, but it's needed in expansion
 			result.push(structCopy);
-		} else if ((struct.bulkEdit||struct==this._expansion)&&struct.entries?.length) {
+		} else if ((struct.bulkEdit||struct==this.schema.details)&&struct.entries?.length) {
 			for (const entryStruct of struct.entries)
 				result.push(...this._buildBulkEditStruct(entryStruct));
 		}
@@ -3273,7 +3271,7 @@ class TablanceBase {
 		this.rootEl.innerHTML="";
 		const expansionDiv=this.rootEl.appendChild(document.createElement("div"));
 		expansionDiv.classList.add("expansion");
-		this._generateExpansionContent(this._expansion,0,this._openExpansions[0]={},expansionDiv,[],this._data[0]);
+		this._generateExpansionContent(this.schema.details,0,this._openExpansions[0]={},expansionDiv,[],this._data[0]);
 	}
 
 	/**Refreshes the table-rows. Should be used after sorting or filtering or such.*/
@@ -3842,7 +3840,7 @@ export default class Tablance extends TablanceBase {
 
 	_expandRow(tr,animate=true) {
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
-		if (!this._expansion||this._rowMetaGet(dataRowIndex)?.h>0)
+		if (!this.schema.details||this._rowMetaGet(dataRowIndex)?.h>0)
 			return;
 		const expRow=this._renderExpansion(tr,dataRowIndex);
 		const expHeight=this._rowMetaSet(dataRowIndex,"h",this._rowHeight+expRow.offsetHeight+this._borderSpacingY);
@@ -3870,7 +3868,7 @@ export default class Tablance extends TablanceBase {
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
 		if (dataRowIndex==this._mainRowIndex&&this._activeExpCell)
 			this._exitEditMode(false);//cancel out of edit-mode so field-validation doesn't cause problems
-		if (!this._expansion||!this._rowMetaGet(dataRowIndex)?.h)
+		if (!this.schema.details||!this._rowMetaGet(dataRowIndex)?.h)
 			return;
 		this._unsortCol(null,"expand");
 		if (this._mainRowIndex==dataRowIndex&&this._activeExpCell) {//if cell-cursor is inside the expansion

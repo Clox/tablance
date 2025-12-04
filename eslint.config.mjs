@@ -20,6 +20,9 @@ export default [
 		},
 
 		rules: {
+
+			"max-len": ["error", { "code": 120 }],//limit to 120 characters per line
+			
 			//
 			// Warn if you accidentally leave console.log() in production code,
 			// but allow console.warn() and console.error()
