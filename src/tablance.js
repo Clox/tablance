@@ -512,7 +512,9 @@ class TablanceBase {
 	 * 								to add the actual data but it will only use the last row sent. So adding multiple
 	 * 								ones will cause it to discard all but the last.
 	 * */
-	constructor(hostEl,columns,staticRowHeight=false,spreadsheet=false,expansion=null,opts=null,onlyExpansion=false){
+	constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null,onlyExpansion=false){
+		const columns=schema.main?.columns;
+		const expansion=schema.details;
 		this.hostEl=hostEl;
 		const rootEl=this.rootEl = document.createElement("div");
 		this.hostEl.appendChild(this.rootEl);
@@ -523,7 +525,7 @@ class TablanceBase {
 		this._onlyExpansion=onlyExpansion;
 		rootEl.classList.add("tablance");
 		//const allowedColProps=["id","title","width","input","type","render","html"];//should we really do filtering?
-		if (!onlyExpansion){
+		if (!onlyExpansion&&columns){
 			for (let col of columns) {
 				let processedCol={};
 				if ((col.type=="expand"||col.type=="select")&&!col.width)
@@ -3124,7 +3126,7 @@ class TablanceBase {
 			bulkEditStructs.push(...this._buildBulkEditStruct(struct));
 
 		const bulkStructTree={type:"lineup",entries:bulkEditStructs};
-		this._bulkEditTable=new TablanceBulk(tableContainer,{},null,true,bulkStructTree,null,true);
+		this._bulkEditTable=new TablanceBulk(tableContainer,{details:bulkStructTree},null,true,null,true);
 		this._bulkEditTable.mainInstance=this;
 		this._bulkEditTable.addData([{}]);
 	}
