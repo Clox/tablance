@@ -137,7 +137,10 @@ class TablanceBase {
 	_numRowsInViewSelected=0;//number of rows in the current view/filter that are selected/checked using select-column
 	_animations={};//keeps tracks of animations. Key is a unique id-string, identifying the animation so multiple
 					//instances of the same animation can't run. Value is the end-time in ms since epoch.
-	_onlyExpansion;//See constructor-param onlyExpansion
+	_onlyExpansion;//If this is set to true then the table will not have any actual rows and will instead only have an
+					// expansion specified in param expansion. It will also not have a scrollpane and the expansion will
+					// always be expanded. Method addData is still used to add the actual data but it will only use the
+					// last row sent. So adding multiple ones will cause it to discard all but the last.
 	_tooltip;//reference to html-element used as tooltip
 	_dropdownAlignmentContainer;						
 
@@ -507,13 +510,8 @@ class TablanceBase {
 	 * 								selectNoResultsFound "No results found"
 	 * 								insertNew "Insert New" (Used in repeat-struct if create is set to true)
 	 * 							}
-	 * 	@param {Bool} onlyExpansion If this is set to true then the table will not have any actual rows and will instead
-	 * 								only have an expansion specified in param expansion. It will also not have a
-	 * 								scrollpane and the expansion will always be expanded. Method addData is still used
-	 * 								to add the actual data but it will only use the last row sent. So adding multiple
-	 * 								ones will cause it to discard all but the last.
 	 * */
-	constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null,onlyExpansion=false){
+	constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const columns=schema.main?.columns;
 		const expansion=schema.details;
 		this.hostEl=hostEl;
@@ -523,10 +521,12 @@ class TablanceBase {
 		this._expansion=expansion;
 		this._staticRowHeight=staticRowHeight;
 		this._opts=opts??{};
-		this._onlyExpansion=onlyExpansion;
 		rootEl.classList.add("tablance");
 		//const allowedColProps=["id","title","width","input","type","render","html"];//should we really do filtering?
-		if (!onlyExpansion&&columns){
+		if (!columns) {
+			this._setupSpreadsheet(true);
+			this._onlyExpansion=true;
+		} else {
 			for (let col of columns) {
 				let processedCol={};
 				if ((col.type=="expand"||col.type=="select")&&!col.width)
@@ -554,8 +554,7 @@ class TablanceBase {
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
 			this._updateHeaderSortHtml();
 			this._buildDependencyGraph();
-		} else
-			this._setupSpreadsheet(true);
+		}
 	}
 
 	addData(data, highlight=false) {
@@ -3126,7 +3125,7 @@ class TablanceBase {
 			bulkEditStructs.push(...this._buildBulkEditStruct(struct));
 
 		const bulkStructTree={type:"lineup",entries:bulkEditStructs};
-		this._bulkEditTable=new TablanceBulk(tableContainer,{details:bulkStructTree},null,true,null,true);
+		this._bulkEditTable=new TablanceBulk(tableContainer,{details:bulkStructTree},null,true,null);
 		this._bulkEditTable.mainInstance=this;
 		this._bulkEditTable.addData([{}]);
 
