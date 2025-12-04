@@ -3,7 +3,8 @@
  * data handling, and rendering helpers etc used by both Tablance and TablanceBulk.
  */
 class TablanceBase {
-	container;//Readonly, container-element for table
+	hostEl;//the element that is passed to the constructor and which the table is added to
+	rootEl;//Readonly, container-element for table
 	neighbourTables;//Object of other Tablance-instances. Possible keys are "up" and "down". If any of these are set
 				//then if one keeps pressing up/down until there are no more cells then one will get o the next table.
 				//Except for manually this can also be set via chainTables()
@@ -140,7 +141,7 @@ class TablanceBase {
 	_dropdownAlignmentContainer;						
 
 	/**
-	 * @param {HTMLElement} container An element which the table is going to be added to
+	 * @param {HTMLElement} hostEl An element which the table is going to be added to
 	 * @param {{}[]} columns An array of objects where each object has the following structure: {
 	 * 			id String A unique identifier for the column. The value in the data that has this key will be used as
 	 * 				the value in the cell.
@@ -511,14 +512,16 @@ class TablanceBase {
 	 * 								to add the actual data but it will only use the last row sent. So adding multiple
 	 * 								ones will cause it to discard all but the last.
 	 * */
-	constructor(container,columns,staticRowHeight=false,spreadsheet=false,expansion=null,opts=null,onlyExpansion=false){
-		Object.defineProperty(this, 'container', {value: container,writable: false});
+	constructor(hostEl,columns,staticRowHeight=false,spreadsheet=false,expansion=null,opts=null,onlyExpansion=false){
+		this.hostEl=hostEl;
+		const rootEl=this.rootEl = document.createElement("div");
+		this.hostEl.appendChild(this.rootEl);
 		this._spreadsheet=spreadsheet;
 		this._expansion=expansion;
 		this._staticRowHeight=staticRowHeight;
 		this._opts=opts??{};
 		this._onlyExpansion=onlyExpansion;
-		container.classList.add("tablance");
+		rootEl.classList.add("tablance");
 		//const allowedColProps=["id","title","width","input","type","render","html"];//should we really do filtering?
 		if (!onlyExpansion){
 			for (let col of columns) {
@@ -534,7 +537,7 @@ class TablanceBase {
 				this._setupSearchbar();
 			this._createTableHeader();
 			this._createTableBody();
-			(new ResizeObserver(this._updateSizesOfViewportAndCols.bind(this))).observe(container);
+			(new ResizeObserver(this._updateSizesOfViewportAndCols.bind(this))).observe(hostEl);
 			this._setupSpreadsheet(false);
 			this._updateSizesOfViewportAndCols();
 			if (opts?.sortAscHtml==null)
@@ -997,9 +1000,9 @@ class TablanceBase {
 
 
 
-	_updateViewportHeight=()=>{
-		this._scrollBody.style.height=this.container.clientHeight-this._headerTable.offsetHeight
-				-(this._searchInput?.offsetHeight??0)-this._bulkEditArea.offsetHeight+"px";
+	_updateViewportHeight = () => {
+		this._scrollBody.style.height = this.hostEl.clientHeight - this._headerTable.offsetHeight
+		- (this._searchInput?.offsetHeight ?? 0) - this._bulkEditArea.offsetHeight + "px";
 	}
 
 	_attachInputFormatter(el, format) {
@@ -1130,7 +1133,7 @@ class TablanceBase {
 		
 	
 	_setupSearchbar() {
-		this._searchInput=this.container.appendChild(document.createElement("input"));
+		this._searchInput=this.rootEl.appendChild(document.createElement("input"));
 		this._searchInput.type=this._searchInput.className="search";
 		this._searchInput.placeholder=this._opts.lang?.filterPlaceholder??"Search";
 		this._searchInput.addEventListener("input",e=>this._onSearchInput(e));
@@ -1141,7 +1144,7 @@ class TablanceBase {
 	}
 
 	_setupSpreadsheet(onlyExpansion) {
-		this.container.classList.add("spreadsheet");
+		this.rootEl.classList.add("spreadsheet");
 		this._cellCursor=document.createElement("div");
 		this._cellCursor.className="cell-cursor";
 		this._cellCursor.style.display="none";
@@ -1151,11 +1154,11 @@ class TablanceBase {
 			//no cell will be selected which is bad user experience. Set it to 0 for headerTable too in order to match
 			this._mainTable.style.borderSpacing=this._headerTable.style.borderSpacing=this._borderSpacingY=0;
 		}
-		this.container.addEventListener("focus",e=>this._spreadsheetOnFocus(e));
-		this.container.addEventListener("blur",e=>this._spreadsheetOnBlur(e));
-		this.container.tabIndex=0;//so that the table can be tabbed to
-		this.container.addEventListener("keydown",e=>this._spreadsheetKeyDown(e));
-		this.container.addEventListener("mousedown",e=>this._spreadsheetMouseDown(e));
+		this.rootEl.addEventListener("focus",e=>this._spreadsheetOnFocus(e));
+		this.rootEl.addEventListener("blur",e=>this._spreadsheetOnBlur(e));
+		this.rootEl.tabIndex=0;//so that the table can be tabbed to
+		this.rootEl.addEventListener("keydown",e=>this._spreadsheetKeyDown(e));
+		this.rootEl.addEventListener("mousedown",e=>this._spreadsheetMouseDown(e));
 		this._cellCursor.addEventListener("dblclick",e=>this._enterCell(e));
 
 		this._tooltip=document.createElement("div");
@@ -1195,9 +1198,9 @@ class TablanceBase {
 		//a cell is highlighted. Thats why #spreadsheetKeyDown sets outline to none, and this line undos that
 		//also, we dont want it to show when focusing by mouse so we use #focusMethod (see its declaration)
 		if (!this._onlyExpansion&&this._highlightOnFocus)
-			this.container.style.removeProperty("outline");
+			this.rootEl.style.removeProperty("outline");
 		else
-			this.container.style.outline="none";
+			this.rootEl.style.outline="none";
 		
 		//why is this needed? it messes things up when cellcursor is in mainpage of bulk-edit-area but hidden because
 		//other page is open, and the tablance gets focus because then it will be visible through the active page
@@ -1209,7 +1212,7 @@ class TablanceBase {
 
 	_spreadsheetOnBlur(_e) {
 		setTimeout(()=>{
-			if (!this.container.contains(document.activeElement)||this._bulkEditArea?.contains(document.activeElement)) {
+			if (!this.rootEl.contains(document.activeElement)||this._bulkEditArea?.contains(document.activeElement)) {
 				this._highlightOnFocus=true;
 				//if (this.neighbourTables&&Object.values(this.neighbourTables).filter(Boolean).length)
 					this._cellCursor.style.display="none";
@@ -1374,7 +1377,7 @@ class TablanceBase {
 			} else if (e.key==="Backspace")
 				e.stopPropagation();
 		}
-		this.container.style.outline="none";//see #spreadsheetOnFocus
+		this.rootEl.style.outline="none";//see #spreadsheetOnFocus
 		if (!this._inEditMode) {
 			switch (e.code) {
 				case "ArrowUp":
@@ -1915,7 +1918,7 @@ class TablanceBase {
 	
 	_spreadsheetMouseDown(e) {
 		this._highlightOnFocus=false;//see decleration
-		this.container.style.outline="none";//see #spreadsheetOnFocus
+		this.rootEl.style.outline="none";//see #spreadsheetOnFocus
 		this._tooltip.style.visibility="hidden";
 		if (Date.now()<this._ignoreClicksUntil)//see decleration of #ignoreClicksUntil
 			return;
@@ -1940,7 +1943,7 @@ class TablanceBase {
 					e.preventDefault();//prevent text-selection when shift-clicking checkboxes
 				if (this._mainRowIndex==null) {
 					this._selectMainTableCell(td);
-					this.container.focus({preventScroll:true});
+					this.rootEl.focus({preventScroll:true});
 				}
 				if (td.classList.contains("expand-col"))
 					return this._toggleRowExpanded(td.parentElement);
@@ -2766,7 +2769,7 @@ class TablanceBase {
 		if (this._activeStruct.input.validation&&save&&!this._validateInput(input.value))
 			return false;
 		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
-		this.container.focus({preventScroll:true});//so that #inputVal gets updated-
+		this.rootEl.focus({preventScroll:true});//so that #inputVal gets updated-
 
 
 		this._inEditMode=false;
@@ -2892,12 +2895,12 @@ class TablanceBase {
 	}
 
 	_selectCell(cellEl,struct,dataObj,adjustCursorPosSize=true) {
-		this.container.focus({preventScroll:true});
+		this.rootEl.focus({preventScroll:true});
 		if (adjustCursorPosSize)
 			this._adjustCursorPosSize(cellEl);
 		this._cellCursor.classList.toggle("expansion",cellEl.closest(".expansion"));
 		this._cellCursor.classList.toggle("disabled",cellEl.classList.contains("disabled"));
-		(this._scrollingContent??this.container).appendChild(this._cellCursor);
+		(this._scrollingContent??this.rootEl).appendChild(this._cellCursor);
 		this._selectedCell=cellEl;
 		this._activeStruct=struct;
 		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
@@ -2911,7 +2914,7 @@ class TablanceBase {
 	_getElPos(el,container) {
 		const cellPos=el.getBoundingClientRect();
 		if (!container)
-			container=this._tableSizer??this.container;
+			container=this._tableSizer??this.rootEl;
 		const contPos=container.getBoundingClientRect();
 		return {x:cellPos.x-contPos.x, y:cellPos.y-contPos.y+(this._tableSizer?.offsetTop??0)}
 	}
@@ -2930,7 +2933,7 @@ class TablanceBase {
 	}
 
 	_createTableHeader() {
-		this._headerTable=this.container.appendChild(document.createElement("table"));
+		this._headerTable=this.rootEl.appendChild(document.createElement("table"));
 		this._headerTable.classList.add("header-table");
 		const thead=this._headerTable.appendChild(document.createElement("thead"));
 		this._headerTr=thead.insertRow();
@@ -3060,7 +3063,7 @@ class TablanceBase {
 	}
 
 	_createTableBody() {
-		this._scrollBody=this.container.appendChild(document.createElement("div"));
+		this._scrollBody=this.rootEl.appendChild(document.createElement("div"));
 
 		if (this._staticRowHeight&&!this._expansion)
 			this._scrollMethod=this._onScrollStaticRowHeightNoExpansion;
@@ -3089,7 +3092,7 @@ class TablanceBase {
 	}
 
 	_createBulkEditArea() {
-		this._bulkEditArea=this.container.appendChild(document.createElement("div"));
+		this._bulkEditArea=this.rootEl.appendChild(document.createElement("div"));
 		this._bulkEditArea.classList.add("bulk-edit-area");
 		this._bulkEditArea.style.height=0;//start at height 0 before expanded
 		this._bulkEditArea.addEventListener("transitionend",()=>{
@@ -3176,22 +3179,21 @@ class TablanceBase {
 	}
 
 	_updateSizesOfViewportAndCols() {
-		if (this.container.offsetHeight!=this._containerHeight) {
+		if (this.hostEl.offsetHeight != this._containerHeight) {
 			this._updateViewportHeight();
-			if (this.container.offsetHeight>this._containerHeight)
+			if (this.hostEl.offsetHeight > this._containerHeight)
 				this._maybeAddTrs();
 			else
 				this._maybeRemoveTrs();
-			this._containerHeight=this.container.offsetHeight;
+			this._containerHeight = this.hostEl.offsetHeight;
 		}
 		this._updateColsWidths();
-
-		this._headerTable.style.width=this._scrollBody.offsetWidth+"px";
+		this._headerTable.style.width = this._scrollBody.offsetWidth + "px";
 		this._adjustCursorPosSize(this._selectedCell);
 	}
 
 	_updateColsWidths() {
-		if (this.container.offsetWidth>this._containerWidth) {
+		if (this.rootEl.offsetWidth>this._containerWidth) {
 			let areaWidth=this._tableSizer.offsetWidth;
 			const percentageWidthRegex=/\d+%/;
 			let totalFixedWidth=0;
@@ -3264,8 +3266,8 @@ class TablanceBase {
 
 	_setDataForOnlyExpansion(data) {
 		this._allData=this._data=[data[data.length-1]];
-		this.container.innerHTML="";
-		const expansionDiv=this.container.appendChild(document.createElement("div"));
+		this.rootEl.innerHTML="";
+		const expansionDiv=this.rootEl.appendChild(document.createElement("div"));
 		expansionDiv.classList.add("expansion");
 		this._generateExpansionContent(this._expansion,0,this._openExpansions[0]={},expansionDiv,[],this._data[0]);
 	}
@@ -3754,7 +3756,7 @@ class TablanceBulk extends TablanceBase {
 
 	/** @type {Tablance} main tablance owning this bulk instance */
 	mainInstance;
-	_dropdownAlignmentContainer=this.container;
+	_dropdownAlignmentContainer=this.rootEl;
 	constructor() {
 		super(...arguments);
 	}
@@ -3779,7 +3781,7 @@ class TablanceBulk extends TablanceBase {
 export default class Tablance extends TablanceBase {
 	constructor() {
 		super(...arguments);
-		this._dropdownAlignmentContainer=this._onlyExpansion?this.container:this._scrollBody;
+		this._dropdownAlignmentContainer=this._onlyExpansion?this.rootEl:this._scrollBody;
 	}
 	
 	_doEditSave() {

@@ -31,6 +31,7 @@
 				,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"},bulkEdit:true}, 
 				{title:"numtwice", render:num=>num*2, dependsOn:"num"}];
 			const myExpansion={type:"list",titlesColWidth:"8em",entries:[
+				
 				{type:"field",title:"amount+10",render:amount=>(Number(amount)+10).toFixed(2)
 					, dependsOn:"amount",/* visibleIf:()=>false */},
 				{type:"field",title:"num",id:"num", input:{type:"text"},bulkEdit:true},
@@ -212,8 +213,8 @@
 	<style>
 		#tablanceContainer1:not(.only-expansion) {
 			border: 2px solid;
-			overflow:hidden;
 			resize: both;
+			overflow:hidden;/*needed for resize to work*/
 			height:700px;
 			width:700px
 		}
