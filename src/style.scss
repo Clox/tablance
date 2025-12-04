@@ -1,7 +1,13 @@
 .tablance {
-	position: relative;//needed for position of .multi-row-area to work correctly
+	position: relative;//needed for position of .bulk-edit-area to work correctly
 	font-family: arial;
 	font-size: 16px;
+	height:100%;//needed for the bottom:0 of .bulk-edit-area to work correctly. One could also just simply remove the
+				//bottom:0 from .bulk-edit-area and let it be positioned according to content which would also work but
+				//this way it is more predictable.
+				
+	width: 100%;//doesn't currently do anything but doesn't hurt either
+
 	&:focus {
 		outline: 3px solid blue;
 	}

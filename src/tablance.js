@@ -39,6 +39,7 @@ class TablanceBase {
 	_bulkEditTable;//this holds another instance of the Tablance class which is used inside the bulk-edit-area
 	_bulkEditAreaOpen=false;//whether the section is currently open or not
 	_bulkEditStructs;//Array of structs with inputs that are present in the bulk-edit-area
+	_bulkEditAreaHeightPx;//height of bulk-edit-area in px. Used to animate from 0 to full height when opening/closing
 	_numberOfRowsSelectedSpan;//resides in the bulk-edit-area. Should be set to the number of rows selected
 	_borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
@@ -2003,7 +2004,7 @@ class TablanceBase {
 			checkbox.indeterminate=true;
 		if (this._numRowsSelected^this._bulkEditAreaOpen) {
 			this._bulkEditAreaOpen=!!this._numRowsSelected;
-			this._bulkEditArea.style.height=this._bulkEditAreaOpen?this._bulkEditArea.firstChild.offsetHeight+"px":0;
+			this._bulkEditArea.style.height=this._bulkEditAreaOpen?this._bulkEditAreaHeightPx+"px":0;
 			this._animate(this._updateViewportHeight,Infinity,"adjustViewportHeight");
 		}
 	}
@@ -3096,7 +3097,6 @@ class TablanceBase {
 	_createBulkEditArea() {
 		this._bulkEditArea=this.rootEl.appendChild(document.createElement("div"));
 		this._bulkEditArea.classList.add("bulk-edit-area");
-		this._bulkEditArea.style.height=0;//start at height 0 before expanded
 		this._bulkEditArea.addEventListener("transitionend",()=>{
 			delete this._animations["adjustViewportHeight"];
 			if (this._bulkEditArea.style.height!="0px")
@@ -3129,6 +3129,9 @@ class TablanceBase {
 		this._bulkEditTable=new TablanceBulk(tableContainer,{details:bulkStructTree},null,true,null,true);
 		this._bulkEditTable.mainInstance=this;
 		this._bulkEditTable.addData([{}]);
+
+		this._bulkEditAreaHeightPx=this._bulkEditArea.firstChild.offsetHeight;
+		this._bulkEditArea.style.height=0;//start at height 0 before expanded. but do this after having measured above
 	}
 
 	_isObject(val) {
