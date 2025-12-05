@@ -517,7 +517,7 @@ class TablanceBase {
 		this._staticRowHeight=staticRowHeight;
 		this._opts=opts??{};
 		rootEl.classList.add("tablance");
-		this.schema=schema;
+		this.schema=this._cloneSchemaNode(schema);
 		//const allowedColProps=["id","title","width","input","type","render","html"];//should we really do filtering?
 		if (!schema.main?.columns) {
 			this._setupSpreadsheet(true);
@@ -674,6 +674,90 @@ class TablanceBase {
 		}
 		this._adjustCursorPosSize(this._selectedCell,true);
 	}
+
+	/**
+	 * Clone a schema tree safely.
+	 *
+	 * Rules:
+	 * - Recurse ONLY into plain objects (POJOs) and arrays.
+	 * - Only objects inside `entry` / `entries` of a schema-node are schema-nodes.
+	 * - Schema-nodes get `.parent`; config objects never do.
+	 * - Functions, DOM nodes and non-POJO objects (Date, Map, class instances, etc.)
+	 *   are preserved by reference.
+	 *
+	 * @param {*} obj        The value to clone.
+	 * @param {*} parent     Parent schema-node clone.
+	 * @param {boolean} isNode  True if obj represents a schema-node.
+	 * @returns {*}          The cloned value.
+	 */
+	_cloneSchemaNode(obj, parent=null, isNode=true) {
+		if (!obj || typeof obj!="object")
+			return obj;
+
+		// DOM nodes must be preserved by reference
+		if (typeof Node!="undefined" && obj instanceof Node)
+			return obj;
+
+		
+
+		// Non-POJO objects (Date, Map, Set, class instances, etc.) → return by reference
+		const isPojo = [Object.prototype, null].includes(Object.getPrototypeOf(obj));
+		if (!isPojo && !Array.isArray(obj))
+			return obj;
+
+		// Arrays → clone element-wise
+		if (Array.isArray(obj)) {
+			const arr=[];
+			for (const item of obj)
+				arr.push(this._cloneSchemaNode(item, null, false));
+			return arr;
+		}
+
+		// At this point obj is a POJO: either schema-node or config object
+		const clone=Object.assign(Object.create(null), {});
+		if (isNode&&parent)
+			clone.parent=parent;
+
+		for (const [key, val] of Object.entries(obj)) {
+
+			// Functions and meta preserved by reference
+			if (typeof val=="function" || key=="meta") {
+				clone[key]=val;
+				continue;
+			}
+		
+			// Remove parent from non-schema config objects
+			if (!isNode && key=="parent")
+				continue;
+		
+			// Child schema-nodes: only valid when obj is a schema-node
+			if (isNode && key=="entries" && Array.isArray(val)) {
+				const arr=[];
+				for (const child of val)
+					arr.push(this._cloneSchemaNode(child, clone, true));
+				clone[key]=arr;
+				continue;
+			}
+		
+			if (isNode && key=="entry" && val && typeof val=="object") {
+				clone[key]=this._cloneSchemaNode(val, clone, true);
+				continue;
+			}
+		
+			// Config object inside node (input, styles, validators, etc.)
+			if (val && typeof val=="object") {
+				clone[key]=this._cloneSchemaNode(val, null, false);
+				continue;
+			}
+		
+			// Primitive
+			clone[key]=val;
+		}		
+
+		return clone;
+	}
+
+
 
 	_findDescendantOfIdInCellObj(searchInObj,idToFind) {
 		for (const child of searchInObj.children)
@@ -3115,15 +3199,15 @@ class TablanceBase {
 		const tableContainer=mainPage.appendChild(document.createElement("div"));
 		mainPage.classList.add("main");
 		mainPage.style.display="block";
-		const bulkEditStructs=[];
 
-		//Build structs for bulk-edit-area based on columns and expansion. They will get placed in this._bulkEditStructs
-		//and later used to create the actual inputs in the bulk-edit-area
-		for (const struct of [...this._colStructs,this.schema.details])
-			bulkEditStructs.push(...this._buildBulkEditStruct(struct));
+		const bulkEditFields=this._buildBulkEditSchemaNodes(this.schema.details);
+		for (const column of this.schema.main.columns)
+			bulkEditFields.push(...this._buildBulkEditSchemaNodes(column));
 
-		const bulkStructTree={type:"lineup",entries:bulkEditStructs};
-		this._bulkEditTable=new TablanceBulk(tableContainer,{details:bulkStructTree},null,true,null);
+		//Build schema for bulk-edit-area based on the real schema
+		const schema={details:{type:"lineup",entries:bulkEditFields}};
+
+		this._bulkEditTable=new TablanceBulk(tableContainer,schema,null,true,null);
 		this._bulkEditTable.mainInstance=this;
 		this._bulkEditTable.addData([{}]);
 
@@ -3137,25 +3221,24 @@ class TablanceBase {
 
 	/**Given a struct like expansion or column, will add inputs to this._bulkEditStructs which later is iterated
 	 * and the contents added to the bulk-edit-area. 
-	 * @param {*} struct Should be expansion or column when called from outside, but it calls itself recursively
+	 * @param {*} schema Should be expansion or column when called from outside, but it calls itself recursively
 	 * 						when hitting upon containers which then are passed to this param
 	 * @returns */
-	_buildBulkEditStruct(struct) {
-		const main=this._colStructs.includes(struct);//Whether the struct is in expansion or not.
+	_buildBulkEditSchemaNodes(schema) {
+		const mainCol=this.schema.main.columns.includes(schema);
 		const result=[];
-		if ((main||struct.type=="field")&&struct.bulkEdit) {
-			const structCopy=Object.assign(Object.create(null), struct);
-			structCopy.type="field";//struct of columns don't need to specify this, but it's needed in expansion
-			result.push(structCopy);
-		} else if ((struct.bulkEdit||struct==this.schema.details)&&struct.entries?.length) {
-			for (const entryStruct of struct.entries)
-				result.push(...this._buildBulkEditStruct(entryStruct));
+		if ((mainCol||schema.type=="field")&&schema.bulkEdit) {
+			//schema-nodes of main-columns don't need to specify this, but it's needed in details
+			result.push(Object.assign(Object.create(null), schema, {type:"field"}));
+		} else if ((schema.entries?.length&&schema.bulkEdit)||schema===this.schema.details) {
+			for (const schemaNode of schema.entries)
+				result.push(...this._buildBulkEditSchemaNodes(schemaNode));
 		}
 		return result;
 	}
 
 	/**Updates the displayed values in the bulk-edit-area */
-	_updateBulkEditAreaCells(structsToUpdateCellsFor=this._bulkEditTable._expansion.entries) {
+	_updateBulkEditAreaCells(structsToUpdateCellsFor=this._bulkEditTable.schema.details.entries) {
 		const mixedText="(Mixed)";
 		for (let multiCellI=-1, multiCellStruct; multiCellStruct=structsToUpdateCellsFor[++multiCellI];) {
 
