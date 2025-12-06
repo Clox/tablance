@@ -517,7 +517,7 @@ class TablanceBase {
 		this._staticRowHeight=staticRowHeight;
 		this._opts=opts??{};
 		rootEl.classList.add("tablance");
-		this.schema=this._cloneSchemaNode(schema);
+		this.schema=this._cloneSchema(schema);
 		//const allowedColProps=["id","title","width","input","type","render","html"];//should we really do filtering?
 		if (!schema.main?.columns) {
 			this._setupSpreadsheet(true);
@@ -685,77 +685,76 @@ class TablanceBase {
 	 * - Functions, DOM nodes and non-POJO objects (Date, Map, class instances, etc.)
 	 *   are preserved by reference.
 	 *
-	 * @param {*} obj        The value to clone.
-	 * @param {*} parent     Parent schema-node clone.
-	 * @param {boolean} isNode  True if obj represents a schema-node.
+	 * @param {*} schema     The value to clone.
 	 * @returns {*}          The cloned value.
 	 */
-	_cloneSchemaNode(obj, parent=null, isNode=true) {
-		if (!obj || typeof obj!="object")
-			return obj;
-
-		// DOM nodes must be preserved by reference
-		if (typeof Node!="undefined" && obj instanceof Node)
-			return obj;
-
+	_cloneSchema(schema) {
+		//"normally" when determining if an object is a a schema-node we check if it is pointed to either by entry or
+		//entries of a schema-node. E.g. if an object is not a schema-node then any items of entry or entries wont
+		//be schema-nodes either. However the root schema, main and details are schema-nodes as well and this is what's
+		//stated by including them in pathNodes here.
+		const pathNodes=new Set([schema,schema.main,schema.details,...(schema.main?.columns??[])]);//all path-nodes
 		
+		return cloneRec(schema, null, true);
 
-		// Non-POJO objects (Date, Map, Set, class instances, etc.) → return by reference
-		const isPojo = [Object.prototype, null].includes(Object.getPrototypeOf(obj));
-		if (!isPojo && !Array.isArray(obj))
-			return obj;
+		function cloneRec(obj, parent, isNode) {
+			if (!obj || typeof obj!="object")
+				return obj
 
-		// Arrays → clone element-wise
-		if (Array.isArray(obj)) {
-			const arr=[];
-			for (const item of obj)
-				arr.push(this._cloneSchemaNode(item, null, false));
-			return arr;
+			if (typeof Node!="undefined" && obj instanceof Node)
+				return obj
+
+			const proto = Object.getPrototypeOf(obj)
+			const isPojo = proto===Object.prototype || proto===null
+
+			if (!isPojo && !Array.isArray(obj))
+				return obj
+
+			const clone = Object.assign(Object.create(null), {})
+			isNode||=pathNodes.has(obj);
+			if (parent&&isNode)
+				clone.parent = parent
+
+			for (const [key, val] of Object.entries(obj)) {
+
+				if (typeof val=="function" || key=="meta") {
+					clone[key]=val
+					continue
+				}
+
+				if (!isNode && key=="parent")
+					continue
+
+				// entry/entries → always schema-nodes if parent is node
+				if (isNode && key=="entries" && Array.isArray(val)) {
+					const arr=[]
+					for (const child of val)
+						arr.push(cloneRec(child, clone, true))
+					clone[key]=arr
+					continue
+				}
+
+				if (isNode && key=="entry" && val && typeof val=="object") {
+					clone[key]=cloneRec(val, clone, true)
+					continue
+				}
+
+				// config objects → non-schema OR schema-nodes defined by pathNodes
+				if (val && typeof val=="object") {
+					
+					// Objects inside arrays inherit the same parent.
+					// Objects inside non-arrays inherit this object as parent (if they become nodes).
+					clone[key] = cloneRec(val, Array.isArray(obj)?parent:clone, false);
+					continue
+				}
+
+				clone[key]=val
+			}
+
+			return clone
 		}
-
-		// At this point obj is a POJO: either schema-node or config object
-		const clone=Object.assign(Object.create(null), {});
-		if (isNode&&parent)
-			clone.parent=parent;
-
-		for (const [key, val] of Object.entries(obj)) {
-
-			// Functions and meta preserved by reference
-			if (typeof val=="function" || key=="meta") {
-				clone[key]=val;
-				continue;
-			}
-		
-			// Remove parent from non-schema config objects
-			if (!isNode && key=="parent")
-				continue;
-		
-			// Child schema-nodes: only valid when obj is a schema-node
-			if (isNode && key=="entries" && Array.isArray(val)) {
-				const arr=[];
-				for (const child of val)
-					arr.push(this._cloneSchemaNode(child, clone, true));
-				clone[key]=arr;
-				continue;
-			}
-		
-			if (isNode && key=="entry" && val && typeof val=="object") {
-				clone[key]=this._cloneSchemaNode(val, clone, true);
-				continue;
-			}
-		
-			// Config object inside node (input, styles, validators, etc.)
-			if (val && typeof val=="object") {
-				clone[key]=this._cloneSchemaNode(val, null, false);
-				continue;
-			}
-		
-			// Primitive
-			clone[key]=val;
-		}		
-
-		return clone;
 	}
+
 
 	/**
 	 * Searches upward through schema-node parents to find a meta value.
