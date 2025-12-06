@@ -98,7 +98,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 						{type:"field",title:"Förvalta egendom",id:"administrationOfProperty"
 							,input:{type:"select",
 							options:[{text:"Ja",value:true},{text:"Nej",value:false}]
-						},dependsOn:"type",visibleIf:typeVal=>typeVal!="end"}
+						},dependsOn:"type",visibleIf:typeVal=>typeVal&&typeVal!="end"}
 					],
 					creationValidation:(message,schemaNode,data,index,instanceNode)=>{
 						message("Both fields are mandatory. Enter the data or delete to cancel.");

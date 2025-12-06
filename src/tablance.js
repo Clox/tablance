@@ -4020,7 +4020,8 @@ export default class Tablance extends TablanceBase {
 	
 		instanceNode.hidden = !!instanceNode.hidden;
 	
-		if (schemaNode.visibleIf(val,instanceNode.dataObj,schemaNode,mainIndex,instanceNode) == instanceNode.hidden) {
+		//the !! is needed or else undefined will be treated the same as true
+		if (!!schemaNode.visibleIf(val,instanceNode.dataObj,schemaNode,mainIndex,instanceNode) == instanceNode.hidden) {
 			instanceNode.hidden=!instanceNode.hidden;
 			instanceNode.outerContainerEl.style.display=instanceNode.hidden?"none":"";
 		}
