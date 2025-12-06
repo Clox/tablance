@@ -77,7 +77,7 @@ class TablanceBase {
 				//keyboard-tabbing, and not when clicking or exiting out of edit-mode which again focuses the table.
 				//By setting this to true in mouseDownEvent we can 
 				//check which input was used last when the focus-method is triggerd
-	_detailsBordersHeight;//when animating details for expanding/contracting the height of them fully
+	_detailsBordersHeight;//when animating details-pane for expanding/contracting the height of them fully
 			//expanded needs to be known to know where to animate to and from. This is different from 
 			//#expandedRowIndicesHeights because that is the height of the whole row and not the div inside.
 			//we could retrieve offsetheight of the div each time a row needs to be animated or instead we can get
@@ -117,7 +117,7 @@ class TablanceBase {
 	_activeDetailsCell;	//points to an object in #openDetailsNavMap and in extension the cell of an details.
 							//If this is set then it means the cursor is inside an details.
 	/* #generatingDetails=false;//this is a flag that gets set to true when a row gets expanded or an already expanded
-		//row gets scrolled into view, in short whenver the details-elements are generated. Then it gets unset when
+		//row gets scrolled into view, in short whenever the details-elements are generated. Then it gets unset when
 		//creation finishes. The reason for having this flag is so that update */
 	_ignoreClicksUntil;//when being inside an open group and trying to double-click on another cell further down to
 
@@ -537,21 +537,22 @@ class TablanceBase {
 						processedCol[colKey]=colVal;
 				this._colSchemaNodes.push(processedCol);
 			}
-			if (opts?.searchbar!=false)
+			if (this._opts.searchbar!=false)
 				this._setupSearchbar();
 			this._createTableHeader();
 			this._createTableBody();
 			(new ResizeObserver(this._updateSizesOfViewportAndCols.bind(this))).observe(hostEl);
 			this._setupSpreadsheet(false);
 			this._updateSizesOfViewportAndCols();
-			if (opts?.sortAscHtml==null)
-				opts.sortAscHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
+
+			if (this._opts.sortAscHtml==null)
+				this._opts.sortAscHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#000" points="4,10,0,6,8,6"/></svg>';
-			if (opts?.sortDescHtml==null)
-				opts.sortDescHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#000" '
+			if (this._opts.sortDescHtml==null)
+				this._opts.sortDescHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#000" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
-			if (opts?.sortNoneHtml==null)
-				opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
+			if (this._opts.sortNoneHtml==null)
+				this._opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
 			this._updateHeaderSortHtml();
 			this._buildDependencyGraph();
@@ -1777,7 +1778,7 @@ class TablanceBase {
 		return true;
 	}
 
-		/**
+	/**
 	 * Creates details content based on the provided structure.
 	 *
 	 * @param {object} listSchemaNode Structure object defining what to create.
