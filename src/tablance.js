@@ -4015,7 +4015,7 @@ export default class Tablance extends TablanceBase {
 	_applyVisibleIf(instanceNode,mainIndex) {
 		const schemaNode=instanceNode.schemaNode;
 		let val=this._getTargetVal(false,schemaNode,instanceNode);
-		if (schemaNode.input?.type==="select"&&val.value)
+		if (schemaNode.input?.type==="select"&&val?.value)
 			val=val.value;
 	
 		instanceNode.hidden = !!instanceNode.hidden;
