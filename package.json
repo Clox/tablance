@@ -5,11 +5,22 @@
 	"main": "dist/tablance.umd.js",
 	"module": "dist/tablance.esm.js",
 	"style": "dist/tablance.css",
+	"exports": {
+		".": {
+			"import": "./dist/tablance.esm.js",
+			"default": "./dist/tablance.umd.js"
+		},
+		"./style": "./dist/tablance.css",
+		"./tablance.css": "./dist/tablance.css",
+		"./tablance.min.css": "./dist/tablance.min.css"
+	},
 	"files": [
 		"dist"
 	],
 	"scripts": {
-		"build": "rollup -c",
+		"build": "rm -rf dist && npm run build:js && npm run build:css",
+		"build:js": "rollup -c",
+		"build:css": "mkdir -p dist && cp styles/tablance.css styles/tablance.css.map styles/tablance.min.css styles/tablance.min.css.map dist/",
 		"test": "echo \"Error: no test specified\" && exit 1"
 	},
 	"repository": {
