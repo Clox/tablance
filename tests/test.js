@@ -6,6 +6,7 @@
 /** @type {TablanceOnChangeCallback} */
 const handleDescriptionChange=({newValue,oldValue,rowData,schemaNode,instanceNode,closestMeta,cancelUpdate})=>{
 	console.log({newValue,oldValue,rowData,schemaNode,instanceNode,closestMeta});
+	console.log(closestMeta("foo"));//should log 69
 	// cancelUpdate(); // Uncomment to stop Tablance from writing newValue
 };
 
@@ -32,7 +33,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			,selectInputPlaceholder:"Sök/Skapa"},bulkEdit:true}
 		,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"},bulkEdit:true}, 
 		{title:"numtwice", render:num=>num*2, dependsOn:"num"}];
-	const myExpansion={type:"list",titlesColWidth:"8em",entries:[
+	const myExpansion={meta:{"foo":"details", "baz":42},type:"list",titlesColWidth:"8em",entries:[
 		
 		{type:"field",title:"amount+10",render:amount=>(Number(amount)+10).toFixed(2)
 			, dependsOn:"amount",/* visibleIf:()=>false */},
@@ -64,11 +65,10 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			,entries:
 			[{type:"field",title:"Gata",id:"street"},
 			{type:"field",title:"Postnummer",id:"zip"},
-			{type:"field",title:"Ort",id:"city",input:{type:"text"}},
+			{type:"field",title:"Ort",id:"city",input:{type:"text", onChange:args=>console.log(args.closestMeta("foo"))}},
 			{type:"field",title:"Ort i versaler"
 				,render:city=>{
-					console.log(city);
-					console.log(city);
+					//console.log(city);
 					return city.toUpperCase();
 
 				},dependsOn:"city"},
@@ -167,7 +167,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 					};
 	const tablanceContainer=document.getElementById("tablanceContainer1");
 
-	const schema={main:{columns:myTablanceCols},details:myExpansion};
+	const schema={main:{columns:myTablanceCols},details:myExpansion, meta:{foo:"root"}};
 	
 	const myTablance=new Tablance(tablanceContainer,schema, true, true
 					,{defaultFileMetasToShow:{filename:false},lang:lang});

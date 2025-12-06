@@ -523,7 +523,7 @@ class TablanceBase {
 			this._setupSpreadsheet(true);
 			this._onlyExpansion=true;
 		} else {
-			for (let col of schema.main.columns) {
+			for (let col of this.schema.main.columns) {
 				let processedCol={};
 				if ((col.type=="expand"||col.type=="select")&&!col.width)
 					processedCol.width=50;
