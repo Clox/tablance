@@ -100,7 +100,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 							options:[{text:"Ja",value:true},{text:"Nej",value:false}]
 						},dependsOn:"type",visibleIf:typeVal=>typeVal!="end"}
 					],
-					creationValidation:(message,struct,data,index,cellObj)=>{
+					creationValidation:(message,schemaNode,data,index,instanceNode)=>{
 						message("Both fields are mandatory. Enter the data or delete to cancel.");
 						return data.date&&data.type;
 					}
@@ -122,7 +122,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 							options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"}]
 							,allowSelectEmpty:false
 						}}],
-					creationValidation:(message,struct,data,index,cellObj)=>{
+					creationValidation:(message,schemaNode,data,index,instanceNode)=>{
 						message("Both fields are mandatory. Enter the data or delete to cancel.");
 						return data.date&&data.type;
 					}
@@ -210,10 +210,10 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	// 	myTablance2.addData(data);
 });
 
-function btnClickHandler(e,dataObject,mainIndex,struct,cellObject) {
+function btnClickHandler(e,dataObject,mainIndex,schemaNode,instanceNode) {
 	console.log(e);
 	console.log(dataObject);
 	console.log(mainIndex);
-	console.log(struct);
-	console.log(cellObject);
+	console.log(schemaNode);
+	console.log(instanceNode);
 }
