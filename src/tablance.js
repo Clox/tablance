@@ -709,9 +709,16 @@ class TablanceBase {
 
 			if (!isPojo && !Array.isArray(obj))
 				return obj
-
-			const clone = Object.assign(Object.create(null), {})
 			isNode||=pathNodes.has(obj);
+
+			if (Array.isArray(obj)) {
+				const arr=[]
+				for (const item of obj)
+					arr.push(cloneRec(item, parent, false))
+				return arr
+			}
+
+			const clone = Object.create(null)
 			if (parent&&isNode)
 				clone.parent = parent
 
