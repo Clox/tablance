@@ -692,8 +692,8 @@ class TablanceBase {
 		//"normally" when determining if an object is a a schema-node we check if it is pointed to either by entry or
 		//entries of a schema-node. E.g. if an object is not a schema-node then any items of entry or entries wont
 		//be schema-nodes either. However the root schema, main and details are schema-nodes as well and this is what's
-		//stated by including them in pathNodes here.
-		const pathNodes=new Set([schema,schema.main,schema.details,...(schema.main?.columns??[])]);//all path-nodes
+		//stated by including them in pathNodes here. filter(Boolean) removes any undefined/null roots/columns.
+		const nodeSeeds=new Set([schema,schema.main,schema.details,...(schema.main?.columns??[])].filter(Boolean));
 		
 		return cloneRec(schema, null, true);
 
@@ -709,9 +709,9 @@ class TablanceBase {
 
 			if (!isPojo && !Array.isArray(obj))
 				return obj
-			isNode||=pathNodes.has(obj);
+			isNode||=nodeSeeds.has(obj);
 
-			if (Array.isArray(obj)) {
+			if (Array.isArray(obj)) { // preserve Array prototype; children keep the same parent ref
 				const arr=[]
 				for (const item of obj)
 					arr.push(cloneRec(item, parent, false))
