@@ -757,7 +757,17 @@ class TablanceBase {
 		return clone;
 	}
 
-
+	/**
+	 * Searches upward through schema-node parents to find a meta value.
+	 * @param {*} startNode  The schema-node where the search begins.
+	 * @param {string} metaKey  The meta key to look for.
+	 * @returns {*} The found value or undefined.
+	 */
+	_closestMeta(startNode, metaKey) {
+		for (let node=startNode; node; node=node.parent)
+			if (node.meta && metaKey in node.meta)
+				return node.meta[metaKey];
+	}
 
 	_findDescendantOfIdInCellObj(searchInObj,idToFind) {
 		for (const child of searchInObj.children)
@@ -3872,8 +3882,12 @@ export default class Tablance extends TablanceBase {
 	_doEditSave() {
 		let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
 		const inputVal=this._activeStruct.input.type==="select"?this._inputVal.value:this._inputVal;
-		this._activeStruct.input.onChange?.({preventDefault:()=>doUpdate=false},this._activeStruct.id,
-				inputVal,this._selectedCellVal,this._cellCursorDataObj,this._activeStruct,this._activeExpCell);
+
+		this._activeStruct.input.onChange?.({newValue: inputVal,oldValue: this._selectedCellVal,
+			rowData: this._cellCursorDataObj,schemaNode: this._activeStruct,instanceNode: this._activeExpCell,
+			closestMeta: key => this._closestMeta(this._activeStruct, key),cancelUpdate: ()=> doUpdate=false
+		});
+
 		if (doUpdate) {
 			this._cellCursorDataObj[this._activeStruct.id]=this._inputVal;
 			if (this._activeExpCell){
@@ -3995,4 +4009,3 @@ export default class Tablance extends TablanceBase {
 		return !cellObj.hidden;
 	}
 }
-
