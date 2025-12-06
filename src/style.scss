@@ -21,7 +21,7 @@
 		cursor:pointer;
 		padding: 3px;
 	}
-	tbody>tr:not(.expansion) {
+	tbody>tr:not(.details) {
 		background-color: white;
 	}
 	.cell-cursor {
@@ -31,7 +31,7 @@
 		position: absolute;
 		cursor:cell;
 		outline:2px solid blue;
-		&:not(.expansion) {
+		&:not(.details) {
 			outline-offset:-2px;
 		}
 		&.disabled {
@@ -167,7 +167,7 @@
 			}
 		}
 	}
-	.expansion {
+	.details {
 		>td {
 			padding: 0;
 			border-bottom: 2px solid #D8D8E7;
@@ -176,7 +176,7 @@
 				margin-left: 15px;
 				overflow: hidden;//hide overflowing content when expanding/contracting-animating
 				transition: height .15s ease-out;
-				>div.expansion-shadow {
+				>div.details-shadow {
 					margin-top: -6px;
 					left: 0;
 					right: 0;
@@ -184,8 +184,8 @@
 					box-shadow: 0px 5px 6px #ccc;
 					height: 5px;
 				}
-				>table.expansion-list > tbody > tr:first-child > td {
-					//if the top row of the expansion is a list then give its top row a little more padding-top in order
+				>table.details-list > tbody > tr:first-child > td {
+					//if the top row of the details is a list then give its top row a little more padding-top in order
 					//to distance the content a little bit from the shadow above. we don't want the whole list-table
 					//to move down because that puts its top border in the middle of the shadow and/or cut offs the
 					//vertical borders so they don't reach all the way to the top
@@ -269,7 +269,7 @@
 				}
 			}
 		}
-		table.expansion-group>tbody>tr>td {
+		table.details-group>tbody>tr>td {
 			padding: 0;
 			&:first-child>span.title {
 				margin-top: 5px;
@@ -282,7 +282,7 @@
 			padding: 0;
 			color: gray;
 		}
-		table.expansion-list {
+		table.details-list {
 			border-spacing: 0;
 			width: 100%;
 			padding-right: 2px;//so that the right edge of the cell-cursor is fully visible
@@ -294,7 +294,7 @@
 							border-left: 1px solid #ccc;
 						}
 						padding: 5px;
-							>.expansion-group {
+							>.details-group {
 								min-height: 1.4em;
 							}
 					}

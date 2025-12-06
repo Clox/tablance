@@ -19,7 +19,7 @@
   cursor: pointer;
   padding: 3px;
 }
-.tablance tbody > tr:not(.expansion) {
+.tablance tbody > tr:not(.details) {
   background-color: white;
 }
 .tablance .cell-cursor {
@@ -27,7 +27,7 @@
   cursor: cell;
   outline: 2px solid blue;
 }
-.tablance .cell-cursor:not(.expansion) {
+.tablance .cell-cursor:not(.details) {
   outline-offset: -2px;
 }
 .tablance .cell-cursor.disabled {
@@ -155,17 +155,17 @@
 .tablance tr.expanded > td.expand-col > div > a > span::before, .tablance tr.expanded > th.expand-col > div > a > span::before {
   content: "–";
 }
-.tablance .expansion > td {
+.tablance .details > td {
   padding: 0;
   border-bottom: 2px solid #D8D8E7;
 }
-.tablance .expansion > td > div {
+.tablance .details > td > div {
   background-color: white;
   margin-left: 15px;
   overflow: hidden;
   transition: height 0.15s ease-out;
 }
-.tablance .expansion > td > div > div.expansion-shadow {
+.tablance .details > td > div > div.details-shadow {
   margin-top: -6px;
   left: 0;
   right: 0;
@@ -173,25 +173,25 @@
   box-shadow: 0px 5px 6px #ccc;
   height: 5px;
 }
-.tablance .expansion > td > div > table.expansion-list > tbody > tr:first-child > td {
+.tablance .details > td > div > table.details-list > tbody > tr:first-child > td {
   padding-top: 10px;
 }
-.tablance .expansion .lineup > .date-container {
+.tablance .details .lineup > .date-container {
   min-width: 12ch;
 }
-.tablance .expansion .disabled {
+.tablance .details .disabled {
   background-color: #f2f2f2;
 }
-.tablance .expansion .value:empty::after {
+.tablance .details .value:empty::after {
   content: " ";
 }
-.tablance .expansion .progressbar {
+.tablance .details .progressbar {
   height: 1.3em;
   background-color: #e9ecef;
   border-radius: 0.4em;
   overflow: hidden;
 }
-.tablance .expansion .progressbar.active > div {
+.tablance .details .progressbar.active > div {
   animation: progress 10s linear infinite;
 }
 @keyframes progress {
@@ -202,7 +202,7 @@
     background-position: 100% 100%;
   }
 }
-.tablance .expansion .progressbar > div {
+.tablance .details .progressbar > div {
   width: 0;
   height: 100%;
   background-image: linear-gradient(45deg, rgba(255, 255, 255, 0.15) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.15) 75%, transparent 75%, transparent);
@@ -216,68 +216,68 @@
   padding-top: 0.1em;
   font-size: 1em;
 }
-.tablance .expansion .lineup > span {
+.tablance .details .lineup > span {
   display: inline-block;
   padding: 0.4em;
   min-width: 50px;
 }
-.tablance .expansion .lineup > span > span.title {
+.tablance .details .lineup > span > span.title {
   text-align: center;
 }
-.tablance .expansion .lineup > span > div {
+.tablance .details .lineup > span > div {
   padding: 4px;
 }
-.tablance .expansion .lineup > span > div.input-cell {
+.tablance .details .lineup > span > div.input-cell {
   border: 1px solid #ddd;
 }
-.tablance .expansion .lineup.delete-controls:not(.delete-confirming) > .yes, .tablance .expansion .lineup.delete-controls:not(.delete-confirming) > .no {
+.tablance .details .lineup.delete-controls:not(.delete-confirming) > .yes, .tablance .details .lineup.delete-controls:not(.delete-confirming) > .no {
   display: none;
 }
-.tablance .expansion .lineup.delete-controls.delete-confirming > :not(.yes):not(.no) {
+.tablance .details .lineup.delete-controls.delete-confirming > :not(.yes):not(.no) {
   display: none;
 }
-.tablance .expansion .lineup.delete-controls .no {
+.tablance .details .lineup.delete-controls .no {
   margin-right: -2em;
 }
-.tablance .expansion .lineup.delete-controls .no span.title {
+.tablance .details .lineup.delete-controls .no span.title {
   color: red;
 }
-.tablance .expansion table.expansion-group > tbody > tr > td {
+.tablance .details table.details-group > tbody > tr > td {
   padding: 0;
 }
-.tablance .expansion table.expansion-group > tbody > tr > td:first-child > span.title {
+.tablance .details table.details-group > tbody > tr > td:first-child > span.title {
   margin-top: 5px;
 }
-.tablance .expansion table.expansion-group > tbody > tr > td > div {
+.tablance .details table.details-group > tbody > tr > td > div {
   padding: 0;
 }
-.tablance .expansion .repeat-insertion td {
+.tablance .details .repeat-insertion td {
   padding: 0;
   color: gray;
 }
-.tablance .expansion table.expansion-list {
+.tablance .details table.details-list {
   border-spacing: 0;
   width: 100%;
   padding-right: 2px;
 }
-.tablance .expansion table.expansion-list > tbody > tr > td.value:first-child {
+.tablance .details table.details-list > tbody > tr > td.value:first-child {
   border-left: 1px solid #ccc;
 }
-.tablance .expansion table.expansion-list > tbody > tr > td.value {
+.tablance .details table.details-list > tbody > tr > td.value {
   padding: 5px;
 }
-.tablance .expansion table.expansion-list > tbody > tr > td.value > .expansion-group {
+.tablance .details table.details-list > tbody > tr > td.value > .details-group {
   min-height: 1.4em;
 }
-.tablance .expansion table.expansion-list > tbody > tr > td.title {
+.tablance .details table.details-list > tbody > tr > td.title {
   border-top: none;
   font-weight: bold;
   text-align: right;
 }
-.tablance .expansion table.expansion-list > tbody > tr:last-child > td.value {
+.tablance .details table.details-list > tbody > tr:last-child > td.value {
   border-bottom: 1px solid #ddd;
 }
-.tablance .expansion span.title {
+.tablance .details span.title {
   margin-top: 0px;
   color: #787878;
   font-size: 13px;

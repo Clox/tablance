@@ -62,7 +62,7 @@ class TablanceBase {
 	_mainRowIndex;//the index of the row that the cellcursor is at
 	_mainColIndex;//the index of the column that the cellcursor is at.
 	_activeSchemaNode;//reference to the schemaNode-object of the selcted cell. For cells in the maintable this would
-						//point to an object in #colSchemaNodes, otherwise to the schemaNode-object of expansion-cells
+						//point to an object in #colSchemaNodes, otherwise to the schemaNode-object of details-cells
 	_cellCursorDataObj;//reference to the actual object holding the data that the cell-cursor currently is at.
 						//Usually this will simply point to an object in #data but for data that is nested with
 						//repeat-entries this will point to the correct inner object
@@ -77,29 +77,29 @@ class TablanceBase {
 				//keyboard-tabbing, and not when clicking or exiting out of edit-mode which again focuses the table.
 				//By setting this to true in mouseDownEvent we can 
 				//check which input was used last when the focus-method is triggerd
-	_expBordersHeight;//when animating expansions for expanding/contracting the height of them fully
+	_detailsBordersHeight;//when animating details for expanding/contracting the height of them fully
 			//expanded needs to be known to know where to animate to and from. This is different from 
 			//#expandedRowIndicesHeights because that is the height of the whole row and not the div inside.
 			//we could retrieve offsetheight of the div each time a row needs to be animated or instead we can get
 			//the border-top-width + border-bottom-width once and then substract that from the value of  what's in
 			//#expandedRowIndicesHeights instead
 	_scrollMethod;//this will be set to a reference of the scroll-method that will be used. This depends on settings for
-				//staticRowHeight and expansion
+				//staticRowHeight and details
 	_rowsMeta={keys:[],vals:[]};//This holds meta-data for the data-rows. The structure is essentially like a hashmap
 			//from Java where objects are used as keys which in this case it is the data-row-object. This is done by
 			//having 2 arrays: keys & vals. A references to a row is placed in "keys" and meta-data placed in "vals"
 			//and index X in "keys" always corresponds to index X in "values". As for the meta-data itself this is
 			//another object:
 			//	h Integer 	If this is present then the row is expanded, otherwise not. The value is the combined height
-			//				of the main row and its expansion-row.
+			//				of the main row and its details-row.
 	_filesMeta={keys:[],vals:[]};//Similiar to rowsMeta as it is structured the same but used for files that the user
 								//has uploaded during the current session. This is to keep track of upload-progress.
 								//keys are filled with File-objects while vals is filled with objects containing
 								//metadata: uploadedBytes
 	_selectedRows=[];//array of the actual data-objects of rows that are currently selected/checked using the select-col
 	_scrollY=0;//this keeps track of the "old" scrollTop of the table when a scroll occurs to know 
-	_numRenderedRows=0;//number of tr-elements in the table excluding tr's that are expansions (expansions too are tr's)
-	_openExpansions={};//for any row that is expanded and also in view this will hold navigational data which
+	_numRenderedRows=0;//number of tr-elements in the table excluding tr's that are details (details too are tr's)
+	_openDetailsPanes={};//for any row that is expanded and also in view this will hold navigational data which
 						//is read from when clicking or navigating using keyboard to know which cell is next, and
 						//which elements even are selectable and so on. Keys are data-row-index. As soon as a row
 						//is either contracted or scrolled out of view it is removed from here and then re-added
@@ -114,10 +114,10 @@ class TablanceBase {
 						//						it simply holds the top instance-nodes
 						//  index: the index of the node in the children-array of its parent
 						//}
-	_activeExpCell;	//points to an object in #openExpansionNavMap and in extension the cell of an expansion.
-							//If this is set then it means the cursor is inside an expansion.
-	/* #generatingExpansion=false;//this is a flag that gets set to true when a row gets expanded or an already expanded
-		//row gets scrolled into view, in short whenver the expansion-elements are generated. Then it gets unset when
+	_activeDetailsCell;	//points to an object in #openDetailsNavMap and in extension the cell of an details.
+							//If this is set then it means the cursor is inside an details.
+	/* #generatingDetails=false;//this is a flag that gets set to true when a row gets expanded or an already expanded
+		//row gets scrolled into view, in short whenver the details-elements are generated. Then it gets unset when
 		//creation finishes. The reason for having this flag is so that update */
 	_ignoreClicksUntil;//when being inside an open group and trying to double-click on another cell further down to
 
@@ -135,8 +135,8 @@ class TablanceBase {
 	_numRowsInViewSelected=0;//number of rows in the current view/filter that are selected/checked using select-column
 	_animations={};//keeps tracks of animations. Key is a unique id-string, identifying the animation so multiple
 					//instances of the same animation can't run. Value is the end-time in ms since epoch.
-	_onlyExpansion;//If this is set to true then the table will not have any actual rows and will instead only have an
-					// expansion specified in param expansion. It will also not have a scrollpane and the expansion will
+	_onlyDetails;//If this is set to true then the table will not have any actual rows and will instead only have an
+					// details specified in param details. It will also not have a scrollpane and the details will
 					// always be expanded. Method addData is still used to add the actual data but it will only use the
 					// last row sent. So adding multiple ones will cause it to discard all but the last.
 	_tooltip;//reference to html-element used as tooltip
@@ -151,8 +151,8 @@ class TablanceBase {
 	 * 			width String The width of the column. This can be in either px or % units.
 	 * 				In case of % it will be calculated on the remaining space after all the fixed widths
 	 * 				have been accounted for.
-	 * 			input: See param expansion -> input. This is the same as that one except textareas are only valid for
-	 * 												expansion-cells and not directly in a maintable-cell
+	 * 			input: See param details -> input. This is the same as that one except textareas are only valid for
+	 * 												details-cells and not directly in a maintable-cell
 	 * 			render Function Function that can be set to render the content of the cell. The return-value is what
 	 * 					will be displayed in the cell. Similiarly to columns->render it gets passed the following:
 	 * 					1: The value from data pointed to by "id". If id is not set but dependsOn is then this will 
@@ -164,7 +164,7 @@ class TablanceBase {
 	 * 1: The value from data pointed to by "id", 2: data-row, 3: schemaNode,4: main-index, 5: instanceNode
 	 * 			type String The default is "data". Possible values are:
 	 * 				"data" - As it it implies, simply to display data but also input-elements such as fields or buttons
-	 * 				"expand" - The column will be buttons used for expanding/contracting the rows. See param expansion
+	 * 				"expand" - The column will be buttons used for expanding/contracting the rows. See param details
 	 * 				"select" - The column will be checkboxes used to (un)select rows	
 	 * 		}
 	 * 			
@@ -172,7 +172,7 @@ class TablanceBase {
 	 * 				quickly through large tables will be more performant.
 	 * 	@param	{Boolean} spreadsheet If true then the table will work like a spreadsheet. Cells can be selected and the
 	 * 				keyboard can be used for navigating the cell-selection.
-	 * 	@param	{Object} expansion This allows for having rows that can be expanded to show more data. An "entry"-object
+	 * 	@param	{Object} details This allows for having rows that can be expanded to show more data. An "entry"-object
 	 * 			is expected and some of them can hold other entry-objects so that they can be nested.
 	 * 			Properties that are valid for all types of entries:
 	 * 				* title String displayed title if placed in a container which displays the title
@@ -277,11 +277,11 @@ class TablanceBase {
 	 * 							1:newValue, 2: message-function - A function that that takes a message-string as its
 	 * 							first argument. If it the validation didn't go through then this string will be
 	 * 							displayed to the user. 3:schemaNode, 4:rowData, 5:mainIndex, 
-	 * 							6:instanceNode(if expansion-cell)
+	 * 							6:instanceNode(if details-cell)
 	 *						title String String displayed title if placed in a container which displays the title
 	 * 						bulkEdit Bool Whether this input should be editable via bulk-edit-area, the section that 
 	 * 							appears when selecting/checking multiple rows using the select-col. Default is true if
-	 * 							not in expansion, or false if in expansion.
+	 * 							not in details, or false if in details.
 	 * 							Containers can too be added to the bulk-edit-area by setting bulkEdit on the container.
 	 * 						multiCellWidth Int For inputs that are present in the bulk-edit-area. This property can be 
 	 * 							used to specify the number of pixels in width of the cell in that section.
@@ -290,7 +290,7 @@ class TablanceBase {
 	 * 							1:TablanceEvent. It has a method with key "preventDefault" which if called prevents the
 	 * 							data/cell from actually being changed. ,2:property-name (id) of edited value
 	 * 							,3:newValue,4:oldValue,5:rowData or rowData[] if bulk-edit-cell was edited,6:schemaNode
-	 * 							,7:instanceNode of the input if in expansion,null if not inside expansion
+	 * 							,7:instanceNode of the input if in details,null if not inside details
 	 * 						onBlur Function Callback fired when cellcursor goes from being inside the container
 	 * 							to outside. It will get passed arguments 1:instanceNode, 2:mainIndex
 	 * 						enabled Function - If present then this function will be run and if it returns falsey then
@@ -298,7 +298,7 @@ class TablanceBase {
 	 * 							{enabled:Bool, message:String}. The message will be displayed to the user 
 	 * 							if edit is attempted and enabled is set to false, disabling the field
 	 * 							It gets passed the following arguments - 
-	 * 							1:schemaNode,2:rowData,3:mainIndex,4:instanceNode(if in expansion)
+	 * 							1:schemaNode,2:rowData,3:mainIndex,4:instanceNode(if in details)
 	 * 					----Properties specific to input "text"----
 	 * 						format object When defined, Tablance automatically applies the specified pattern to 
 	 * 							the <input> element as the user types. It can enforce numeric-only input, insert
@@ -327,18 +327,18 @@ class TablanceBase {
 	 * 					----Properties specific to input "file"----
 	 * 						fileUploadHandler Function This callback will be triggered when the user does a file-upload.
 	 * 							Arguments: 1:XMLHttpRequest - call open() on this to specify url and such,
-	 * 							2: The File-object, 3:schemaNode,4:rowData,5:mainIndex,6:instanceNode(if in expansion)
+	 * 							2: The File-object, 3:schemaNode,4:rowData,5:mainIndex,6:instanceNode(if in details)
 	 * 						fileMetasToShow Object An object specifying which meta-bits to show. Default of all are true
 	 * 							{filename Bool, lastModified Bool, size Bool, type Bool}
 	 * 							May also be set via opts->defaultFileMetasToShow
 	 * 						openHandler Function callback-function for when the open-button is pressed. It gets the
 	 * 							following arguments passed to it: 
 	 * 							1: Event, 2: File-object, 3:schemaNode,4:rowData,5:mainIndex,
-	 * 							6:instanceNode(if in expansion)
+	 * 							6:instanceNode(if in details)
 	 * 						deleteHandler Function callback-function for when the user deletes a file. It gets the 
 	 * 							following arguments passed to it:
 	 * 							1: Event, 2: File-object, 3:schemaNode,4:rowData,5:mainIndex,
-	 * 							6:instanceNode(if in expansion)
+	 * 							6:instanceNode(if in details)
 	 * 					----Properties specific to input "select"----
 	 * 						minOptsFilter Integer - The minimum number of options required for the filter-input to
 	 * 							appear. Can also be set via param opts->defaultMinOptsFilter
@@ -356,7 +356,7 @@ class TablanceBase {
 	 * 						createNewOptionHandler Function - Callback which is called when the user creates a new 
 	 * 							option, which can be done if allowCreateNew is true. It will get passed arguments 
 	 * 							1:new option-object,2:event, 3:dataObject,4:mainDataIndex,
-	 * 							5:schemaNode,6:instanceNode(if inside expansion)
+	 * 							5:schemaNode,6:instanceNode(if inside details)
 	 * 						selectInputPlaceholder String - A placeholder for the input which is
 	 * 							visible either if the number of options exceed minOptsFilter or allowCreateNew is true
 	 * 					}
@@ -364,7 +364,7 @@ class TablanceBase {
 	 * 						btnText String If type is "button" then this will be the text on it
 	 * 						clickHandler Function A callback-function that will get called  when the button is pressed. 
 	 * 							It will get passed arguments 1:event, 2:dataObject
-	 * 							,3:mainDataIndex,4:schemaNode,5:instanceNode(if inside expansion)
+	 * 							,3:mainDataIndex,4:schemaNode,5:instanceNode(if inside details)
   	 * 				}
 	 * 			}
 	 * 			{
@@ -494,7 +494,7 @@ class TablanceBase {
 	 * 							defaultMinOptsFilter Integer The minimum number of options required for the
 	 * 								filter-input of input-type "select" to appear
 	 * 							defaultFileMetasToShow Object Default meta-data for files to show.
-	 * 													See prop fileMetasToShow in param expansion
+	 * 													See prop fileMetasToShow in param details
 	 * 							lang Object {  Object to replace language-specific text. The strings may be html-code
 	 * 										except for ones used as placeholders. Below are the keys and defaults.
 	 * 								fileName "Filename"
@@ -526,7 +526,7 @@ class TablanceBase {
 		//const allowedColProps=["id","title","width","input","type","render","html"];//should we really do filtering?
 		if (!schema.main?.columns) {
 			this._setupSpreadsheet(true);
-			this._onlyExpansion=true;
+			this._onlyDetails=true;
 		} else {
 			for (let col of this.schema.main.columns) {
 				let processedCol={};
@@ -559,8 +559,8 @@ class TablanceBase {
 	}
 
 	addData(data, highlight=false) {
-		if (this._onlyExpansion)
-			return this._setDataForOnlyExpansion(data)
+		if (this._onlyDetails)
+			return this._setDataForOnlyDetails(data)
 		const oldLen=this._data.length;
 		if (highlight)
 			this._searchInput.value=this._filter="";//remove any filter
@@ -630,17 +630,17 @@ class TablanceBase {
 		if (dataPath.length==1) //it's possible only if the path is a single id-key. (but still not guaranteed)
 			for (let colI=-1,colSchemaNode;colSchemaNode=this._colSchemaNodes[++colI];)
 				if (colSchemaNode.id==dataPath[0]) {//if true then yes, it was a column of main-table
-					const tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndx}"]:not(.expansion)`);
+					const tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndx}"]:not(.details)`);
 					return this._updateMainRowCell(tr.cells[colI],colSchemaNode);//update it and be done with this
 				}
 
-		//The data is somewhere in expansion
+		//The data is somewhere in details
 		
-		let nodeToUpdate=this._openExpansions[mainIndx];//points to the instance-node that will be subject for update
-		if (!nodeToUpdate)//if the updates expansion is not open
+		let nodeToUpdate=this._openDetailsPanes[mainIndx];//points to the instance-node that will be subject for update
+		if (!nodeToUpdate)//if the updates details is not open
 			return;
 
-		//look through the celObjToUpdate and its descendants-tree (currently set to whole expansion), following the
+		//look through the celObjToUpdate and its descendants-tree (currently set to whole details), following the
 		//dataPath. At the end of this loop celObjToUpdate should be set to the deepest down object that dataPath points
 		//to, and pathIndex should be the index in dataPath that is the last step pointing to celObjToUpdate.
 		//When simply editing an already existing field then celObjToUpdate would be the container of that cell, and
@@ -672,7 +672,7 @@ class TablanceBase {
 		}
 
 		if (nodeToUpdate.schemaNode.type=="field")
-			this._updateExpansionCell(nodeToUpdate,dataRow);
+			this._updateDetailsCell(nodeToUpdate,dataRow);
 		if (scrollTo) {
 			nodeToUpdate.el.scrollIntoView({behavior:'smooth',block:"center"});
 			updatedEls.forEach(el=>this._highlightElements([el,...el.getElementsByTagName('*')]));
@@ -791,12 +791,12 @@ class TablanceBase {
 			}
 	}
 
-	/**Expands a row and returns the expansion instance-tree root.
+	/**Expands a row and returns the details instance-tree root.
 	 * @param int mainIndex
 	 * @returns Object Root instance-node (outer-most instanceNode)*/
 	expandRow(mainIndex) {
-		if (this._onlyExpansion)
-			return this._openExpansions[0];
+		if (this._onlyDetails)
+			return this._openDetailsPanes[0];
 		let tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndex}"]`);
 		if (!tr) {
 			this.scrollToDataRow(this._data[mainIndex],false,false);
@@ -804,7 +804,7 @@ class TablanceBase {
 			tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndex}"]`);
 		}
 		this._expandRow(tr);
-		return this._openExpansions[mainIndex];
+		return this._openDetailsPanes[mainIndex];
 	}
 
 	scrollToDataRow(dataRow,highlight=true,smooth=true) {
@@ -840,15 +840,15 @@ class TablanceBase {
 		}
 	}
 
-	selectTopBottomCellOnlyExpansion(top) {
+	selectTopBottomCellOnlyDetails(top) {
 		this._highlightOnFocus=false;
-		this._selectFirstSelectableExpansionCell(this._openExpansions[0],top);
+		this._selectFirstSelectableDetailsCell(this._openDetailsPanes[0],top);
 	}
 
 	/**
 	 * Build a complete dependency graph and assign internal autoIds.
 	 *
-	 * This walks the column + expansion schemaNode tree and enriches each node with
+	 * This walks the column + details schemaNode tree and enriches each node with
 	 * the metadata needed for dependency resolution and runtime lookups.
 	 *
 	 * Permanent runtime metadata produced:
@@ -869,7 +869,7 @@ class TablanceBase {
 		const ctx = this._pass1_assignAutoIdsAndMaps();
 
 		//---- PASS 2 — Compute UI path & data paths ----
-		for (let i = 0; i < this.schema.details.entries.length; i++)// Expansion roots
+		for (let i = 0; i < this.schema.details.entries.length; i++)// Details roots
 			this._assignPathsAndData(this.schema.details.entries[i], [i], []);
 		for (let i = 0; i < this._colSchemaNodes.length; i++)// Main columns
 			this._assignPathsAndData(this._colSchemaNodes[i], ["m", i], []);
@@ -1026,15 +1026,15 @@ class TablanceBase {
 		if (from[0] === "m" && to[0] === "m")
 			return ["m", to[1]];
 
-		// expansion → main
+		// details → main
 		if (from[0] !== "m" && to[0] === "m")
 			return ["m", to[1]];
 
-		// main → expansion
+		// main → details
 		if (from[0] === "m" && to[0] !== "m")
 			return ["e", ...to];
 
-		// expansion → expansion
+		// details → details
 		let common = 0;
 
 		while (common < from.length && common < to.length && from[common] === to[common])
@@ -1246,12 +1246,12 @@ class TablanceBase {
 		this._filterData(this._searchInput.value);
 	}
 
-	_setupSpreadsheet(onlyExpansion) {
+	_setupSpreadsheet(onlyDetails) {
 		this.rootEl.classList.add("spreadsheet");
 		this._cellCursor=document.createElement("div");
 		this._cellCursor.className="cell-cursor";
 		this._cellCursor.style.display="none";
-		if (!onlyExpansion) {
+		if (!onlyDetails) {
 			this._createBulkEditArea();
 			//remove any border-spacing beacuse if spacing is clicked the target-element will be the table itself and
 			//no cell will be selected which is bad user experience. Set it to 0 for headerTable too in order to match
@@ -1292,15 +1292,15 @@ class TablanceBase {
 	_spreadsheetOnFocus(_e) {
 		const tabbedTo=this._highlightOnFocus;
 		if (this._mainRowIndex==null&&this._mainColIndex==null&&this._data.length&&tabbedTo)
-				if (this._onlyExpansion)
-					this.selectTopBottomCellOnlyExpansion(true);
+				if (this._onlyDetails)
+					this.selectTopBottomCellOnlyDetails(true);
 				else
 					this._selectMainTableCell(this._mainTbody.rows[0].cells[0]);
 		//when the table is tabbed to, whatever focus-outline that the css has set for it should show, but then when the
 		//user starts to navigate using the keyboard we want to hide it because it is a bit distracting when both it and
 		//a cell is highlighted. Thats why #spreadsheetKeyDown sets outline to none, and this line undos that
 		//also, we dont want it to show when focusing by mouse so we use #focusMethod (see its declaration)
-		if (!this._onlyExpansion&&this._highlightOnFocus)
+		if (!this._onlyDetails&&this._highlightOnFocus)
 			this.rootEl.style.removeProperty("outline");
 		else
 			this.rootEl.style.outline="none";
@@ -1333,48 +1333,48 @@ class TablanceBase {
 
 		if (this._mainRowIndex==null&&this._mainColIndex==null)//if table has focus but no cell is selected.
 			return;//can happen if table is clicked but not on a cell
-		e?.preventDefault();//to prevent native scrolling when pressing arrow-keys. Needed if #onlyExpansion==true but
+		e?.preventDefault();//to prevent native scrolling when pressing arrow-keys. Needed if #onlyDetails==true but
 							//not otherwise. Seems the native scrolling is only done on the body and not scrollpane..?
 		//const newColIndex=Math.min(this._cols.length-1,Math.max(0,this._cellCursorColIndex+numCols));
-		if (!this._onlyExpansion)
+		if (!this._onlyDetails)
 			this._scrollToCursor();//need this first to make sure adjacent cell is even rendered
 
-		if (this._activeExpCell?.parent?.schemaNode.type==="lineup")
+		if (this._activeDetailsCell?.parent?.schemaNode.type==="lineup")
 			this._moveInsideLineup(hSign,vSign);
 		else if (vSign) {//moving up or down
 			let newColIndex=this._mainColIndex;
-			if (this._activeExpCell) {//moving from inside expansion.might move to another cell inside,or outside
-					this._selectAdjacentExpansionCell(this._activeExpCell,vSign==1);
-			} else if (vSign===1&&this._rowMetaGet(this._mainRowIndex)?.h){//moving down into expansion
-				this._selectFirstSelectableExpansionCell(this._openExpansions[this._mainRowIndex],true);
-			} else if (vSign===-1&&this._rowMetaGet(this._mainRowIndex-1)?.h){//moving up into expansion
-				this._selectFirstSelectableExpansionCell(this._openExpansions[this._mainRowIndex-1],false);
+			if (this._activeDetailsCell) {//moving from inside details.might move to another cell inside,or outside
+					this._selectAdjacentDetailsCell(this._activeDetailsCell,vSign==1);
+			} else if (vSign===1&&this._rowMetaGet(this._mainRowIndex)?.h){//moving down into details
+				this._selectFirstSelectableDetailsCell(this._openDetailsPanes[this._mainRowIndex],true);
+			} else if (vSign===-1&&this._rowMetaGet(this._mainRowIndex-1)?.h){//moving up into details
+				this._selectFirstSelectableDetailsCell(this._openDetailsPanes[this._mainRowIndex-1],false);
 			} else {//moving from and to maintable-cells
 				this._selectMainTableCell(
 					this._selectedCell.parentElement[(vSign>0?"next":"previous")+"Sibling"]?.cells[newColIndex]);
 			}
-		} else if (!this._activeExpCell)
+		} else if (!this._activeDetailsCell)
 			this._selectMainTableCell(this._selectedCell[(hSign>0?"next":"previous")+"Sibling"]);
-		if (this._onlyExpansion&&this._mainRowIndex!=null)
+		if (this._onlyDetails&&this._mainRowIndex!=null)
 			this._scrollToCursor();
 	}
 
 	_moveInsideLineup(numCols,numRows) {
-		const currentCellX=this._activeExpCell.el.offsetLeft;
-		const currCelTop=this._activeExpCell.el.offsetTop;
-		const currCelBottom=currCelTop+this._activeExpCell.el.offsetHeight;
+		const currentCellX=this._activeDetailsCell.el.offsetLeft;
+		const currCelTop=this._activeDetailsCell.el.offsetTop;
+		const currCelBottom=currCelTop+this._activeDetailsCell.el.offsetHeight;
 		if (numCols) {//moving left or right
-			for (let i=this._activeExpCell.index,nextCel;nextCel=this._activeExpCell.parent.children[i+=numCols];) {
+			for (let i=this._activeDetailsCell.index,nextCel;nextCel=this._activeDetailsCell.parent.children[i+=numCols];) {
 				if (nextCel.el.offsetParent != null && (nextCel?.el.offsetLeft>currentCellX)==(numCols>0)) {
 					if (currCelBottom>nextCel.el.offsetTop&&nextCel.el.offsetTop+nextCel.el.offsetHeight>currCelTop)
-						this._selectExpansionCell(nextCel);
+						this._selectDetailsCell(nextCel);
 					break;
 				}
 			}
 		} else {//moving up or down
 			let closestCell,closestCellX;
-			const siblings=this._activeExpCell.parent.children;
-			for (let i=this._activeExpCell.index,otherCell;otherCell=siblings[i+=numRows];) {
+			const siblings=this._activeDetailsCell.parent.children;
+			for (let i=this._activeDetailsCell.index,otherCell;otherCell=siblings[i+=numRows];) {
 				const skipCell=Math.max(otherCell.el.offsetTop,currCelTop) <= 					 //cell is on the
 								Math.min(otherCell.el.offsetTop+otherCell.el.offsetHeight,currCelBottom)//same line
 								||otherCell.el.offsetParent == null;//cell is hidden
@@ -1389,30 +1389,30 @@ class TablanceBase {
 					break;
 			}
 			if (closestCell)
-				this._selectExpansionCell(closestCell);
+				this._selectDetailsCell(closestCell);
 			else
-				this._selectAdjacentExpansionCell(this._activeExpCell.parent,numRows==1?true:false);
+				this._selectAdjacentDetailsCell(this._activeDetailsCell.parent,numRows==1?true:false);
 		}
 	}
 
-	_selectAdjacentExpansionCell(instanceNode,isGoingDown) {
-		let cell=this._getAdjacentExpansionCell(instanceNode,isGoingDown);//repeat this line until valid cell is found?
+	_selectAdjacentDetailsCell(instanceNode,isGoingDown) {
+		let cell=this._getAdjacentDetailsCell(instanceNode,isGoingDown);//repeat this line until valid cell is found?
 		if (cell)
-			return this._selectExpansionCell(cell);
-		if (!this._onlyExpansion)
+			return this._selectDetailsCell(cell);
+		if (!this._onlyDetails)
 			this._selectMainTableCell(this._mainTbody.querySelector(
 				`[data-data-row-index="${this._mainRowIndex+isGoingDown}"]`)?.cells[this._mainColIndex]);
 		else {
 			const nextTable=this.neighbourTables?.[isGoingDown?"down":"up"];
 			if (nextTable) {
-				this._mainColIndex=this._mainRowIndex=this._activeExpCell=null;
+				this._mainColIndex=this._mainRowIndex=this._activeDetailsCell=null;
 				nextTable.container.style.outline=this._cellCursor.style.display="none";
-				nextTable.selectTopBottomCellOnlyExpansion(isGoingDown);
+				nextTable.selectTopBottomCellOnlyDetails(isGoingDown);
 			}
 		}
 	}
 	
-	_getAdjacentExpansionCell (instanceNode,isGoingDown) {
+	_getAdjacentDetailsCell (instanceNode,isGoingDown) {
 		if (!instanceNode.parent)//parent is null if the class-instance is in the bulk-edit-area
 			return;
 		const siblings=instanceNode.parent.children;
@@ -1424,29 +1424,29 @@ class TablanceBase {
 			if (sibling.el)
 				return sibling;
 			//else if sibling.children
-			const niece=this._getFirstSelectableExpansionCell(sibling,isGoingDown);
+			const niece=this._getFirstSelectableDetailsCell(sibling,isGoingDown);
 			if (niece)
 				return niece;
 		}
 		if (instanceNode.parent.parent)
-			return this._getAdjacentExpansionCell(instanceNode.parent,isGoingDown);
+			return this._getAdjacentDetailsCell(instanceNode.parent,isGoingDown);
 	}
 
-	_selectFirstSelectableExpansionCell(instanceNode,isGoingDown,onlyGetChild=false) {
-		const newInstanceNode=this._getFirstSelectableExpansionCell(instanceNode,isGoingDown,onlyGetChild);
+	_selectFirstSelectableDetailsCell(instanceNode,isGoingDown,onlyGetChild=false) {
+		const newInstanceNode=this._getFirstSelectableDetailsCell(instanceNode,isGoingDown,onlyGetChild);
 		if (newInstanceNode)
-			return this._selectExpansionCell(newInstanceNode);
+			return this._selectDetailsCell(newInstanceNode);
 		this._selectMainTableCell(this._mainTbody.querySelector(
 				`[data-data-row-index="${this._mainRowIndex+(isGoingDown||-1)}"]`)?.cells[this._mainColIndex]);
 	}
 
-	/**Given an instanceNode, like the expansion of a row or any of its sub-containers, it will return the first
+	/**Given an instanceNode, like the details of a row or any of its sub-containers, it will return the first
 	 * selectable cell from top or bottom
 	 * @param {*} instanceNode
 	 * @param {Boolean} isGoingDown 
 	 * @param {Boolean} onlyGetChild if set to true then it will never return the passed in instanceNode and instead
 	 *			only look at its (grand)children. Used for groups where both itself and its children can be selected*/
-	_getFirstSelectableExpansionCell(instanceNode,isGoingDown,onlyGetChild=false) {
+	_getFirstSelectableDetailsCell(instanceNode,isGoingDown,onlyGetChild=false) {
 		if (!onlyGetChild&&instanceNode.el)
 			return instanceNode;
 		const children=instanceNode.children;
@@ -1463,7 +1463,7 @@ class TablanceBase {
 		}
 		for (let childI=startI;childI>=0&&childI<children.length; childI+=isGoingDown||-1)
 			if (!children[childI].hidden&&(children[childI].children||children[childI].select))
-				 return this._getFirstSelectableExpansionCell(children[childI],isGoingDown);
+				 return this._getFirstSelectableDetailsCell(children[childI],isGoingDown);
 	}
 	
 	_spreadsheetKeyDown(e) {
@@ -1505,7 +1505,7 @@ class TablanceBase {
 					this._scrollToCursor();
 					if (this._activeSchemaNode.type=="expand")
 						// the preventDefault() above can SOMETIMES suppress transitionend;
-						// deferring one frame ensures the animation completes and expansion is closed properly.
+						// deferring one frame ensures the animation completes and details is closed properly.
 						return requestAnimationFrame(()=>this._toggleRowExpanded(this._selectedCell.parentElement));
 					if (this._activeSchemaNode.type=="select")
 						return this._rowCheckboxChange(this._selectedCell,e.shiftKey);
@@ -1525,9 +1525,9 @@ class TablanceBase {
 	}
 
 	_groupEscape() {
-		for (let instanceNode=this._activeExpCell; instanceNode=instanceNode?.parent;)
+		for (let instanceNode=this._activeDetailsCell; instanceNode=instanceNode?.parent;)
 			if (instanceNode.schemaNode.type==="group")
-				return this._selectExpansionCell(instanceNode);
+				return this._selectDetailsCell(instanceNode);
 	}
 
 	_insertAtCursor(myField, myValue) {
@@ -1561,26 +1561,26 @@ class TablanceBase {
 	 * @param {*} tr 
 	 * @param {*} rowIndex 
 	 * @returns */
-	_renderExpansion(tr,rowIndex) {
+	_renderDetails(tr,rowIndex) {
 		tr.classList.add("expanded");
-		const expansionRow=tr.parentElement.insertRow(tr.rowIndex+1);
-		expansionRow.className="expansion";
-		expansionRow.dataset.dataRowIndex=rowIndex;
-		const expansionCell=expansionRow.insertCell();
-		expansionCell.colSpan=this._cols.length;
-		const expansionDiv=expansionCell.appendChild(document.createElement("div"));//single div inside td for animate
-		expansionDiv.style.height="auto";
-		expansionDiv.className="content";
-		expansionDiv.addEventListener("transitionend",this._expansionAnimationEnd.bind(this));
-		const shadowLine=expansionDiv.appendChild(document.createElement("div"));
-		shadowLine.className="expansion-shadow";
-		const instanceNode=this._openExpansions[rowIndex]={};
-		this._generateExpansionContent(this.schema.details,rowIndex,instanceNode,expansionDiv,[],this._data[rowIndex]);
+		const detailsRow=tr.parentElement.insertRow(tr.rowIndex+1);
+		detailsRow.className="details";
+		detailsRow.dataset.dataRowIndex=rowIndex;
+		const detailsCell=detailsRow.insertCell();
+		detailsCell.colSpan=this._cols.length;
+		const detailsDiv=detailsCell.appendChild(document.createElement("div"));//single div inside td for animate
+		detailsDiv.style.height="auto";
+		detailsDiv.className="content";
+		detailsDiv.addEventListener("transitionend",this._detailsAnimationEnd.bind(this));
+		const shadowLine=detailsDiv.appendChild(document.createElement("div"));
+		shadowLine.className="details-shadow";
+		const instanceNode=this._openDetailsPanes[rowIndex]={};
+		this._generateDetailsContent(this.schema.details,rowIndex,instanceNode,detailsDiv,[],this._data[rowIndex]);
 		instanceNode.rowIndex=rowIndex;
-		return expansionRow;
+		return detailsRow;
 	}
 
-	_expansionAnimationEnd(e) {
+	_detailsAnimationEnd(e) {
 		if (e.currentTarget!==e.target)
 			return;//otherwise it will apply to transitions of child-elements as well
 		if (parseInt(e.target.style.height)) {//if expand finished
@@ -1588,35 +1588,35 @@ class TablanceBase {
 			e.target.style.height="auto";
 		} else {//if contract finished
 
-			const expansionTr=e.target.closest("tr");
-			const mainTr=expansionTr.previousSibling;
+			const detailsTr=e.target.closest("tr");
+			const mainTr=detailsTr.previousSibling;
 			const dataRowIndex=mainTr.dataset.dataRowIndex;
 			mainTr.classList.remove("expanded");
 			this._tableSizer.style.height=parseInt(this._tableSizer.style.height)
 				 -this._rowMetaGet(dataRowIndex).h+this._rowHeight+"px";
-			expansionTr.remove();
+			detailsTr.remove();
 			this._rowMetaSet(dataRowIndex,"h",null);
-			delete this._openExpansions[dataRowIndex];
+			delete this._openDetailsPanes[dataRowIndex];
 		}
 	}
 
 	/**
-	 * Creates expansion content based on the provided structure.
+	 * Creates details content based on the provided structure.
 	 *
 	 * @param {object} schemaNode Structure object defining what to create.
-	 * @param {number} mainIndex Index of the main data row that this expansion belongs to.
+	 * @param {number} mainIndex Index of the main data row that this details belongs to.
 	 * @param {object} instanceNode The object representing the cell that is being created.
 	 * @param {HTMLElement} parentEl The parent element to which the created elements should be appended.
 	 * @param {number[]} path Keeps track of the "path" by adding and removing index numbers when entering and leaving 
 	 * 		nesting levels. This path is added as a data attribute to interactive cells so that the corresponding cell
 	 * 		object can later be retrieved.
-	 * @param {object} rowData The actual data object that this expansion is representing.
+	 * @param {object} rowData The actual data object that this details is representing.
 	 * @param {boolean} notYetCreated True if the instanceNode points to data within objects that do not yet exist.
 	 * 		This happens when the context points to a data object that will be created when the user adds data.
 	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
 	 * 		schemaNode with no create option).
 	 */
-	_generateExpansionContent(schemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
+	_generateDetailsContent(schemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
 		if (!path.length)
 			instanceNode.rowIndex=mainIndex;
 		instanceNode.path=[...path];
@@ -1625,11 +1625,11 @@ class TablanceBase {
 		if (schemaNode.visibleIf)
 			this._applyVisibleIf(instanceNode);
 		switch (schemaNode.type) {
-			case "list": return this._generateExpansionList(...arguments);
+			case "list": return this._generateDetailsList(...arguments);
 			case "field": return this._generateField(...arguments);
-			case "group": return this._generateExpansionGroup(...arguments);
-			case "repeated": return this._generateExpansionRepeated(...arguments);
-			case "lineup": return this._generateExpansionLineup(...arguments);
+			case "group": return this._generateDetailsGroup(...arguments);
+			case "repeated": return this._generateDetailsRepeated(...arguments);
+			case "lineup": return this._generateDetailsLineup(...arguments);
 			case "context": return this._generateContext(...arguments);
 		}
 	}
@@ -1647,9 +1647,9 @@ class TablanceBase {
 		const fileTd=fileCell.el.parentElement;
 		fileTd.innerHTML="";
 		fileTd.classList.remove("group-cell");
-		this._generateExpansionContent(inputSchemaNode,index,fileCell,fileTd,fileCell.path,dataRow);
+		this._generateDetailsContent(inputSchemaNode,index,fileCell,fileTd,fileCell.path,dataRow);
 		inputSchemaNode.deleteHandler?.(e,data,inputSchemaNode,fileCell.parent.dataObj,index,fileCell);
-		this._selectExpansionCell(fileCell);
+		this._selectDetailsCell(fileCell);
 	}
 
 	_onOpenCreationGroup=(e,groupObject)=>{
@@ -1658,24 +1658,24 @@ class TablanceBase {
 	}
 
 	/**
-	 * This is "supposed" to get called when a repeated-schemaNode is found however in #generateExpansionList,
+	 * This is "supposed" to get called when a repeated-schemaNode is found however in #generateDetailsList,
 	 * repeated schema-nodes are looked for and handled by that method instead so that titles can be added to the list
-	 * which isn't handled by #generateExpansionContent but by the list-method itself
+	 * which isn't handled by #generateDetailsContent but by the list-method itself
 	 *
 	 * @param {object} repeatedSchemaNode Structure object defining what to create.
-	 * @param {number} mainIndex Index of the main data row that this expansion belongs to.
+	 * @param {number} mainIndex Index of the main data row that this details belongs to.
 	 * @param {object} instanceNode The object representing the cell that is being created.
 	 * @param {HTMLElement} parentEl The parent element to which the created elements should be appended.
 	 * @param {number[]} path Keeps track of the "path" by adding and removing index numbers when entering and leaving 
 	 * 		nesting levels. This path is added as a data attribute to interactive cells so that the corresponding cell
 	 * 		object can later be retrieved.
-	 * @param {object} rowData The actual data object that this expansion is representing.
+	 * @param {object} rowData The actual data object that this details is representing.
 	 * @param {boolean} notYetCreated True if the instanceNode points to data within objects that do not yet exist.
 	 * 		This happens when the context points to a data object that will be created when the user adds data.
 	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
 	 * 		schemaNode with no create option).
 	 */
-	_generateExpansionRepeated(repeatedSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
+	_generateDetailsRepeated(repeatedSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
 		instanceNode.children=[];
 		let repeatData=instanceNode.dataObj=rowData[repeatedSchemaNode.id]??(rowData[repeatedSchemaNode.id]=[]);
 		instanceNode.insertionPoint=parentEl.appendChild(document.createComment("repeated-insert"));
@@ -1706,7 +1706,7 @@ class TablanceBase {
 
 	_cancelDelete(e,data,mainIndex,schemaNode,cell) {
 			cell.parent.containerEl.classList.remove("delete-confirming");
-			this._selectExpansionCell(cell.parent.children[0]);
+			this._selectDetailsCell(cell.parent.children[0]);
 	}
 
 	_schemaCopyWithDeleteButton(schemaNode,deleteHandler) {
@@ -1740,23 +1740,23 @@ class TablanceBase {
 	}
 
 		/**
-	 * Creates expansion content based on the provided structure.
+	 * Creates details content based on the provided structure.
 	 *
 	 * @param {object} groupSchemaNode Structure object defining what to create.
-	 * @param {number} mainIndex Index of the main data row that this expansion belongs to.
+	 * @param {number} mainIndex Index of the main data row that this details belongs to.
 	 * @param {object} instanceNode The object representing the cell that is being created.
 	 * @param {HTMLElement} parentEl The parent element to which the created elements should be appended.
 	 * @param {number[]} path Keeps track of the "path" by adding and removing index numbers when entering and leaving 
 	 * 		nesting levels. This path is added as a data attribute to interactive cells so that the corresponding cell
 	 * 		object can later be retrieved.
-	 * @param {object} rowData The actual data object that this expansion is representing.
+	 * @param {object} rowData The actual data object that this details is representing.
 	 * @param {boolean} notYetCreated True if the instanceNode points to data within objects that do not yet exist.
 	 * 		This happens when the context points to a data object that will be created when the user adds data.
 	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
 	 * 		schemaNode with no create option).
 	 */
-	_generateExpansionGroup(groupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,notYetCreated) {
-		instanceNode.select=()=>this._selectExpansionCell(instanceNode);
+	_generateDetailsGroup(groupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,notYetCreated) {
+		instanceNode.select=()=>this._selectDetailsCell(instanceNode);
 		const groupTable=parentEl.appendChild(document.createElement("table"));
 		const tbody=instanceNode.containerEl=groupTable.appendChild(document.createElement("tbody"));
 		groupTable.dataset.path=path.join("-");
@@ -1764,8 +1764,8 @@ class TablanceBase {
 		instanceNode.el=groupTable;//so that the whole group-table can be selectedf
 		if (notYetCreated)
 			instanceNode.creating=true;
-		groupTable.className="expansion-group "+(groupSchemaNode.cssClass??"");
-		this._generateExpansionCollection(groupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
+		groupTable.className="details-group "+(groupSchemaNode.cssClass??"");
+		this._generateDetailsCollection(groupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
 		if (groupSchemaNode.closedRender) {
 			groupTable.classList.add("closed-render");
 			const renderRow=tbody.insertRow();
@@ -1778,54 +1778,54 @@ class TablanceBase {
 	}
 
 		/**
-	 * Creates expansion content based on the provided structure.
+	 * Creates details content based on the provided structure.
 	 *
 	 * @param {object} listSchemaNode Structure object defining what to create.
-	 * @param {number} mainIndex Index of the main data row that this expansion belongs to.
+	 * @param {number} mainIndex Index of the main data row that this details belongs to.
 	 * @param {object} instanceNode The object representing the cell that is being created.
 	 * @param {HTMLElement} parentEl The parent element to which the created elements should be appended.
 	 * @param {number[]} path Keeps track of the "path" by adding and removing index numbers when entering and leaving 
 	 * 		nesting levels. This path is added as a data attribute to interactive cells so that the corresponding cell
 	 * 		object can later be retrieved.
-	 * @param {object} rowData The actual data object that this expansion is representing.
+	 * @param {object} rowData The actual data object that this details is representing.
 	 * @param {boolean} notYetCreated True if the instanceNode points to data within objects that do not yet exist.
 	 * 		This happens when the context points to a data object that will be created when the user adds data.
 	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
 	 * 		schemaNode with no create option).
 	 */
-	_generateExpansionList(listSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
+	_generateDetailsList(listSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
 		const listTable=parentEl.appendChild(document.createElement("table"));
 		instanceNode.containerEl=listTable.appendChild(document.createElement("tbody"));
-		listTable.className="expansion-list";
+		listTable.className="details-list";
 		if (listSchemaNode.titlesColWidth!=false) {
 			let titlesCol=document.createElement("col");
 			listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
 			if (listSchemaNode.titlesColWidth!=null)
 				titlesCol.style.width=listSchemaNode.titlesColWidth;
 		}
-		return this._generateExpansionCollection(listSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
+		return this._generateDetailsCollection(listSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
 	}
 
 	/**
-	 * Creates expansion content based on the provided structure.
+	 * Creates details content based on the provided structure.
 	 *
 	 * @param {object} lineupSchemaNode Structure object defining what to create.
-	 * @param {number} mainIndex Index of the main data row that this expansion belongs to.
+	 * @param {number} mainIndex Index of the main data row that this details belongs to.
 	 * @param {object} instanceNode The object representing the cell that is being created.
 	 * @param {HTMLElement} parentEl The parent element to which the created elements should be appended.
 	 * @param {number[]} path Keeps track of the "path" by adding and removing index numbers when entering and leaving 
 	 * 		nesting levels. This path is added as a data attribute to interactive cells so that the corresponding cell
 	 * 		object can later be retrieved.
-	 * @param {object} rowData The actual data object that this expansion is representing.
+	 * @param {object} rowData The actual data object that this details is representing.
 	 * @param {boolean} notYetCreated True if the instanceNode points to data within objects that do not yet exist.
 	 * 		This happens when the context points to a data object that will be created when the user adds data.
 	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
 	 * 		schemaNode with no create option).
 	 */
-	_generateExpansionLineup(lineupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
+	_generateDetailsLineup(lineupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
 		instanceNode.containerEl=parentEl.appendChild(document.createElement("div"));
 		instanceNode.containerEl.classList.add("lineup","collection",...lineupSchemaNode.cssClass?.split(" ")??[]);
-		return this._generateExpansionCollection(lineupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
+		return this._generateDetailsCollection(lineupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
 	}
 
 	/**
@@ -1834,13 +1834,13 @@ class TablanceBase {
 	 * changes the data scope to a nested object on the current row.
 	 * Its child entries are then generated using this nested object as their data source.
 	 * @param {object} contextSchemaNode Structure object defining what to create.
-	 * @param {number} mainIndex Index of the main data row that this expansion belongs to.
+	 * @param {number} mainIndex Index of the main data row that this details belongs to.
 	 * @param {object} instanceNode The object representing the cell that is being created.
 	 * @param {HTMLElement} parentEl The parent element to which the created elements should be appended.
 	 * @param {number[]} path Keeps track of the "path" by adding and removing index numbers when entering and leaving 
 	 * 		nesting levels. This path is added as a data attribute to interactive cells so that the corresponding cell
 	 * 		object can later be retrieved.
-	 * @param {object} rowData The actual data object that this expansion is representing.
+	 * @param {object} rowData The actual data object that this details is representing.
 	 * @param {boolean} notYetCreated True if the instanceNode points to data within objects that do not yet exist.
 	 * 		This happens when the context points to a data object that will be created when the user adds data.
 	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
@@ -1851,12 +1851,12 @@ class TablanceBase {
 			notYetCreated=true;
 			rowData[contextSchemaNode.id]={};
 		}
-		return this._generateExpansionContent(contextSchemaNode.entry, mainIndex, instanceNode, parentEl, path
+		return this._generateDetailsContent(contextSchemaNode.entry, mainIndex, instanceNode, parentEl, path
 			,rowData[contextSchemaNode.id],notYetCreated);
 	}
 	
 
-	_generateExpansionCollection(containerSchemaNode,mainIndex,collectionObj,parentEl,path,rowData) {
+	_generateDetailsCollection(containerSchemaNode,mainIndex,collectionObj,parentEl,path,rowData) {
 		//allows for easily finding the outer-most parent of elements that are placed in collection
 		collectionObj.containerEl.classList.add("collection");
 
@@ -1960,7 +1960,7 @@ class TablanceBase {
 	/**
 	 * Generate one item inside a collection or repeated block.
 	 * Creates DOM, updates indices, generates inner content, and inserts into DOM
-	 * only if expansion content was actually created (e.g., repeated with empty data should not add item).
+	 * only if details content was actually created (e.g., repeated with empty data should not add item).
 	 */
 	_generateCollectionItem(schemaNode,mainIndex,collectionOrRepeated,path,data,index=null) {
 		// Determine actual collection (repeated uses parent collection visually)
@@ -2002,7 +2002,7 @@ class TablanceBase {
 		itemObj.outerContainerEl=outerContainerEl;//reference to outer-most container belonging exclusively to this item
 
 		// Expand inner content; may return false if nothing should be rendered
-		const generated=this._generateExpansionContent(
+		const generated=this._generateDetailsContent(
 												schemaNode,mainIndex,itemObj,containerEl,path,data,outerContainerEl);
 
 		// Only insert if it actually has content (important for sparse repeated arrays)
@@ -2014,9 +2014,9 @@ class TablanceBase {
 	}
 
 	_generateField(fieldSchemaNode,mainIndex,instanceNode,parentEl,path,rowData) {
-		instanceNode.select=()=>this._selectExpansionCell(instanceNode);
+		instanceNode.select=()=>this._selectDetailsCell(instanceNode);
 		instanceNode.el=parentEl;
-		this._updateExpansionCell(instanceNode,rowData);
+		this._updateDetailsCell(instanceNode,rowData);
 		instanceNode[instanceNode.selEl?"selEl":"el"].dataset.path=path.join("-");
 		return true;
 	}
@@ -2030,18 +2030,18 @@ class TablanceBase {
 		if (e.which===3)//if right click
 			return;
 		const mainTr=e.target.closest(".main-table>tbody>tr");
-		if (this._onlyExpansion||mainTr?.classList.contains("expansion")) {//in expansion
+		if (this._onlyDetails||mainTr?.classList.contains("details")) {//in details
 			const interactiveEl=e.target.closest('[data-path]');
 			if (!interactiveEl)
 				return;
-			let instanceNode=this._openExpansions[mainTr?.dataset.dataRowIndex??0];
+			let instanceNode=this._openDetailsPanes[mainTr?.dataset.dataRowIndex??0];
 			for (let step of interactiveEl.dataset.path.split("-")) {
 				instanceNode=instanceNode.children[step];
 				if (instanceNode.schemaNode.type==="group"&&!instanceNode.el.classList.contains("open"))
 					break;
 			}
-			this._selectExpansionCell(instanceNode);
-		} else {//not in expansion
+			this._selectDetailsCell(instanceNode);
+		} else {//not in details
 			const td=e.target.closest(".main-table>tbody>tr>td");
 			if (td?.classList.contains("expand-col")||td?.classList.contains("select-col")) {
 				if (e.shiftKey)
@@ -2134,7 +2134,7 @@ class TablanceBase {
 		//__auto-resize__
 		//first set height to auto.This won't make it auto-resize or anything but will rather set its height to about 40
 		e.target.style.height="auto";
-		//then set size of cellcursor, and also the underlying cell in order to make expansion-height adjust to scroll-
+		//then set size of cellcursor, and also the underlying cell in order to make details-height adjust to scroll-
 		//height of the textarea. Also add 1px because *sometimes* without logic the textarea would recieve a scrollbar
 		//which can scroll about 1 px. Not sure if 1px is actually sufficent but let's start there.
 		this._cellCursor.style.height=this._selectedCell.style.height=Math.min(maxHeight,e.target.scrollHeight+1)+"px";
@@ -2142,16 +2142,16 @@ class TablanceBase {
 		//setting it to auto "could" be skipped but that will result in the textarea not shrinking when needed.
 		e.target.style.height="100%";
 
-		//need to call this to make the height of the expansion adjust and reflect the change in size of the textarea
-		this._updateExpansionHeight(this._selectedCell.closest("tr.expansion"));
+		//need to call this to make the height of the details adjust and reflect the change in size of the textarea
+		this._updateDetailsHeight(this._selectedCell.closest("tr.details"));
 	}
 
-	_updateExpansionHeight(expansionTr) {
-		const contentDiv=expansionTr.querySelector(".content");
-		const mainRowIndex=parseInt(expansionTr.dataset.dataRowIndex);
+	_updateDetailsHeight(detailsTr) {
+		const contentDiv=detailsTr.querySelector(".content");
+		const mainRowIndex=parseInt(detailsTr.dataset.dataRowIndex);
 		contentDiv.style.height="auto";//set to auto in case of in middle of animation, get correct height
 		const prevRowHeight=this._rowMetaGet(mainRowIndex).h;
-		const newRowHeight=this._rowHeight+expansionTr.offsetHeight+this._borderSpacingY;
+		const newRowHeight=this._rowHeight+detailsTr.offsetHeight+this._borderSpacingY;
 		this._rowMetaSet(mainRowIndex,"h",newRowHeight);
 		this._tableSizer.style.height=parseInt(this._tableSizer.style.height)//adjust scroll-height reflect change...
 			+newRowHeight-prevRowHeight+"px";//...in height of the table
@@ -2249,14 +2249,14 @@ class TablanceBase {
 		if (this._activeSchemaNode.input) {
 			e.preventDefault();//prevent text selection upon entering editmode
 			if (this._activeSchemaNode.input.type==="button")
-				return this._activeExpCell.el.click();
+				return this._activeDetailsCell.el.click();
 			this._inputVal=this._selectedCellVal;
 			this._inEditMode=true;
 			this._cellCursor.classList.add("edit-mode");
 			({textarea:this._openTextAreaEdit,date:this._openDateEdit,select:this._openSelectEdit
 				,file:this._openFileEdit}[this._activeSchemaNode.input.type]??this._openTextEdit).call(this,e);
 		} else if (this._activeSchemaNode.type==="group") {
-			this._openGroup(this._activeExpCell);
+			this._openGroup(this._activeDetailsCell);
 		}
 	}
 
@@ -2266,7 +2266,7 @@ class TablanceBase {
 		if (!doOpen)
 			return;
 		groupObj.el.classList.add("open");
-		this._selectExpansionCell(this._getFirstSelectableExpansionCell(groupObj,true,true));
+		this._selectDetailsCell(this._getFirstSelectableDetailsCell(groupObj,true,true));
 		groupObj.schemaNode.onOpenAfter?.(groupObj);
 		
 	}
@@ -2309,7 +2309,7 @@ class TablanceBase {
 		const newObj=this._generateCollectionItem(schemaNode.entry,rowIndex,repeated,repeated.path,data,indexOfNew);
 		if (creating) {
 			newObj.creating=true;//creating means it hasn't been commited yet.
-			this._selectFirstSelectableExpansionCell(newObj,true,true);
+			this._selectFirstSelectableDetailsCell(newObj,true,true);
 			repeated.schemaNode.onCreateOpen?.(repeated);
 		}
 		return newObj.el;
@@ -2346,9 +2346,9 @@ class TablanceBase {
 			instanceNode.el.parentElement.parentElement.remove();
 		else
 			instanceNode.el.parentElement.remove();
-		this._activeExpCell=null;//causes problem otherwise when #selectExpansionCell checks old cell
+		this._activeDetailsCell=null;//causes problem otherwise when #selectDetailsCell checks old cell
 		if (!programatically)
-			this._selectExpansionCell(newSelectedCell??instanceNode.parent.parent);
+			this._selectDetailsCell(newSelectedCell??instanceNode.parent.parent);
 		instanceNode.creating&&instanceNode.parent.schemaNode.onCreateCancel?.(instanceNode.parent);
 	}
 
@@ -2405,7 +2405,7 @@ class TablanceBase {
 	 *     #processFileUpload(), which performs the actual upload logic.
 	 *
 	 * After a file is chosen, the edit mode automatically exits and
-	 * the expansion cell is re-selected.
+	 * the details cell is re-selected.
 	 */
 	_openFileEdit() {
 		window.getSelection().empty();
@@ -2476,7 +2476,7 @@ class TablanceBase {
 	 *
 	 * After initiating the upload:
 	 *   - The cell exits edit mode.
-	 *   - The original expansion cell is automatically re-selected.
+	 *   - The original details cell is automatically re-selected.
 	 *
 	 * This method does not handle UI creation — only the upload workflow
 	 * and progress bookkeeping.
@@ -2503,7 +2503,7 @@ class TablanceBase {
 		});
 	
 		this._activeSchemaNode.input.fileUploadHandler?.(xhr,file,this._activeSchemaNode,this._cellCursorDataObj,
-			this._mainRowIndex,this._activeExpCell);
+			this._mainRowIndex,this._activeDetailsCell);
 	
 		xhr.addEventListener("load", () => {
 			this._mapRemove(this._filesMeta, file);
@@ -2519,7 +2519,7 @@ class TablanceBase {
 		xhr.send(formData);
 	
 		this._exitEditMode(true);
-		this._selectExpansionCell(this._activeExpCell);
+		this._selectDetailsCell(this._activeDetailsCell);
 	}
 	
 	
@@ -2760,7 +2760,7 @@ class TablanceBase {
 				this._inputVal={text:ctx.filterText};
 				ctx.strctInp.options.push(this._inputVal);
 				ctx.strctInp.createNewOptionHandler?.(this._inputVal,e,this._cellCursorDataObj,this._mainRowIndex
-																,this._activeSchemaNode,this._activeExpCell);
+																,this._activeSchemaNode,this._activeDetailsCell);
 			} else
 				this._inputVal=(ctx.highlightUlIndex?ctx.looseOpts:ctx.pinnedOpts)[ctx.highlightLiIndex];
 			ctx.selectContainer.remove();
@@ -2818,7 +2818,7 @@ class TablanceBase {
 		let message;
 		const input=this._cellCursor.querySelector("input");
 		const doCommit=this._activeSchemaNode.input.validation(newVal,m=>message=m,this._activeSchemaNode
-												,this._cellCursorDataObj,this._mainRowIndex,this._activeExpCell);
+												,this._cellCursorDataObj,this._mainRowIndex,this._activeDetailsCell);
 		if (doCommit)
 			return true;
 		input.focus();
@@ -2831,7 +2831,7 @@ class TablanceBase {
 	 *
 	 * This method propagates changes from a modified cell to its dependent cells,
 	 * ensuring that the dependent cells are updated accordingly. It traverses the
-	 * hierarchical structure of cells and updates both expansion cells and main-row
+	 * hierarchical structure of cells and updates both details cells and main-row
 	 * cells as needed.
 	 *
 	 * @param {Object} editedCellSchemaNode - The schema-node of the cell that was edited.
@@ -2842,13 +2842,13 @@ class TablanceBase {
 		for (const depPath of editedCellSchemaNode.dependencyPaths??[])
 			if (depPath[0]==="m") {//if cell is in main row cell
 				// Find the corresponding table row for the main data row
-				const tr=this._mainTbody.querySelector(`[data-data-row-index="${this._mainRowIndex}"]:not(.expansion)`);
+				const tr=this._mainTbody.querySelector(`[data-data-row-index="${this._mainRowIndex}"]:not(.details)`);
 				// Update the content of the dependent cell in the main table
 				this._updateMainRowCell(tr.cells[depPath[1]], this._colSchemaNodes[depPath[1]]);
-			} else if (this._openExpansions[this._mainRowIndex]) {//if cell is in expansion and expansion is open
+			} else if (this._openDetailsPanes[this._mainRowIndex]) {//if cell is in details and details is open
 				//cells is an array that potentially can hold more than 1 cell. The reason is that when going into
 				//repeated structures, it "splits" into multiple cells if there are multiple repeated-entries/instances
-				let cells=depPath[0]==="r"?[editedInstanceNode]:[this._openExpansions[this._mainRowIndex]];
+				let cells=depPath[0]==="r"?[editedInstanceNode]:[this._openDetailsPanes[this._mainRowIndex]];
 
 				for (var step=1; depPath[step]===".."; step++)//if there are any, iterate all the ".."
 					cells[0] = cells[0].parent;//go up one level per "..". At this point cells will only have one cell
@@ -2864,7 +2864,7 @@ class TablanceBase {
 						cells[cellI]=cells[cellI].children[depPath[step]];//and do the step
 				}
 				for (const cell of cells)//iterate the cell(s) again
-					this._updateExpansionCell(cell,cell.dataObj);//and do the actual update
+					this._updateDetailsCell(cell,cell.dataObj);//and do the actual update
 			}
 	}
 
@@ -2928,9 +2928,9 @@ class TablanceBase {
 		return true;
 	}
 
-	_closeActiveExpCell() {
-		if (this._activeExpCell) {
-			for (let oldCellParent=this._activeExpCell; oldCellParent=oldCellParent.parent;) {
+	_closeActiveDetailsCell() {
+		if (this._activeDetailsCell) {
+			for (let oldCellParent=this._activeDetailsCell; oldCellParent=oldCellParent.parent;) {
 				if (oldCellParent.schemaNode.type==="group") {
 					if (!this._closeGroup(oldCellParent))//close any open group above old cell
 						return false;
@@ -2939,7 +2939,7 @@ class TablanceBase {
 				
 				oldCellParent.schemaNode.onBlur?.(oldCellParent,this._mainRowIndex);
 			}
-			this._activeExpCell=null;//should be null when not inside expansion
+			this._activeDetailsCell=null;//should be null when not inside details
 		}
 		return true;
 	}
@@ -2956,23 +2956,23 @@ class TablanceBase {
 		const mainRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);//save it here rather than setting it 
 					//directly because we do not want it to change if #selectCell returns false, preventing the select
 					
-		if (this._closeActiveExpCell()) {
+		if (this._closeActiveDetailsCell()) {
 			this._selectCell(cell,this._colSchemaNodes[this._mainColIndex],this._data[mainRowIndex]);
 			this._mainRowIndex=mainRowIndex;
 		}
 	}
 
-	_selectExpansionCell(instanceNode) {
+	_selectDetailsCell(instanceNode) {
 		if (!this._exitEditMode(true))//try to exit-mode and commit any changes.
 			return false;//if exiting edit-mode was denied then do nothing more
 
-		const oldExpCell=this._activeExpCell;//need to know the current/old expansion-cell if any for closing groups
-					//etc but we can't just use this._activeExpCell because #selectCell changes it and we do want
+		const oldExpCell=this._activeDetailsCell;//need to know the current/old details-cell if any for closing groups
+					//etc but we can't just use this._activeDetailsCell because #selectCell changes it and we do want
 					//to call #selectCell first in order to know if changing cell is being prevented by validation()
 
 		for (var root=instanceNode; root.parent; root=root.parent);
 		const mainRowIndex=root.rowIndex;
-		if (oldExpCell)//changing from an old expansionCell
+		if (oldExpCell)//changing from an old detailsCell
 			for (let oldParnt=oldExpCell; oldParnt=oldParnt?.parent;)//traverse parents of old cell
 				if(oldParnt.schemaNode.type==="group"||oldParnt.schemaNode.onBlur||oldParnt.creating){//found group/cell
 					//...with onBlur or cell that is being created. For any of these we want to observe the cell being
@@ -2998,7 +2998,7 @@ class TablanceBase {
 				parentCell.el.classList.add("open");
 
 		this._adjustCursorPosSize(instanceNode.selEl??instanceNode.el);
-		this._activeExpCell=instanceNode;
+		this._activeDetailsCell=instanceNode;
 		return instanceNode;
 	}
 
@@ -3006,7 +3006,7 @@ class TablanceBase {
 		this.rootEl.focus({preventScroll:true});
 		if (adjustCursorPosSize)
 			this._adjustCursorPosSize(cellEl);
-		this._cellCursor.classList.toggle("expansion",cellEl.closest(".expansion"));
+		this._cellCursor.classList.toggle("details",cellEl.closest(".details"));
 		this._cellCursor.classList.toggle("disabled",cellEl.classList.contains("disabled"));
 		(this._scrollingContent??this.rootEl).appendChild(this._cellCursor);
 		this._selectedCell=cellEl;
@@ -3104,7 +3104,7 @@ class TablanceBase {
 		this._scrollMethod();
 		let rows;
 		if (expand) {
-			rows=this._tableSizer.querySelectorAll(".main-table>tbody>tr:not(.expansion):not(.expanded)");
+			rows=this._tableSizer.querySelectorAll(".main-table>tbody>tr:not(.details):not(.expanded)");
 			for (const row of rows)
 				this._expandRow(row);
 			for (const dataRow of this._data) {
@@ -3174,9 +3174,9 @@ class TablanceBase {
 		this._scrollBody=this.rootEl.appendChild(document.createElement("div"));
 
 		if (this._staticRowHeight&&!this.schema.details)
-			this._scrollMethod=this._onScrollStaticRowHeightNoExpansion;
+			this._scrollMethod=this._onScrollStaticRowHeightNoDetails;
 		else if (this._staticRowHeight&&this.schema.details)
-			this._scrollMethod=this._onScrollStaticRowHeightExpansion;
+			this._scrollMethod=this._onScrollStaticRowHeightDetails;
 		this._scrollBody.addEventListener("scroll",e=>this._scrollMethod(e),{passive:true});
 		this._scrollBody.className="scroll-body";
 		
@@ -3243,9 +3243,9 @@ class TablanceBase {
 		return val&&typeof val==="object"&&!Array.isArray(val);
 	}
 
-	/**Given a schemaNode like expansion or column, will add inputs to this._bulkEditSchemaNodes which later is iterated
+	/**Given a schemaNode like details or column, will add inputs to this._bulkEditSchemaNodes which later is iterated
 	 * and the contents added to the bulk-edit-area. 
-	 * @param {*} schema Should be expansion or column when called from outside, but it calls itself recursively
+	 * @param {*} schema Should be details or column when called from outside, but it calls itself recursively
 	 * 						when hitting upon containers which then are passed to this param
 	 * @returns */
 	_buildBulkEditSchemaNodes(schema) {
@@ -3281,7 +3281,7 @@ class TablanceBase {
 
 			//update both the data and the dom
 			this._bulkEditTable.updateData(0,multiCellSchemaNode.id,mixed?mixedText:val?.text??val??"");
-			const el=this._bulkEditTable._openExpansions[0].children[multiCellI].el;
+			const el=this._bulkEditTable._openDetailsPanes[0].children[multiCellI].el;
 			el.innerText=mixed?mixedText:val?.text??val??"";
 			this._bulkEditTable._data[0][multiCellSchemaNode.id]=mixed?"":val;
 		}
@@ -3329,9 +3329,9 @@ class TablanceBase {
 	}
 
 	_filterData(filterString) {
-		this._openExpansions={};
+		this._openDetailsPanes={};
 		this._rowsMeta={keys:[],vals:[]};
-		for (const tr of this._mainTbody.querySelectorAll("tr.expansion"))
+		for (const tr of this._mainTbody.querySelectorAll("tr.details"))
 		 	tr.remove();
 		this._filter=filterString;
 		const colsToFilterBy=[];
@@ -3371,15 +3371,15 @@ class TablanceBase {
 			this._data=this._allData;
 		this._scrollRowIndex=0;
 		this._refreshTable();
-		this._refreshTableSizerNoExpansions();
+		this._refreshTableSizerNoDetails();
 	}
 
-	_setDataForOnlyExpansion(data) {
+	_setDataForOnlyDetails(data) {
 		this._allData=this._data=[data[data.length-1]];
 		this.rootEl.innerHTML="";
-		const expansionDiv=this.rootEl.appendChild(document.createElement("div"));
-		expansionDiv.classList.add("expansion");
-		this._generateExpansionContent(this.schema.details,0,this._openExpansions[0]={},expansionDiv,[],this._data[0]);
+		const detailsDiv=this.rootEl.appendChild(document.createElement("div"));
+		detailsDiv.classList.add("details");
+		this._generateDetailsContent(this.schema.details,0,this._openDetailsPanes[0]={},detailsDiv,[],this._data[0]);
 	}
 
 	/**Refreshes the table-rows. Should be used after sorting or filtering or such.*/
@@ -3396,7 +3396,7 @@ class TablanceBase {
 		this._tableSizer.style.height=parseInt(this._tableSizer.style.height)+parseInt(this._tableSizer.style.top)+"px";
 		this._tableSizer.style.top=this._numRenderedRows=0;
 
-		//its position and size needs to be udated.Hide for now and let #updateRowValues or #renderExpansion add it back
+		//its position and size needs to be udated.Hide for now and let #updateRowValues or #renderDetails add it back
 		this._cellCursor.style.display="none";
 
 		this._mainTbody.replaceChildren();//remove all the tr-elements
@@ -3409,7 +3409,7 @@ class TablanceBase {
 	 * rendered even when scrolling more than a whole page at once as each row won't have to be iterated, and rows
 	 * will only have to be created or deleted if the table is resized so the same tr-elements are reused.* 
 	 * @returns */
-	_onScrollStaticRowHeightNoExpansion() {
+	_onScrollStaticRowHeightNoDetails() {
 		const scrY=Math.max(this._scrollBody.scrollTop-this._scrollMarginPx,0);
 		const newScrollRowIndex=Math.min(parseInt(scrY/this._rowHeight),this._data.length-this._mainTbody.rows.length);
 		
@@ -3432,10 +3432,10 @@ class TablanceBase {
 				}
 			} while (this._scrollRowIndex!=newScrollRowIndex);
 		}
-		this._refreshTableSizerNoExpansions();
+		this._refreshTableSizerNoDetails();
 	}
 
-	_onScrollStaticRowHeightExpansion(_e) {
+	_onScrollStaticRowHeightDetails(_e) {
 		const newScrY=Math.max(this._scrollBody.scrollTop-this._scrollMarginPx,0);
 		if (newScrY>parseInt(this._scrollY)) {//if scrolling down
 			while (newScrY-parseInt(this._tableSizer.style.top)
@@ -3446,7 +3446,7 @@ class TablanceBase {
 																	// amount of pixels the whole table is shiftet by
 				//check if the top row (the one that is to be moved to the bottom) is expanded
 				if (topShift=this._rowMetaGet(this._scrollRowIndex)?.h) {
-					delete this._openExpansions[this._scrollRowIndex];
+					delete this._openDetailsPanes[this._scrollRowIndex];
 					this._mainTbody.rows[1].remove();
 				} else
 					topShift=this._rowHeight;
@@ -3457,7 +3457,7 @@ class TablanceBase {
 
 				//move the table down by the height of the removed row to compensate,else the whole table would shift up
 
-				this._doRowScrollExp(trToMove,dataIndex,this._scrollRowIndex,-topShift);
+				this._doRowScrollDetails(trToMove,dataIndex,this._scrollRowIndex,-topShift);
 				this._scrollRowIndex++;
 			}
 		} else if (newScrY<parseInt(this._scrollY)) {//if scrolling up
@@ -3466,8 +3466,8 @@ class TablanceBase {
 
 				//check if the bottom row (the one that is to be moved to the top) is expanded
 				if (this._rowMetaGet(this._scrollRowIndex+this._numRenderedRows)?.h) {
-					delete this._openExpansions[this._scrollRowIndex+this._numRenderedRows];
-					this._mainTbody.lastChild.remove();//remove the expansion-tr
+					delete this._openDetailsPanes[this._scrollRowIndex+this._numRenderedRows];
+					this._mainTbody.lastChild.remove();//remove the details-tr
 				}
 
 				let trToMove=this._mainTbody.lastChild;									//move bottom row to top
@@ -3477,18 +3477,18 @@ class TablanceBase {
 				//height of the row that is added at the top which is amount of pixels the whole table is shiftet by
 				const topShift=this._rowMetaGet(this._scrollRowIndex)?.h??this._rowHeight;
 
-				this._doRowScrollExp(trToMove,this._scrollRowIndex,this._scrollRowIndex+this._numRenderedRows,topShift);
+				this._doRowScrollDetails(trToMove,this._scrollRowIndex,this._scrollRowIndex+this._numRenderedRows,topShift);
 			}
 		}
 		this._scrollY=newScrY;
 	}
 
-	/**Used by #onScrollStaticRowHeightExpansion whenever a row is actually added/removed(or rather moved)*/
-	_doRowScrollExp(trToMove,newMainIndex,oldMainIndex,topShift) {
-		const expansionHeight=this._rowMetaGet(newMainIndex)?.h;
-		if (expansionHeight>0) {
-			this._renderExpansion(trToMove,newMainIndex);
-		} else if (expansionHeight==-1) {
+	/**Used by #onScrollStaticRowHeightDetails whenever a row is actually added/removed(or rather moved)*/
+	_doRowScrollDetails(trToMove,newMainIndex,oldMainIndex,topShift) {
+		const detailsHeight=this._rowMetaGet(newMainIndex)?.h;
+		if (detailsHeight>0) {
+			this._renderDetails(trToMove,newMainIndex);
+		} else if (detailsHeight==-1) {
 			this._scrollBody.scrollTop+=this._expandRow(trToMove,false);
 		} else
 			trToMove.classList.remove("expanded");
@@ -3498,7 +3498,7 @@ class TablanceBase {
 
 		if (oldMainIndex===this._mainRowIndex) {//cell-cursor is on moved row
 			this._selectedCell=null;
-			for (let cell=this._activeExpCell; cell&&(cell=cell.parent);)
+			for (let cell=this._activeDetailsCell; cell&&(cell=cell.parent);)
 				if (cell.creating) {
 					cell.creating=false;//otherwise cell.select() below will not work
 					this._exitEditMode(false);//in case field is validated. Could prevent cell.select() too otherwise
@@ -3522,25 +3522,25 @@ class TablanceBase {
 	 * @param {HTMLTableRowElement} tr */
 	_lookForActiveCellInRow(tr) {
 		if (tr.dataset.dataRowIndex==this._mainRowIndex) {
-			if (!this._activeExpCell)
+			if (!this._activeDetailsCell)
 				this._selectedCell=tr.cells[this._mainColIndex];
-			else {//if inside expansion
-				//generate the path to the instanceNode in #activeExpansionCell by stepping through its parents to root
+			else {//if inside details
+				//generate the path to the instanceNode in #activeDetailsCell by stepping through its parents to root
 				let path=[];
-				for (let instanceNode=this._activeExpCell; instanceNode.parent; instanceNode=instanceNode.parent)
+				for (let instanceNode=this._activeDetailsCell; instanceNode.parent; instanceNode=instanceNode.parent)
 					path.unshift(instanceNode.index);
-				//now follow the same path in the new #openExpansionNavMap[rowIndex], eg the instanceNodes..
-				let instanceNode=this._openExpansions[this._mainRowIndex];
+				//now follow the same path in the new #openDetailsNavMap[rowIndex], eg the instanceNodes..
+				let instanceNode=this._openDetailsPanes[this._mainRowIndex];
 				for (let step of path)
 					instanceNode=instanceNode.children[step];
 				this._selectedCell=instanceNode.el;
-				this._activeExpCell=instanceNode;//should be identical but this allows for the old one to be gc'd
+				this._activeDetailsCell=instanceNode;//should be identical but this allows for the old one to be gc'd
 			}
 			this._adjustCursorPosSize(this._selectedCell);
 		}
 	}
 
-	_refreshTableSizerNoExpansions() {	
+	_refreshTableSizerNoDetails() {	
 		this._tableSizer.style.top=this._scrollRowIndex*this._rowHeight+"px";
 		this._tableSizer.style.height=(this._data.length-this._scrollRowIndex)*this._rowHeight+"px";
 	}
@@ -3588,7 +3588,7 @@ class TablanceBase {
 			}
 			this._updateRowValues(lastTr,this._scrollRowIndex+this._numRenderedRows-1);
 			if (this._rowMetaGet(this._scrollRowIndex+this._numRenderedRows-1)?.h)
-				this._renderExpansion(lastTr,this._scrollRowIndex+this._numRenderedRows-1);
+				this._renderDetails(lastTr,this._scrollRowIndex+this._numRenderedRows-1);
 			this._lookForActiveCellInRow(lastTr);//look for active cell (cellcursor) in the row
 			if (!this._rowHeight) {//if there were no rows prior to this
 				this._rowHeight=lastTr.offsetHeight+this._borderSpacingY;
@@ -3610,7 +3610,7 @@ class TablanceBase {
 		while ((this._numRenderedRows-2)*this._rowHeight>scrH) {
 			if (this._rowMetaGet(this._scrollRowIndex+this._numRenderedRows-1)?.h) {
 				this._mainTbody.lastChild.remove();
-				delete this._openExpansions[this._scrollRowIndex+this._numRenderedRows];
+				delete this._openDetailsPanes[this._scrollRowIndex+this._numRenderedRows];
 			}
 			this._mainTbody.lastChild.remove();
 			this._numRenderedRows--;
@@ -3700,7 +3700,7 @@ class TablanceBase {
 		fileGroup.entries.push({type:"lineup",entries:metaEntries});
 		
 		const fileData=rowData[fileInstanceNode.schemaNode.id];
-		this._generateExpansionContent(fileGroup,dataIndex,fileInstanceNode,cellEl,fileInstanceNode.path,fileData);
+		this._generateDetailsContent(fileGroup,dataIndex,fileInstanceNode,cellEl,fileInstanceNode.path,fileData);
 		const fileMeta=this._mapGet(this._filesMeta,fileData);
 		if (fileMeta!=null) {
 			const progressbarOuter=cellEl.appendChild(document.createElement("div"));
@@ -3716,10 +3716,10 @@ class TablanceBase {
 	}
 
 
-	/**Updates the html-element of a cell inside an expansion. Also updates nonEmptyDescentants of the instanceNode of 
+	/**Updates the html-element of a cell inside an details. Also updates nonEmptyDescentants of the instanceNode of 
 	 * 	group-rows as well as toggling the empty-class of them. Reports back whether visibility has been changed.
 	 * @param {*} instanceNode */
-	_updateExpansionCell(instanceNode,rowData=null) {
+	_updateDetailsCell(instanceNode,rowData=null) {
 		let cellEl=instanceNode.el;
 		if (instanceNode.schemaNode.maxHeight) {//if there's a maxHeight stated, which is used for textareas
 			cellEl.innerHTML="";//empty the cell, otherwise multiple calls to this would add more and more content to it
@@ -3884,18 +3884,18 @@ class TablanceBulk extends TablanceBase {
 			selectedRow[this._activeSchemaNode.id]=inputVal;
 		for (const selectedTr of this.mainInstance._mainTbody.querySelectorAll("tr.selected"))
 			this.mainInstance.updateData(selectedTr.dataset.dataRowIndex,this._activeSchemaNode.id,inputVal,false,true);
-		this._updateExpansionCell(this._activeExpCell,this._cellCursorDataObj);
+		this._updateDetailsCell(this._activeDetailsCell,this._cellCursorDataObj);
 	}
 }
 
 /**
  * Primary Tablance component representing the main interactive table.
- * Handles full data display, user interaction, editing, expansion, and rendering.
+ * Handles full data display, user interaction, editing, details, and rendering.
  */
 export default class Tablance extends TablanceBase {
 	constructor() {
 		super(...arguments);
-		this._dropdownAlignmentContainer=this._onlyExpansion?this.rootEl:this._scrollBody;
+		this._dropdownAlignmentContainer=this._onlyDetails?this.rootEl:this._scrollBody;
 	}
 	
 	_doEditSave() {
@@ -3903,17 +3903,17 @@ export default class Tablance extends TablanceBase {
 		const inputVal=this._activeSchemaNode.input.type==="select"?this._inputVal.value:this._inputVal;
 
 		this._activeSchemaNode.input.onChange?.({newValue: inputVal,oldValue: this._selectedCellVal,
-			rowData: this._cellCursorDataObj,schemaNode: this._activeSchemaNode,instanceNode: this._activeExpCell,
+			rowData: this._cellCursorDataObj,schemaNode: this._activeSchemaNode,instanceNode: this._activeDetailsCell,
 			closestMeta: key => this._closestMeta(this._activeSchemaNode, key),cancelUpdate: ()=> doUpdate=false
 		});
 
 		if (doUpdate) {
 			this._cellCursorDataObj[this._activeSchemaNode.id]=this._inputVal;
-			if (this._activeExpCell){
-				const doHeightUpdate=this._updateExpansionCell(this._activeExpCell,this._cellCursorDataObj);
-				if (doHeightUpdate&&!this._onlyExpansion)
-					this._updateExpansionHeight(this._selectedCell.closest("tr.expansion"));
-				for (let cell=this._activeExpCell.parent; cell; cell=cell.parent)
+			if (this._activeDetailsCell){
+				const doHeightUpdate=this._updateDetailsCell(this._activeDetailsCell,this._cellCursorDataObj);
+				if (doHeightUpdate&&!this._onlyDetails)
+					this._updateDetailsHeight(this._selectedCell.closest("tr.details"));
+				for (let cell=this._activeDetailsCell.parent; cell; cell=cell.parent)
 					if (cell.schemaNode.closedRender)//found a group with a closed-group-render func
 						cell.updateRenderOnClose=true;//update closed-group-render
 			} else {
@@ -3922,14 +3922,14 @@ export default class Tablance extends TablanceBase {
 			}
 			if (this._selectedRows.indexOf(this._cellCursorDataObj)!=-1)//if edited row is checked/selected
 				this._updateBulkEditAreaCells([this._activeSchemaNode]);
-			this._updateDependentCells(this._activeSchemaNode,this._activeExpCell);
+			this._updateDependentCells(this._activeSchemaNode,this._activeDetailsCell);
 		} else
 			this._inputVal=this._selectedCellVal;
 		this._selectedCellVal=this._inputVal;
 	}
 
 	_scrollToCursor() {
-		if (this._onlyExpansion)
+		if (this._onlyDetails)
 			return this._cellCursor.scrollIntoView({block: "center"});
 		const distanceRatioDeadzone=.5;//when moving the cellcursor within this distance from center of view no 
 										//scrolling will be done. 0.5 is half of view, 1 is entire height of view
@@ -3958,42 +3958,42 @@ export default class Tablance extends TablanceBase {
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
 		if (!this.schema.details||this._rowMetaGet(dataRowIndex)?.h>0)
 			return;
-		const expRow=this._renderExpansion(tr,dataRowIndex);
+		const expRow=this._renderDetails(tr,dataRowIndex);
 		const expHeight=this._rowMetaSet(dataRowIndex,"h",this._rowHeight+expRow.offsetHeight+this._borderSpacingY);
 		const contentDiv=expRow.querySelector(".content");
-		if (!this._expBordersHeight)//see declarataion of _expansionTopBottomBorderWidth
-			this._expBordersHeight=expHeight-contentDiv.offsetHeight;
+		if (!this._detailsBordersHeight)//see declarataion of _detailsTopBottomBorderWidth
+			this._detailsBordersHeight=expHeight-contentDiv.offsetHeight;
 		this._tableSizer.style.height=parseInt(this._tableSizer.style.height)//adjust scroll-height reflect change...
 			+expHeight-this._rowHeight+"px";//...in height of the table
 		if (animate) {
 			this._unsortCol(null,"expand");
 			contentDiv.style.transition="";
 			contentDiv.style.height="0px";//start at 0
-			setTimeout(()=>contentDiv.style.height=expHeight-this._expBordersHeight+"px");
+			setTimeout(()=>contentDiv.style.height=expHeight-this._detailsBordersHeight+"px");
 			this._animate(()=>this._adjustCursorPosSize(this._selectedCell,true),500,"cellCursor");
 		} else {
 			contentDiv.style.transition="none";
-			contentDiv.style.height=expHeight-this._expBordersHeight+"px";
+			contentDiv.style.height=expHeight-this._detailsBordersHeight+"px";
 		}
 		return expHeight;
 	}
 
 	_contractRow(tr) {
-		if (tr.classList.contains("expansion"))
+		if (tr.classList.contains("details"))
 			tr=tr.previousSibling;
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
-		if (dataRowIndex==this._mainRowIndex&&this._activeExpCell)
+		if (dataRowIndex==this._mainRowIndex&&this._activeDetailsCell)
 			this._exitEditMode(false);//cancel out of edit-mode so field-validation doesn't cause problems
 		if (!this.schema.details||!this._rowMetaGet(dataRowIndex)?.h)
 			return;
 		this._unsortCol(null,"expand");
-		if (this._mainRowIndex==dataRowIndex&&this._activeExpCell) {//if cell-cursor is inside the expansion
+		if (this._mainRowIndex==dataRowIndex&&this._activeDetailsCell) {//if cell-cursor is inside the details
 			this._selectMainTableCell(tr.cells[this._mainColIndex]);//then move it out
 			this._scrollToCursor();
 		}
 		const contentDiv=tr.nextSibling.querySelector(".content");
 		if (contentDiv.style.height==="auto") {//if fully expanded
-			contentDiv.style.height=this._rowMetaGet(dataRowIndex).h-this._expBordersHeight+"px";
+			contentDiv.style.height=this._rowMetaGet(dataRowIndex).h-this._detailsBordersHeight+"px";
 			setTimeout(()=>contentDiv.style.height=0);
 		} else if (parseInt(contentDiv.style.height)==0)//if previous closing-animation has reached 0 but transitionend 
 		//hasn't been called yet which happens easily, for instance by selecting expand-button and holding space/enter
@@ -4004,7 +4004,7 @@ export default class Tablance extends TablanceBase {
 	}
 
 	_scrollElementIntoView(element) {
-		if (!this._onlyExpansion) {
+		if (!this._onlyDetails) {
 			const pos=this._getElPos(element);
 			this._scrollBody.scrollTop=pos.y+element.offsetHeight/2-this._scrollBody.offsetHeight/2;
 			this._scrollMethod();
