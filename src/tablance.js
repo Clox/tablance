@@ -10,7 +10,8 @@ class TablanceBase {
 				//Except for manually this can also be set via chainTables()
 	_containerHeight=0;//height of #container. Used to keep track of if height shrinks or grows
 	_containerWidth=0;//height of #container. Used to keep track of if width shrinks or grows
-	_colSchemaNodes=[];//column-objects. Essentially the same as schema.main.columns but have been processed an may in
+	_wrappedSchema;//the wrapped schema that is created with _wrapSchema()
+	_wrappedCols;//reference to _wrappedSchema.main.columns
 		// addition contain "sortDiv" reffering to the div with the sorting-html (see for example opts->sortAscHtml)
 	_cols=[];//array of col-elements for each column
 	_headerTr;//the tr for the top header-row
@@ -522,21 +523,22 @@ class TablanceBase {
 		this._staticRowHeight=staticRowHeight;
 		this._opts=opts??{};
 		rootEl.classList.add("tablance");
-		this.wrappedSchema=this._wrapSchema(schema);
+		this._wrappedSchema=this._wrapSchema(schema);
 		//const allowedColProps=["id","title","width","input","type","render","html"];//should we really do filtering?
 		if (!schema.main?.columns) {
 			this._setupSpreadsheet(true);
 			this._onlyDetails=true;
 		} else {
-			for (let col of this.wrappedSchema.main.columns) {
-				let processedCol={};
-				if ((col.type=="expand"||col.type=="select")&&!col.width)
-					processedCol.width=50;
-				for (let [colKey,colVal] of Object.entries(col))
-					//if (allowedColProps.includes(colKey))
-						processedCol[colKey]=colVal;
-				this._colSchemaNodes.push(processedCol);
-			}
+			this._wrappedCols=this._wrappedSchema.main.columns;
+			// for (let col of this.wrappedSchema.main.columns) {
+			// 	let processedCol={};
+			// 	if ((col.type=="expand"||col.type=="select")&&!col.width)
+			// 		processedCol.width=50;
+			// 	for (let [colKey,colVal] of Object.entries(col))
+			// 		//if (allowedColProps.includes(colKey))
+			// 			processedCol[colKey]=colVal;
+			// 	this._colSchemaNodes.push(processedCol);
+			// }
 			if (this._opts.searchbar!=false)
 				this._setupSearchbar();
 			this._createTableHeader();
@@ -555,7 +557,7 @@ class TablanceBase {
 				this._opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
 			this._updateHeaderSortHtml();
-			this._buildDependencyGraph();
+			this._buildDependencyGraph(this._wrappedSchema);
 		}
 	}
 
@@ -629,7 +631,7 @@ class TablanceBase {
 		
 		//is it a column of the main-table?
 		if (dataPath.length==1) //it's possible only if the path is a single id-key. (but still not guaranteed)
-			for (let colI=-1,colSchemaNode;colSchemaNode=this._colSchemaNodes[++colI];)
+			for (let colI=-1,colSchemaNode;colSchemaNode=this._wrappedCols[++colI];)
 				if (colSchemaNode.id==dataPath[0]) {//if true then yes, it was a column of main-table
 					const tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndx}"]:not(.details)`);
 					return this._updateMainRowCell(tr.cells[colI],colSchemaNode);//update it and be done with this
@@ -923,157 +925,107 @@ class TablanceBase {
 		this._selectFirstSelectableDetailsCell(this._openDetailsPanes[0],top);
 	}
 
+
 	/**
 	 * Build a complete dependency graph and assign internal autoIds.
 	 *
-	 * This walks the column + details schemaNode tree and enriches each node with
-	 * the metadata needed for dependency resolution and runtime lookups.
+	 * This walks the wrapped schema tree (main.columns + details) and enriches each
+	 * schema-node with metadata needed for dependency resolution and runtime lookups.
 	 *
-	 * Permanent runtime metadata produced:
-	 *  - schemaNode.dependencyPaths: UI-forward paths (dependee → dependent)
-	 *  - schemaNode.dependsOnCellPaths: reverse structural path(s) (exp→exp)
-	 *  - schemaNode.dependsOnDataPath: absolute data path for non-exp→exp deps
+	 * Permanent runtime metadata produced on wrapped schema-nodes:
+	 *  - dependencyPaths: UI-forward paths (dependee → dependent)
+	 *  - dependsOnCellPaths: reverse structural path(s) (exp→exp)
+	 *  - dependsOnDataPath: absolute data path for non-exp→exp deps
 	 *
-	 * Temporary builder-only metadata (removed in Pass 4):
-	 *  - schemaNode._autoId
-	 *  - schemaNode._path
-	 *  - schemaNode._dataContextPath
-	 *  - schemaNode._dataPath
-	 *  - ctx.explicitIdToAutoId, ctx.implicitIdToAutoId, ctx.schemaNodeByAutoId, ctx.autoIdByName, etc.
+	 * Temporary builder-only metadata (removed in PASS 4):
+	 *  - _autoId
+	 *  - _path
+	 *  - _dataContextPath
+	 *  - _dataPath
+	 *
+	 * @param {*} wrappedSchema	Root of the wrapped schema tree.
 	 */
-	_buildDependencyGraph() {
+	_buildDependencyGraph(wrappedSchema) {
 
 		//---- PASS 1 — Assign autoIds + collect ID maps ----
-		const ctx = this._pass1_assignAutoIdsAndMaps();
+		const ctx = this._dep_pass1_assignAutoIdsAndMaps(wrappedSchema);
 
 		//---- PASS 2 — Compute UI path & data paths ----
-		for (let i = 0; i < this.wrappedSchema.details.entries.length; i++)// Details roots
-			this._assignPathsAndData(this.wrappedSchema.details.entries[i], [i], []);
-		for (let i = 0; i < this._colSchemaNodes.length; i++)// Main columns
-			this._assignPathsAndData(this._colSchemaNodes[i], ["m", i], []);
+		this._dep_pass2_assignPathsAndData(wrappedSchema);
 
 		//---- PASS 3 — Resolve dependsOn and build dependency metadata ----
-		this._pass3_resolveDependencies(ctx);
+		this._dep_pass3_resolveDependencies(ctx);
 
 		//---- PASS 4 — Cleanup: remove all temporary builder-only metadata ----
-		let stack = [...ctx.initialRoots];
-		for (let schemaNode; schemaNode = stack.pop();) {
-			delete schemaNode._autoId;
-			delete schemaNode._path;
-			delete schemaNode._dataContextPath;
-			delete schemaNode._dataPath;
-			stack.push(...this._schemaChildren(schemaNode));
-		}
+		this._dep_pass4_cleanup(ctx);
 	}
 
 	/*───────────────────────────────────────────────────────────
 		PASS 1 — Assign autoIds + collect ID maps
 	───────────────────────────────────────────────────────────*/
-	_pass1_assignAutoIdsAndMaps() {
+	_dep_pass1_assignAutoIdsAndMaps(wrappedSchema) {
 		const ctx = Object.create(null);
-		ctx.autoIdCounter       = 0;
-		ctx.explicitIdToAutoId  = Object.create(null);
-		ctx.implicitIdToAutoId  = Object.create(null);
-		ctx.schemaNodeByAutoId      = Object.create(null);
-		ctx.seenCellIds         = Object.create(null);
+		ctx.autoIdCounter      = 0;
+		ctx.explicitIdToAutoId = Object.create(null);
+		ctx.implicitIdToAutoId = Object.create(null);
+		ctx.schemaNodeByAutoId = Object.create(null);
+		ctx.seenCellIds        = Object.create(null);
 
-		ctx.initialRoots = [...this._colSchemaNodes, ...this.wrappedSchema.details.entries];
+		const roots = [];
+		const cols = wrappedSchema.main && Array.isArray(wrappedSchema.main.columns)
+			? wrappedSchema.main.columns
+			: [];
+		for (let i = 0; i < cols.length; i++)
+			roots.push(cols[i]);
 
-		let stack = [...ctx.initialRoots];
+		if (wrappedSchema.details)
+			roots.push(wrappedSchema.details);
+
+		ctx.initialRoots = roots;
+
+		let stack = [...roots];
 
 		for (let schemaNode; schemaNode = stack.pop();) {
-
 			const autoId = ++ctx.autoIdCounter;
 			schemaNode._autoId = autoId;
 			ctx.schemaNodeByAutoId[autoId] = schemaNode;
 
 			if (schemaNode.cellId != null) {
-
 				if (ctx.seenCellIds[schemaNode.cellId])
 					throw new Error(`Duplicate cellId "${schemaNode.cellId}".`);
-
 				ctx.seenCellIds[schemaNode.cellId] = true;
 				ctx.explicitIdToAutoId[schemaNode.cellId] = autoId;
 			} else if (schemaNode.id != null)
 				ctx.implicitIdToAutoId[schemaNode.id] = autoId;
 
-			stack.push(...this._schemaChildren(schemaNode));
+			stack.push(...this._dep_children(schemaNode));
 		}
 
-		// Id/cellId → autoId lookup
-		ctx.autoIdByName = Object.assign(Object.create(null), ctx.implicitIdToAutoId, ctx.explicitIdToAutoId);
+		ctx.autoIdByName = Object.assign(
+			Object.create(null),
+			ctx.implicitIdToAutoId,
+			ctx.explicitIdToAutoId
+		);
 
 		return ctx;
 	}
 
 	/*───────────────────────────────────────────────────────────
-		PASS 3 — Resolve dependsOn and build dependency metadata
+		PASS 2 — Assign _path, _dataContextPath, and _dataPath
 	───────────────────────────────────────────────────────────*/
-	_pass3_resolveDependencies(ctx) {
-		let stack = [...ctx.initialRoots];
+	_dep_pass2_assignPathsAndData(wrappedSchema) {
+		if (wrappedSchema.details)
+			this._dep_assignPathsAndData(wrappedSchema.details, [], []);
 
-		for (let schemaNode; schemaNode = stack.pop();) {
+		const cols = wrappedSchema.main && Array.isArray(wrappedSchema.main.columns)
+			? wrappedSchema.main.columns
+			: [];
 
-			if (schemaNode.dependsOn) {
-				const deps = Array.isArray(schemaNode.dependsOn) ? schemaNode.dependsOn : [schemaNode.dependsOn];
-
-				const dependentIsExp = schemaNode._path[0] !== "m";
-				const cellPaths = [];
-				const dataPaths = [];
-
-				for (const depName of deps) {
-
-					const depAutoId = ctx.autoIdByName[depName];
-
-					if (depAutoId == null) {
-						console.warn(`Unknown dependsOn "${depName}".`, schemaNode);
-						continue;
-					}
-
-					const dependee = ctx.schemaNodeByAutoId[depAutoId];
-					const dependeeIsExp = dependee._path[0] !== "m";
-
-					// UI-forward dependency path
-					const fwd = this._computeDependencyPath(dependee, schemaNode);
-
-					if (fwd)
-						(dependee.dependencyPaths ??= []).push(fwd);
-
-					// classify dependency type
-					if (dependentIsExp && dependeeIsExp) {
-						const rev = this._computeReversePath(schemaNode, dependee);
-						if (rev && rev.length)
-							cellPaths.push(rev);
-					} else {
-						if (dependee._dataPath)
-							dataPaths.push(dependee._dataPath);
-						else if (dependee.id != null || dependee.cellId != null)
-							console.warn("Dependee has no dataPath:", dependee);
-					}
-				}
-
-				this._finalizeDependency(schemaNode, cellPaths, dataPaths);
-			}
-
-			stack.push(...this._schemaChildren(schemaNode));
-		}
+		for (let i = 0; i < cols.length; i++)
+			this._dep_assignPathsAndData(cols[i], ["m", i], []);
 	}
 
-	/*───────────────────────────────────────────────────────────
-		Helper: Normalize schemaNode children
-	───────────────────────────────────────────────────────────*/
-	_schemaChildren(schemaNode) {
-		while (schemaNode.entry)
-			schemaNode = schemaNode.entry;
-		if (Array.isArray(schemaNode.entries))
-			return schemaNode.entries;
-		return [];
-	}
-
-	/*───────────────────────────────────────────────────────────
-		Helper: Assign _path, _dataContextPath, and _dataPath
-	───────────────────────────────────────────────────────────*/
-	_assignPathsAndData(schemaNode, uiPath, parentCtx = []) {
+	_dep_assignPathsAndData(schemaNode, uiPath, parentCtx = []) {
 		schemaNode._path = uiPath;
 
 		const hasCtx = typeof schemaNode.context === "string" && schemaNode.context.length;
@@ -1084,18 +1036,99 @@ class TablanceBase {
 		if (schemaNode.id != null)
 			schemaNode._dataPath = [...myCtx, String(schemaNode.id)];
 
-		const kids = this._schemaChildren(schemaNode);
+		const kids = this._dep_children(schemaNode);
 
 		for (let i = 0; i < kids.length; i++)
-			this._assignPathsAndData(kids[i], [...uiPath, i], myCtx);
+			this._dep_assignPathsAndData(kids[i], [...uiPath, i], myCtx);
+	}
+
+	/*───────────────────────────────────────────────────────────
+		PASS 3 — Resolve dependsOn and build dependency metadata
+	───────────────────────────────────────────────────────────*/
+	_dep_pass3_resolveDependencies(ctx) {
+		let stack = [...ctx.initialRoots];
+
+		for (let schemaNode; schemaNode = stack.pop();) {
+
+			if (schemaNode.dependsOn) {
+				const deps = Array.isArray(schemaNode.dependsOn)
+					? schemaNode.dependsOn
+					: [schemaNode.dependsOn];
+
+				const dependentIsExp = schemaNode._path && schemaNode._path[0] !== "m";
+				const cellPaths = [];
+				const dataPaths = [];
+
+				for (const depName of deps) {
+					const depAutoId = ctx.autoIdByName[depName];
+
+					if (depAutoId == null) {
+						console.warn(`Unknown dependsOn "${depName}".`, schemaNode);
+						continue;
+					}
+
+					const dependee = ctx.schemaNodeByAutoId[depAutoId];
+					const dependeeIsExp = dependee._path && dependee._path[0] !== "m";
+
+					const fwd = this._dep_computeForwardPath(dependee, schemaNode);
+
+					if (fwd)
+						(dependee.dependencyPaths ??= []).push(fwd);
+
+					if (dependentIsExp && dependeeIsExp) {
+						const rev = this._dep_computeReversePath(schemaNode, dependee);
+						if (rev && rev.length)
+							cellPaths.push(rev);
+					} else {
+						if (dependee._dataPath)
+							dataPaths.push(dependee._dataPath);
+						else if (dependee.id != null || dependee.cellId != null)
+							console.warn("Dependee has no dataPath:", dependee);
+					}
+				}
+
+				this._dep_finalizeDependency(schemaNode, cellPaths, dataPaths);
+			}
+
+			stack.push(...this._dep_children(schemaNode));
+		}
+	}
+
+	/*───────────────────────────────────────────────────────────
+		PASS 4 — Cleanup: remove temporary builder-only metadata
+	───────────────────────────────────────────────────────────*/
+	_dep_pass4_cleanup(ctx) {
+		let stack = [...ctx.initialRoots];
+
+		for (let schemaNode; schemaNode = stack.pop();) {
+			delete schemaNode._autoId;
+			delete schemaNode._path;
+			delete schemaNode._dataContextPath;
+			delete schemaNode._dataPath;
+			stack.push(...this._dep_children(schemaNode));
+		}
+	}
+
+
+	/*───────────────────────────────────────────────────────────
+		Helper: Normalize schemaNode children
+		- Skips nodes that only serve as wrappers (context/repeated)
+		- Returns the "real" children array.
+	───────────────────────────────────────────────────────────*/
+	_dep_children(schemaNode) {
+		while (schemaNode.entry)
+			schemaNode = schemaNode.entry;
+		if (Array.isArray(schemaNode.entries))
+			return schemaNode.entries;
+		return [];
 	}
 
 	/*───────────────────────────────────────────────────────────
 		Helper: Compute UI-forward dependency path
 	───────────────────────────────────────────────────────────*/
-	_computeDependencyPath(dependee, dependent) {
+	_dep_computeForwardPath(dependee, dependent) {
 		const from = dependee._path;
-		const to   = dependent._path;
+		const to = dependent._path;
 
 		if (!from || !to)
 			return null;
@@ -1127,7 +1160,9 @@ class TablanceBase {
 	/*───────────────────────────────────────────────────────────
 		Helper: Compute reverse dependency path (exp→exp)
 	───────────────────────────────────────────────────────────*/
-	_computeReversePath(from, to) {
+	_dep_computeReversePath(from, to) {
+		if (!from._path || !to._path)
+			return null;
 		if (from._path[0] === "m" || to._path[0] === "m")
 			return null;
 
@@ -1148,7 +1183,7 @@ class TablanceBase {
 	/*───────────────────────────────────────────────────────────
 		Helper: Finalize dependency classification (exclusive)
 	───────────────────────────────────────────────────────────*/
-	_finalizeDependency(schemaNode, cellPaths, dataPaths) {
+	_dep_finalizeDependency(schemaNode, cellPaths, dataPaths) {
 
 		if (cellPaths.length) {
 			schemaNode.dependsOnCellPaths = cellPaths;
@@ -1176,9 +1211,6 @@ class TablanceBase {
 				schemaNode._dataPath = dataPaths[0];
 		}
 	}
-
-
-
 
 
 	_updateViewportHeight = () => {
@@ -1653,7 +1685,7 @@ class TablanceBase {
 		const shadowLine=detailsDiv.appendChild(document.createElement("div"));
 		shadowLine.className="details-shadow";
 		const instanceNode=this._openDetailsPanes[rowIndex]={};
-		this._generateDetailsContent(this.wrappedSchema.details,rowIndex,instanceNode,detailsDiv,[],this._data[rowIndex]);
+		this._generateDetailsContent(this._wrappedSchema.details,rowIndex,instanceNode,detailsDiv,[],this._data[rowIndex]);
 		instanceNode.rowIndex=rowIndex;
 		return detailsRow;
 	}
@@ -2922,7 +2954,7 @@ class TablanceBase {
 				// Find the corresponding table row for the main data row
 				const tr=this._mainTbody.querySelector(`[data-data-row-index="${this._mainRowIndex}"]:not(.details)`);
 				// Update the content of the dependent cell in the main table
-				this._updateMainRowCell(tr.cells[depPath[1]], this._colSchemaNodes[depPath[1]]);
+				this._updateMainRowCell(tr.cells[depPath[1]], this._wrappedCols[depPath[1]]);
 			} else if (this._openDetailsPanes[this._mainRowIndex]) {//if cell is in details and details is open
 				//cells is an array that potentially can hold more than 1 cell. The reason is that when going into
 				//repeated structures, it "splits" into multiple cells if there are multiple repeated-entries/instances
@@ -3035,7 +3067,7 @@ class TablanceBase {
 					//directly because we do not want it to change if #selectCell returns false, preventing the select
 					
 		if (this._closeActiveDetailsCell()) {
-			this._selectCell(cell,this._colSchemaNodes[this._mainColIndex],this._data[mainRowIndex]);
+			this._selectCell(cell,this._wrappedCols[this._mainColIndex],this._data[mainRowIndex]);
 			this._mainRowIndex=mainRowIndex;
 		}
 	}
@@ -3123,7 +3155,7 @@ class TablanceBase {
 		this._headerTable.classList.add("header-table");
 		const thead=this._headerTable.appendChild(document.createElement("thead"));
 		this._headerTr=thead.insertRow();
-		for (let col of this._colSchemaNodes) {
+		for (let col of this._wrappedCols) {
 			let th=this._headerTr.appendChild(document.createElement("th"));
 			th.addEventListener("click",e=>this._onThClick(e));
 			if (col.type=="select") {
@@ -3147,7 +3179,7 @@ class TablanceBase {
 
 	_onThClick(e) {
 		const clickedIndex=e.currentTarget.cellIndex;
-		if (this._colSchemaNodes[clickedIndex].type=="select"&&e.target.tagName.toLowerCase()=="input")
+		if (this._wrappedCols[clickedIndex].type=="select"&&e.target.tagName.toLowerCase()=="input")
 			return this._toggleRowsSelected(e.target.checked,0,this._data.length-1);
 		if (e.target.closest(".expand-div"))
 			return this._expandOrContractAll(!e.target.closest("tr").classList.contains("expanded"));
@@ -3165,7 +3197,7 @@ class TablanceBase {
 			}
 		}
 		if (sortingColIndex==this._sortingCols.length) {//if the clicked header wasn't sorted upon at all
-			const {id,type}=this._colSchemaNodes[clickedIndex];
+			const {id,type}=this._wrappedCols[clickedIndex];
 			const sortCol={id,type,order:"asc",index:clickedIndex};
 			if (!e.shiftKey)
 				this._sortingCols=[];
@@ -3206,7 +3238,7 @@ class TablanceBase {
 			if (thIndex==this._headerTr.cells.length-1)
 				break;
 			let order=null;
-			let sortDiv=this._colSchemaNodes[thIndex].sortDiv;
+			let sortDiv=this._wrappedCols[thIndex].sortDiv;
 			for (let sortingCol of this._sortingCols) {
 				if (sortingCol.index==thIndex) {
 					order=sortingCol.order;
@@ -3251,9 +3283,9 @@ class TablanceBase {
 	_createTableBody() {
 		this._scrollBody=this.rootEl.appendChild(document.createElement("div"));
 
-		if (this._staticRowHeight&&!this.wrappedSchema.details)
+		if (this._staticRowHeight&&!this._wrappedSchema.details)
 			this._scrollMethod=this._onScrollStaticRowHeightNoDetails;
-		else if (this._staticRowHeight&&this.wrappedSchema.details)
+		else if (this._staticRowHeight&&this._wrappedSchema.details)
 			this._scrollMethod=this._onScrollStaticRowHeightDetails;
 		this._scrollBody.addEventListener("scroll",e=>this._scrollMethod(e),{passive:true});
 		this._scrollBody.className="scroll-body";
@@ -3269,7 +3301,7 @@ class TablanceBase {
 		this._mainTable=this._tableSizer.appendChild(document.createElement("table"));
 		this._mainTable.className="main-table";
 		this._mainTbody=this._mainTable.appendChild(document.createElement("tbody"));
-		for (let i = 0; i < this._colSchemaNodes.length; i++) {
+		for (let i = 0; i < this._wrappedCols.length; i++) {
 			let col=document.createElement("col");
 			this._cols.push(col);
 			this._mainTable.appendChild(document.createElement("colgroup")).appendChild(col);
@@ -3302,8 +3334,8 @@ class TablanceBase {
 		mainPage.classList.add("main");
 		mainPage.style.display="block";
 
-		const bulkEditFields=this._buildBulkEditSchemaNodes(this.wrappedSchema.details);
-		for (const column of this.wrappedSchema.main.columns)
+		const bulkEditFields=this._buildBulkEditSchemaNodes(this._wrappedSchema.details);
+		for (const column of this._wrappedSchema.main.columns)
 			bulkEditFields.push(...this._buildBulkEditSchemaNodes(column));
 
 		//Build schema for bulk-edit-area based on the real schema
@@ -3327,12 +3359,12 @@ class TablanceBase {
 	 * 						when hitting upon containers which then are passed to this param
 	 * @returns */
 	_buildBulkEditSchemaNodes(schema) {
-		const mainCol=this.wrappedSchema.main.columns.includes(schema);
+		const mainCol=this._wrappedSchema.main.columns.includes(schema);
 		const result=[];
 		if ((mainCol||schema.type=="field")&&schema.bulkEdit) {
 			//schema-nodes of main-columns don't need to specify this, but it's needed in details
 			result.push(Object.assign(Object.create(null), schema, {type:"field"}));
-		} else if ((schema.entries?.length&&schema.bulkEdit)||schema===this.wrappedSchema.details) {
+		} else if ((schema.entries?.length&&schema.bulkEdit)||schema===this._wrappedSchema.details) {
 			for (const schemaNode of schema.entries)
 				result.push(...this._buildBulkEditSchemaNodes(schemaNode));
 		}
@@ -3385,21 +3417,21 @@ class TablanceBase {
 			const percentageWidthRegex=/\d+%/;
 			let totalFixedWidth=0;
 			let numUndefinedWidths=0;
-			for (let col of this._colSchemaNodes)
+			for (let col of this._wrappedCols)
 				if (!col.width)
 					numUndefinedWidths++;
 				else if (!percentageWidthRegex.test(col))//if fixed width
 					totalFixedWidth+=(col.pxWidth=parseInt(col.width));
 			let sumFixedAndFlexibleWidth=totalFixedWidth;
-			for (let col of this._colSchemaNodes)
+			for (let col of this._wrappedCols)
 				if (col.width&&percentageWidthRegex.test(col))//if flexible width
 					sumFixedAndFlexibleWidth+=(col.pxWidth=(areaWidth-totalFixedWidth)*parseFloat(col.width)/100);
-			for (let col of this._colSchemaNodes)
+			for (let col of this._wrappedCols)
 				if (!col.width)//if undefined width
 					col.pxWidth=(areaWidth-sumFixedAndFlexibleWidth)/numUndefinedWidths;
-			for (var colI=0; colI<this._colSchemaNodes.length; colI++) 
+			for (var colI=0; colI<this._wrappedCols.length; colI++) 
 				this._cols[colI].style.width=this._headerTr.cells[colI].style.width
-																			=this._colSchemaNodes[colI].pxWidth+"px";
+																			=this._wrappedCols[colI].pxWidth+"px";
 			//last col is empty col with the width of table-scrollbar if its present in order to make the header span
 			//the whole with while not actually using that last bit in the calculations for the normal cols
 			this._headerTr.cells[colI].style.width=this._scrollBody.offsetWidth-areaWidth+"px";
@@ -3417,7 +3449,7 @@ class TablanceBase {
 			//col-index as key and an object as val. the object holds all the options but they are keyed by teir value
 			//rather than being in an indexed array.This is to simplify and likely improve speed of filtering by the col
 
-		for (let col of this._colSchemaNodes)
+		for (let col of this._wrappedCols)
 			if (col.type!=="expand"&&col.type!=="select") {
 				if (col.input?.type=="select") {
 					const optsByVal=selectsOptsByVal[colsToFilterBy.length]={};
@@ -3457,7 +3489,7 @@ class TablanceBase {
 		this.rootEl.innerHTML="";
 		const detailsDiv=this.rootEl.appendChild(document.createElement("div"));
 		detailsDiv.classList.add("details");
-		this._generateDetailsContent(this.wrappedSchema.details,0,this._openDetailsPanes[0]={},detailsDiv,[],this._data[0]);
+		this._generateDetailsContent(this._wrappedSchema.details,0,this._openDetailsPanes[0]={},detailsDiv,[],this._data[0]);
 	}
 
 	/**Refreshes the table-rows. Should be used after sorting or filtering or such.*/
@@ -3652,14 +3684,14 @@ class TablanceBase {
 		while ((this._numRenderedRows-1)*this._rowHeight<scrH&&this._scrollRowIndex+this._numRenderedRows<dataLen) {
 			lastTr=this._mainTable.insertRow();
 			this._numRenderedRows++;
-			for (let i=0; i<this._colSchemaNodes.length; i++) {
+			for (let i=0; i<this._wrappedCols.length; i++) {
 				const cell=lastTr.insertCell();
 				const div=cell.appendChild(document.createElement("div"));//used to set height of cells
 				div.style.height=this._rowInnerHeight||"auto";				
-				if (this._colSchemaNodes[i].type==="expand") {
+				if (this._wrappedCols[i].type==="expand") {
 					div.appendChild(this._createExpandContractButton());
 					cell.classList.add("expand-col");
-				} else if (this._colSchemaNodes[i].type==="select") {
+				} else if (this._wrappedCols[i].type==="select") {
 					div.appendChild(this._createCheckbox(true));
 					cell.classList.add("select-col");
 				}
@@ -3702,9 +3734,9 @@ class TablanceBase {
 		tr.dataset.dataRowIndex=mainIndex;
 		const selected=this._selectedRows.indexOf(this._data[mainIndex])!=-1;
 		tr.classList.toggle("selected",!!selected);
-		for (let colI=0; colI<this._colSchemaNodes.length; colI++) {
+		for (let colI=0; colI<this._wrappedCols.length; colI++) {
 			let td=tr.cells[colI];
-			let colSchemaNode=this._colSchemaNodes[colI];
+			let colSchemaNode=this._wrappedCols[colI];
 			if (colSchemaNode.type!="expand"&&colSchemaNode.type!="select")
 				this._updateMainRowCell(td,colSchemaNode);
 			else if (colSchemaNode.type=="select")
@@ -4034,7 +4066,7 @@ export default class Tablance extends TablanceBase {
 
 	_expandRow(tr,animate=true) {
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
-		if (!this.wrappedSchema.details||this._rowMetaGet(dataRowIndex)?.h>0)
+		if (!this._wrappedSchema.details||this._rowMetaGet(dataRowIndex)?.h>0)
 			return;
 		const expRow=this._renderDetails(tr,dataRowIndex);
 		const expHeight=this._rowMetaSet(dataRowIndex,"h",this._rowHeight+expRow.offsetHeight+this._borderSpacingY);
@@ -4062,7 +4094,7 @@ export default class Tablance extends TablanceBase {
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
 		if (dataRowIndex==this._mainRowIndex&&this._activeDetailsCell)
 			this._exitEditMode(false);//cancel out of edit-mode so field-validation doesn't cause problems
-		if (!this.wrappedSchema.details||!this._rowMetaGet(dataRowIndex)?.h)
+		if (!this._wrappedSchema.details||!this._rowMetaGet(dataRowIndex)?.h)
 			return;
 		this._unsortCol(null,"expand");
 		if (this._mainRowIndex==dataRowIndex&&this._activeDetailsCell) {//if cell-cursor is inside the details
