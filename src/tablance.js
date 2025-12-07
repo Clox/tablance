@@ -522,13 +522,13 @@ class TablanceBase {
 		this._staticRowHeight=staticRowHeight;
 		this._opts=opts??{};
 		rootEl.classList.add("tablance");
-		this.schema=this._cloneSchema(schema);
+		this.wrappedSchema=this._wrapSchema(schema);
 		//const allowedColProps=["id","title","width","input","type","render","html"];//should we really do filtering?
 		if (!schema.main?.columns) {
 			this._setupSpreadsheet(true);
 			this._onlyDetails=true;
 		} else {
-			for (let col of this.schema.main.columns) {
+			for (let col of this.wrappedSchema.main.columns) {
 				let processedCol={};
 				if ((col.type=="expand"||col.type=="select")&&!col.width)
 					processedCol.width=50;
@@ -680,6 +680,83 @@ class TablanceBase {
 		}
 		this._adjustCursorPosSize(this._selectedCell,true);
 	}
+
+	/**
+	 * Build a wrapped-schema tree from the raw user schema.
+	 *
+	 * RULES:
+	 * - The raw schema is never cloned or mutated.
+	 * - Only schema-structure keys (main, details, columns, entry, entries) are recursed into.
+	 * - Config objects (input, meta, validators, etc.) are ignored and never wrapped.
+	 * - The wrapper tree mirrors schema structure but contains only:
+	 *       { raw: <raw node>, parent: <wrapped parent>, and wrapped children }
+	 * @param {*} rawSchema	The user-provided schema root.
+	 * @returns {*}         The root wrapped schema-node.
+	 */
+	_wrapSchema(rawSchema) {
+		return wrapSchemaNode(rawSchema, null);
+
+		function wrapSchemaNode(rawNode, parentWrappedNode) {
+
+			// Reject null/undefined & non-objects. Could be left for isPojo-check but that throws error on undefined
+			if (!rawNode || typeof rawNode!="object")
+				return null;
+
+			// Accept only POJOs and arrays.
+			// This ensures we only traverse expected schema structures
+			// and never recurse into exotic/custom objects.
+			const proto = Object.getPrototypeOf(rawNode);
+			const isPojo = proto===Object.prototype || proto===null;
+			if (!isPojo && !Array.isArray(rawNode))
+				return null;
+
+			const wrappedNode = Object.assign(Object.create(null), {raw: rawNode,parent: parentWrappedNode});
+
+			// ---- CHILD NODE PROCESSING ----
+			// We recurse ONLY into known schema-node containers.
+			// Everything else inside the raw schema object is left untouched.
+
+			// main
+			if (rawNode.main && typeof rawNode.main=="object")
+				wrappedNode.main = wrapSchemaNode(rawNode.main, wrappedNode);
+
+			// details
+			if (rawNode.details && typeof rawNode.details=="object")
+				wrappedNode.details = wrapSchemaNode(rawNode.details, wrappedNode);
+
+			// columns (array of schema-nodes)
+			if (Array.isArray(rawNode.columns)) {
+				const cols = [];
+				for (const col of rawNode.columns) {
+					const wrappedCol = wrapSchemaNode(col, wrappedNode);
+					if (wrappedCol)
+						cols.push(wrappedCol);
+				}
+				if (cols.length)
+					wrappedNode.columns = cols;
+			}
+
+			// entry (single schema-node)
+			if (rawNode.entry && typeof rawNode.entry=="object")
+				wrappedNode.entry = wrapSchemaNode(rawNode.entry, wrappedNode);
+
+			// entries (multiple schema-nodes)
+			if (Array.isArray(rawNode.entries)) {
+				const arr = [];
+				for (const child of rawNode.entries) {
+					const wrappedChild = wrapSchemaNode(child, wrappedNode);
+					if (wrappedChild)
+						arr.push(wrappedChild);
+				}
+				if (arr.length)
+					wrappedNode.entries = arr;
+			}
+
+			return wrappedNode;
+		}
+	}
+
+
 
 	/**
 	 * Clone a schema tree safely.
@@ -870,8 +947,8 @@ class TablanceBase {
 		const ctx = this._pass1_assignAutoIdsAndMaps();
 
 		//---- PASS 2 — Compute UI path & data paths ----
-		for (let i = 0; i < this.schema.details.entries.length; i++)// Details roots
-			this._assignPathsAndData(this.schema.details.entries[i], [i], []);
+		for (let i = 0; i < this.wrappedSchema.details.entries.length; i++)// Details roots
+			this._assignPathsAndData(this.wrappedSchema.details.entries[i], [i], []);
 		for (let i = 0; i < this._colSchemaNodes.length; i++)// Main columns
 			this._assignPathsAndData(this._colSchemaNodes[i], ["m", i], []);
 
@@ -900,7 +977,7 @@ class TablanceBase {
 		ctx.schemaNodeByAutoId      = Object.create(null);
 		ctx.seenCellIds         = Object.create(null);
 
-		ctx.initialRoots = [...this._colSchemaNodes, ...this.schema.details.entries];
+		ctx.initialRoots = [...this._colSchemaNodes, ...this.wrappedSchema.details.entries];
 
 		let stack = [...ctx.initialRoots];
 
@@ -1576,7 +1653,7 @@ class TablanceBase {
 		const shadowLine=detailsDiv.appendChild(document.createElement("div"));
 		shadowLine.className="details-shadow";
 		const instanceNode=this._openDetailsPanes[rowIndex]={};
-		this._generateDetailsContent(this.schema.details,rowIndex,instanceNode,detailsDiv,[],this._data[rowIndex]);
+		this._generateDetailsContent(this.wrappedSchema.details,rowIndex,instanceNode,detailsDiv,[],this._data[rowIndex]);
 		instanceNode.rowIndex=rowIndex;
 		return detailsRow;
 	}
@@ -3174,9 +3251,9 @@ class TablanceBase {
 	_createTableBody() {
 		this._scrollBody=this.rootEl.appendChild(document.createElement("div"));
 
-		if (this._staticRowHeight&&!this.schema.details)
+		if (this._staticRowHeight&&!this.wrappedSchema.details)
 			this._scrollMethod=this._onScrollStaticRowHeightNoDetails;
-		else if (this._staticRowHeight&&this.schema.details)
+		else if (this._staticRowHeight&&this.wrappedSchema.details)
 			this._scrollMethod=this._onScrollStaticRowHeightDetails;
 		this._scrollBody.addEventListener("scroll",e=>this._scrollMethod(e),{passive:true});
 		this._scrollBody.className="scroll-body";
@@ -3225,8 +3302,8 @@ class TablanceBase {
 		mainPage.classList.add("main");
 		mainPage.style.display="block";
 
-		const bulkEditFields=this._buildBulkEditSchemaNodes(this.schema.details);
-		for (const column of this.schema.main.columns)
+		const bulkEditFields=this._buildBulkEditSchemaNodes(this.wrappedSchema.details);
+		for (const column of this.wrappedSchema.main.columns)
 			bulkEditFields.push(...this._buildBulkEditSchemaNodes(column));
 
 		//Build schema for bulk-edit-area based on the real schema
@@ -3250,12 +3327,12 @@ class TablanceBase {
 	 * 						when hitting upon containers which then are passed to this param
 	 * @returns */
 	_buildBulkEditSchemaNodes(schema) {
-		const mainCol=this.schema.main.columns.includes(schema);
+		const mainCol=this.wrappedSchema.main.columns.includes(schema);
 		const result=[];
 		if ((mainCol||schema.type=="field")&&schema.bulkEdit) {
 			//schema-nodes of main-columns don't need to specify this, but it's needed in details
 			result.push(Object.assign(Object.create(null), schema, {type:"field"}));
-		} else if ((schema.entries?.length&&schema.bulkEdit)||schema===this.schema.details) {
+		} else if ((schema.entries?.length&&schema.bulkEdit)||schema===this.wrappedSchema.details) {
 			for (const schemaNode of schema.entries)
 				result.push(...this._buildBulkEditSchemaNodes(schemaNode));
 		}
@@ -3380,7 +3457,7 @@ class TablanceBase {
 		this.rootEl.innerHTML="";
 		const detailsDiv=this.rootEl.appendChild(document.createElement("div"));
 		detailsDiv.classList.add("details");
-		this._generateDetailsContent(this.schema.details,0,this._openDetailsPanes[0]={},detailsDiv,[],this._data[0]);
+		this._generateDetailsContent(this.wrappedSchema.details,0,this._openDetailsPanes[0]={},detailsDiv,[],this._data[0]);
 	}
 
 	/**Refreshes the table-rows. Should be used after sorting or filtering or such.*/
@@ -3957,7 +4034,7 @@ export default class Tablance extends TablanceBase {
 
 	_expandRow(tr,animate=true) {
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
-		if (!this.schema.details||this._rowMetaGet(dataRowIndex)?.h>0)
+		if (!this.wrappedSchema.details||this._rowMetaGet(dataRowIndex)?.h>0)
 			return;
 		const expRow=this._renderDetails(tr,dataRowIndex);
 		const expHeight=this._rowMetaSet(dataRowIndex,"h",this._rowHeight+expRow.offsetHeight+this._borderSpacingY);
@@ -3985,7 +4062,7 @@ export default class Tablance extends TablanceBase {
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
 		if (dataRowIndex==this._mainRowIndex&&this._activeDetailsCell)
 			this._exitEditMode(false);//cancel out of edit-mode so field-validation doesn't cause problems
-		if (!this.schema.details||!this._rowMetaGet(dataRowIndex)?.h)
+		if (!this.wrappedSchema.details||!this._rowMetaGet(dataRowIndex)?.h)
 			return;
 		this._unsortCol(null,"expand");
 		if (this._mainRowIndex==dataRowIndex&&this._activeDetailsCell) {//if cell-cursor is inside the details
