@@ -632,7 +632,7 @@ class TablanceBase {
 		//is it a column of the main-table?
 		if (dataPath.length==1) //it's possible only if the path is a single id-key. (but still not guaranteed)
 			for (let colI=-1,colSchemaNode;colSchemaNode=this._wrappedCols[++colI];)
-				if (colSchemaNode.id==dataPath[0]) {//if true then yes, it was a column of main-table
+				if (colSchemaNode.raw.id==dataPath[0]) {//if true then yes, it was a column of main-table
 					const tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndx}"]:not(.details)`);
 					return this._updateMainRowCell(tr.cells[colI],colSchemaNode);//update it and be done with this
 				}
@@ -651,17 +651,17 @@ class TablanceBase {
 		for (let i=0,instanceNodeId; instanceNodeId=dataPath[i]; i+=2) {
 			const arrayIndex=dataPath[i+1]?.replace(/^\[|\]$/g,"");
 			nodeToUpdate=this._findDescendantInstanceNodeById(nodeToUpdate,instanceNodeId);
-			if (nodeToUpdate.schemaNode.type=="repeated") {//should be true until possibly last iteration
+			if (nodeToUpdate.schemaNode.raw.type=="repeated") {//should be true until possibly last iteration
 				if (i==dataPath.length-1) {//final array-index not specified. replace all of the data in repeated
 
 					//remove all the current entries. Do it backwards so that the remaining entries doesn't have to
 					//have their index&path updates each time
 					const children=nodeToUpdate.children;
-					for (let entryI=children.length-!!nodeToUpdate.schemaNode.create,entry; entry=children[--entryI];)
+					for (let entryI=children.length-!!nodeToUpdate.schemaNode.raw.create,entry; entry=children[--entryI];)
 						this._deleteCell(entry,true);
 
 					//insert all the new data
-					nodeToUpdate.dataObj=nodeToUpdate.parent.dataObj[nodeToUpdate.schemaNode.id];
+					nodeToUpdate.dataObj=nodeToUpdate.parent.dataObj[nodeToUpdate.schemaNode.raw.id];
 					nodeToUpdate.dataObj.forEach(
 									dataEntry=>updatedEls.push(this._repeatInsert(nodeToUpdate,false,dataEntry)));
 					break;
@@ -674,7 +674,7 @@ class TablanceBase {
 			}
 		}
 
-		if (nodeToUpdate.schemaNode.type=="field")
+		if (nodeToUpdate.schemaNode.raw.type=="field")
 			this._updateDetailsCell(nodeToUpdate,dataRow);
 		if (scrollTo) {
 			nodeToUpdate.el.scrollIntoView({behavior:'smooth',block:"center"});
@@ -898,7 +898,7 @@ class TablanceBase {
 
 	_findDescendantInstanceNodeById(searchInObj,idToFind) {
 		for (const child of searchInObj.children)
-			if (child.schemaNode.id==idToFind)//if true then its the repeated-obj we're looking for
+			if (child.schemaNode.raw.id==idToFind)//if true then its the repeated-obj we're looking for
 				return child;
 			else if (child.children) {//if container-obj
 				const result=this._findDescendantInstanceNodeById(child,idToFind);
@@ -1780,19 +1780,19 @@ class TablanceBase {
 
 	_repeatedOnDelete=(e,data,index,schemaNode,cel)=>{
 		this._deleteCell(cel.parent.parent);
-		cel.parent.parent.parent.schemaNode.onDelete?.(cel.parent.parent.dataObj,cel.parent.parent);
+		cel.parent.parent.parent.schemaNode.raw.onDelete?.(cel.parent.parent.dataObj,cel.parent.parent);
 	}
 
 	_fileOnDelete=(e,data,index,strct,cel)=>{
 		const fileCell=cel.parent.parent;
 		const inputSchemaNode=fileCell.fileInputSchemaNode;
 		const dataRow=fileCell.parent.dataObj;
-		delete dataRow[inputSchemaNode.id];
+		delete dataRow[inputSchemaNode.raw.id];
 		const fileTd=fileCell.el.parentElement;
 		fileTd.innerHTML="";
 		fileTd.classList.remove("group-cell");
 		this._generateDetailsContent(inputSchemaNode,index,fileCell,fileTd,fileCell.path,dataRow);
-		inputSchemaNode.deleteHandler?.(e,data,inputSchemaNode,fileCell.parent.dataObj,index,fileCell);
+		inputSchemaNode.raw.deleteHandler?.(e,data,inputSchemaNode,fileCell.parent.dataObj,index,fileCell);
 		this._selectDetailsCell(fileCell);
 	}
 
@@ -2487,14 +2487,14 @@ class TablanceBase {
 		instanceNode.parent.children.splice(instanceNode.index,1);
 		if (!programatically)
 			instanceNode.parent.dataObj.splice(instanceNode.index,1);
-		if (instanceNode.parent.schemaNode.type==="repeated"&&instanceNode.parent.parent.schemaNode.type==="list")
+		if (instanceNode.parent.schemaNode.raw.type==="repeated"&&instanceNode.parent.parent.schemaNode.raw.type==="list")
 			instanceNode.el.parentElement.parentElement.remove();
 		else
 			instanceNode.el.parentElement.remove();
 		this._activeDetailsCell=null;//causes problem otherwise when #selectDetailsCell checks old cell
 		if (!programatically)
 			this._selectDetailsCell(newSelectedCell??instanceNode.parent.parent);
-		instanceNode.creating&&instanceNode.parent.schemaNode.onCreateCancel?.(instanceNode.parent);
+		instanceNode.creating&&instanceNode.parent.schemaNode.raw.onCreateCancel?.(instanceNode.parent);
 	}
 
 	_openTextEdit() {
@@ -2999,7 +2999,7 @@ class TablanceBase {
 					cells[0] = cells[0].parent;//go up one level per "..". At this point cells will only have one cell
 
 				for (; step<depPath.length; step++) {//iterate the steps
-					if (cells[0].schemaNode.type==="repeated") {
+					if (cells[0].schemaNode.raw.type==="repeated") {
 						const newCells=[];//will hold the new set of cells after this step
 						for (const cell of cells)
 							newCells.push(...cell.children);//add all repeated-children of current cell
@@ -4061,7 +4061,7 @@ export default class Tablance extends TablanceBase {
 				if (doHeightUpdate&&!this._onlyDetails)
 					this._updateDetailsHeight(this._selectedCell.closest("tr.details"));
 				for (let cell=this._activeDetailsCell.parent; cell; cell=cell.parent)
-					if (cell.schemaNode.closedRender)//found a group with a closed-group-render func
+					if (cell.schemaNode.raw.closedRender)//found a group with a closed-group-render func
 						cell.updateRenderOnClose=true;//update closed-group-render
 			} else {
 				this._updateMainRowCell(this._selectedCell,this._activeSchemaNode);
