@@ -965,154 +965,103 @@ class TablanceBase {
 	/**
 	 * Build a complete dependency graph and assign internal autoIds.
 	 *
-	 * This walks the column + details schemaNode tree and enriches each node with
-	 * the metadata needed for dependency resolution and runtime lookups.
+	 * This walks the wrapped schema tree (main.columns + details) and enriches each
+	 * schema-node with metadata needed for dependency resolution and runtime lookups.
 	 *
-	 * Permanent runtime metadata produced:
-	 *  - schemaNode.dependencyPaths: UI-forward paths (dependee → dependent)
-	 *  - schemaNode.dependsOnCellPaths: reverse structural path(s) (exp→exp)
-	 *  - schemaNode.dependsOnDataPath: absolute data path for non-exp→exp deps
+	 * Permanent runtime metadata produced on wrapped schema-nodes:
+	 *  - dependencyPaths: UI-forward paths (dependee → dependent)
+	 *  - dependsOnCellPaths: reverse structural path(s) (exp→exp)
+	 *  - dependsOnDataPath: absolute data path for non-exp→exp deps
 	 *
-	 * Temporary builder-only metadata (removed in Pass 4):
-	 *  - schemaNode._autoId
-	 *  - schemaNode._path
-	 *  - schemaNode._dataContextPath
-	 *  - schemaNode._dataPath
-	 *  - ctx.explicitIdToAutoId, ctx.implicitIdToAutoId, ctx.schemaNodeByAutoId, ctx.autoIdByName, etc.
+	 * Temporary builder-only metadata (removed in PASS 4):
+	 *  - _autoId
+	 *  - _path
+	 *  - _dataContextPath
+	 *  - _dataPath
+	 *
+	 * @param {*} wrappedSchema	Root of the wrapped schema tree.
 	 */
-	_buildDependencyGraph() {
+	_buildDependencyGraph(wrappedSchema) {
 
 		//---- PASS 1 — Assign autoIds + collect ID maps ----
-		const ctx = this._pass1_assignAutoIdsAndMaps();
+		const ctx = this._dep_pass1_assignAutoIdsAndMaps(wrappedSchema);
 
 		//---- PASS 2 — Compute UI path & data paths ----
-		for (let i = 0; i < this._wrappedSchema.details.entries.length; i++)// Details roots
-			this._assignPathsAndData(this._wrappedSchema.details.entries[i], [i], []);
-		for (let i = 0; i < this._wrappedSchema.main.columns.length; i++)// Main columns
-			this._assignPathsAndData(this._wrappedSchema.main.columns[i], ["m", i], []);
+		this._dep_pass2_assignPathsAndData(wrappedSchema);
 
 		//---- PASS 3 — Resolve dependsOn and build dependency metadata ----
-		this._pass3_resolveDependencies(ctx);
+		this._dep_pass3_resolveDependencies(ctx);
 
 		//---- PASS 4 — Cleanup: remove all temporary builder-only metadata ----
-		let stack = [...ctx.initialRoots];
-		for (let schemaNode; schemaNode = stack.pop();) {
-			delete schemaNode._autoId;
-			delete schemaNode._path;
-			delete schemaNode._dataContextPath;
-			delete schemaNode._dataPath;
-			stack.push(...this._schemaChildren(schemaNode));
-		}
+		this._dep_pass4_cleanup(ctx);
 	}
 
 	/*───────────────────────────────────────────────────────────
 		PASS 1 — Assign autoIds + collect ID maps
 	───────────────────────────────────────────────────────────*/
-	_pass1_assignAutoIdsAndMaps() {
+	_dep_pass1_assignAutoIdsAndMaps(wrappedSchema) {
 		const ctx = Object.create(null);
-		ctx.autoIdCounter       = 0;
-		ctx.explicitIdToAutoId  = Object.create(null);
-		ctx.implicitIdToAutoId  = Object.create(null);
-		ctx.schemaNodeByAutoId      = Object.create(null);
-		ctx.seenCellIds         = Object.create(null);
+		ctx.autoIdCounter      = 0;
+		ctx.explicitIdToAutoId = Object.create(null);
+		ctx.implicitIdToAutoId = Object.create(null);
+		ctx.schemaNodeByAutoId = Object.create(null);
+		ctx.seenCellIds        = Object.create(null);
 
-		ctx.initialRoots = [...this._wrappedSchema.main.columns, this._wrappedSchema.details];
+		const roots = [];
+		const cols = wrappedSchema.main && Array.isArray(wrappedSchema.main.columns)
+			? wrappedSchema.main.columns
+			: [];
+		for (let i = 0; i < cols.length; i++)
+			roots.push(cols[i]);
 
-		let stack = [...ctx.initialRoots];
+		if (wrappedSchema.details)
+			roots.push(wrappedSchema.details);
+
+		ctx.initialRoots = roots;
+
+		let stack = [...roots];
 
 		for (let schemaNode; schemaNode = stack.pop();) {
-
 			const autoId = ++ctx.autoIdCounter;
 			schemaNode._autoId = autoId;
 			ctx.schemaNodeByAutoId[autoId] = schemaNode;
 
 			if (schemaNode.raw.cellId != null) {
-
 				if (ctx.seenCellIds[schemaNode.raw.cellId])
 					throw new Error(`Duplicate cellId "${schemaNode.raw.cellId}".`);
-
 				ctx.seenCellIds[schemaNode.raw.cellId] = true;
 				ctx.explicitIdToAutoId[schemaNode.raw.cellId] = autoId;
 			} else if (schemaNode.raw.id != null)
 				ctx.implicitIdToAutoId[schemaNode.raw.id] = autoId;
 
-			stack.push(...this._schemaChildren(schemaNode));
+			stack.push(...this._dep_children(schemaNode));
 		}
 
-		// Id/cellId → autoId lookup
-		ctx.autoIdByName = Object.assign(Object.create(null), ctx.implicitIdToAutoId, ctx.explicitIdToAutoId);
+		ctx.autoIdByName = Object.assign(
+			Object.create(null),
+			ctx.implicitIdToAutoId,
+			ctx.explicitIdToAutoId
+		);
 
 		return ctx;
 	}
 
 	/*───────────────────────────────────────────────────────────
-		PASS 3 — Resolve dependsOn and build dependency metadata
+		PASS 2 — Assign _path, _dataContextPath, and _dataPath
 	───────────────────────────────────────────────────────────*/
-	_pass3_resolveDependencies(ctx) {
-		let stack = [...ctx.initialRoots];
+	_dep_pass2_assignPathsAndData(wrappedSchema) {
+		if (wrappedSchema.details)
+			this._dep_assignPathsAndData(wrappedSchema.details, [], []);
 
-		for (let schemaNode; schemaNode = stack.pop();) {
+		const cols = wrappedSchema.main && Array.isArray(wrappedSchema.main.columns)
+			? wrappedSchema.main.columns
+			: [];
 
-			if (schemaNode.raw.dependsOn) {
-				const deps = Array.isArray(schemaNode.raw.dependsOn) ? schemaNode.raw.dependsOn : [schemaNode.raw.dependsOn];
-
-				const dependentIsExp = schemaNode._path[0] !== "m";
-				const cellPaths = [];
-				const dataPaths = [];
-
-				for (const depName of deps) {
-
-					const depAutoId = ctx.autoIdByName[depName];
-
-					if (depAutoId == null) {
-						console.warn(`Unknown dependsOn "${depName}".`, schemaNode);
-						continue;
-					}
-
-					const dependee = ctx.schemaNodeByAutoId[depAutoId];
-					const dependeeIsExp = dependee._path[0] !== "m";
-
-					// UI-forward dependency path
-					const fwd = this._computeDependencyPath(dependee, schemaNode);
-
-					if (fwd)
-						(dependee.dependencyPaths ??= []).push(fwd);
-
-					// classify dependency type
-					if (dependentIsExp && dependeeIsExp) {
-						const rev = this._computeReversePath(schemaNode, dependee);
-						if (rev && rev.length)
-							cellPaths.push(rev);
-					} else {
-						if (dependee._dataPath)
-							dataPaths.push(dependee._dataPath);
-						else if (dependee.id != null || dependee.cellId != null)
-							console.warn("Dependee has no dataPath:", dependee);
-					}
-				}
-
-				this._finalizeDependency(schemaNode, cellPaths, dataPaths);
-			}
-
-			stack.push(...this._schemaChildren(schemaNode));
-		}
+		for (let i = 0; i < cols.length; i++)
+			this._dep_assignPathsAndData(cols[i], ["m", i], []);
 	}
 
-	/*───────────────────────────────────────────────────────────
-		Helper: Normalize schemaNode children
-	───────────────────────────────────────────────────────────*/
-	_schemaChildren(schemaNode) {
-		while (schemaNode.entry)
-			schemaNode = schemaNode.entry;
-		if (Array.isArray(schemaNode.entries))
-			return schemaNode.entries;
-		return [];
-	}
-
-	/*───────────────────────────────────────────────────────────
-		Helper: Assign _path, _dataContextPath, and _dataPath
-	───────────────────────────────────────────────────────────*/
-	_assignPathsAndData(schemaNode, uiPath, parentCtx = []) {
+	_dep_assignPathsAndData(schemaNode, uiPath, parentCtx = []) {
 		schemaNode._path = uiPath;
 
 		const hasCtx = typeof schemaNode.raw.context === "string" && schemaNode.raw.context.length;
@@ -1123,18 +1072,97 @@ class TablanceBase {
 		if (schemaNode.raw.id != null)
 			schemaNode._dataPath = [...myCtx, String(schemaNode.raw.id)];
 
-		const kids = this._schemaChildren(schemaNode);
+		const kids = this._dep_children(schemaNode);
 
 		for (let i = 0; i < kids.length; i++)
-			this._assignPathsAndData(kids[i], [...uiPath, i], myCtx);
+			this._dep_assignPathsAndData(kids[i], [...uiPath, i], myCtx);
+	}
+
+	/*───────────────────────────────────────────────────────────
+		PASS 3 — Resolve dependsOn and build dependency metadata
+	───────────────────────────────────────────────────────────*/
+	_dep_pass3_resolveDependencies(ctx) {
+		let stack = [...ctx.initialRoots];
+
+		for (let schemaNode; schemaNode = stack.pop();) {
+
+			if (schemaNode.raw.dependsOn) {
+				const deps =Array.isArray(schemaNode.raw.dependsOn)?schemaNode.raw.dependsOn:[schemaNode.raw.dependsOn];
+
+				const dependentIsExp = schemaNode._path && schemaNode._path[0] !== "m";
+				const cellPaths = [];
+				const dataPaths = [];
+
+				for (const depName of deps) {
+					const depAutoId = ctx.autoIdByName[depName];
+
+					if (depAutoId == null) {
+						console.warn(`Unknown dependsOn "${depName}".`, schemaNode);
+						continue;
+					}
+
+					const dependee = ctx.schemaNodeByAutoId[depAutoId];
+					const dependeeIsExp = dependee._path && dependee._path[0] !== "m";
+
+					const fwd = this._dep_computeForwardPath(dependee, schemaNode);
+
+					if (fwd)
+						(dependee.dependencyPaths ??= []).push(fwd);
+
+					if (dependentIsExp && dependeeIsExp) {
+						const rev = this._dep_computeReversePath(schemaNode, dependee);
+						if (rev && rev.length)
+							cellPaths.push(rev);
+					} else {
+						if (dependee._dataPath)
+							dataPaths.push(dependee._dataPath);
+						else if (dependee.id != null || dependee.cellId != null)
+							console.warn("Dependee has no dataPath:", dependee);
+					}
+				}
+
+				this._dep_finalizeDependency(schemaNode, cellPaths, dataPaths);
+			}
+
+			stack.push(...this._dep_children(schemaNode));
+		}
+	}
+
+	/*───────────────────────────────────────────────────────────
+		PASS 4 — Cleanup: remove temporary builder-only metadata
+	───────────────────────────────────────────────────────────*/
+	_dep_pass4_cleanup(ctx) {
+		let stack = [...ctx.initialRoots];
+
+		for (let schemaNode; schemaNode = stack.pop();) {
+			delete schemaNode._autoId;
+			delete schemaNode._path;
+			delete schemaNode._dataContextPath;
+			delete schemaNode._dataPath;
+			stack.push(...this._dep_children(schemaNode));
+		}
+	}
+
+
+	/*───────────────────────────────────────────────────────────
+		Helper: Normalize schemaNode children
+		- Skips nodes that only serve as wrappers (context/repeated)
+		- Returns the "real" children array.
+	───────────────────────────────────────────────────────────*/
+	_dep_children(schemaNode) {
+		while (schemaNode.entry)
+			schemaNode = schemaNode.entry;
+		if (Array.isArray(schemaNode.entries))
+			return schemaNode.entries;
+		return [];
 	}
 
 	/*───────────────────────────────────────────────────────────
 		Helper: Compute UI-forward dependency path
 	───────────────────────────────────────────────────────────*/
-	_computeDependencyPath(dependee, dependent) {
+	_dep_computeForwardPath(dependee, dependent) {
 		const from = dependee._path;
-		const to   = dependent._path;
+		const to = dependent._path;
 
 		if (!from || !to)
 			return null;
@@ -1166,7 +1194,9 @@ class TablanceBase {
 	/*───────────────────────────────────────────────────────────
 		Helper: Compute reverse dependency path (exp→exp)
 	───────────────────────────────────────────────────────────*/
-	_computeReversePath(from, to) {
+	_dep_computeReversePath(from, to) {
+		if (!from._path || !to._path)
+			return null;
 		if (from._path[0] === "m" || to._path[0] === "m")
 			return null;
 
@@ -1187,17 +1217,17 @@ class TablanceBase {
 	/*───────────────────────────────────────────────────────────
 		Helper: Finalize dependency classification (exclusive)
 	───────────────────────────────────────────────────────────*/
-	_finalizeDependency(schemaNode, cellPaths, dataPaths) {
+	_dep_finalizeDependency(schemaNode, cellPaths, dataPaths) {
 
 		if (cellPaths.length) {
 			schemaNode.dependsOnCellPaths = cellPaths;
-			//delete schemaNode.dependsOnDataPath;
+			delete schemaNode.dependsOnDataPath;
 			return;
 		}
 
 		if (dataPaths.length === 1) {
 			schemaNode.dependsOnDataPath = dataPaths[0];
-			//delete schemaNode.dependsOnCellPaths;
+			delete schemaNode.dependsOnCellPaths;
 
 			if (!schemaNode._dataPath)
 				schemaNode._dataPath = dataPaths[0];
