@@ -1,3 +1,12 @@
+
+/** Symbol used to tag wrapper objects to avoid ever double-wrapping. Symbol used over string but not really needed. */
+const SCHEMA_WRAPPER_MARKER=Symbol("schemaWrapper");
+/** Set of properties allowed on wrapper nodes; access outside this set is forwarded to the raw schema node. */
+const SCHEMA_WRAPPER_KEYS=new Set(["raw", "parent", "main", "details", "columns", "entry", "entries", "_autoId",
+	"_path", "sortDiv","_dataContextPath","_dataPath", "dependencyPaths", "dependsOnCellPaths", "dependsOnDataPath",
+	"pxWidth", SCHEMA_WRAPPER_MARKER]);
+
+
 /** 
  * Base class providing shared table logic, structure management,
  * data handling, and rendering helpers etc used by both Tablance and TablanceBulk.
@@ -10,7 +19,7 @@ class TablanceBase {
 				//Except for manually this can also be set via chainTables()
 	_containerHeight=0;//height of #container. Used to keep track of if height shrinks or grows
 	_containerWidth=0;//height of #container. Used to keep track of if width shrinks or grows
-	_colSchemaNodes=[];//column-objects. Essentially the same as schema.main.columns but have been processed an may in
+	_colSchemaNodes;//column-objects. Essentially the same as schema.main.columns but have been processed an may in
 		// addition contain "sortDiv" reffering to the div with the sorting-html (see for example opts->sortAscHtml)
 	_cols=[];//array of col-elements for each column
 	_headerTr;//the tr for the top header-row
@@ -522,21 +531,21 @@ class TablanceBase {
 		this._staticRowHeight=staticRowHeight;
 		this._opts=opts??{};
 		rootEl.classList.add("tablance");
-		this.wrappedSchema=this._wrapSchema(schema);
-		//const allowedColProps=["id","title","width","input","type","render","html"];//should we really do filtering?
+		this._schema=this._buildSchemaFacade(schema);
 		if (!schema.main?.columns) {
 			this._setupSpreadsheet(true);
 			this._onlyDetails=true;
 		} else {
-			for (let col of this.wrappedSchema.main.columns) {
-				let processedCol={};
-				if ((col.type=="expand"||col.type=="select")&&!col.width)
-					processedCol.width=50;
-				for (let [colKey,colVal] of Object.entries(col))
-					//if (allowedColProps.includes(colKey))
-						processedCol[colKey]=colVal;
-				this._colSchemaNodes.push(processedCol);
-			}
+			// for (let col of this._schema.main.columns) {
+			// 	let processedCol={};
+			// 	if ((col.type=="expand"||col.type=="select")&&!col.width)
+			// 		processedCol.width=50;
+			// 	for (let [colKey,colVal] of Object.entries(col))
+			// 		//if (allowedColProps.includes(colKey))
+			// 			processedCol[colKey]=colVal;
+			// 	this._colSchemaNodes.push(processedCol);
+			// }
+			this._colSchemaNodes=this._schema.main.columns;
 			if (this._opts.searchbar!=false)
 				this._setupSearchbar();
 			this._createTableHeader();
@@ -555,7 +564,7 @@ class TablanceBase {
 				this._opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
 			this._updateHeaderSortHtml();
-			this._buildDependencyGraph();
+			this._buildDependencyGraph(this._schema);
 		}
 	}
 
@@ -690,160 +699,89 @@ class TablanceBase {
 	 * - Config objects (input, meta, validators, etc.) are ignored and never wrapped.
 	 * - The wrapper tree mirrors schema structure but contains only:
 	 *       { raw: <raw node>, parent: <wrapped parent>, and wrapped children }
-	 * @param {*} rawSchema	The user-provided schema root.
+	 * @param {*} rawSchema	The user-provided schema node.
+	 * @param {*} parentWrappedNode The wrapped parent, if any.
 	 * @returns {*}         The root wrapped schema-node.
 	 */
-	_wrapSchema(rawSchema) {
-		return wrapSchemaNode(rawSchema, null);
+	_buildSchemaFacade(rawNode, parentWrappedNode=null) {
 
-		function wrapSchemaNode(rawNode, parentWrappedNode) {
+		// Reject null/undefined & non-objects. Could be left for isPojo-check but that throws error on undefined
+		if (!rawNode || typeof rawNode!="object")
+			return null;
 
-			// Reject null/undefined & non-objects. Could be left for isPojo-check but that throws error on undefined
-			if (!rawNode || typeof rawNode!="object")
-				return null;
+		// Already wrapped? Return as-is to avoid double wrapping.
+		if (rawNode[SCHEMA_WRAPPER_MARKER])
+			return rawNode;
 
-			// Accept only POJOs and arrays.
-			// This ensures we only traverse expected schema structures
-			// and never recurse into exotic/custom objects.
-			const proto = Object.getPrototypeOf(rawNode);
-			const isPojo = proto===Object.prototype || proto===null;
-			if (!isPojo && !Array.isArray(rawNode))
-				return null;
+		// Accept only POJOs and arrays.
+		// This ensures we only traverse expected schema structures
+		// and never recurse into exotic/custom objects.
+		const proto = Object.getPrototypeOf(rawNode);
+		const isPojo = proto===Object.prototype || proto===null;
+		if (!isPojo && !Array.isArray(rawNode))
+			return null;
 
-			const wrappedNode = Object.assign(Object.create(null), {raw: rawNode,parent: parentWrappedNode});
+		//const wrappedNode = Object.assign(Object.create(null), {raw: rawNode,parent: parentWrappedNode});
+		const wrappedNode = createSchemaNodeFacade(rawNode, parentWrappedNode);
 
-			// ---- CHILD NODE PROCESSING ----
-			// We recurse ONLY into known schema-node containers.
-			// Everything else inside the raw schema object is left untouched.
+		// ---- CHILD NODE PROCESSING ----
+		// We recurse ONLY into known schema-node containers.
+		// Everything else inside the raw schema object is left untouched.
 
-			// main
-			if (rawNode.main && typeof rawNode.main=="object")
-				wrappedNode.main = wrapSchemaNode(rawNode.main, wrappedNode);
+		// main
+		if (rawNode.main && typeof rawNode.main=="object")
+			wrappedNode.main = this._buildSchemaFacade(rawNode.main, wrappedNode);
 
-			// details
-			if (rawNode.details && typeof rawNode.details=="object")
-				wrappedNode.details = wrapSchemaNode(rawNode.details, wrappedNode);
+		// details
+		if (rawNode.details && typeof rawNode.details=="object")
+			wrappedNode.details = this._buildSchemaFacade(rawNode.details, wrappedNode);
 
-			// columns (array of schema-nodes)
-			if (Array.isArray(rawNode.columns)) {
-				const cols = [];
-				for (const col of rawNode.columns) {
-					const wrappedCol = wrapSchemaNode(col, wrappedNode);
-					if (wrappedCol)
-						cols.push(wrappedCol);
-				}
-				if (cols.length)
-					wrappedNode.columns = cols;
+		// columns (array of schema-nodes)
+		if (Array.isArray(rawNode.columns)) {
+			const cols = [];
+			for (const col of rawNode.columns) {
+				const wrappedCol = this._buildSchemaFacade(col, wrappedNode);
+				if (wrappedCol)
+					cols.push(wrappedCol);
 			}
+			if (cols.length)
+				wrappedNode.columns = cols;
+		}
 
-			// entry (single schema-node)
-			if (rawNode.entry && typeof rawNode.entry=="object")
-				wrappedNode.entry = wrapSchemaNode(rawNode.entry, wrappedNode);
+		// entry (single schema-node)
+		if (rawNode.entry && typeof rawNode.entry=="object")
+			wrappedNode.entry = this._buildSchemaFacade(rawNode.entry, wrappedNode);
 
-			// entries (multiple schema-nodes)
-			if (Array.isArray(rawNode.entries)) {
-				const arr = [];
-				for (const child of rawNode.entries) {
-					const wrappedChild = wrapSchemaNode(child, wrappedNode);
-					if (wrappedChild)
-						arr.push(wrappedChild);
-				}
-				if (arr.length)
-					wrappedNode.entries = arr;
+		// entries (multiple schema-nodes)
+		if (Array.isArray(rawNode.entries)) {
+			const arr = [];
+			for (const child of rawNode.entries) {
+				const wrappedChild = this._buildSchemaFacade(child, wrappedNode);
+				if (wrappedChild)
+					arr.push(wrappedChild);
 			}
+			wrappedNode.entries = arr;
+		}
 
-			return wrappedNode;
+		return wrappedNode;
+
+		function createSchemaNodeFacade(rawNode, parentWrappedNode) {
+			const newWrapper = Object.assign(Object.create(null), {raw: rawNode, [SCHEMA_WRAPPER_MARKER]: true});
+			if (parentWrappedNode)
+				newWrapper.parent = parentWrappedNode;
+			return new Proxy(newWrapper, {
+				get:(target, prop)=>SCHEMA_WRAPPER_KEYS.has(prop)?target[prop]:target.raw[prop],
+				set(target, prop, value) {
+					if (SCHEMA_WRAPPER_KEYS.has(prop)) {
+						target[prop] = value;
+						return true;
+					}
+					throw new Error(`Cannot write ${prop} to schema-node. Add it to SCHEMA_WRAPPER_KEYS if intended.`);
+				}
+			});
 		}
 	}
 
-
-
-	/**
-	 * Clone a schema tree safely.
-	 *
-	 * Rules:
-	 * - Recurse ONLY into plain objects (POJOs) and arrays.
-	 * - Only objects inside `entry` / `entries` of a schema-node are schema-nodes.
-	 * - Schema-nodes get `.parent`; config objects never do.
-	 * - Functions, DOM nodes and non-POJO objects (Date, Map, class instances, etc.)
-	 *   are preserved by reference.
-	 *
-	 * @param {*} schema     The value to clone.
-	 * @returns {*}          The cloned value.
-	 */
-	_cloneSchema(schema) {
-		//"normally" when determining if an object is a a schema-node we check if it is pointed to either by entry or
-		//entries of a schema-node. E.g. if an object is not a schema-node then any items of entry or entries wont
-		//be schema-nodes either. However the root schema, main and details are schema-nodes as well and this is what's
-		//stated by including them in pathNodes here. filter(Boolean) removes any undefined/null roots/columns.
-		const nodeSeeds=new Set([schema,schema.main,schema.details,...(schema.main?.columns??[])].filter(Boolean));
-		
-		return cloneRec(schema, null, true);
-
-		function cloneRec(obj, parent, isNode) {
-			if (!obj || typeof obj!="object")
-				return obj
-
-			if (typeof Node!="undefined" && obj instanceof Node)
-				return obj
-
-			const proto = Object.getPrototypeOf(obj)
-			const isPojo = proto===Object.prototype || proto===null
-
-			if (!isPojo && !Array.isArray(obj))
-				return obj
-			isNode||=nodeSeeds.has(obj);
-
-			if (Array.isArray(obj)) { // preserve Array prototype; children keep the same parent ref
-				const arr=[]
-				for (const item of obj)
-					arr.push(cloneRec(item, parent, false))
-				return arr
-			}
-
-			const clone = Object.create(null)
-			if (parent&&isNode)
-				clone.parent = parent
-
-			for (const [key, val] of Object.entries(obj)) {
-
-				if (typeof val=="function" || key=="meta") {
-					clone[key]=val
-					continue
-				}
-
-				if (!isNode && key=="parent")
-					continue
-
-				// entry/entries → always schema-nodes if parent is node
-				if (isNode && key=="entries" && Array.isArray(val)) {
-					const arr=[]
-					for (const child of val)
-						arr.push(cloneRec(child, clone, true))
-					clone[key]=arr
-					continue
-				}
-
-				if (isNode && key=="entry" && val && typeof val=="object") {
-					clone[key]=cloneRec(val, clone, true)
-					continue
-				}
-
-				// config objects → non-schema OR schema-nodes defined by pathNodes
-				if (val && typeof val=="object") {
-					
-					// Objects inside arrays inherit the same parent.
-					// Objects inside non-arrays inherit this object as parent (if they become nodes).
-					clone[key] = cloneRec(val, Array.isArray(obj)?parent:clone, false);
-					continue
-				}
-
-				clone[key]=val
-			}
-
-			return clone
-		}
-	}
 
 
 	/**
@@ -923,157 +861,103 @@ class TablanceBase {
 		this._selectFirstSelectableDetailsCell(this._openDetailsPanes[0],top);
 	}
 
+	
 	/**
 	 * Build a complete dependency graph and assign internal autoIds.
 	 *
-	 * This walks the column + details schemaNode tree and enriches each node with
-	 * the metadata needed for dependency resolution and runtime lookups.
+	 * This walks the wrapped schema tree (main.columns + details) and enriches each
+	 * schema-node with metadata needed for dependency resolution and runtime lookups.
 	 *
-	 * Permanent runtime metadata produced:
-	 *  - schemaNode.dependencyPaths: UI-forward paths (dependee → dependent)
-	 *  - schemaNode.dependsOnCellPaths: reverse structural path(s) (exp→exp)
-	 *  - schemaNode.dependsOnDataPath: absolute data path for non-exp→exp deps
+	 * Permanent runtime metadata produced on wrapped schema-nodes:
+	 *  - dependencyPaths: UI-forward paths (dependee → dependent)
+	 *  - dependsOnCellPaths: reverse structural path(s) (exp→exp)
+	 *  - dependsOnDataPath: absolute data path for non-exp→exp deps
 	 *
-	 * Temporary builder-only metadata (removed in Pass 4):
-	 *  - schemaNode._autoId
-	 *  - schemaNode._path
-	 *  - schemaNode._dataContextPath
-	 *  - schemaNode._dataPath
-	 *  - ctx.explicitIdToAutoId, ctx.implicitIdToAutoId, ctx.schemaNodeByAutoId, ctx.autoIdByName, etc.
+	 * Temporary builder-only metadata (removed in PASS 4):
+	 *  - _autoId
+	 *  - _path
+	 *  - _dataContextPath
+	 *  - _dataPath
+	 *
+	 * @param {*} schema	Root of the wrapped schema tree.
 	 */
-	_buildDependencyGraph() {
+	_buildDependencyGraph(schema) {
 
 		//---- PASS 1 — Assign autoIds + collect ID maps ----
-		const ctx = this._pass1_assignAutoIdsAndMaps();
+		const ctx = this._dep_pass1_assignAutoIdsAndMaps(schema);
 
 		//---- PASS 2 — Compute UI path & data paths ----
-		for (let i = 0; i < this.wrappedSchema.details.entries.length; i++)// Details roots
-			this._assignPathsAndData(this.wrappedSchema.details.entries[i], [i], []);
-		for (let i = 0; i < this._colSchemaNodes.length; i++)// Main columns
-			this._assignPathsAndData(this._colSchemaNodes[i], ["m", i], []);
+		this._dep_pass2_assignPathsAndData(schema);
 
 		//---- PASS 3 — Resolve dependsOn and build dependency metadata ----
-		this._pass3_resolveDependencies(ctx);
+		this._dep_pass3_resolveDependencies(ctx);
 
 		//---- PASS 4 — Cleanup: remove all temporary builder-only metadata ----
-		let stack = [...ctx.initialRoots];
-		for (let schemaNode; schemaNode = stack.pop();) {
-			delete schemaNode._autoId;
-			delete schemaNode._path;
-			delete schemaNode._dataContextPath;
-			delete schemaNode._dataPath;
-			stack.push(...this._schemaChildren(schemaNode));
-		}
+		this._dep_pass4_cleanup(ctx);
 	}
 
 	/*───────────────────────────────────────────────────────────
 		PASS 1 — Assign autoIds + collect ID maps
 	───────────────────────────────────────────────────────────*/
-	_pass1_assignAutoIdsAndMaps() {
+	_dep_pass1_assignAutoIdsAndMaps(wrappedSchema) {
 		const ctx = Object.create(null);
-		ctx.autoIdCounter       = 0;
-		ctx.explicitIdToAutoId  = Object.create(null);
-		ctx.implicitIdToAutoId  = Object.create(null);
-		ctx.schemaNodeByAutoId      = Object.create(null);
-		ctx.seenCellIds         = Object.create(null);
+		ctx.autoIdCounter      = 0;
+		ctx.explicitIdToAutoId = Object.create(null);
+		ctx.implicitIdToAutoId = Object.create(null);
+		ctx.schemaNodeByAutoId = Object.create(null);
+		ctx.seenCellIds        = Object.create(null);
 
-		ctx.initialRoots = [...this._colSchemaNodes, ...this.wrappedSchema.details.entries];
+		const roots = [];
+		const cols = wrappedSchema.main && Array.isArray(wrappedSchema.main.columns)? wrappedSchema.main.columns: [];
+		for (let i = 0; i < cols.length; i++)
+			roots.push(cols[i]);
 
-		let stack = [...ctx.initialRoots];
+		if (wrappedSchema.details)
+			roots.push(wrappedSchema.details);
+
+		ctx.initialRoots = roots;
+
+		let stack = [...roots];
 
 		for (let schemaNode; schemaNode = stack.pop();) {
-
 			const autoId = ++ctx.autoIdCounter;
 			schemaNode._autoId = autoId;
 			ctx.schemaNodeByAutoId[autoId] = schemaNode;
 
 			if (schemaNode.cellId != null) {
-
 				if (ctx.seenCellIds[schemaNode.cellId])
 					throw new Error(`Duplicate cellId "${schemaNode.cellId}".`);
-
 				ctx.seenCellIds[schemaNode.cellId] = true;
 				ctx.explicitIdToAutoId[schemaNode.cellId] = autoId;
 			} else if (schemaNode.id != null)
 				ctx.implicitIdToAutoId[schemaNode.id] = autoId;
 
-			stack.push(...this._schemaChildren(schemaNode));
+			stack.push(...this._dep_children(schemaNode));
 		}
 
-		// Id/cellId → autoId lookup
-		ctx.autoIdByName = Object.assign(Object.create(null), ctx.implicitIdToAutoId, ctx.explicitIdToAutoId);
+		ctx.autoIdByName = Object.assign(
+			Object.create(null),
+			ctx.implicitIdToAutoId,
+			ctx.explicitIdToAutoId
+		);
 
 		return ctx;
 	}
 
 	/*───────────────────────────────────────────────────────────
-		PASS 3 — Resolve dependsOn and build dependency metadata
+		PASS 2 — Assign _path, _dataContextPath, and _dataPath
 	───────────────────────────────────────────────────────────*/
-	_pass3_resolveDependencies(ctx) {
-		let stack = [...ctx.initialRoots];
+	_dep_pass2_assignPathsAndData(wrappedSchema) {
+		if (wrappedSchema.details)
+			this._dep_assignPathsAndData(wrappedSchema.details, [], []);
 
-		for (let schemaNode; schemaNode = stack.pop();) {
+		const cols = wrappedSchema.main && Array.isArray(wrappedSchema.main.columns)? wrappedSchema.main.columns: [];
 
-			if (schemaNode.dependsOn) {
-				const deps = Array.isArray(schemaNode.dependsOn) ? schemaNode.dependsOn : [schemaNode.dependsOn];
-
-				const dependentIsExp = schemaNode._path[0] !== "m";
-				const cellPaths = [];
-				const dataPaths = [];
-
-				for (const depName of deps) {
-
-					const depAutoId = ctx.autoIdByName[depName];
-
-					if (depAutoId == null) {
-						console.warn(`Unknown dependsOn "${depName}".`, schemaNode);
-						continue;
-					}
-
-					const dependee = ctx.schemaNodeByAutoId[depAutoId];
-					const dependeeIsExp = dependee._path[0] !== "m";
-
-					// UI-forward dependency path
-					const fwd = this._computeDependencyPath(dependee, schemaNode);
-
-					if (fwd)
-						(dependee.dependencyPaths ??= []).push(fwd);
-
-					// classify dependency type
-					if (dependentIsExp && dependeeIsExp) {
-						const rev = this._computeReversePath(schemaNode, dependee);
-						if (rev && rev.length)
-							cellPaths.push(rev);
-					} else {
-						if (dependee._dataPath)
-							dataPaths.push(dependee._dataPath);
-						else if (dependee.id != null || dependee.cellId != null)
-							console.warn("Dependee has no dataPath:", dependee);
-					}
-				}
-
-				this._finalizeDependency(schemaNode, cellPaths, dataPaths);
-			}
-
-			stack.push(...this._schemaChildren(schemaNode));
-		}
+		for (let i = 0; i < cols.length; i++)
+			this._dep_assignPathsAndData(cols[i], ["m", i], []);
 	}
 
-	/*───────────────────────────────────────────────────────────
-		Helper: Normalize schemaNode children
-	───────────────────────────────────────────────────────────*/
-	_schemaChildren(schemaNode) {
-		while (schemaNode.entry)
-			schemaNode = schemaNode.entry;
-		if (Array.isArray(schemaNode.entries))
-			return schemaNode.entries;
-		return [];
-	}
-
-	/*───────────────────────────────────────────────────────────
-		Helper: Assign _path, _dataContextPath, and _dataPath
-	───────────────────────────────────────────────────────────*/
-	_assignPathsAndData(schemaNode, uiPath, parentCtx = []) {
+	_dep_assignPathsAndData(schemaNode, uiPath, parentCtx = []) {
 		schemaNode._path = uiPath;
 
 		const hasCtx = typeof schemaNode.context === "string" && schemaNode.context.length;
@@ -1084,18 +968,97 @@ class TablanceBase {
 		if (schemaNode.id != null)
 			schemaNode._dataPath = [...myCtx, String(schemaNode.id)];
 
-		const kids = this._schemaChildren(schemaNode);
+		const kids = this._dep_children(schemaNode);
 
 		for (let i = 0; i < kids.length; i++)
-			this._assignPathsAndData(kids[i], [...uiPath, i], myCtx);
+			this._dep_assignPathsAndData(kids[i], [...uiPath, i], myCtx);
+	}
+
+	/*───────────────────────────────────────────────────────────
+		PASS 3 — Resolve dependsOn and build dependency metadata
+	───────────────────────────────────────────────────────────*/
+	_dep_pass3_resolveDependencies(ctx) {
+		let stack = [...ctx.initialRoots];
+
+		for (let schemaNode; schemaNode = stack.pop();) {
+
+			if (schemaNode.dependsOn) {
+				const deps = Array.isArray(schemaNode.dependsOn) ? schemaNode.dependsOn : [schemaNode.dependsOn];
+
+				const dependentIsExp = schemaNode._path && schemaNode._path[0] !== "m";
+				const cellPaths = [];
+				const dataPaths = [];
+
+				for (const depName of deps) {
+					const depAutoId = ctx.autoIdByName[depName];
+
+					if (depAutoId == null) {
+						console.warn(`Unknown dependsOn "${depName}".`, schemaNode);
+						continue;
+					}
+
+					const dependee = ctx.schemaNodeByAutoId[depAutoId];
+					const dependeeIsExp = dependee._path && dependee._path[0] !== "m";
+
+					const fwd = this._dep_computeForwardPath(dependee, schemaNode);
+
+					if (fwd)
+						(dependee.dependencyPaths ??= []).push(fwd);
+
+					if (dependentIsExp && dependeeIsExp) {
+						const rev = this._dep_computeReversePath(schemaNode, dependee);
+						if (rev && rev.length)
+							cellPaths.push(rev);
+					} else {
+						if (dependee._dataPath)
+							dataPaths.push(dependee._dataPath);
+						else if (dependee.id != null || dependee.cellId != null)
+							console.warn("Dependee has no dataPath:", dependee);
+					}
+				}
+
+				this._dep_finalizeDependency(schemaNode, cellPaths, dataPaths);
+			}
+
+			stack.push(...this._dep_children(schemaNode));
+		}
+	}
+
+	/*───────────────────────────────────────────────────────────
+		PASS 4 — Cleanup: remove temporary builder-only metadata
+	───────────────────────────────────────────────────────────*/
+	_dep_pass4_cleanup(ctx) {
+		let stack = [...ctx.initialRoots];
+
+		for (let schemaNode; schemaNode = stack.pop();) {
+			delete schemaNode._autoId;
+			delete schemaNode._path;
+			delete schemaNode._dataContextPath;
+			delete schemaNode._dataPath;
+			stack.push(...this._dep_children(schemaNode));
+		}
+	}
+
+
+	/*───────────────────────────────────────────────────────────
+		Helper: Normalize schemaNode children
+		- Skips nodes that only serve as wrappers (context/repeated)
+		- Returns the "real" children array.
+	───────────────────────────────────────────────────────────*/
+	_dep_children(schemaNode) {
+		while (schemaNode.entry)
+			schemaNode = schemaNode.entry;
+		if (Array.isArray(schemaNode.entries))
+			return schemaNode.entries;
+		return [];
 	}
 
 	/*───────────────────────────────────────────────────────────
 		Helper: Compute UI-forward dependency path
 	───────────────────────────────────────────────────────────*/
-	_computeDependencyPath(dependee, dependent) {
+	_dep_computeForwardPath(dependee, dependent) {
 		const from = dependee._path;
-		const to   = dependent._path;
+		const to = dependent._path;
 
 		if (!from || !to)
 			return null;
@@ -1127,7 +1090,9 @@ class TablanceBase {
 	/*───────────────────────────────────────────────────────────
 		Helper: Compute reverse dependency path (exp→exp)
 	───────────────────────────────────────────────────────────*/
-	_computeReversePath(from, to) {
+	_dep_computeReversePath(from, to) {
+		if (!from._path || !to._path)
+			return null;
 		if (from._path[0] === "m" || to._path[0] === "m")
 			return null;
 
@@ -1148,7 +1113,7 @@ class TablanceBase {
 	/*───────────────────────────────────────────────────────────
 		Helper: Finalize dependency classification (exclusive)
 	───────────────────────────────────────────────────────────*/
-	_finalizeDependency(schemaNode, cellPaths, dataPaths) {
+	_dep_finalizeDependency(schemaNode, cellPaths, dataPaths) {
 
 		if (cellPaths.length) {
 			schemaNode.dependsOnCellPaths = cellPaths;
@@ -1176,6 +1141,9 @@ class TablanceBase {
 				schemaNode._dataPath = dataPaths[0];
 		}
 	}
+
+
+
 
 
 	_updateViewportHeight = () => {
@@ -1650,7 +1618,7 @@ class TablanceBase {
 		const shadowLine=detailsDiv.appendChild(document.createElement("div"));
 		shadowLine.className="details-shadow";
 		const instanceNode=this._openDetailsPanes[rowIndex]={};
-		this._generateDetailsContent(this.wrappedSchema.details,rowIndex,instanceNode,detailsDiv,[],this._data[rowIndex]);
+		this._generateDetailsContent(this._schema.details,rowIndex,instanceNode,detailsDiv,[],this._data[rowIndex]);
 		instanceNode.rowIndex=rowIndex;
 		return detailsRow;
 	}
@@ -1767,7 +1735,8 @@ class TablanceBase {
 		const creationSchemaNode={type:"group",closedRender:()=>creationTxt,entries:[],
 							creator:true//used to know that this entry is the creator and that it should not be sorted
 							,onOpen:this._onOpenCreationGroup,cssClass:"repeat-insertion"};
-		const el=this._repeatInsert(repeatedObj,false,{},creationSchemaNode);
+		const wrappedCreationSchemaNode=this._buildSchemaFacade(creationSchemaNode);//WRAPPED
+		const el=this._repeatInsert(repeatedObj,false,{},wrappedCreationSchemaNode);
 		el.parentElement.classList.add("empty");//this will make it hidden if inside a group that is closed
 	}
 
@@ -1797,9 +1766,13 @@ class TablanceBase {
 			{type:"field",input:{type:"button"
 				,btnText:schemaNode.areYouSureYesText??this._opts.lang?.deleteAreYouSureYes??"Yes",
 				clickHandler:deleteHandler},cssClass:"yes"}]};
-		schemaNode={...schemaNode};//make shallow copy so original is not affected
-		schemaNode.entries=[...schemaNode.entries,deleteControls];
-		return schemaNode;
+		const rawNode=schemaNode?.[SCHEMA_WRAPPER_MARKER]?schemaNode.raw:schemaNode;
+		const parentWrapped=schemaNode?.[SCHEMA_WRAPPER_MARKER]?schemaNode.parent:null;
+		if (!rawNode)
+			return schemaNode;
+		const clonedEntries=[...(rawNode.entries??[]),deleteControls];
+		const clonedNode={...rawNode, entries:clonedEntries};
+		return this._buildSchemaFacade(clonedNode,parentWrapped);
 	}
 
 	_generateButton(schemaNode,mainIndex,parentEl,rowData,instanceNode=null) {
@@ -2377,11 +2350,11 @@ class TablanceBase {
 		} else
 			indexOfNew=repeated.children.length-(repeated.schemaNode.create&&!entrySchemaNode.creator)//pos be4 creator
 		for (let root=repeated.parent; root.parent; root=root.parent,rowIndex=root.rowIndex);//get main-index
-		let schemaNode=repeated.schemaNode;
-		if (schemaNode.create&&entrySchemaNode.type==="group")
-			(schemaNode={...schemaNode}).entry=this._schemaCopyWithDeleteButton(entrySchemaNode,this._repeatedOnDelete);
-			//copy repeat-schemaNode not to edit orig.Then add delete-controls to its inner group which also gets copied
-		const newObj=this._generateCollectionItem(schemaNode.entry,rowIndex,repeated,repeated.path,data,indexOfNew);
+		let entryNode=entrySchemaNode;
+		if (repeated.schemaNode.create&&entrySchemaNode.type==="group")
+			entryNode=this._schemaCopyWithDeleteButton(entrySchemaNode,this._repeatedOnDelete);
+			//make a wrapped copy of the entry so delete-controls can be appended without touching the original
+		const newObj=this._generateCollectionItem(entryNode,rowIndex,repeated,repeated.path,data,indexOfNew);
 		if (creating) {
 			newObj.creating=true;//creating means it hasn't been commited yet.
 			this._selectFirstSelectableDetailsCell(newObj,true,true);
@@ -3248,9 +3221,9 @@ class TablanceBase {
 	_createTableBody() {
 		this._scrollBody=this.rootEl.appendChild(document.createElement("div"));
 
-		if (this._staticRowHeight&&!this.wrappedSchema.details)
+		if (this._staticRowHeight&&!this._schema.details)
 			this._scrollMethod=this._onScrollStaticRowHeightNoDetails;
-		else if (this._staticRowHeight&&this.wrappedSchema.details)
+		else if (this._staticRowHeight&&this._schema.details)
 			this._scrollMethod=this._onScrollStaticRowHeightDetails;
 		this._scrollBody.addEventListener("scroll",e=>this._scrollMethod(e),{passive:true});
 		this._scrollBody.className="scroll-body";
@@ -3299,12 +3272,12 @@ class TablanceBase {
 		mainPage.classList.add("main");
 		mainPage.style.display="block";
 
-		const bulkEditFields=this._buildBulkEditSchemaNodes(this.wrappedSchema.details);
-		for (const column of this.wrappedSchema.main.columns)
+		const bulkEditFields=this._buildBulkEditSchemaNodes(this._schema.details);
+		for (const column of this._schema.main.columns)
 			bulkEditFields.push(...this._buildBulkEditSchemaNodes(column));
 
 		//Build schema for bulk-edit-area based on the real schema
-		const schema={details:{type:"lineup",entries:bulkEditFields}};
+		const schema={details:{type:"lineup",entries:bulkEditFields}};//WRAP
 
 		this._bulkEditTable=new TablanceBulk(tableContainer,schema,null,true,null);
 		this._bulkEditTable.mainInstance=this;
@@ -3324,14 +3297,14 @@ class TablanceBase {
 	 * 						when hitting upon containers which then are passed to this param
 	 * @returns */
 	_buildBulkEditSchemaNodes(schema) {
-		const mainCol=this.wrappedSchema.main.columns.includes(schema);
+		const mainCol=this._schema.main.columns.includes(schema);
 		const result=[];
 		if ((mainCol||schema.type=="field")&&schema.bulkEdit) {
 			//schema-nodes of main-columns don't need to specify this, but it's needed in details
 			result.push(Object.assign(Object.create(null), schema, {type:"field"}));
-		} else if ((schema.entries?.length&&schema.bulkEdit)||schema===this.wrappedSchema.details) {
+		} else if ((schema.entries?.length&&schema.bulkEdit)||schema===this._schema.details) {
 			for (const schemaNode of schema.entries)
-				result.push(...this._buildBulkEditSchemaNodes(schemaNode));
+				result.push(...this._buildBulkEditSchemaNodes(schemaNode));//TODO this has to be fixed to deal with wrapped...
 		}
 		return result;
 	}
@@ -3454,7 +3427,7 @@ class TablanceBase {
 		this.rootEl.innerHTML="";
 		const detailsDiv=this.rootEl.appendChild(document.createElement("div"));
 		detailsDiv.classList.add("details");
-		this._generateDetailsContent(this.wrappedSchema.details,0,this._openDetailsPanes[0]={},detailsDiv,[],this._data[0]);
+		this._generateDetailsContent(this._schema.details,0,this._openDetailsPanes[0]={},detailsDiv,[],this._data[0]);
 	}
 
 	/**Refreshes the table-rows. Should be used after sorting or filtering or such.*/
@@ -3773,9 +3746,11 @@ class TablanceBase {
 			}},
 		});
 		fileGroup.entries.push({type:"lineup",entries:metaEntries});
+		const wrappedFileGroup=this._buildSchemaFacade(fileGroup);//WRAPPED
 		
 		const fileData=rowData[fileInstanceNode.schemaNode.id];
-		this._generateDetailsContent(fileGroup,dataIndex,fileInstanceNode,cellEl,fileInstanceNode.path,fileData);
+		//call _buildSchemaTreeFacade on fileGroup here?
+		this._generateDetailsContent(wrappedFileGroup,dataIndex,fileInstanceNode,cellEl,fileInstanceNode.path,fileData);
 		const fileMeta=this._mapGet(this._filesMeta,fileData);
 		if (fileMeta!=null) {
 			const progressbarOuter=cellEl.appendChild(document.createElement("div"));
@@ -4031,7 +4006,7 @@ export default class Tablance extends TablanceBase {
 
 	_expandRow(tr,animate=true) {
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
-		if (!this.wrappedSchema.details||this._rowMetaGet(dataRowIndex)?.h>0)
+		if (!this._schema.details||this._rowMetaGet(dataRowIndex)?.h>0)
 			return;
 		const expRow=this._renderDetails(tr,dataRowIndex);
 		const expHeight=this._rowMetaSet(dataRowIndex,"h",this._rowHeight+expRow.offsetHeight+this._borderSpacingY);
@@ -4059,7 +4034,7 @@ export default class Tablance extends TablanceBase {
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
 		if (dataRowIndex==this._mainRowIndex&&this._activeDetailsCell)
 			this._exitEditMode(false);//cancel out of edit-mode so field-validation doesn't cause problems
-		if (!this.wrappedSchema.details||!this._rowMetaGet(dataRowIndex)?.h)
+		if (!this._schema.details||!this._rowMetaGet(dataRowIndex)?.h)
 			return;
 		this._unsortCol(null,"expand");
 		if (this._mainRowIndex==dataRowIndex&&this._activeDetailsCell) {//if cell-cursor is inside the details
