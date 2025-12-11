@@ -463,34 +463,6 @@ class TablanceBase {
 	 * 				onClose Function Callback that is fired when the group closes. Gets passed the following arguments:
 	 * 					1: group-object
   	 * 			}
-	 * 			{
-	 * 				type "context" Used when a set of entries should be evaluated within the scope of a nested object
-	 * 					on the current record. It does not render any visible content of its own, but changes
-	 * 					the data context for its child entries. This is useful when the data is stored as a single
-	 * 					object rather than an array, for example when a client record has a single homeAddress
-	 * 					object instead of an array of addresses.
-	 * 				id String The property name of the nested object to use as the new context.
-	 * 				entry Object Any entry. May be field or list for instance or even further context or group entries
-	 * 				Notes:
-	 * 					- The context entry itself produces no DOM elements; it simply delegates rendering to its
-	 * 					  child entries with a modified data scope.
-	 * 					- Context entries can be nested multiple levels deep to traverse complex object structures.
-	 * 					- Unlike "group" or "list", context entries cannot be directly opened or closed by the user
-	 * 					  and have no visual representation on their own.
-	 * 
-	 * 				Example:
-	 * 				{
-	 * 					type: "context",
-	 * 					id: "homeAddress",
-	 * 					entry: {
-	 * 						type:"group",
-	 * 						entries:[
-	 * 							{ title: "Street", id: "street", editable: "text" },
-	 * 							{ title: "City", id: "city", editable: "text" }
-	 * 						]
-	 * 					}
-	 * 				}
-	 * 			}
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							searchbar Bool that defaults to true. If true then there will be a searchbar that
 	 * 								can be used to filter the data.
@@ -960,18 +932,15 @@ class TablanceBase {
 	_dep_assignPathsAndData(schemaNode, uiPath, parentCtx = []) {
 		schemaNode._path = uiPath;
 
-		const hasCtx = typeof schemaNode.context === "string" && schemaNode.context.length;
-		const myCtx = hasCtx ? [...parentCtx, schemaNode.context] : parentCtx;
-
-		schemaNode._dataContextPath = myCtx;
+		schemaNode._dataContextPath = parentCtx;
 
 		if (schemaNode.id != null)
-			schemaNode._dataPath = [...myCtx, String(schemaNode.id)];
+			schemaNode._dataPath = [...parentCtx, String(schemaNode.id)];
 
 		const kids = this._dep_children(schemaNode);
 
 		for (let i = 0; i < kids.length; i++)
-			this._dep_assignPathsAndData(kids[i], [...uiPath, i], myCtx);
+			this._dep_assignPathsAndData(kids[i], [...uiPath, i], parentCtx);
 	}
 
 	/*───────────────────────────────────────────────────────────
@@ -1042,7 +1011,7 @@ class TablanceBase {
 
 	/*───────────────────────────────────────────────────────────
 		Helper: Normalize schemaNode children
-		- Skips nodes that only serve as wrappers (context/repeated)
+		- Skips nodes that only serve as wrappers (repeated)
 		- Returns the "real" children array.
 	───────────────────────────────────────────────────────────*/
 	_dep_children(schemaNode) {
@@ -1655,7 +1624,7 @@ class TablanceBase {
 	 * 		object can later be retrieved.
 	 * @param {object} rowData The actual data object that this details is representing.
 	 * @param {boolean} notYetCreated True if the instanceNode points to data within objects that do not yet exist.
-	 * 		This happens when the context points to a data object that will be created when the user adds data.
+	 * 		This happens when child objects get created lazily during user input.
 	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
 	 * 		schemaNode with no create option).
 	 */
@@ -1673,7 +1642,6 @@ class TablanceBase {
 			case "group": return this._generateDetailsGroup(...arguments);
 			case "repeated": return this._generateDetailsRepeated(...arguments);
 			case "lineup": return this._generateDetailsLineup(...arguments);
-			case "context": return this._generateContext(...arguments);
 		}
 	}
 
@@ -1714,7 +1682,7 @@ class TablanceBase {
 	 * 		object can later be retrieved.
 	 * @param {object} rowData The actual data object that this details is representing.
 	 * @param {boolean} notYetCreated True if the instanceNode points to data within objects that do not yet exist.
-	 * 		This happens when the context points to a data object that will be created when the user adds data.
+	 * 		This happens when child objects get created lazily during user input.
 	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
 	 * 		schemaNode with no create option).
 	 */
@@ -1799,7 +1767,7 @@ class TablanceBase {
 	 * 		object can later be retrieved.
 	 * @param {object} rowData The actual data object that this details is representing.
 	 * @param {boolean} notYetCreated True if the instanceNode points to data within objects that do not yet exist.
-	 * 		This happens when the context points to a data object that will be created when the user adds data.
+	 * 		This happens when child objects get created lazily during user input.
 	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
 	 * 		schemaNode with no create option).
 	 */
@@ -1836,8 +1804,8 @@ class TablanceBase {
 	 * 		nesting levels. This path is added as a data attribute to interactive cells so that the corresponding cell
 	 * 		object can later be retrieved.
 	 * @param {object} rowData The actual data object that this details is representing.
-	 * @param {boolean} notYetCreated True if the instanceNode points to data within objects that do not yet exist.
-	 * 		This happens when the context points to a data object that will be created when the user adds data.
+	* @param {boolean} notYetCreated True if the instanceNode points to data within objects that do not yet exist.
+	 * 		This happens when child objects get created lazily during user input.
 	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
 	 * 		schemaNode with no create option).
 	 */
@@ -1865,8 +1833,8 @@ class TablanceBase {
 	 * 		nesting levels. This path is added as a data attribute to interactive cells so that the corresponding cell
 	 * 		object can later be retrieved.
 	 * @param {object} rowData The actual data object that this details is representing.
-	 * @param {boolean} notYetCreated True if the instanceNode points to data within objects that do not yet exist.
-	 * 		This happens when the context points to a data object that will be created when the user adds data.
+	* @param {boolean} notYetCreated True if the instanceNode points to data within objects that do not yet exist.
+	 * 		This happens when child objects get created lazily during user input.
 	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
 	 * 		schemaNode with no create option).
 	 */
@@ -1877,33 +1845,9 @@ class TablanceBase {
 	}
 
 	/**
-	 * Generates a "context"-entry.
-	 * A context entry does not produce its own visible container but instead
-	 * changes the data scope to a nested object on the current row.
-	 * Its child entries are then generated using this nested object as their data source.
-	 * @param {object} contextSchemaNode Structure object defining what to create.
-	 * @param {number} mainIndex Index of the main data row that this details belongs to.
-	 * @param {object} instanceNode The object representing the cell that is being created.
-	 * @param {HTMLElement} parentEl The parent element to which the created elements should be appended.
-	 * @param {number[]} path Keeps track of the "path" by adding and removing index numbers when entering and leaving 
-	 * 		nesting levels. This path is added as a data attribute to interactive cells so that the corresponding cell
-	 * 		object can later be retrieved.
-	 * @param {object} rowData The actual data object that this details is representing.
-	 * @param {boolean} notYetCreated True if the instanceNode points to data within objects that do not yet exist.
-	 * 		This happens when the context points to a data object that will be created when the user adds data.
-	 * @returns {boolean} True if any content was created; false if nothing was created (for example, an empty repeated
-	 * 		schemaNode with no create option).
+	 * Generates the children of a container schema node (list/lineup/group).
+	 * Handles repeated entries specially; otherwise delegates to _generateCollectionItem.
 	 */
-	_generateContext(contextSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,notYetCreated) {
-		if (!rowData[contextSchemaNode.id]) {//if the structure point to data within objects that doesn't yet exist
-			notYetCreated=true;
-			rowData[contextSchemaNode.id]={};
-		}
-		return this._generateDetailsContent(contextSchemaNode.entry, mainIndex, instanceNode, parentEl, path
-			,rowData[contextSchemaNode.id],notYetCreated);
-	}
-	
-
 	_generateDetailsCollection(containerSchemaNode,mainIndex,collectionObj,parentEl,path,rowData) {
 		//allows for easily finding the outer-most parent of elements that are placed in collection
 		collectionObj.containerEl.classList.add("collection");
@@ -2050,8 +1994,7 @@ class TablanceBase {
 		itemObj.outerContainerEl=outerContainerEl;//reference to outer-most container belonging exclusively to this item
 
 		// Expand inner content; may return false if nothing should be rendered
-		const generated=this._generateDetailsContent(
-												schemaNode,mainIndex,itemObj,containerEl,path,data,outerContainerEl);
+		const generated=this._generateDetailsContent(schemaNode,mainIndex,itemObj,containerEl,path,data,false);
 
 		// Only insert if it actually has content (important for sparse repeated arrays)
 		if (generated)
