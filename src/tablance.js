@@ -10,8 +10,7 @@ class TablanceBase {
 				//Except for manually this can also be set via chainTables()
 	_containerHeight=0;//height of #container. Used to keep track of if height shrinks or grows
 	_containerWidth=0;//height of #container. Used to keep track of if width shrinks or grows
-	_wrappedSchema;//the wrapped schema that is created with _wrapSchema()
-	_wrappedCols;//reference to _wrappedSchema.main.columns
+	_colSchemaNodes=[];//column-objects. Essentially the same as schema.main.columns but have been processed an may in
 		// addition contain "sortDiv" reffering to the div with the sorting-html (see for example opts->sortAscHtml)
 	_cols=[];//array of col-elements for each column
 	_headerTr;//the tr for the top header-row
@@ -523,22 +522,21 @@ class TablanceBase {
 		this._staticRowHeight=staticRowHeight;
 		this._opts=opts??{};
 		rootEl.classList.add("tablance");
-		this._wrappedSchema=this._wrapSchema(schema);
+		this.wrappedSchema=this._wrapSchema(schema);
 		//const allowedColProps=["id","title","width","input","type","render","html"];//should we really do filtering?
 		if (!schema.main?.columns) {
 			this._setupSpreadsheet(true);
 			this._onlyDetails=true;
 		} else {
-			this._wrappedCols=this._wrappedSchema.main.columns;
-			// for (let col of this._wrappedSchema.main.columns) {
-			// 	let processedCol={};
-			// 	if ((col.type=="expand"||col.type=="select")&&!col.width)
-			// 		processedCol.width=50;
-			// 	for (let [colKey,colVal] of Object.entries(col))
-			// 		//if (allowedColProps.includes(colKey))
-			// 			processedCol[colKey]=colVal;
-			// 	this._colSchemaNodes.push(processedCol);
-			// }
+			for (let col of this.wrappedSchema.main.columns) {
+				let processedCol={};
+				if ((col.type=="expand"||col.type=="select")&&!col.width)
+					processedCol.width=50;
+				for (let [colKey,colVal] of Object.entries(col))
+					//if (allowedColProps.includes(colKey))
+						processedCol[colKey]=colVal;
+				this._colSchemaNodes.push(processedCol);
+			}
 			if (this._opts.searchbar!=false)
 				this._setupSearchbar();
 			this._createTableHeader();
@@ -557,7 +555,7 @@ class TablanceBase {
 				this._opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
 			this._updateHeaderSortHtml();
-			this._buildDependencyGraph(this._wrappedSchema);
+			this._buildDependencyGraph();
 		}
 	}
 
@@ -631,8 +629,8 @@ class TablanceBase {
 		
 		//is it a column of the main-table?
 		if (dataPath.length==1) //it's possible only if the path is a single id-key. (but still not guaranteed)
-			for (let colI=-1,colSchemaNode;colSchemaNode=this._wrappedCols[++colI];)
-				if (colSchemaNode.raw.id==dataPath[0]) {//if true then yes, it was a column of main-table
+			for (let colI=-1,colSchemaNode;colSchemaNode=this._colSchemaNodes[++colI];)
+				if (colSchemaNode.id==dataPath[0]) {//if true then yes, it was a column of main-table
 					const tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndx}"]:not(.details)`);
 					return this._updateMainRowCell(tr.cells[colI],colSchemaNode);//update it and be done with this
 				}
@@ -651,17 +649,17 @@ class TablanceBase {
 		for (let i=0,instanceNodeId; instanceNodeId=dataPath[i]; i+=2) {
 			const arrayIndex=dataPath[i+1]?.replace(/^\[|\]$/g,"");
 			nodeToUpdate=this._findDescendantInstanceNodeById(nodeToUpdate,instanceNodeId);
-			if (nodeToUpdate.schemaNode.raw.type=="repeated") {//should be true until possibly last iteration
+			if (nodeToUpdate.schemaNode.type=="repeated") {//should be true until possibly last iteration
 				if (i==dataPath.length-1) {//final array-index not specified. replace all of the data in repeated
 
 					//remove all the current entries. Do it backwards so that the remaining entries doesn't have to
 					//have their index&path updates each time
 					const children=nodeToUpdate.children;
-					for (let entryI=children.length-!!nodeToUpdate.schemaNode.raw.create,entry; entry=children[--entryI];)
+					for (let entryI=children.length-!!nodeToUpdate.schemaNode.create,entry; entry=children[--entryI];)
 						this._deleteCell(entry,true);
 
 					//insert all the new data
-					nodeToUpdate.dataObj=nodeToUpdate.parent.dataObj[nodeToUpdate.schemaNode.raw.id];
+					nodeToUpdate.dataObj=nodeToUpdate.parent.dataObj[nodeToUpdate.schemaNode.id];
 					nodeToUpdate.dataObj.forEach(
 									dataEntry=>updatedEls.push(this._repeatInsert(nodeToUpdate,false,dataEntry)));
 					break;
@@ -674,7 +672,7 @@ class TablanceBase {
 			}
 		}
 
-		if (nodeToUpdate.schemaNode.raw.type=="field")
+		if (nodeToUpdate.schemaNode.type=="field")
 			this._updateDetailsCell(nodeToUpdate,dataRow);
 		if (scrollTo) {
 			nodeToUpdate.el.scrollIntoView({behavior:'smooth',block:"center"});
@@ -697,42 +695,7 @@ class TablanceBase {
 	 */
 	_wrapSchema(rawSchema) {
 		return wrapSchemaNode(rawSchema, null);
-		// DEV proxy: catches incorrect accesses like wrappedNode.id instead of wrappedNode.raw.id
-		function _wrapProxy(wrapped) {
-			const allowedInWrapperButNotInRaw=["raw", "sortDiv", "parent","creator","dependsOnDataPath", 
-				"dependsOnCellPaths", "pxWidth", "_path", "dependencyPaths", "_dataPath", "autoId"];
-			wrapped.raw=new Proxy(wrapped.raw, {
-				get(target, prop) {
-					if (allowedInWrapperButNotInRaw.includes(prop))
-						throw new Error(`Schema-node accessed incorrectly: rawSchemaNode.${String(prop)}
-										 → use wrappedSchemaNode.${String(prop)} instead.`);
-					return target[prop];
-				},
-				set() {throw new Error("Illegal write: cannot write to .raw")}
-			});
-			return new Proxy(wrapped, {
-				get(target, prop) {
-					if ([...allowedInWrapperButNotInRaw,"entries", "entry", "main", "columns", "details"]
-						.includes(prop))
-						return target[prop];
-					console.log(`tried to access ||||${String(prop)}|||| directly on wrapped-schema-node`);
-					throw new Error(`Schema-node accessed incorrectly: wrappedSchemaNode.${String(prop)}
-										 → use wrappedSchemaNode.raw.${String(prop)} instead.`);
-				},
-				set(target, prop, value) {
 
-					// Prevent mutation of the raw schema ALWAYS
-					if (prop === "raw") {
-						console.error("❌ Attempted to overwrite wrappedSchemaNode.raw");
-						throw new Error("Illegal write: cannot overwrite wrappedSchemaNode.raw");
-					}
-
-					// Allowed: runtime metadata on wrapper
-					target[prop] = value;
-					return true;
-				}
-			});
-		}
 		function wrapSchemaNode(rawNode, parentWrappedNode) {
 
 			// Reject null/undefined & non-objects. Could be left for isPojo-check but that throws error on undefined
@@ -747,8 +710,7 @@ class TablanceBase {
 			if (!isPojo && !Array.isArray(rawNode))
 				return null;
 
-			//const wrappedNode = Object.assign(Object.create(null), {raw: rawNode,parent: parentWrappedNode});
-			const wrappedNode =_wrapProxy(Object.assign(Object.create(null), {raw: rawNode,parent: parentWrappedNode}));
+			const wrappedNode = Object.assign(Object.create(null), {raw: rawNode,parent: parentWrappedNode});
 
 			// ---- CHILD NODE PROCESSING ----
 			// We recurse ONLY into known schema-node containers.
@@ -898,7 +860,7 @@ class TablanceBase {
 
 	_findDescendantInstanceNodeById(searchInObj,idToFind) {
 		for (const child of searchInObj.children)
-			if (child.schemaNode.raw.id==idToFind)//if true then its the repeated-obj we're looking for
+			if (child.schemaNode.id==idToFind)//if true then its the repeated-obj we're looking for
 				return child;
 			else if (child.children) {//if container-obj
 				const result=this._findDescendantInstanceNodeById(child,idToFind);
@@ -961,139 +923,106 @@ class TablanceBase {
 		this._selectFirstSelectableDetailsCell(this._openDetailsPanes[0],top);
 	}
 
-
 	/**
 	 * Build a complete dependency graph and assign internal autoIds.
 	 *
-	 * This walks the wrapped schema tree (main.columns + details) and enriches each
-	 * schema-node with metadata needed for dependency resolution and runtime lookups.
+	 * This walks the column + details schemaNode tree and enriches each node with
+	 * the metadata needed for dependency resolution and runtime lookups.
 	 *
-	 * Permanent runtime metadata produced on wrapped schema-nodes:
-	 *  - dependencyPaths: UI-forward paths (dependee → dependent)
-	 *  - dependsOnCellPaths: reverse structural path(s) (exp→exp)
-	 *  - dependsOnDataPath: absolute data path for non-exp→exp deps
+	 * Permanent runtime metadata produced:
+	 *  - schemaNode.dependencyPaths: UI-forward paths (dependee → dependent)
+	 *  - schemaNode.dependsOnCellPaths: reverse structural path(s) (exp→exp)
+	 *  - schemaNode.dependsOnDataPath: absolute data path for non-exp→exp deps
 	 *
-	 * Temporary builder-only metadata (removed in PASS 4):
-	 *  - _autoId
-	 *  - _path
-	 *  - _dataContextPath
-	 *  - _dataPath
-	 *
-	 * @param {*} wrappedSchema	Root of the wrapped schema tree.
+	 * Temporary builder-only metadata (removed in Pass 4):
+	 *  - schemaNode._autoId
+	 *  - schemaNode._path
+	 *  - schemaNode._dataContextPath
+	 *  - schemaNode._dataPath
+	 *  - ctx.explicitIdToAutoId, ctx.implicitIdToAutoId, ctx.schemaNodeByAutoId, ctx.autoIdByName, etc.
 	 */
-	_buildDependencyGraph(wrappedSchema) {
+	_buildDependencyGraph() {
 
 		//---- PASS 1 — Assign autoIds + collect ID maps ----
-		const ctx = this._dep_pass1_assignAutoIdsAndMaps(wrappedSchema);
+		const ctx = this._pass1_assignAutoIdsAndMaps();
 
 		//---- PASS 2 — Compute UI path & data paths ----
-		this._dep_pass2_assignPathsAndData(wrappedSchema);
+		for (let i = 0; i < this.wrappedSchema.details.entries.length; i++)// Details roots
+			this._assignPathsAndData(this.wrappedSchema.details.entries[i], [i], []);
+		for (let i = 0; i < this._colSchemaNodes.length; i++)// Main columns
+			this._assignPathsAndData(this._colSchemaNodes[i], ["m", i], []);
 
 		//---- PASS 3 — Resolve dependsOn and build dependency metadata ----
-		this._dep_pass3_resolveDependencies(ctx);
+		this._pass3_resolveDependencies(ctx);
 
 		//---- PASS 4 — Cleanup: remove all temporary builder-only metadata ----
-		this._dep_pass4_cleanup(ctx);
+		let stack = [...ctx.initialRoots];
+		for (let schemaNode; schemaNode = stack.pop();) {
+			delete schemaNode._autoId;
+			delete schemaNode._path;
+			delete schemaNode._dataContextPath;
+			delete schemaNode._dataPath;
+			stack.push(...this._schemaChildren(schemaNode));
+		}
 	}
 
 	/*───────────────────────────────────────────────────────────
 		PASS 1 — Assign autoIds + collect ID maps
 	───────────────────────────────────────────────────────────*/
-	_dep_pass1_assignAutoIdsAndMaps(wrappedSchema) {
+	_pass1_assignAutoIdsAndMaps() {
 		const ctx = Object.create(null);
-		ctx.autoIdCounter      = 0;
-		ctx.explicitIdToAutoId = Object.create(null);
-		ctx.implicitIdToAutoId = Object.create(null);
-		ctx.schemaNodeByAutoId = Object.create(null);
-		ctx.seenCellIds        = Object.create(null);
+		ctx.autoIdCounter       = 0;
+		ctx.explicitIdToAutoId  = Object.create(null);
+		ctx.implicitIdToAutoId  = Object.create(null);
+		ctx.schemaNodeByAutoId      = Object.create(null);
+		ctx.seenCellIds         = Object.create(null);
 
-		const roots = [];
-		const cols = wrappedSchema.main && Array.isArray(wrappedSchema.main.columns)
-			? wrappedSchema.main.columns
-			: [];
-		for (let i = 0; i < cols.length; i++)
-			roots.push(cols[i]);
+		ctx.initialRoots = [...this._colSchemaNodes, ...this.wrappedSchema.details.entries];
 
-		if (wrappedSchema.details)
-			roots.push(wrappedSchema.details);
-
-		ctx.initialRoots = roots;
-
-		let stack = [...roots];
+		let stack = [...ctx.initialRoots];
 
 		for (let schemaNode; schemaNode = stack.pop();) {
+
 			const autoId = ++ctx.autoIdCounter;
 			schemaNode._autoId = autoId;
 			ctx.schemaNodeByAutoId[autoId] = schemaNode;
 
-			if (schemaNode.raw.cellId != null) {
-				if (ctx.seenCellIds[schemaNode.raw.cellId])
-					throw new Error(`Duplicate cellId "${schemaNode.raw.cellId}".`);
-				ctx.seenCellIds[schemaNode.raw.cellId] = true;
-				ctx.explicitIdToAutoId[schemaNode.raw.cellId] = autoId;
-			} else if (schemaNode.raw.id != null)
-				ctx.implicitIdToAutoId[schemaNode.raw.id] = autoId;
+			if (schemaNode.cellId != null) {
 
-			stack.push(...this._dep_children(schemaNode));
+				if (ctx.seenCellIds[schemaNode.cellId])
+					throw new Error(`Duplicate cellId "${schemaNode.cellId}".`);
+
+				ctx.seenCellIds[schemaNode.cellId] = true;
+				ctx.explicitIdToAutoId[schemaNode.cellId] = autoId;
+			} else if (schemaNode.id != null)
+				ctx.implicitIdToAutoId[schemaNode.id] = autoId;
+
+			stack.push(...this._schemaChildren(schemaNode));
 		}
 
-		ctx.autoIdByName = Object.assign(
-			Object.create(null),
-			ctx.implicitIdToAutoId,
-			ctx.explicitIdToAutoId
-		);
+		// Id/cellId → autoId lookup
+		ctx.autoIdByName = Object.assign(Object.create(null), ctx.implicitIdToAutoId, ctx.explicitIdToAutoId);
 
 		return ctx;
 	}
 
 	/*───────────────────────────────────────────────────────────
-		PASS 2 — Assign _path, _dataContextPath, and _dataPath
-	───────────────────────────────────────────────────────────*/
-	_dep_pass2_assignPathsAndData(wrappedSchema) {
-		if (wrappedSchema.details)
-			this._dep_assignPathsAndData(wrappedSchema.details, [], []);
-
-		const cols = wrappedSchema.main && Array.isArray(wrappedSchema.main.columns)
-			? wrappedSchema.main.columns
-			: [];
-
-		for (let i = 0; i < cols.length; i++)
-			this._dep_assignPathsAndData(cols[i], ["m", i], []);
-	}
-
-	_dep_assignPathsAndData(schemaNode, uiPath, parentCtx = []) {
-		schemaNode._path = uiPath;
-
-		const hasCtx = typeof schemaNode.raw.context === "string" && schemaNode.raw.context.length;
-		const myCtx = hasCtx ? [...parentCtx, schemaNode.raw.context] : parentCtx;
-
-		schemaNode._dataContextPath = myCtx;
-
-		if (schemaNode.raw.id != null)
-			schemaNode._dataPath = [...myCtx, String(schemaNode.raw.id)];
-
-		const kids = this._dep_children(schemaNode);
-
-		for (let i = 0; i < kids.length; i++)
-			this._dep_assignPathsAndData(kids[i], [...uiPath, i], myCtx);
-	}
-
-	/*───────────────────────────────────────────────────────────
 		PASS 3 — Resolve dependsOn and build dependency metadata
 	───────────────────────────────────────────────────────────*/
-	_dep_pass3_resolveDependencies(ctx) {
+	_pass3_resolveDependencies(ctx) {
 		let stack = [...ctx.initialRoots];
 
 		for (let schemaNode; schemaNode = stack.pop();) {
 
-			if (schemaNode.raw.dependsOn) {
-				const deps =Array.isArray(schemaNode.raw.dependsOn)?schemaNode.raw.dependsOn:[schemaNode.raw.dependsOn];
+			if (schemaNode.dependsOn) {
+				const deps = Array.isArray(schemaNode.dependsOn) ? schemaNode.dependsOn : [schemaNode.dependsOn];
 
-				const dependentIsExp = schemaNode._path && schemaNode._path[0] !== "m";
+				const dependentIsExp = schemaNode._path[0] !== "m";
 				const cellPaths = [];
 				const dataPaths = [];
 
 				for (const depName of deps) {
+
 					const depAutoId = ctx.autoIdByName[depName];
 
 					if (depAutoId == null) {
@@ -1102,15 +1031,17 @@ class TablanceBase {
 					}
 
 					const dependee = ctx.schemaNodeByAutoId[depAutoId];
-					const dependeeIsExp = dependee._path && dependee._path[0] !== "m";
+					const dependeeIsExp = dependee._path[0] !== "m";
 
-					const fwd = this._dep_computeForwardPath(dependee, schemaNode);
+					// UI-forward dependency path
+					const fwd = this._computeDependencyPath(dependee, schemaNode);
 
 					if (fwd)
 						(dependee.dependencyPaths ??= []).push(fwd);
 
+					// classify dependency type
 					if (dependentIsExp && dependeeIsExp) {
-						const rev = this._dep_computeReversePath(schemaNode, dependee);
+						const rev = this._computeReversePath(schemaNode, dependee);
 						if (rev && rev.length)
 							cellPaths.push(rev);
 					} else {
@@ -1121,35 +1052,17 @@ class TablanceBase {
 					}
 				}
 
-				this._dep_finalizeDependency(schemaNode, cellPaths, dataPaths);
+				this._finalizeDependency(schemaNode, cellPaths, dataPaths);
 			}
 
-			stack.push(...this._dep_children(schemaNode));
+			stack.push(...this._schemaChildren(schemaNode));
 		}
 	}
-
-	/*───────────────────────────────────────────────────────────
-		PASS 4 — Cleanup: remove temporary builder-only metadata
-	───────────────────────────────────────────────────────────*/
-	_dep_pass4_cleanup(ctx) {
-		let stack = [...ctx.initialRoots];
-
-		for (let schemaNode; schemaNode = stack.pop();) {
-			delete schemaNode._autoId;
-			delete schemaNode._path;
-			delete schemaNode._dataContextPath;
-			delete schemaNode._dataPath;
-			stack.push(...this._dep_children(schemaNode));
-		}
-	}
-
 
 	/*───────────────────────────────────────────────────────────
 		Helper: Normalize schemaNode children
-		- Skips nodes that only serve as wrappers (context/repeated)
-		- Returns the "real" children array.
 	───────────────────────────────────────────────────────────*/
-	_dep_children(schemaNode) {
+	_schemaChildren(schemaNode) {
 		while (schemaNode.entry)
 			schemaNode = schemaNode.entry;
 		if (Array.isArray(schemaNode.entries))
@@ -1158,11 +1071,31 @@ class TablanceBase {
 	}
 
 	/*───────────────────────────────────────────────────────────
+		Helper: Assign _path, _dataContextPath, and _dataPath
+	───────────────────────────────────────────────────────────*/
+	_assignPathsAndData(schemaNode, uiPath, parentCtx = []) {
+		schemaNode._path = uiPath;
+
+		const hasCtx = typeof schemaNode.context === "string" && schemaNode.context.length;
+		const myCtx = hasCtx ? [...parentCtx, schemaNode.context] : parentCtx;
+
+		schemaNode._dataContextPath = myCtx;
+
+		if (schemaNode.id != null)
+			schemaNode._dataPath = [...myCtx, String(schemaNode.id)];
+
+		const kids = this._schemaChildren(schemaNode);
+
+		for (let i = 0; i < kids.length; i++)
+			this._assignPathsAndData(kids[i], [...uiPath, i], myCtx);
+	}
+
+	/*───────────────────────────────────────────────────────────
 		Helper: Compute UI-forward dependency path
 	───────────────────────────────────────────────────────────*/
-	_dep_computeForwardPath(dependee, dependent) {
+	_computeDependencyPath(dependee, dependent) {
 		const from = dependee._path;
-		const to = dependent._path;
+		const to   = dependent._path;
 
 		if (!from || !to)
 			return null;
@@ -1194,9 +1127,7 @@ class TablanceBase {
 	/*───────────────────────────────────────────────────────────
 		Helper: Compute reverse dependency path (exp→exp)
 	───────────────────────────────────────────────────────────*/
-	_dep_computeReversePath(from, to) {
-		if (!from._path || !to._path)
-			return null;
+	_computeReversePath(from, to) {
 		if (from._path[0] === "m" || to._path[0] === "m")
 			return null;
 
@@ -1217,7 +1148,7 @@ class TablanceBase {
 	/*───────────────────────────────────────────────────────────
 		Helper: Finalize dependency classification (exclusive)
 	───────────────────────────────────────────────────────────*/
-	_dep_finalizeDependency(schemaNode, cellPaths, dataPaths) {
+	_finalizeDependency(schemaNode, cellPaths, dataPaths) {
 
 		if (cellPaths.length) {
 			schemaNode.dependsOnCellPaths = cellPaths;
@@ -1483,7 +1414,7 @@ class TablanceBase {
 		if (!this._onlyDetails)
 			this._scrollToCursor();//need this first to make sure adjacent cell is even rendered
 
-		if (this._activeDetailsCell?.parent?.schemaNode.raw.type==="lineup")
+		if (this._activeDetailsCell?.parent?.schemaNode.type==="lineup")
 			this._moveInsideLineup(hSign,vSign);
 		else if (vSign) {//moving up or down
 			let newColIndex=this._mainColIndex;
@@ -1595,7 +1526,7 @@ class TablanceBase {
 			return instanceNode;
 		const children=instanceNode.children;
 		let startI=isGoingDown?0:children.length-1;
-		if (instanceNode.schemaNode.raw.type==="lineup"&&!isGoingDown) {
+		if (instanceNode.schemaNode.type==="lineup"&&!isGoingDown) {
 			let chosenCell;
 			for (let i=startI,otherCell;otherCell=children[i--];)
 				if (otherCell.el.offsetParent)
@@ -1615,7 +1546,7 @@ class TablanceBase {
 		if (this._bulkEditArea?.contains(document.activeElement))
 			return;
 		this._tooltip.style.visibility="hidden";
-		if (this._inEditMode&&this._activeSchemaNode.raw.input.type==="date") {
+		if (this._inEditMode&&this._activeSchemaNode.input.type==="date") {
 			if (e.key.slice(0,5)==="Arrow") {
 				if (e.ctrlKey)
 					e.stopPropagation();//allow moving textcursor if ctrl is held so prevent date-change then
@@ -1647,13 +1578,13 @@ class TablanceBase {
 					if (e.code=="Space")
 						e.preventDefault();//prevent scrolling when pressing space
 					this._scrollToCursor();
-					if (this._activeSchemaNode.raw.type=="expand")
+					if (this._activeSchemaNode.type=="expand")
 						// the preventDefault() above can SOMETIMES suppress transitionend;
 						// deferring one frame ensures the animation completes and details is closed properly.
 						return requestAnimationFrame(()=>this._toggleRowExpanded(this._selectedCell.parentElement));
-					if (this._activeSchemaNode.raw.type=="select")
+					if (this._activeSchemaNode.type=="select")
 						return this._rowCheckboxChange(this._selectedCell,e.shiftKey);
-					if (e.code.endsWith("Enter")||this._activeSchemaNode.raw.input?.type==="button") {
+					if (e.code.endsWith("Enter")||this._activeSchemaNode.input?.type==="button") {
 						e.preventDefault();//prevent newline from being entered into textareas
 						return this._enterCell(e);
 					}
@@ -1670,7 +1601,7 @@ class TablanceBase {
 
 	_groupEscape() {
 		for (let instanceNode=this._activeDetailsCell; instanceNode=instanceNode?.parent;)
-			if (instanceNode.schemaNode.raw.type==="group")
+			if (instanceNode.schemaNode.type==="group")
 				return this._selectDetailsCell(instanceNode);
 	}
 
@@ -1719,7 +1650,7 @@ class TablanceBase {
 		const shadowLine=detailsDiv.appendChild(document.createElement("div"));
 		shadowLine.className="details-shadow";
 		const instanceNode=this._openDetailsPanes[rowIndex]={};
-		this._generateDetailsContent(this._wrappedSchema.details,rowIndex,instanceNode,detailsDiv,[],this._data[rowIndex]);
+		this._generateDetailsContent(this.wrappedSchema.details,rowIndex,instanceNode,detailsDiv,[],this._data[rowIndex]);
 		instanceNode.rowIndex=rowIndex;
 		return detailsRow;
 	}
@@ -1766,9 +1697,9 @@ class TablanceBase {
 		instanceNode.path=[...path];
 		instanceNode.dataObj=rowData;
 		instanceNode.schemaNode=schemaNode;
-		if (schemaNode.raw.visibleIf)
+		if (schemaNode.visibleIf)
 			this._applyVisibleIf(instanceNode);
-		switch (schemaNode.raw.type) {
+		switch (schemaNode.type) {
 			case "list": return this._generateDetailsList(...arguments);
 			case "field": return this._generateField(...arguments);
 			case "group": return this._generateDetailsGroup(...arguments);
@@ -1780,19 +1711,19 @@ class TablanceBase {
 
 	_repeatedOnDelete=(e,data,index,schemaNode,cel)=>{
 		this._deleteCell(cel.parent.parent);
-		cel.parent.parent.parent.schemaNode.raw.onDelete?.(cel.parent.parent.dataObj,cel.parent.parent);
+		cel.parent.parent.parent.schemaNode.onDelete?.(cel.parent.parent.dataObj,cel.parent.parent);
 	}
 
 	_fileOnDelete=(e,data,index,strct,cel)=>{
 		const fileCell=cel.parent.parent;
 		const inputSchemaNode=fileCell.fileInputSchemaNode;
 		const dataRow=fileCell.parent.dataObj;
-		delete dataRow[inputSchemaNode.raw.id];
+		delete dataRow[inputSchemaNode.id];
 		const fileTd=fileCell.el.parentElement;
 		fileTd.innerHTML="";
 		fileTd.classList.remove("group-cell");
 		this._generateDetailsContent(inputSchemaNode,index,fileCell,fileTd,fileCell.path,dataRow);
-		inputSchemaNode.raw.deleteHandler?.(e,data,inputSchemaNode,fileCell.parent.dataObj,index,fileCell);
+		inputSchemaNode.deleteHandler?.(e,data,inputSchemaNode,fileCell.parent.dataObj,index,fileCell);
 		this._selectDetailsCell(fileCell);
 	}
 
@@ -1832,11 +1763,11 @@ class TablanceBase {
 	 * this method creates the last entry that the user interacts with to create another entry
 	 * @param {Object} repeatedObj The object representing the repeated-container*/
 	_generateRepeatedCreator(repeatedObj) {
-		const creationTxt=repeatedObj.schemaNode.raw.creationText??this._opts.lang?.insertNew??"Insert new";
+		const creationTxt=repeatedObj.schemaNode.creationText??this._opts.lang?.insertNew??"Insert new";
 		const creationSchemaNode={type:"group",closedRender:()=>creationTxt,entries:[],
 							creator:true//used to know that this entry is the creator and that it should not be sorted
 							,onOpen:this._onOpenCreationGroup,cssClass:"repeat-insertion"};
-		const el=this._repeatInsert(repeatedObj,false,{},this._wrapSchema(creationSchemaNode));
+		const el=this._repeatInsert(repeatedObj,false,{},creationSchemaNode);
 		el.parentElement.classList.add("empty");//this will make it hidden if inside a group that is closed
 	}
 
@@ -1874,9 +1805,8 @@ class TablanceBase {
 	_generateButton(schemaNode,mainIndex,parentEl,rowData,instanceNode=null) {
 		const btn=parentEl.appendChild(document.createElement("button"));
 		btn.tabIndex="-1";//so it can't be tabbed to
-		btn.innerHTML=schemaNode.raw.input.btnText;
-		btn.addEventListener("click",
-							e=>schemaNode.raw.input.clickHandler?.(e,rowData,mainIndex,schemaNode.raw,instanceNode));
+		btn.innerHTML=schemaNode.input.btnText;
+		btn.addEventListener("click",e=>schemaNode.input.clickHandler?.(e,rowData,mainIndex,schemaNode,instanceNode));
 
 		//prevent gaining focus upon clicking it whhich would cause problems. It should be "focused" by having the
 		//cellcursor on its cell which triggers it with enter-key anyway
@@ -1909,15 +1839,15 @@ class TablanceBase {
 		instanceNode.el=groupTable;//so that the whole group-table can be selectedf
 		if (notYetCreated)
 			instanceNode.creating=true;
-		groupTable.className="details-group "+(groupSchemaNode.raw.cssClass??"");
+		groupTable.className="details-group "+(groupSchemaNode.cssClass??"");
 		this._generateDetailsCollection(groupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
-		if (groupSchemaNode.raw.closedRender) {
+		if (groupSchemaNode.closedRender) {
 			groupTable.classList.add("closed-render");
 			const renderRow=tbody.insertRow();
 			renderRow.dataset.path=path.join("-");
 			renderRow.className="group-render";
 			const renderCell=renderRow.insertCell();
-			renderCell.innerText=groupSchemaNode.raw.closedRender(rowData);
+			renderCell.innerText=groupSchemaNode.closedRender(rowData);
 		}
 		return true;
 	}
@@ -1942,11 +1872,11 @@ class TablanceBase {
 		const listTable=parentEl.appendChild(document.createElement("table"));
 		instanceNode.containerEl=listTable.appendChild(document.createElement("tbody"));
 		listTable.className="details-list";
-		if (listSchemaNode.raw.titlesColWidth!=false) {
+		if (listSchemaNode.titlesColWidth!=false) {
 			let titlesCol=document.createElement("col");
 			listTable.appendChild(document.createElement("colgroup")).appendChild(titlesCol);
-			if (listSchemaNode.raw.titlesColWidth!=null)
-				titlesCol.style.width=listSchemaNode.raw.titlesColWidth;
+			if (listSchemaNode.titlesColWidth!=null)
+				titlesCol.style.width=listSchemaNode.titlesColWidth;
 		}
 		return this._generateDetailsCollection(listSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
 	}
@@ -1969,7 +1899,7 @@ class TablanceBase {
 	 */
 	_generateDetailsLineup(lineupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
 		instanceNode.containerEl=parentEl.appendChild(document.createElement("div"));
-		instanceNode.containerEl.classList.add("lineup","collection",...lineupSchemaNode.raw.cssClass?.split(" ")??[]);
+		instanceNode.containerEl.classList.add("lineup","collection",...lineupSchemaNode.cssClass?.split(" ")??[]);
 		return this._generateDetailsCollection(lineupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
 	}
 
@@ -1992,12 +1922,12 @@ class TablanceBase {
 	 * 		schemaNode with no create option).
 	 */
 	_generateContext(contextSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,notYetCreated) {
-		if (!rowData[contextSchemaNode.raw.id]) {//if the structure point to data within objects that doesn't yet exist
+		if (!rowData[contextSchemaNode.id]) {//if the structure point to data within objects that doesn't yet exist
 			notYetCreated=true;
-			rowData[contextSchemaNode.raw.id]={};
+			rowData[contextSchemaNode.id]={};
 		}
 		return this._generateDetailsContent(contextSchemaNode.entry, mainIndex, instanceNode, parentEl, path
-			,rowData[contextSchemaNode.raw.id],notYetCreated);
+			,rowData[contextSchemaNode.id],notYetCreated);
 	}
 	
 
@@ -2007,12 +1937,12 @@ class TablanceBase {
 
 		collectionObj.children=[];
 		for (let entryI=-1,childSchemaNode; childSchemaNode=containerSchemaNode.entries[++entryI];) {
-			if (childSchemaNode.raw.type==="repeated") {
-				const repeatData=rowData[childSchemaNode.raw.id]??(rowData[childSchemaNode.raw.id]=[]);
+			if (childSchemaNode.type==="repeated") {
+				const repeatData=rowData[childSchemaNode.id]??(rowData[childSchemaNode.id]=[]);
 				const rptCelObj=collectionObj.children[entryI]={parent:collectionObj,index:entryI,children:[]
 												,schemaNode:childSchemaNode,dataObj:repeatData,path:[...path,entryI]};
 				rptCelObj.insertionPoint=collectionObj.containerEl.appendChild(document.createComment("repeat-insert"));
-				childSchemaNode.raw.create&&this._generateRepeatedCreator(rptCelObj);
+				childSchemaNode.create&&this._generateRepeatedCreator(rptCelObj);
 				repeatData?.forEach(repeatData=>this._repeatInsert(rptCelObj,false,repeatData));
 			} else
 				this._generateCollectionItem(childSchemaNode,mainIndex,collectionObj,path,rowData);
@@ -2029,15 +1959,15 @@ class TablanceBase {
 	 */
 	_buildCollectionItemDOM(schemaNode,collection,itemObj,title) {
 		let outerContainerEl,containerEl;
-		const type=collection.schemaNode.raw.type;
+		const type=collection.schemaNode.type;
 
 		// LIST: Each item is a <tr> with title cell optionally + value cell
 		if (type=="list") {
 			outerContainerEl=document.createElement("tr");
-			if (collection.schemaNode.raw.titlesColWidth!=false) {
+			if (collection.schemaNode.titlesColWidth!=false) {
 				const td=outerContainerEl.insertCell();
 				td.className="title";
-				td.innerText=schemaNode.raw.title??"";
+				td.innerText=schemaNode.title??"";
 			}
 			containerEl=outerContainerEl.insertCell();
 		} else if (type=="lineup") {// LINEUP: Items rendered inline, outerContainerEl wraps title + inner content
@@ -2050,10 +1980,10 @@ class TablanceBase {
 			outerContainerEl.className="empty";	// Will be hidden while group is closed until content becomes non-empty
 
 			const td=outerContainerEl.insertCell();
-			td.classList.toggle("disabled",schemaNode.raw.type=="field"&&!schemaNode.raw.input);
+			td.classList.toggle("disabled",schemaNode.type=="field"&&!schemaNode.input);
 
 			// Add separator for non-group members
-			if (schemaNode.raw.type!="group")
+			if (schemaNode.type!="group")
 				td.appendChild(document.createElement("hr")).className="separator";
 
 			if (title)
@@ -2080,7 +2010,7 @@ class TablanceBase {
 		let siblingAfter=null;
 
 		// For repeated collections: determine the real insertion position based on insertionPoint
-		if (collectionOrRepeated.schemaNode.raw.type=="repeated") {
+		if (collectionOrRepeated.schemaNode.type=="repeated") {
 			const next=collectionOrRepeated.insertionPoint.nextSibling;
 			const base=collectionOrRepeated.children.length;
 			const pos=(next?.rowIndex??base)-base+index;
@@ -2096,8 +2026,8 @@ class TablanceBase {
 		collectionOrRepeated.children.splice(index,0,itemObj);
 
 		// Extra CSS class if defined in schemaNode
-		if (schemaNode.raw.cssClass)
-			outerContainerEl.className+=" "+schemaNode.raw.cssClass;
+		if (schemaNode.cssClass)
+			outerContainerEl.className+=" "+schemaNode.cssClass;
 	}
 	
 	
@@ -2109,7 +2039,7 @@ class TablanceBase {
 	 */
 	_generateCollectionItem(schemaNode,mainIndex,collectionOrRepeated,path,data,index=null) {
 		// Determine actual collection (repeated uses parent collection visually)
-		const collection=collectionOrRepeated.schemaNode.raw.type=="repeated"
+		const collection=collectionOrRepeated.schemaNode.type=="repeated"
 									?collectionOrRepeated.parent:collectionOrRepeated;
 
 		const collectionEl=collection.containerEl;
@@ -2120,10 +2050,10 @@ class TablanceBase {
 
 		// Optional title element
 		let title;
-		if (schemaNode.raw.title) {
+		if (schemaNode.title) {
 			title=document.createElement("span");
 			title.className="title";
-			title.innerHTML=schemaNode.raw.title;
+			title.innerHTML=schemaNode.title;
 		}
 
 		// Build DOM structure for this item
@@ -2131,11 +2061,11 @@ class TablanceBase {
 
 
 		// Visual CSS classes
-		if (schemaNode.raw.input&&schemaNode.raw.input.type!="button")
+		if (schemaNode.input&&schemaNode.input.type!="button")
 			containerEl.classList.add("input-cell");
 		containerEl.classList.add("value");
-		if (schemaNode.raw.input)
-			outerContainerEl.classList.add((schemaNode.raw.input.type??"text")+"-container");
+		if (schemaNode.input)
+			outerContainerEl.classList.add((schemaNode.input.type??"text")+"-container");
 
 		// If inserting in middle: update sibling item indices
 		if (index<collectionOrRepeated.children.length)
@@ -2182,7 +2112,7 @@ class TablanceBase {
 			let instanceNode=this._openDetailsPanes[mainTr?.dataset.dataRowIndex??0];
 			for (let step of interactiveEl.dataset.path.split("-")) {
 				instanceNode=instanceNode.children[step];
-				if (instanceNode.schemaNode.raw.type==="group"&&!instanceNode.el.classList.contains("open"))
+				if (instanceNode.schemaNode.type==="group"&&!instanceNode.el.classList.contains("open"))
 					break;
 			}
 			this._selectDetailsCell(instanceNode);
@@ -2274,7 +2204,7 @@ class TablanceBase {
 	}
 
 	_autoTextAreaResize(e) {
-		const maxHeight=this._activeSchemaNode.raw.maxHeight??Infinity;
+		const maxHeight=this._activeSchemaNode.maxHeight??Infinity;
 		
 		//__auto-resize__
 		//first set height to auto.This won't make it auto-resize or anything but will rather set its height to about 40
@@ -2346,7 +2276,7 @@ class TablanceBase {
 		
 		this._cellCursor.appendChild(input);
 		input.value=this._selectedCellVal??"";
-		input.placeholder=this._activeSchemaNode.raw.input.placeholder??this._opts.lang?.datePlaceholder??"YYYY-MM-DD";
+		input.placeholder=this._activeSchemaNode.input.placeholder??this._opts.lang?.datePlaceholder??"YYYY-MM-DD";
 		input.focus();
 		
 		function onInput(_e) {
@@ -2391,28 +2321,28 @@ class TablanceBase {
 	_enterCell(e) {
 		if (this._inEditMode||this._cellCursor.classList.contains("disabled"))
 			return;
-		if (this._activeSchemaNode.raw.input) {
+		if (this._activeSchemaNode.input) {
 			e.preventDefault();//prevent text selection upon entering editmode
-			if (this._activeSchemaNode.raw.input.type==="button")
+			if (this._activeSchemaNode.input.type==="button")
 				return this._activeDetailsCell.el.click();
 			this._inputVal=this._selectedCellVal;
 			this._inEditMode=true;
 			this._cellCursor.classList.add("edit-mode");
 			({textarea:this._openTextAreaEdit,date:this._openDateEdit,select:this._openSelectEdit
-				,file:this._openFileEdit}[this._activeSchemaNode.raw.input.type]??this._openTextEdit).call(this,e);
-		} else if (this._activeSchemaNode.raw.type==="group") {
+				,file:this._openFileEdit}[this._activeSchemaNode.input.type]??this._openTextEdit).call(this,e);
+		} else if (this._activeSchemaNode.type==="group") {
 			this._openGroup(this._activeDetailsCell);
 		}
 	}
 
 	_openGroup(groupObj) {
 		let doOpen=true;
-		groupObj.schemaNode.raw.onOpen?.({preventDefault:()=>doOpen=false},groupObj);
+		groupObj.schemaNode.onOpen?.({preventDefault:()=>doOpen=false},groupObj);
 		if (!doOpen)
 			return;
 		groupObj.el.classList.add("open");
 		this._selectDetailsCell(this._getFirstSelectableDetailsCell(groupObj,true,true));
-		groupObj.schemaNode.raw.onOpenAfter?.(groupObj);
+		groupObj.schemaNode.onOpenAfter?.(groupObj);
 		
 	}
 
@@ -2427,10 +2357,10 @@ class TablanceBase {
 			//look for ancestor-cell with rowData which repeated rows have. It's a sub-data-row of #data.
 			//if we got all the way to the root without finding any repeated-rows then use datarow directly from #data
 			for (cell=groupObject.parent;!cell.dataObj&&cell.parent;cell=cell.parent);//look for ancestor with rowData
-			renderText=groupObject.schemaNode.raw.closedRender(groupObject.dataObj);
+			renderText=groupObject.schemaNode.closedRender(groupObject.dataObj);
 			groupObject.el.rows[groupObject.el.rows.length-1].cells[0].innerText=renderText;
 		}
-		groupObject.schemaNode.raw.onClose?.(groupObject);
+		groupObject.schemaNode.onClose?.(groupObject);
 		return true;
 	}
 
@@ -2440,15 +2370,15 @@ class TablanceBase {
 		entrySchemaNode??=repeated.schemaNode.entry;
 
 		let indexOfNew,rowIndex;
-		if (!creating&&repeated.schemaNode.raw.sortCompare&&!entrySchemaNode.creator) {
-			for (indexOfNew=0;indexOfNew<repeated.children.length-!!repeated.schemaNode.raw.create; indexOfNew++)
-				if (repeated.schemaNode.raw.sortCompare(data,repeated.children[indexOfNew].dataObj)<0)
+		if (!creating&&repeated.schemaNode.sortCompare&&!entrySchemaNode.creator) {
+			for (indexOfNew=0;indexOfNew<repeated.children.length-!!repeated.schemaNode.create; indexOfNew++)
+				if (repeated.schemaNode.sortCompare(data,repeated.children[indexOfNew].dataObj)<0)
 					break;
 		} else
-			indexOfNew=repeated.children.length-(repeated.schemaNode.raw.create&&!entrySchemaNode.creator)//pos be4 creator
+			indexOfNew=repeated.children.length-(repeated.schemaNode.create&&!entrySchemaNode.creator)//pos be4 creator
 		for (let root=repeated.parent; root.parent; root=root.parent,rowIndex=root.rowIndex);//get main-index
 		let schemaNode=repeated.schemaNode;
-		if (false&&schemaNode.raw.create&&entrySchemaNode.raw.type==="group")//FIX återaktivera sedan
+		if (schemaNode.create&&entrySchemaNode.type==="group")
 			(schemaNode={...schemaNode}).entry=this._schemaCopyWithDeleteButton(entrySchemaNode,this._repeatedOnDelete);
 			//copy repeat-schemaNode not to edit orig.Then add delete-controls to its inner group which also gets copied
 		const newObj=this._generateCollectionItem(schemaNode.entry,rowIndex,repeated,repeated.path,data,indexOfNew);
@@ -2487,14 +2417,14 @@ class TablanceBase {
 		instanceNode.parent.children.splice(instanceNode.index,1);
 		if (!programatically)
 			instanceNode.parent.dataObj.splice(instanceNode.index,1);
-		if (instanceNode.parent.schemaNode.raw.type==="repeated"&&instanceNode.parent.parent.schemaNode.raw.type==="list")
+		if (instanceNode.parent.schemaNode.type==="repeated"&&instanceNode.parent.parent.schemaNode.type==="list")
 			instanceNode.el.parentElement.parentElement.remove();
 		else
 			instanceNode.el.parentElement.remove();
 		this._activeDetailsCell=null;//causes problem otherwise when #selectDetailsCell checks old cell
 		if (!programatically)
 			this._selectDetailsCell(newSelectedCell??instanceNode.parent.parent);
-		instanceNode.creating&&instanceNode.parent.schemaNode.raw.onCreateCancel?.(instanceNode.parent);
+		instanceNode.creating&&instanceNode.parent.schemaNode.onCreateCancel?.(instanceNode.parent);
 	}
 
 	_openTextEdit() {
@@ -2506,12 +2436,12 @@ class TablanceBase {
 		
 		input.addEventListener("change",()=>this._inputVal=input.value);
 		input.value=this._selectedCellVal??"";
-		if (this._activeSchemaNode.raw.input.format)
-			this._attachInputFormatter(input,this._activeSchemaNode.raw.input.format);
+		if (this._activeSchemaNode.input.format)
+			this._attachInputFormatter(input,this._activeSchemaNode.input.format);
 		input.focus();
-		if (this._activeSchemaNode.raw.input.maxLength)
-			input.maxLength=this._activeSchemaNode.raw.input.maxLength;
-		input.placeholder=this._activeSchemaNode.raw.input.placeholder??"";
+		if (this._activeSchemaNode.input.maxLength)
+			input.maxLength=this._activeSchemaNode.input.maxLength;
+		input.placeholder=this._activeSchemaNode.input.placeholder??"";
 	}
 
 	_mapAdd(map,key,val) {
@@ -2647,7 +2577,7 @@ class TablanceBase {
 			}
 		});
 	
-		this._activeSchemaNode.raw.input.fileUploadHandler?.(xhr,file,this._activeSchemaNode,this._cellCursorDataObj,
+		this._activeSchemaNode.input.fileUploadHandler?.(xhr,file,this._activeSchemaNode,this._cellCursorDataObj,
 			this._mainRowIndex,this._activeDetailsCell);
 	
 		xhr.addEventListener("load", () => {
@@ -2681,9 +2611,9 @@ class TablanceBase {
 		textarea.addEventListener("keydown",keydown.bind(this));
 		textarea.focus();
 		textarea.addEventListener("change",_e=>this._inputVal=textarea.value);
-		if (this._activeSchemaNode.raw.input.maxLength)
-			textarea.maxLength=this._activeSchemaNode.raw.input.maxLength;
-		textarea.placeholder=this._activeSchemaNode.raw.input.placeholder??"";
+		if (this._activeSchemaNode.input.maxLength)
+			textarea.maxLength=this._activeSchemaNode.input.maxLength;
+		textarea.placeholder=this._activeSchemaNode.input.placeholder??"";
 		function keydown(e) {
 			if (e.key==="Enter"&&e.ctrlKey) {
 				this._insertAtCursor(textarea,"\r\n");
@@ -2918,8 +2848,8 @@ class TablanceBase {
 		 * wires up filtering, keyboard navigation and mouse interaction, and focuses the input.
 		 */
 		_openSelectEdit() {
-			const strctInp=this._activeSchemaNode.raw.input;
-			this._inputVal=this._cellCursorDataObj[this._activeSchemaNode.raw.id];
+			const strctInp=this._activeSchemaNode.input;
+			this._inputVal=this._cellCursorDataObj[this._activeSchemaNode.id];
 			const ctx=this._createSelectDropdownContext(strctInp);
 			this._cellCursor.style.backgroundColor="transparent";
 			const allowCreateNew=strctInp.allowCreateNew;
@@ -2962,7 +2892,7 @@ class TablanceBase {
 	_validateInput(newVal) {
 		let message;
 		const input=this._cellCursor.querySelector("input");
-		const doCommit=this._activeSchemaNode.raw.input.validation(newVal,m=>message=m,this._activeSchemaNode
+		const doCommit=this._activeSchemaNode.input.validation(newVal,m=>message=m,this._activeSchemaNode
 												,this._cellCursorDataObj,this._mainRowIndex,this._activeDetailsCell);
 		if (doCommit)
 			return true;
@@ -2989,7 +2919,7 @@ class TablanceBase {
 				// Find the corresponding table row for the main data row
 				const tr=this._mainTbody.querySelector(`[data-data-row-index="${this._mainRowIndex}"]:not(.details)`);
 				// Update the content of the dependent cell in the main table
-				this._updateMainRowCell(tr.cells[depPath[1]], this._wrappedCols[depPath[1]]);
+				this._updateMainRowCell(tr.cells[depPath[1]], this._colSchemaNodes[depPath[1]]);
 			} else if (this._openDetailsPanes[this._mainRowIndex]) {//if cell is in details and details is open
 				//cells is an array that potentially can hold more than 1 cell. The reason is that when going into
 				//repeated structures, it "splits" into multiple cells if there are multiple repeated-entries/instances
@@ -2999,7 +2929,7 @@ class TablanceBase {
 					cells[0] = cells[0].parent;//go up one level per "..". At this point cells will only have one cell
 
 				for (; step<depPath.length; step++) {//iterate the steps
-					if (cells[0].schemaNode.raw.type==="repeated") {
+					if (cells[0].schemaNode.type==="repeated") {
 						const newCells=[];//will hold the new set of cells after this step
 						for (const cell of cells)
 							newCells.push(...cell.children);//add all repeated-children of current cell
@@ -3017,9 +2947,9 @@ class TablanceBase {
 		if (!this._inEditMode)
 			return true;	
 		const input=this._cellCursor.querySelector("input");
-		if (this._activeSchemaNode.raw.input.format?.stripDelimiterOnSave&&this._activeSchemaNode.raw.input.format.delimiter)
-			input.value=input.value.replaceAll(this._activeSchemaNode.raw.input.format.delimiter, "");
-		if (this._activeSchemaNode.raw.input.validation&&save&&!this._validateInput(input.value))
+		if (this._activeSchemaNode.input.format?.stripDelimiterOnSave&&this._activeSchemaNode.input.format.delimiter)
+			input.value=input.value.replaceAll(this._activeSchemaNode.input.format.delimiter, "");
+		if (this._activeSchemaNode.input.validation&&save&&!this._validateInput(input.value))
 			return false;
 		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
 		this.rootEl.focus({preventScroll:true});//so that #inputVal gets updated-
@@ -3031,7 +2961,7 @@ class TablanceBase {
 			this._doEditSave();
 		}
 		this._cellCursor.innerHTML="";
-		//if (this._activeSchemaNode.raw.input.type==="textarea")//also needed for file..
+		//if (this._activeSchemaNode.input.type==="textarea")//also needed for file..
 		this._adjustCursorPosSize(this._selectedCell);
 		this._highlightOnFocus=false;
 		return true;
@@ -3054,8 +2984,8 @@ class TablanceBase {
 			let message;//message to show to the user if creation was unsucessful
 			for (var root=repeatEntry; root.parent; root=root.parent);//get root-object in order to retrieve rowIndex
 			let doCreate=true;
-			if (repeatEntry.schemaNode.raw.creationValidation)
-				doCreate=repeatEntry.schemaNode.raw.creationValidation(m=>message=m,repeatEntry.schemaNode.raw
+			if (repeatEntry.schemaNode.creationValidation)
+				doCreate=repeatEntry.schemaNode.creationValidation(m=>message=m,repeatEntry.schemaNode
 																	,repeatEntry.dataObj,root.rowIndex,repeatEntry);
 			if (!doCreate) {
 				if (message)
@@ -3063,8 +2993,8 @@ class TablanceBase {
 				return false;//prevent commiting/closing the group
 			}
 			repeatEntry.creating=false;
-			const creationContainer=repeatEntry.schemaNode.raw.type=="group"?repeatEntry:repeatEntry.parent;
-			creationContainer.schemaNode.raw.onCreate?.
+			const creationContainer=repeatEntry.schemaNode.type=="group"?repeatEntry:repeatEntry.parent;
+			creationContainer.schemaNode.onCreate?.
 							(repeatEntry.dataObj,this._data[root.rowIndex],creationContainer.schemaNode,repeatEntry);
 		} else {
 			this._deleteCell(repeatEntry);
@@ -3076,13 +3006,13 @@ class TablanceBase {
 	_closeActiveDetailsCell() {
 		if (this._activeDetailsCell) {
 			for (let oldCellParent=this._activeDetailsCell; oldCellParent=oldCellParent.parent;) {
-				if (oldCellParent.schemaNode.raw.type==="group") {
+				if (oldCellParent.schemaNode.type==="group") {
 					if (!this._closeGroup(oldCellParent))//close any open group above old cell
 						return false;
 					this._ignoreClicksUntil=Date.now()+500;
 				}
 				
-				oldCellParent.schemaNode.raw.onBlur?.(oldCellParent,this._mainRowIndex);
+				oldCellParent.schemaNode.onBlur?.(oldCellParent,this._mainRowIndex);
 			}
 			this._activeDetailsCell=null;//should be null when not inside details
 		}
@@ -3102,7 +3032,7 @@ class TablanceBase {
 					//directly because we do not want it to change if #selectCell returns false, preventing the select
 					
 		if (this._closeActiveDetailsCell()) {
-			this._selectCell(cell,this._wrappedCols[this._mainColIndex],this._data[mainRowIndex]);
+			this._selectCell(cell,this._colSchemaNodes[this._mainColIndex],this._data[mainRowIndex]);
 			this._mainRowIndex=mainRowIndex;
 		}
 	}
@@ -3119,7 +3049,7 @@ class TablanceBase {
 		const mainRowIndex=root.rowIndex;
 		if (oldExpCell)//changing from an old detailsCell
 			for (let oldParnt=oldExpCell; oldParnt=oldParnt?.parent;)//traverse parents of old cell
-				if(oldParnt.schemaNode.raw.type==="group"||oldParnt.schemaNode.raw.onBlur||oldParnt.creating){//found group/cell
+				if(oldParnt.schemaNode.type==="group"||oldParnt.schemaNode.onBlur||oldParnt.creating){//found group/cell
 					//...with onBlur or cell that is being created. For any of these we want to observe the cell being
 					//left so that appropriate action can be taken
 					for (let newParent=instanceNode; newParent=newParent.parent;)//traverse parents of new cell
@@ -3128,10 +3058,10 @@ class TablanceBase {
 							break;
 						}
 					if (oldParnt) {
-						if (oldParnt.schemaNode.raw.type==="group"&&!this._closeGroup(oldParnt))
+						if (oldParnt.schemaNode.type==="group"&&!this._closeGroup(oldParnt))
 							return false;
-						if (oldParnt.schemaNode.raw.onBlur)
-							oldParnt.schemaNode.raw.onBlur?.(oldParnt,mainRowIndex);
+						if (oldParnt.schemaNode.onBlur)
+							oldParnt.schemaNode.onBlur?.(oldParnt,mainRowIndex);
 					}
 				}
 		this._selectCell(instanceNode.selEl??instanceNode.el,instanceNode.schemaNode,instanceNode.dataObj,false);
@@ -3139,7 +3069,7 @@ class TablanceBase {
 
 		//in case this was called via instanceNode.select() it might be necessary to make sure parent-groups are open
 		for (let parentCell=instanceNode; parentCell=parentCell.parent;)
-			if (parentCell.schemaNode.raw.type=="group")
+			if (parentCell.schemaNode.type=="group")
 				parentCell.el.classList.add("open");
 
 		this._adjustCursorPosSize(instanceNode.selEl??instanceNode.el);
@@ -3157,12 +3087,11 @@ class TablanceBase {
 		this._selectedCell=cellEl;
 		this._activeSchemaNode=schemaNode;
 		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
-		const noPtrEvent=["expand","select"].includes(schemaNode.raw.type)||schemaNode.raw.input?.type==="button";
-
+		const noPtrEvent=schemaNode.type==="expand"||schemaNode.type==="select"||schemaNode.input?.type==="button";
 		this._cellCursor.style.pointerEvents=noPtrEvent?"none":"auto";
 		this._cellCursor.style.removeProperty("background-color");//select-input sets it to transparent, revert here
 		this._cellCursorDataObj=dataObj;
-		this._selectedCellVal=dataObj?.[schemaNode.raw.id];
+		this._selectedCellVal=dataObj?.[schemaNode.id];
 	}
 
 	_getElPos(el,container) {
@@ -3191,19 +3120,19 @@ class TablanceBase {
 		this._headerTable.classList.add("header-table");
 		const thead=this._headerTable.appendChild(document.createElement("thead"));
 		this._headerTr=thead.insertRow();
-		for (let col of this._wrappedCols) {
+		for (let col of this._colSchemaNodes) {
 			let th=this._headerTr.appendChild(document.createElement("th"));
 			th.addEventListener("click",e=>this._onThClick(e));
-			if (col.raw.type=="select") {
+			if (col.type=="select") {
 				th.appendChild(this._createCheckbox());
 				th.classList.add("select-col");
-			} else if (col.raw.type=="expand") {
+			} else if (col.type=="expand") {
 				const expandDiv=th.appendChild(document.createElement("div"));
 				expandDiv.classList.add("expand-div");//used to identify if expand-button was clicked in click-handler
 				//expandDiv.appendChild(this._createExpandContractButton());//functionality not fully implemented yet
 				th.classList.add("expand-col");
 			} else
-				th.innerText=col.raw.title??"\xa0";//non breaking space if nothing else or else
+				th.innerText=col.title??"\xa0";//non breaking space if nothing else or else
 																	//sorting arrows wont be positioned correctly
 
 			//create the divs used for showing html for sorting-up/down-arrow or whatever has been configured
@@ -3215,7 +3144,7 @@ class TablanceBase {
 
 	_onThClick(e) {
 		const clickedIndex=e.currentTarget.cellIndex;
-		if (this._wrappedCols[clickedIndex].raw.type=="select"&&e.target.tagName.toLowerCase()=="input")
+		if (this._colSchemaNodes[clickedIndex].type=="select"&&e.target.tagName.toLowerCase()=="input")
 			return this._toggleRowsSelected(e.target.checked,0,this._data.length-1);
 		if (e.target.closest(".expand-div"))
 			return this._expandOrContractAll(!e.target.closest("tr").classList.contains("expanded"));
@@ -3233,7 +3162,7 @@ class TablanceBase {
 			}
 		}
 		if (sortingColIndex==this._sortingCols.length) {//if the clicked header wasn't sorted upon at all
-			const {id,type}=this._wrappedCols[clickedIndex].raw;
+			const {id,type}=this._colSchemaNodes[clickedIndex];
 			const sortCol={id,type,order:"asc",index:clickedIndex};
 			if (!e.shiftKey)
 				this._sortingCols=[];
@@ -3274,7 +3203,7 @@ class TablanceBase {
 			if (thIndex==this._headerTr.cells.length-1)
 				break;
 			let order=null;
-			let sortDiv=this._wrappedCols[thIndex].sortDiv;
+			let sortDiv=this._colSchemaNodes[thIndex].sortDiv;
 			for (let sortingCol of this._sortingCols) {
 				if (sortingCol.index==thIndex) {
 					order=sortingCol.order;
@@ -3319,9 +3248,9 @@ class TablanceBase {
 	_createTableBody() {
 		this._scrollBody=this.rootEl.appendChild(document.createElement("div"));
 
-		if (this._staticRowHeight&&!this._wrappedSchema.details)
+		if (this._staticRowHeight&&!this.wrappedSchema.details)
 			this._scrollMethod=this._onScrollStaticRowHeightNoDetails;
-		else if (this._staticRowHeight&&this._wrappedSchema.details)
+		else if (this._staticRowHeight&&this.wrappedSchema.details)
 			this._scrollMethod=this._onScrollStaticRowHeightDetails;
 		this._scrollBody.addEventListener("scroll",e=>this._scrollMethod(e),{passive:true});
 		this._scrollBody.className="scroll-body";
@@ -3337,7 +3266,7 @@ class TablanceBase {
 		this._mainTable=this._tableSizer.appendChild(document.createElement("table"));
 		this._mainTable.className="main-table";
 		this._mainTbody=this._mainTable.appendChild(document.createElement("tbody"));
-		for (let i = 0; i < this._wrappedCols.length; i++) {
+		for (let i = 0; i < this._colSchemaNodes.length; i++) {
 			let col=document.createElement("col");
 			this._cols.push(col);
 			this._mainTable.appendChild(document.createElement("colgroup")).appendChild(col);
@@ -3370,9 +3299,9 @@ class TablanceBase {
 		mainPage.classList.add("main");
 		mainPage.style.display="block";
 
-		const bulkEditFields=this._buildBulkEditSchemaNodes(this._wrappedSchema.details.raw);
-		for (const rawCol of this._wrappedSchema.raw.main.columns)
-			bulkEditFields.push(...this._buildBulkEditSchemaNodes(rawCol));
+		const bulkEditFields=this._buildBulkEditSchemaNodes(this.wrappedSchema.details);
+		for (const column of this.wrappedSchema.main.columns)
+			bulkEditFields.push(...this._buildBulkEditSchemaNodes(column));
 
 		//Build schema for bulk-edit-area based on the real schema
 		const schema={details:{type:"lineup",entries:bulkEditFields}};
@@ -3391,24 +3320,24 @@ class TablanceBase {
 
 	/**Given a schemaNode like details or column, will add inputs to this._bulkEditSchemaNodes which later is iterated
 	 * and the contents added to the bulk-edit-area. 
-	 * @param {*} rawSchema Should be details or column when called from outside, but it calls itself recursively
+	 * @param {*} schema Should be details or column when called from outside, but it calls itself recursively
 	 * 						when hitting upon containers which then are passed to this param
 	 * @returns */
-	_buildBulkEditSchemaNodes(rawSchema) {
-		const mainCol=this._wrappedSchema.raw.main.columns.includes(rawSchema);
+	_buildBulkEditSchemaNodes(schema) {
+		const mainCol=this.wrappedSchema.main.columns.includes(schema);
 		const result=[];
-		if ((mainCol||rawSchema.type=="field")&&rawSchema.bulkEdit) {
+		if ((mainCol||schema.type=="field")&&schema.bulkEdit) {
 			//schema-nodes of main-columns don't need to specify this, but it's needed in details
-			result.push(Object.assign(Object.create(null), rawSchema, {type:"field"}));
-		} else if ((rawSchema.entries?.length&&rawSchema.bulkEdit)||rawSchema===this._wrappedSchema.details.raw) {
-			for (const rawSchemaNode of rawSchema.entries)
-				result.push(...this._buildBulkEditSchemaNodes(rawSchemaNode));
+			result.push(Object.assign(Object.create(null), schema, {type:"field"}));
+		} else if ((schema.entries?.length&&schema.bulkEdit)||schema===this.wrappedSchema.details) {
+			for (const schemaNode of schema.entries)
+				result.push(...this._buildBulkEditSchemaNodes(schemaNode));
 		}
 		return result;
 	}
 
 	/**Updates the displayed values in the bulk-edit-area */
-	_updateBulkEditAreaCells(schemaNodesToUpdateCellsFor=this._bulkEditTable._wrappedSchema.details.entries) {
+	_updateBulkEditAreaCells(schemaNodesToUpdateCellsFor=this._bulkEditTable.schema.details.entries) {
 		const mixedText="(Mixed)";
 		for (let multiCellI=-1, multiCellSchemaNode; multiCellSchemaNode=schemaNodesToUpdateCellsFor[++multiCellI];) {
 
@@ -3416,7 +3345,7 @@ class TablanceBase {
 			let mixed=false;
 			let val,lastVal;
 			for (let rowI=-1,row; row=this._selectedRows[++rowI];) {
-				val=row[multiCellSchemaNode.raw.id];
+				val=row[multiCellSchemaNode.id];
 				if (rowI&&val!=lastVal) {
 					mixed=true;
 					break;
@@ -3426,10 +3355,10 @@ class TablanceBase {
 
 
 			//update both the data and the dom
-			this._bulkEditTable.updateData(0,multiCellSchemaNode.raw.id,mixed?mixedText:val?.text??val??"");
+			this._bulkEditTable.updateData(0,multiCellSchemaNode.id,mixed?mixedText:val?.text??val??"");
 			const el=this._bulkEditTable._openDetailsPanes[0].children[multiCellI].el;
 			el.innerText=mixed?mixedText:val?.text??val??"";
-			this._bulkEditTable._data[0][multiCellSchemaNode.raw.id]=mixed?"":val;
+			this._bulkEditTable._data[0][multiCellSchemaNode.id]=mixed?"":val;
 		}
 	}
 
@@ -3453,21 +3382,21 @@ class TablanceBase {
 			const percentageWidthRegex=/\d+%/;
 			let totalFixedWidth=0;
 			let numUndefinedWidths=0;
-			for (let col of this._wrappedCols)
-				if (!col.raw.width)
+			for (let col of this._colSchemaNodes)
+				if (!col.width)
 					numUndefinedWidths++;
-				else if (!percentageWidthRegex.test(col.raw.width))//if fixed width
-					totalFixedWidth+=(col.pxWidth=parseInt(col.raw.width));
+				else if (!percentageWidthRegex.test(col))//if fixed width
+					totalFixedWidth+=(col.pxWidth=parseInt(col.width));
 			let sumFixedAndFlexibleWidth=totalFixedWidth;
-			for (let col of this._wrappedCols)
-				if (col.raw.width&&percentageWidthRegex.test(col.raw.width))//if flexible width
-					sumFixedAndFlexibleWidth+=(col.pxWidth=(areaWidth-totalFixedWidth)*parseFloat(col.raw.width)/100);
-			for (let col of this._wrappedCols)
-				if (!col.raw.width)//if undefined width
+			for (let col of this._colSchemaNodes)
+				if (col.width&&percentageWidthRegex.test(col))//if flexible width
+					sumFixedAndFlexibleWidth+=(col.pxWidth=(areaWidth-totalFixedWidth)*parseFloat(col.width)/100);
+			for (let col of this._colSchemaNodes)
+				if (!col.width)//if undefined width
 					col.pxWidth=(areaWidth-sumFixedAndFlexibleWidth)/numUndefinedWidths;
-			for (var colI=0; colI<this._wrappedCols.length; colI++) 
+			for (var colI=0; colI<this._colSchemaNodes.length; colI++) 
 				this._cols[colI].style.width=this._headerTr.cells[colI].style.width
-																			=this._wrappedCols[colI].pxWidth+"px";
+																			=this._colSchemaNodes[colI].pxWidth+"px";
 			//last col is empty col with the width of table-scrollbar if its present in order to make the header span
 			//the whole with while not actually using that last bit in the calculations for the normal cols
 			this._headerTr.cells[colI].style.width=this._scrollBody.offsetWidth-areaWidth+"px";
@@ -3485,7 +3414,7 @@ class TablanceBase {
 			//col-index as key and an object as val. the object holds all the options but they are keyed by teir value
 			//rather than being in an indexed array.This is to simplify and likely improve speed of filtering by the col
 
-		for (let col of this._wrappedCols)
+		for (let col of this._colSchemaNodes)
 			if (col.type!=="expand"&&col.type!=="select") {
 				if (col.input?.type=="select") {
 					const optsByVal=selectsOptsByVal[colsToFilterBy.length]={};
@@ -3525,7 +3454,7 @@ class TablanceBase {
 		this.rootEl.innerHTML="";
 		const detailsDiv=this.rootEl.appendChild(document.createElement("div"));
 		detailsDiv.classList.add("details");
-		this._generateDetailsContent(this._wrappedSchema.details,0,this._openDetailsPanes[0]={},detailsDiv,[],this._data[0]);
+		this._generateDetailsContent(this.wrappedSchema.details,0,this._openDetailsPanes[0]={},detailsDiv,[],this._data[0]);
 	}
 
 	/**Refreshes the table-rows. Should be used after sorting or filtering or such.*/
@@ -3720,14 +3649,14 @@ class TablanceBase {
 		while ((this._numRenderedRows-1)*this._rowHeight<scrH&&this._scrollRowIndex+this._numRenderedRows<dataLen) {
 			lastTr=this._mainTable.insertRow();
 			this._numRenderedRows++;
-			for (let i=0; i<this._wrappedCols.length; i++) {
+			for (let i=0; i<this._colSchemaNodes.length; i++) {
 				const cell=lastTr.insertCell();
 				const div=cell.appendChild(document.createElement("div"));//used to set height of cells
 				div.style.height=this._rowInnerHeight||"auto";				
-				if (this._wrappedCols[i].raw.type==="expand") {
+				if (this._colSchemaNodes[i].type==="expand") {
 					div.appendChild(this._createExpandContractButton());
 					cell.classList.add("expand-col");
-				} else if (this._wrappedCols[i].raw.type==="select") {
+				} else if (this._colSchemaNodes[i].type==="select") {
 					div.appendChild(this._createCheckbox(true));
 					cell.classList.add("select-col");
 				}
@@ -3770,12 +3699,12 @@ class TablanceBase {
 		tr.dataset.dataRowIndex=mainIndex;
 		const selected=this._selectedRows.indexOf(this._data[mainIndex])!=-1;
 		tr.classList.toggle("selected",!!selected);
-		for (let colI=0; colI<this._wrappedCols.length; colI++) {
+		for (let colI=0; colI<this._colSchemaNodes.length; colI++) {
 			let td=tr.cells[colI];
-			let colSchemaNode=this._wrappedCols[colI];
-			if (colSchemaNode.raw.type!="expand"&&colSchemaNode.raw.type!="select")
+			let colSchemaNode=this._colSchemaNodes[colI];
+			if (colSchemaNode.type!="expand"&&colSchemaNode.type!="select")
 				this._updateMainRowCell(td,colSchemaNode);
-			else if (colSchemaNode.raw.type=="select")
+			else if (colSchemaNode.type=="select")
 				td.querySelector("input").checked=selected;
 		}
 		if (this._highlightRowsOnView[mainIndex]) {
@@ -3831,8 +3760,8 @@ class TablanceBase {
 			new Date(date).toISOString().slice(0, 16).replace('T', ' ')},
 			{type:"field",title:lang.fileSize??"Size",id:"size",render:size=>this._humanFileSize(size)},
 			{type:"field",title:lang.fileType??"Type",id:"type"}];
-		for (let metaI=-1,mName; mName=["filename","lastModified","size","type"][++metaI];)
-			if(!(fileSchemaNode.raw.input.fileMetasToShow?.[mName]??this._opts.defaultFileMetasToShow?.[mName]??true))
+		for (let metaI=-1,metaName; metaName=["filename","lastModified","size","type"][++metaI];)
+			if(!(fileSchemaNode.input.fileMetasToShow?.[metaName]??this._opts.defaultFileMetasToShow?.[metaName]??true))
 				metaEntries.splice(metaI,1);//potentially remove (some of) them
 		//define the group-structure for the file
 		
@@ -3840,13 +3769,13 @@ class TablanceBase {
 		fileGroup.entries[0].entries.unshift({type:"field",input:{type:"button",btnText:"Open"
 				,clickHandler:(e,file,mainIndex,schemaNode,btnObj)=>{
 					rowData??=this._data[mainIndex];
-					fileSchemaNode.raw.input.openHandler?.(e,file,fileSchemaNode,fileInstanceNode.dataObj,mainIndex,btnObj);
+					fileSchemaNode.input.openHandler?.(e,file,fileSchemaNode,fileInstanceNode.dataObj,mainIndex,btnObj);
 			}},
 		});
 		fileGroup.entries.push({type:"lineup",entries:metaEntries});
-		const wrappedFileGroup=this._wrapSchema(fileGroup);
-		const fileData=rowData[fileInstanceNode.schemaNode.raw.id];
-		this._generateDetailsContent(wrappedFileGroup,dataIndex,fileInstanceNode,cellEl,fileInstanceNode.path,fileData);
+		
+		const fileData=rowData[fileInstanceNode.schemaNode.id];
+		this._generateDetailsContent(fileGroup,dataIndex,fileInstanceNode,cellEl,fileInstanceNode.path,fileData);
 		const fileMeta=this._mapGet(this._filesMeta,fileData);
 		if (fileMeta!=null) {
 			const progressbarOuter=cellEl.appendChild(document.createElement("div"));
@@ -3867,22 +3796,22 @@ class TablanceBase {
 	 * @param {*} instanceNode */
 	_updateDetailsCell(instanceNode,rowData=null) {
 		let cellEl=instanceNode.el;
-		if (instanceNode.schemaNode.raw.maxHeight) {//if there's a maxHeight stated, which is used for textareas
+		if (instanceNode.schemaNode.maxHeight) {//if there's a maxHeight stated, which is used for textareas
 			cellEl.innerHTML="";//empty the cell, otherwise multiple calls to this would add more and more content to it
 			cellEl=cellEl.appendChild(document.createElement("div"));//then put a div inside and change cellEl to that
-			cellEl.style.maxHeight=instanceNode.schemaNode.raw.maxHeight;//then set its maxHeight
+			cellEl.style.maxHeight=instanceNode.schemaNode.maxHeight;//then set its maxHeight
 			cellEl.style.overflow="auto";//and male it scrollable
 			//can't make td directly scrollable which is why the div is needed
 		}
 		for (var rootCell=instanceNode;rootCell.parent;rootCell=rootCell.parent);
 		const oldCellContent=cellEl.innerText;
-		if (instanceNode.schemaNode.raw.input?.type=="file"&&rowData[instanceNode.schemaNode.raw.id]) {
+		if (instanceNode.schemaNode.input?.type=="file"&&rowData[instanceNode.schemaNode.id]) {
 			this._generateFileCell(instanceNode,cellEl,rowData,rootCell.rowIndex);
 		} else {
-			if (instanceNode.schemaNode.raw.visibleIf)
+			if (instanceNode.schemaNode.visibleIf)
 				this._applyVisibleIf(instanceNode);
 			this._updateCell(instanceNode.schemaNode,cellEl,instanceNode.selEl,rowData,rootCell.rowIndex,instanceNode);
-			if (instanceNode.schemaNode.raw.input?.type!=="button") {
+			if (instanceNode.schemaNode.input?.type!=="button") {
 				const newCellContent=cellEl.innerText;
 				if (!newCellContent!=!oldCellContent) {
 					for (let cellI=instanceNode; cellI; cellI=cellI.parent)
@@ -3892,7 +3821,6 @@ class TablanceBase {
 				}
 			} else
 				instanceNode.el=instanceNode.selEl=instanceNode.el.querySelector("button");
-				const a=1;
 		}
 	}
 
@@ -3928,8 +3856,8 @@ class TablanceBase {
 	 * @returns 
 	 */
 	_getTargetVal(idOverDependee,schemaNode, instanceNode, rowData=instanceNode.dataObj) {
-		if (idOverDependee&&schemaNode.raw.id)
-			return rowData[schemaNode.raw.id];
+		if (idOverDependee&&schemaNode.id)
+			return rowData[schemaNode.id];
 		if (schemaNode.dependsOnDataPath) {
 			if (instanceNode)
 				for (var root=instanceNode; root.parent; root=root.parent,rowData=root.dataObj);
@@ -3937,36 +3865,36 @@ class TablanceBase {
 		}
 		if (schemaNode.dependsOnCellPaths) {
 			const dependee=this._resolveCellPaths(instanceNode,schemaNode.dependsOnCellPaths[0]);
-			return dependee.dataObj[dependee.schemaNode.raw.id];
+			return dependee.dataObj[dependee.schemaNode.id];
 		}
-		return rowData[schemaNode.raw.id];
+		return rowData[schemaNode.id];
 	}
 	
 
 	_updateCell(schemaNode,el,selEl,rowData,mainIndex,instanceNode=null) {
-		if (schemaNode.raw.input?.type==="button") {
+		if (schemaNode.input?.type==="button") {
 			this._generateButton(schemaNode,mainIndex,el,rowData,instanceNode);
 		} else {
 			let newCellContent;
-			if (schemaNode.raw.render||schemaNode.raw.input?.type!="select") {
+			if (schemaNode.render||schemaNode.input?.type!="select") {
 				newCellContent=this._getTargetVal(true,schemaNode, instanceNode, rowData);
-				if (schemaNode.raw.render)
-					newCellContent=schemaNode.raw.render(newCellContent,rowData,schemaNode.raw,mainIndex,instanceNode);
+				if (schemaNode.render)
+					newCellContent=schemaNode.render(newCellContent,rowData,schemaNode,mainIndex,instanceNode);
 			} else { //if (schemaNode.input?.type==="select") {
-				let selOptObj=rowData[schemaNode.raw.id];
+				let selOptObj=rowData[schemaNode.id];
 				if (selOptObj&&typeof selOptObj!=="object")
-					selOptObj=rowData[schemaNode.raw.id]=schemaNode.raw.input.options.find(
-																			opt=>opt.value==rowData[schemaNode.raw.id]);
+					selOptObj=rowData[schemaNode.id]=schemaNode.input.options.find(
+																				opt=>opt.value==rowData[schemaNode.id]);
 				newCellContent=selOptObj?.text??"";
 			}
 			let isDisabled=false;
-			if (this._spreadsheet&&schemaNode.raw.type!=="expand") {
-				const enabledFuncResult=schemaNode.raw.input?.enabled?.(schemaNode.raw,rowData,mainIndex,instanceNode);
-				if (!schemaNode.raw.input||enabledFuncResult==false||enabledFuncResult?.enabled==false)
+			if (this._spreadsheet&&schemaNode.type!=="expand") {
+				const enabledFuncResult=schemaNode.input?.enabled?.(schemaNode,rowData,mainIndex,instanceNode);
+				if (!schemaNode.input||enabledFuncResult==false||enabledFuncResult?.enabled==false)
 					isDisabled=true;
 			}
 			(selEl??el).classList.toggle("disabled",isDisabled);
-			if (schemaNode.raw.html)
+			if (schemaNode.html)
 				el.innerHTML=newCellContent??"";
 			else
 				el.innerText=newCellContent??"";
@@ -4025,12 +3953,12 @@ class TablanceBulk extends TablanceBase {
 	
 
 	_doEditSave() {
-		const inputVal=this._activeSchemaNode.raw.input.type==="select"?this._inputVal.value:this._inputVal;
-		this._cellCursorDataObj[this._activeSchemaNode.raw.id]=this._inputVal;
+		const inputVal=this._activeSchemaNode.input.type==="select"?this._inputVal.value:this._inputVal;
+		this._cellCursorDataObj[this._activeSchemaNode.id]=this._inputVal;
 		for (const selectedRow of this.mainInstance._selectedRows)
-			selectedRow[this._activeSchemaNode.raw.id]=inputVal;
+			selectedRow[this._activeSchemaNode.id]=inputVal;
 		for (const selectedTr of this.mainInstance._mainTbody.querySelectorAll("tr.selected"))
-			this.mainInstance.updateData(selectedTr.dataset.dataRowIndex,this._activeSchemaNode.raw.id,inputVal,false,true);
+			this.mainInstance.updateData(selectedTr.dataset.dataRowIndex,this._activeSchemaNode.id,inputVal,false,true);
 		this._updateDetailsCell(this._activeDetailsCell,this._cellCursorDataObj);
 	}
 }
@@ -4047,25 +3975,25 @@ export default class Tablance extends TablanceBase {
 	
 	_doEditSave() {
 		let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
-		const inputVal=this._activeSchemaNode.raw.input.type==="select"?this._inputVal.value:this._inputVal;
+		const inputVal=this._activeSchemaNode.input.type==="select"?this._inputVal.value:this._inputVal;
 
-		this._activeSchemaNode.raw.input.onChange?.({newValue: inputVal,oldValue: this._selectedCellVal,
+		this._activeSchemaNode.input.onChange?.({newValue: inputVal,oldValue: this._selectedCellVal,
 			rowData: this._cellCursorDataObj,schemaNode: this._activeSchemaNode,instanceNode: this._activeDetailsCell,
 			closestMeta: key => this._closestMeta(this._activeSchemaNode, key),cancelUpdate: ()=> doUpdate=false
 		});
 
 		if (doUpdate) {
-			this._cellCursorDataObj[this._activeSchemaNode.raw.id]=this._inputVal;
+			this._cellCursorDataObj[this._activeSchemaNode.id]=this._inputVal;
 			if (this._activeDetailsCell){
 				const doHeightUpdate=this._updateDetailsCell(this._activeDetailsCell,this._cellCursorDataObj);
 				if (doHeightUpdate&&!this._onlyDetails)
 					this._updateDetailsHeight(this._selectedCell.closest("tr.details"));
 				for (let cell=this._activeDetailsCell.parent; cell; cell=cell.parent)
-					if (cell.schemaNode.raw.closedRender)//found a group with a closed-group-render func
+					if (cell.schemaNode.closedRender)//found a group with a closed-group-render func
 						cell.updateRenderOnClose=true;//update closed-group-render
 			} else {
 				this._updateMainRowCell(this._selectedCell,this._activeSchemaNode);
-				this._unsortCol(this._activeSchemaNode.raw.id);
+				this._unsortCol(this._activeSchemaNode.id);
 			}
 			if (this._selectedRows.indexOf(this._cellCursorDataObj)!=-1)//if edited row is checked/selected
 				this._updateBulkEditAreaCells([this._activeSchemaNode]);
@@ -4103,7 +4031,7 @@ export default class Tablance extends TablanceBase {
 
 	_expandRow(tr,animate=true) {
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
-		if (!this._wrappedSchema.details||this._rowMetaGet(dataRowIndex)?.h>0)
+		if (!this.wrappedSchema.details||this._rowMetaGet(dataRowIndex)?.h>0)
 			return;
 		const expRow=this._renderDetails(tr,dataRowIndex);
 		const expHeight=this._rowMetaSet(dataRowIndex,"h",this._rowHeight+expRow.offsetHeight+this._borderSpacingY);
@@ -4131,7 +4059,7 @@ export default class Tablance extends TablanceBase {
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
 		if (dataRowIndex==this._mainRowIndex&&this._activeDetailsCell)
 			this._exitEditMode(false);//cancel out of edit-mode so field-validation doesn't cause problems
-		if (!this._wrappedSchema.details||!this._rowMetaGet(dataRowIndex)?.h)
+		if (!this.wrappedSchema.details||!this._rowMetaGet(dataRowIndex)?.h)
 			return;
 		this._unsortCol(null,"expand");
 		if (this._mainRowIndex==dataRowIndex&&this._activeDetailsCell) {//if cell-cursor is inside the details
@@ -4162,13 +4090,13 @@ export default class Tablance extends TablanceBase {
 	_applyVisibleIf(instanceNode,mainIndex) {
 		const schemaNode=instanceNode.schemaNode;
 		let val=this._getTargetVal(false,schemaNode,instanceNode);
-		if (schemaNode.raw.input?.type==="select"&&val?.value)
+		if (schemaNode.input?.type==="select"&&val?.value)
 			val=val.value;
 	
 		instanceNode.hidden = !!instanceNode.hidden;
 	
 		//the !! is needed or else undefined will be treated the same as true
-		if(!!schemaNode.raw.visibleIf(val,instanceNode.dataObj,schemaNode,mainIndex,instanceNode)==instanceNode.hidden){
+		if (!!schemaNode.visibleIf(val,instanceNode.dataObj,schemaNode,mainIndex,instanceNode) == instanceNode.hidden) {
 			instanceNode.hidden=!instanceNode.hidden;
 			instanceNode.outerContainerEl.style.display=instanceNode.hidden?"none":"";
 		}
