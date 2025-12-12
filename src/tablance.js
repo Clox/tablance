@@ -295,11 +295,18 @@ class TablanceBase {
 	 * 						multiCellWidth Int For inputs that are present in the bulk-edit-area. This property can be 
 	 * 							used to specify the number of pixels in width of the cell in that section.
 	 * 						onChange Function Callback fired when the user has changed the value of the input.
-	 * 							It will get passed arguments:
-	 * 							1:TablanceEvent. It has a method with key "preventDefault" which if called prevents the
-	 * 							data/cell from actually being changed. ,2:property-name (id) of edited value
-	 * 							,3:newValue,4:oldValue,5:rowData or rowData[] if bulk-edit-cell was edited,6:schemaNode
-	 * 							,7:instanceNode of the input if in details,null if not inside details
+	 * 							It receives a single object with:
+	 * 							- newValue: the incoming value
+	 * 							- oldValue: the previous value
+	 * 							- dataKey: schemaNode.id of the edited field
+	 * 							- dataContext: the data object being edited (row or nested object)
+	 * 							- schemaNode: schema node for the edited field
+	 * 							- instanceNode: the instance node if in details
+	 * 							- closestMeta: function(key) to read meta data closest to the schema node. In the schema
+	 * 								objects may be specified via "meta" propert and this object may contain any custom
+	 * 								data. This function allows reading that data easily. It traverses up the schema tree
+	 * 								until it finds a meta with the specified key or reaches the root.
+	 * 							- cancelUpdate: function() to prevent the value from being persisted
 	 * 						onBlur Function Callback fired when cellcursor goes from being inside the container
 	 * 							to outside. It will get passed arguments 1:instanceNode, 2:mainIndex
 	 * 						enabled Function - If present then this function will be run and if it returns falsey then
@@ -3988,9 +3995,15 @@ export default class Tablance extends TablanceBase {
 		let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
 		const inputVal=this._activeSchemaNode.input.type==="select"?this._inputVal.value:this._inputVal;
 
-		this._activeSchemaNode.input.onChange?.({newValue: inputVal,oldValue: this._selectedCellVal,
-			rowData: this._cellCursorDataObj,schemaNode: this._activeSchemaNode,instanceNode: this._activeDetailsCell,
-			closestMeta: key => this._closestMeta(this._activeSchemaNode, key),cancelUpdate: ()=> doUpdate=false
+		this._activeSchemaNode.input.onChange?.({
+			newValue: inputVal,
+			oldValue: this._selectedCellVal,
+			dataKey: this._activeSchemaNode.id,
+			dataContext: this._cellCursorDataObj,
+			schemaNode: this._activeSchemaNode,
+			instanceNode: this._activeDetailsCell,
+			closestMeta: key => this._closestMeta(this._activeSchemaNode, key),
+			cancelUpdate: () => doUpdate=false
 		});
 
 		if (doUpdate) {

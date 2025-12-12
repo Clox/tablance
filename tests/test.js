@@ -4,10 +4,12 @@
 /** @typedef {import("../src/tablance-types").TablanceOnChangeCallback} TablanceOnChangeCallback */
 
 /** @type {TablanceOnChangeCallback} */
-const handleDescriptionChange=({newValue,oldValue,rowData,schemaNode,instanceNode,closestMeta,cancelUpdate})=>{
-	console.log({newValue,oldValue,rowData,schemaNode,instanceNode,closestMeta});
+const handleDescriptionChange=(payload)=>{
+	const {newValue,oldValue,dataKey,dataContext,schemaNode,instanceNode,closestMeta}=payload;
+	console.log(payload);
+	console.log({newValue,oldValue,dataKey,dataContext,schemaNode,instanceNode,closestMeta});
 	console.log(closestMeta("foo"));//should log 69
-	// cancelUpdate(); // Uncomment to stop Tablance from writing newValue
+	// payload.cancelUpdate(); // Uncomment to stop Tablance from writing newValue
 };
 
 import Tablance from "../src/tablance.js";
