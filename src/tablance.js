@@ -2500,33 +2500,40 @@ class TablanceBase {
 	
 		const meta = Object.assign(Object.create(null), {uploadedBytes: 0,bars: []});
 		this._mapAdd(this._filesMeta, file, meta);
-	
-		const xhr = new XMLHttpRequest();
-	
-		xhr.upload.addEventListener("progress", e => {
-			for (let i = 0; i < meta.bars.length; i++) {
-				const bar = meta.bars[i];
+
+		const xhr = !this._opts.useFakeFileUploadTest ? new XMLHttpRequest()
+			: new FakeXMLHttpRequest({totalBytes:file.size||1,rate:this._opts.fakeUploadRate,
+				startAt:this._opts.fakeUploadStartAt});
+
+		const updateProgressBars=(loaded,total)=>{
+			for (let i=0; i<meta.bars.length; i++) {
+				const bar=meta.bars[i];
 				if (!bar.isConnected) {
-					meta.bars.splice(i--, 1);
+					meta.bars.splice(i--,1);
 					continue;
 				}
-				meta.uploadedBytes = e.loaded;
-				const pct = parseInt(e.loaded / e.total * 100);
-				bar.style.width = bar.firstChild.innerText = pct + "%";
-			}
+				meta.uploadedBytes=loaded;
+				const pct=total?parseInt(loaded/total*100):0;
+				bar.style.width=bar.firstChild.innerText=pct+"%";
+				}
+		};
+		const finalizeUpload=()=>{
+			this._mapRemove(this._filesMeta,file);
+			for (const bar of meta.bars)
+				if (bar.isConnected) {
+					bar.parentElement.classList.remove("active");
+					bar.firstChild.innerText=this._opts.lang?.fileUploadDone??"Done!";
+				}
+		};
+		const totalBytes=file.size||1;
+		xhr.upload.addEventListener("progress", e=>updateProgressBars(e.loaded,e.total));
+		xhr.addEventListener("load", () => {
+			updateProgressBars(totalBytes,totalBytes);
+			finalizeUpload();
 		});
 	
 		this._activeSchemaNode.input.fileUploadHandler?.(xhr,file,this._activeSchemaNode,this._cellCursorDataObj,
 			this._mainRowIndex,this._activeDetailsCell);
-	
-		xhr.addEventListener("load", () => {
-			this._mapRemove(this._filesMeta, file);
-			for (const bar of meta.bars)
-				if (bar.isConnected) {
-					bar.parentElement.classList.remove("active");
-					bar.firstChild.innerText = this._opts.lang?.fileUploadDone ?? "Done!";
-				}
-		});
 	
 		const formData = new FormData();
 		formData.append("file", file);
@@ -2535,7 +2542,6 @@ class TablanceBase {
 		this._exitEditMode(true);
 		this._selectDetailsCell(this._activeDetailsCell);
 	}
-	
 	
 
 	_openTextAreaEdit() {
@@ -3882,6 +3888,61 @@ class TablanceBase {
 
 	_scrollToCursor(){}//default is to do nothing. Tablance (main) overrides this.
 	_applyVisibleIf(){}//default is to do nothing. Tablance (main) overrides this.
+}
+
+// Test-only XMLHttpRequest stub to simulate slow uploads in a single spot.
+class FakeXMLHttpRequest {
+	constructor({totalBytes,rate=1,startAt=0}) {
+		this.totalBytes=totalBytes||1;
+		const parsedRate=parseFloat(rate);
+		this.pctPerSecond=Math.max(0.0001,isNaN(parsedRate)?1:parsedRate);//avoid hangs at 0
+		const parsedStart=parseFloat(startAt);
+		const startPercent=isNaN(parsedStart)?0:parsedStart;
+		this.startPercent=Math.max(0,Math.min(100,startPercent));
+		this._listeners=Object.create(null);
+		this._uploadListeners=Object.create(null);
+		this.upload={addEventListener:(type,fn)=>this._addListener(this._uploadListeners,type,fn)};
+	}
+
+	_addListener(target,type,fn) {
+		(target[type]??=[]).push(fn);
+	}
+
+	addEventListener(type,fn) { this._addListener(this._listeners,type,fn); }
+	open() {}
+	setRequestHeader() {}
+	abort() { this._clearTimer(); }
+
+	send() {
+		let loaded=this.totalBytes*this.startPercent/100;
+		this._emit(this._uploadListeners.progress,{loaded,total:this.totalBytes});
+		if (loaded>=this.totalBytes) {
+			Promise.resolve().then(()=>this._emit(this._listeners.load,{}));
+			return;
+		}
+		this._timer=setInterval(()=>{
+			loaded=Math.min(this.totalBytes,loaded+this.totalBytes*this.pctPerSecond/100);
+			this._emit(this._uploadListeners.progress,{loaded,total:this.totalBytes});
+			if (loaded>=this.totalBytes) {
+				this._clearTimer();
+				this._emit(this._listeners.load,{});
+			}
+		},1000);
+	}
+
+	_emit(listeners,event) {
+		if (!listeners)
+			return;
+		for (const fn of listeners)
+			fn(event);
+	}
+
+	_clearTimer() {
+		if (this._timer) {
+			clearInterval(this._timer);
+			this._timer=null;
+		}
+	}
 }
 
 /**

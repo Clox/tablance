@@ -166,7 +166,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	const schema={main:{columns:myTablanceCols},details:myExpansion, meta:{foo:"root"}};
 	
 	const myTablance=new Tablance(tablanceContainer,schema, true, true
-					,{defaultFileMetasToShow:{filename:false},lang:lang});
+					,{defaultFileMetasToShow:{filename:false},lang:lang, useFakeFileUploadTest:true});
 
 
 	// const myTablance=window.myTablance=new Tablance(tablanceContainer,myTablanceCols,true,true
