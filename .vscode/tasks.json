@@ -42,7 +42,25 @@
 			"reveal": "always",
 			"panel": "new"
 		}
-	},
+	  },
+	  {
+		"label": "Build Tablance bundle",
+		"type": "shell",
+		"command": "npm run build",
+		"options": {
+		  "cwd": "${workspaceFolder}"
+		},
+		"problemMatcher": [],
+		"group": {
+		  "kind": "build",
+		  "isDefault": false
+		},
+		"presentation": {
+		  "reveal": "always",
+		  "panel": "shared",
+		  "clear": true
+		}
+	  }
 	]
   }
   
