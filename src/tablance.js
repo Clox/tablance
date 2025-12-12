@@ -1820,11 +1820,11 @@ class TablanceBase {
 		groupTable.dataset.path=path.join("-");
 		parentEl.classList.add("group-cell");
 		instanceNode.el=groupTable;//so that the whole group-table can be selectedf
+		this._generateDetailsCollection(groupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
+		groupTable.className="details-group "+(groupSchemaNode.cssClass??"");
 		if (notYetCreated)
 			instanceNode.creating=true;
-		groupTable.className="details-group "+(groupSchemaNode.cssClass??"");
-		this._generateDetailsCollection(groupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
-		if (groupSchemaNode.closedRender) {
+		else if (groupSchemaNode.closedRender) {
 			groupTable.classList.add("closed-render");
 			const renderRow=tbody.insertRow();
 			renderRow.dataset.path=path.join("-");
@@ -1996,7 +1996,7 @@ class TablanceBase {
 	 * Creates DOM, updates indices, generates inner content, and inserts into DOM
 	 * only if details content was actually created (e.g., repeated with empty data should not add item).
 	 */
-	_generateCollectionItem(schemaNode,mainIndex,collectionOrRepeated,path,data,index=null) {
+	_generateCollectionItem(schemaNode,mainIndex,collectionOrRepeated,path,data,index=null, creating=false) {
 		// Determine actual collection (repeated uses parent collection visually)
 		const collection=collectionOrRepeated.schemaNode.type=="repeated"
 									?collectionOrRepeated.parent:collectionOrRepeated;
@@ -2036,7 +2036,7 @@ class TablanceBase {
 		itemObj.outerContainerEl=outerContainerEl;//reference to outer-most container belonging exclusively to this item
 
 		// Expand inner content; may return false if nothing should be rendered
-		const generated=this._generateDetailsContent(schemaNode,mainIndex,itemObj,containerEl,path,data,false);
+		const generated=this._generateDetailsContent(schemaNode,mainIndex,itemObj,containerEl,path,data,creating);
 
 		// Only insert if it actually has content (important for sparse repeated arrays)
 		if (generated)
@@ -2341,7 +2341,7 @@ class TablanceBase {
 		if (repeated.schemaNode.create&&entrySchemaNode.type==="group")
 			entryNode=this._schemaCopyWithDeleteButton(entrySchemaNode,this._repeatedOnDelete);
 			//make a wrapped copy of the entry so delete-controls can be appended without touching the original
-		const newObj=this._generateCollectionItem(entryNode,rowIndex,repeated,repeated.path,data,indexOfNew);
+		const newObj=this._generateCollectionItem(entryNode,rowIndex,repeated,repeated.path,data,indexOfNew,creating);
 		if (creating) {
 			newObj.creating=true;//creating means it hasn't been commited yet.
 			this._selectFirstSelectableDetailsCell(newObj,true,true);
