@@ -43,7 +43,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	{type:"field",title:"Format field",id:"myFormattedData"
 		,input:{type:"text", format:{ blocks: [8, 4], delimiter: "-", numericOnly: true , 
 		stripDelimiterOnSave:true}}},
-{type:"group",id:"hemadress",dataPath:"hemadress",title:"Hemadress",bulkEdit:true,entries:[
+{type:"group",dataPath:"hemadress",title:"Hemadress",bulkEdit:true,entries:[
 	{type:"field",title:"Gata",id:"street",input:{type:"text",
 			onChange:(...args)=>console.log(args)}},
 	{type:"field",title:"Postnummer",id:"zip",input:{type:"text",
@@ -184,7 +184,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			data.push({num:55,myFormattedData:123456789123,desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,
 				descLetter:String.fromCharCode(ii+33)
 				,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
-				,hello:"Hallå",world:"Världen",innerFoo:1337,hemadress:{street:"Kaplan",zip:"9999",city:"Skara"}
+				,hello:"Hallå",world:"Världen",innerFoo:1337,hemadress:{street:"Inre Kaplan",zip:"060606",city:"Inre Skara"}
 				,addresses:[{street:"kaplan",zip:9999,city:"skara"},{street:"kaplan",zip:8999,city:"skara"}]
 				//,sel:Math.random()<.5?null:foods[Math.round(Math.random()*(foods.length-1))]
 				,sel:Math.random()<.5?null:foods[Math.round(Math.random()*(foods.length-1))].value

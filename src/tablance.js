@@ -413,6 +413,7 @@ class TablanceBase {
 	 * 					- newInstanceNode: the instance node for the created entry
 	 * 					- mainIndex: index of the root row
 	 * 					- bulkEdit: true if triggered from bulk-edit
+	 * 					- closestMeta: function(key) to read meta data closest to the schema node
 	 * 					- cancelCreate: function() to abort the creation (removes the new item)
 	 * 				onCreateOpen Function If the entry of the repeated is group and "create" is set to true, then this
 	 * 					callback-function will be called when a new group is added, i.e. when the user interacts with
@@ -2968,6 +2969,7 @@ class TablanceBase {
 				newInstanceNode: repeatEntry,
 				mainIndex: root.rowIndex,
 				bulkEdit: false,
+				closestMeta: key => this._closestMeta(creationContainer.schemaNode, key),
 				cancelCreate: ()=>doCreate=false
 			};
 			repeatEntry.creating=false;
