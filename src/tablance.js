@@ -1753,7 +1753,7 @@ class TablanceBase {
 	_beginDeleteRepeated(e,data,mainIndex,schemaNode,cell) {
 		if (!cell.parent.parent.creating) {
 			cell.parent.containerEl.classList.add("delete-confirming");
-			this._moveInsideLineup(1);//move away from the delete-button which now dissapeared, to the next btn
+			this._selectDetailsCell(cell.parent.children[1]);//select "No" button
 		} else
 			this._deleteCell(cell.parent.parent);
 	}
