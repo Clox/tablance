@@ -932,10 +932,10 @@ class TablanceBase {
 	_dep_assignPathsAndData(schemaNode, uiPath, parentCtx = []) {
 		schemaNode._path = uiPath;
 
-		const ctxOffset = schemaNode.context
-			? (Array.isArray(schemaNode.context)
-				? schemaNode.context
-				: String(schemaNode.context).split(".").filter(Boolean))
+		const ctxOffset = schemaNode.dataPath
+			? (Array.isArray(schemaNode.dataPath)
+				? schemaNode.dataPath
+				: String(schemaNode.dataPath).split(".").filter(Boolean))
 			: [];
 		const myCtx = ctxOffset.length ? [...parentCtx, ...ctxOffset] : parentCtx;
 
@@ -1638,10 +1638,10 @@ class TablanceBase {
 	_generateDetailsContent(schemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
 		let notYetCreated=_notYetCreated;
 		let scopedRowData=rowData;
-		if (schemaNode.context) {
-			const ctx=Array.isArray(schemaNode.context)
-				? schemaNode.context
-				: String(schemaNode.context).split(".").filter(Boolean);
+		if (schemaNode.dataPath) {
+			const ctx=Array.isArray(schemaNode.dataPath)
+				? schemaNode.dataPath
+				: String(schemaNode.dataPath).split(".").filter(Boolean);
 			let target=scopedRowData;
 			for (const key of ctx) {
 				if (!target[key]||typeof target[key]!="object") {
