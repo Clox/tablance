@@ -932,12 +932,12 @@ class TablanceBase {
 	_dep_assignPathsAndData(schemaNode, uiPath, parentCtx = []) {
 		schemaNode._path = uiPath;
 
-		const ctxOffset = schemaNode.dataPath
-			? (Array.isArray(schemaNode.dataPath)
-				? schemaNode.dataPath
-				: String(schemaNode.dataPath).split(".").filter(Boolean))
-			: [];
-		const myCtx = ctxOffset.length ? [...parentCtx, ...ctxOffset] : parentCtx;
+		let myCtx=parentCtx;
+		if (schemaNode.dataPath) {
+			const dataPathArr=Array.isArray(schemaNode.dataPath) ? schemaNode.dataPath
+				: String(schemaNode.dataPath).split(".").filter(Boolean);
+			myCtx = [...parentCtx, ...dataPathArr];
+		}
 
 		schemaNode._dataContextPath = myCtx;
 
