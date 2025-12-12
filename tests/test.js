@@ -41,14 +41,14 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	{type:"field",title:"Format field",id:"myFormattedData"
 		,input:{type:"text", format:{ blocks: [8, 4], delimiter: "-", numericOnly: true , 
 		stripDelimiterOnSave:true}}},
-	{type:"group",id:"hemadress",title:"Hemadress",bulkEdit:true,entries:[
-		{type:"field",title:"Gata",id:"home_street",input:{type:"text",
-				onChange:(...args)=>console.log(args)}},
-		{type:"field",title:"Postnummer",id:"home_zip",input:{type:"text",
-				onChange:(...args)=>console.log(args)}},
-		{type:"field",title:"Ort",id:"home_city",input:{type:"text",
-				onChange:(...args)=>console.log(args)}}
-	]},
+{type:"group",id:"hemadress",context:"hemadress",title:"Hemadress",bulkEdit:true,entries:[
+	{type:"field",title:"Gata",id:"street",input:{type:"text",
+			onChange:(...args)=>console.log(args)}},
+	{type:"field",title:"Postnummer",id:"zip",input:{type:"text",
+			onChange:(...args)=>console.log(args)}},
+	{type:"field",title:"Ort",id:"city",input:{type:"text",
+			onChange:(...args)=>console.log(args)}}
+]},
 	{type:"group",id:"innergrejer",title:"Inre grej",entries:[{type:"field",id:"innerFoo"}]},
 		{type:"field",title:"File",id:"file",input:{type:"file",fileUploadHandler:xhr=>{
 				xhr.open("POST", "http://localhost:3000/tests/serve.php", true);
@@ -64,13 +64,10 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			,entries:
 			[{type:"field",title:"Gata",id:"street"},
 			{type:"field",title:"Postnummer",id:"zip"},
-			{type:"field",title:"Ort",id:"city",input:{type:"text", onChange:args=>console.log(args.closestMeta("foo"))}},
-			{type:"field",title:"Ort i versaler"
-				,render:city=>{
-					//console.log(city);
-					return city.toUpperCase();
-
-				},dependsOn:"city"},
+				{type:"field",title:"Ort",id:"city",cellId:"addrCity",input:{type:"text", onChange:args=>console.log(args.closestMeta("foo"))}},
+				{type:"field",title:"Ort i versaler"
+					,render:city=>city.toUpperCase()
+					,dependsOn:"addrCity"},
 				{type:"field",title:"test1", render:val=>val, dependsOn:"amount"}
 			]}},
 		
@@ -185,7 +182,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			data.push({num:55,myFormattedData:123456789123,desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,
 				descLetter:String.fromCharCode(ii+33)
 				,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
-				,hello:"Hallå",world:"Världen",innerFoo:1337,home_street:"Kaplan",home_zip:"9999",home_city:"Skara"
+				,hello:"Hallå",world:"Världen",innerFoo:1337,hemadress:{street:"Kaplan",zip:"9999",city:"Skara"}
 				,addresses:[{street:"kaplan",zip:9999,city:"skara"},{street:"kaplan",zip:8999,city:"skara"}]
 				//,sel:Math.random()<.5?null:foods[Math.round(Math.random()*(foods.length-1))]
 				,sel:Math.random()<.5?null:foods[Math.round(Math.random()*(foods.length-1))].value

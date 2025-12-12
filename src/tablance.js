@@ -932,15 +932,22 @@ class TablanceBase {
 	_dep_assignPathsAndData(schemaNode, uiPath, parentCtx = []) {
 		schemaNode._path = uiPath;
 
-		schemaNode._dataContextPath = parentCtx;
+		const ctxOffset = schemaNode.context
+			? (Array.isArray(schemaNode.context)
+				? schemaNode.context
+				: String(schemaNode.context).split(".").filter(Boolean))
+			: [];
+		const myCtx = ctxOffset.length ? [...parentCtx, ...ctxOffset] : parentCtx;
+
+		schemaNode._dataContextPath = myCtx;
 
 		if (schemaNode.id != null)
-			schemaNode._dataPath = [...parentCtx, String(schemaNode.id)];
+			schemaNode._dataPath = [...myCtx, String(schemaNode.id)];
 
 		const kids = this._dep_children(schemaNode);
 
 		for (let i = 0; i < kids.length; i++)
-			this._dep_assignPathsAndData(kids[i], [...uiPath, i], parentCtx);
+			this._dep_assignPathsAndData(kids[i], [...uiPath, i], myCtx);
 	}
 
 	/*───────────────────────────────────────────────────────────
@@ -1629,19 +1636,35 @@ class TablanceBase {
 	 * 		schemaNode with no create option).
 	 */
 	_generateDetailsContent(schemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
+		let notYetCreated=_notYetCreated;
+		let scopedRowData=rowData;
+		if (schemaNode.context) {
+			const ctx=Array.isArray(schemaNode.context)
+				? schemaNode.context
+				: String(schemaNode.context).split(".").filter(Boolean);
+			let target=scopedRowData;
+			for (const key of ctx) {
+				if (!target[key]||typeof target[key]!="object") {
+					target[key]={};
+					notYetCreated=true;
+				}
+				target=target[key];
+			}
+			scopedRowData=target;
+		}
 		if (!path.length)
 			instanceNode.rowIndex=mainIndex;
 		instanceNode.path=[...path];
-		instanceNode.dataObj=rowData;
+		instanceNode.dataObj=scopedRowData;
 		instanceNode.schemaNode=schemaNode;
 		if (schemaNode.visibleIf)
 			this._applyVisibleIf(instanceNode);
 		switch (schemaNode.type) {
-			case "list": return this._generateDetailsList(...arguments);
-			case "field": return this._generateField(...arguments);
-			case "group": return this._generateDetailsGroup(...arguments);
-			case "repeated": return this._generateDetailsRepeated(...arguments);
-			case "lineup": return this._generateDetailsLineup(...arguments);
+			case "list": return this._generateDetailsList(schemaNode,mainIndex,instanceNode,parentEl,path,scopedRowData,notYetCreated);
+			case "field": return this._generateField(schemaNode,mainIndex,instanceNode,parentEl,path,scopedRowData);
+			case "group": return this._generateDetailsGroup(schemaNode,mainIndex,instanceNode,parentEl,path,scopedRowData,notYetCreated);
+			case "repeated": return this._generateDetailsRepeated(schemaNode,mainIndex,instanceNode,parentEl,path,scopedRowData,notYetCreated);
+			case "lineup": return this._generateDetailsLineup(schemaNode,mainIndex,instanceNode,parentEl,path,scopedRowData,notYetCreated);
 		}
 	}
 
@@ -3756,12 +3779,18 @@ class TablanceBase {
 		let target = baseCell;
 
 		// Step 1: go up for each ".."
-		for (var i=0; i < path.length && path[i] === ".."; i++)
+		for (var i=0; i < path.length && path[i] === ".."; i++) {
+			if (!target?.parent)
+				return null;
 			target = target.parent;
+		}
 
 		// Step 2: go down via the remaining indices
-		for (; i < path.length; i++)
-			target = target.children[path[i]];
+		for (; i < path.length; i++) {
+			target = target?.children?.[path[i]];
+			if (!target)
+				return null;
+		}
 		return target;
 	}
 
@@ -3783,7 +3812,7 @@ class TablanceBase {
 		}
 		if (schemaNode.dependsOnCellPaths) {
 			const dependee=this._resolveCellPaths(instanceNode,schemaNode.dependsOnCellPaths[0]);
-			return dependee.dataObj[dependee.schemaNode.id];
+			return dependee?.dataObj?.[dependee.schemaNode.id];
 		}
 		return rowData[schemaNode.id];
 	}
