@@ -402,11 +402,18 @@ class TablanceBase {
 	 * 				create: Bool If true then there will be a user-interface for creating and deleting entries
 	 * 				onCreate Function Callback fired when the user has created an entry via the interface available if
 	 * 					"create" is true. It is considered committed when the cell-cursor has left the repeat-row after
-	 * 					having created it. It will normally get passed arguments: 1:new data,2:rowData,
-	 * 					3:repeatedSchemaNode,4:instanceNode
-	 * 					However if in the bulk-edit-area by setting "bulkEdit" to true then it will get passed
-	 * 					1:new data, 2:array of rowData, 3:repeatedSchemaNode,
-	 * 					4:true (to easily check for bulk-edit-row edit)
+	 * 					having created it. Receives a single object:
+	 * 					- newDataItem: the newly created data object
+	 * 					- dataContext: the object owning the repeated array (row-data or nested object)
+	 * 					- dataKey: key on dataContext for the repeated array (repeated schema id)
+	 * 					- dataArray: the array the item-data was inserted into
+	 * 					- itemIndex: index of the new item within dataArray
+	 * 					- repeatedSchemaNode: the repeated container schema node
+	 * 					- entrySchemaNode: the schema node for the created entry (often a group)
+	 * 					- newInstanceNode: the instance node for the created entry
+	 * 					- mainIndex: index of the root row
+	 * 					- bulkEdit: true if triggered from bulk-edit
+	 * 					- cancelCreate: function() to abort the creation (removes the new item)
 	 * 				onCreateOpen Function If the entry of the repeated is group and "create" is set to true, then this
 	 * 					callback-function will be called when a new group is added, i.e. when the user interacts with
 	 * 					insertNew-cell, not when the data is actually created, that triggers "onCreate".
@@ -2947,10 +2954,28 @@ class TablanceBase {
 					this._showTooltip(message,repeatEntry.el);
 				return false;//prevent commiting/closing the group
 			}
-			repeatEntry.creating=false;
 			const creationContainer=repeatEntry.schemaNode.type=="group"?repeatEntry:repeatEntry.parent;
-			creationContainer.schemaNode.onCreate?.
-							(repeatEntry.dataObj,this._data[root.rowIndex],creationContainer.schemaNode,repeatEntry);
+			const repeatedContainer=creationContainer.parent;
+			const dataContext=repeatedContainer?.parent?.dataObj??this._data[root.rowIndex];
+			const payload={
+				newDataItem: repeatEntry.dataObj,
+				dataContext,
+				dataArray: repeatedContainer?.dataObj,
+				dataKey: repeatedContainer?.schemaNode.id,
+				itemIndex: repeatEntry.index,
+				repeatedSchemaNode: repeatedContainer?.schemaNode,
+				entrySchemaNode: creationContainer.schemaNode,
+				newInstanceNode: repeatEntry,
+				mainIndex: root.rowIndex,
+				bulkEdit: false,
+				cancelCreate: ()=>doCreate=false
+			};
+			repeatEntry.creating=false;
+			creationContainer.schemaNode.onCreate?.(payload);
+			if (!doCreate) {
+				this._deleteCell(repeatEntry);
+				return false;
+			}
 		} else {
 			this._deleteCell(repeatEntry);
 			return false;

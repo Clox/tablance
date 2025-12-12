@@ -82,7 +82,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		 {type:"group",title:"förordnande",bulkEdit:true,entries:[
 			{type:"repeated",id:"custodianshipChanges",bulkEdit:true,create:true
 			,sortCompare:(a,b)=>a.date>b.date?1:-1
-			,onCreate:(...args)=>console.log(args)
+			,onCreate:payload=>console.log(payload)
 			,onDelete:(...args)=>console.log(args)
 			,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
 			,areYouSureYesText:"Ja",areYouSureNoText:"Nej",entry:
@@ -109,7 +109,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			a=a;
 		},
 			title:"förordnande-lista",titlesColWidth:0,entries:[
-			{type:"repeated",id:"custodianshipChanges",create:true,onCreate:(...args)=>console.log(args)
+			{type:"repeated",id:"custodianshipChanges",create:true,onCreate:payload=>console.log(payload)
 			,onDelete:(...args)=>console.log(args)
 			,sortCompare:(a,b)=>a.date>b.date?1:-1
 			,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
