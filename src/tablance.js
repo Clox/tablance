@@ -524,7 +524,7 @@ class TablanceBase {
 			this._createTableBody();
 			(new ResizeObserver(this._updateSizesOfViewportAndCols.bind(this))).observe(hostEl);
 			this._setupSpreadsheet(false);
-			this._updateSizesOfViewportAndCols();
+			
 
 			if (this._opts.sortAscHtml==null)
 				this._opts.sortAscHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
@@ -537,6 +537,8 @@ class TablanceBase {
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
 			this._updateHeaderSortHtml();
 			this._buildDependencyGraph(this._schema);
+			this._createBulkEditArea(schema);//send in the raw schema for this one
+			this._updateSizesOfViewportAndCols();
 		}
 	}
 
@@ -1271,7 +1273,6 @@ class TablanceBase {
 		this._cellCursor.className="cell-cursor";
 		this._cellCursor.style.display="none";
 		if (!onlyDetails) {
-			this._createBulkEditArea();
 			//remove any border-spacing beacuse if spacing is clicked the target-element will be the table itself and
 			//no cell will be selected which is bad user experience. Set it to 0 for headerTable too in order to match
 			this._mainTable.style.borderSpacing=this._headerTable.style.borderSpacing=this._borderSpacingY=0;
@@ -3219,7 +3220,7 @@ class TablanceBase {
 		this._borderSpacingY=parseInt(window.getComputedStyle(this._mainTable)['border-spacing'].split(" ")[1]);
 	}
 
-	_createBulkEditArea() {
+	_createBulkEditArea(schema) {
 		this._bulkEditArea=this.rootEl.appendChild(document.createElement("div"));
 		this._bulkEditArea.classList.add("bulk-edit-area");
 		this._bulkEditArea.addEventListener("transitionend",()=>{
@@ -3244,14 +3245,14 @@ class TablanceBase {
 		mainPage.classList.add("main");
 		mainPage.style.display="block";
 
-		const bulkEditFields=this._buildBulkEditSchemaNodes(this._schema.details);
-		for (const column of this._schema.main.columns)
+		const bulkEditFields=this._buildBulkEditSchemaNodes(schema.details);
+		for (const column of schema.main.columns)
 			bulkEditFields.push(...this._buildBulkEditSchemaNodes(column));
 
 		//Build schema for bulk-edit-area based on the real schema
-		const schema={details:{type:"lineup",entries:bulkEditFields}};//WRAP
+		const bulkSchema={details:{type:"lineup",entries:bulkEditFields}};//WRAP
 
-		this._bulkEditTable=new TablanceBulk(tableContainer,schema,null,true,null);
+		this._bulkEditTable=new TablanceBulk(tableContainer,bulkSchema,null,true,null);
 		this._bulkEditTable.mainInstance=this;
 		this._bulkEditTable.addData([{}]);
 
@@ -3269,9 +3270,8 @@ class TablanceBase {
 	 * 						when hitting upon containers which then are passed to this param
 	 * @returns */
 	_buildBulkEditSchemaNodes(schema) {
-		const mainCol=this._schema.main.columns.includes(schema);
 		const result=[];
-		if ((mainCol||schema.type=="field")&&schema.bulkEdit) {
+		if ((!schema.type||schema.type=="field")&&schema.bulkEdit) {
 			//schema-nodes of main-columns don't need to specify this, but it's needed in details
 			result.push(Object.assign(Object.create(null), schema, {type:"field"}));
 		} else if ((schema.entries?.length&&schema.bulkEdit)||schema===this._schema.details) {
@@ -3282,7 +3282,7 @@ class TablanceBase {
 	}
 
 	/**Updates the displayed values in the bulk-edit-area */
-	_updateBulkEditAreaCells(schemaNodesToUpdateCellsFor=this._bulkEditTable.schema.details.entries) {
+	_updateBulkEditAreaCells(schemaNodesToUpdateCellsFor=this._bulkEditTable._schema.details.entries) {
 		const mixedText="(Mixed)";
 		for (let multiCellI=-1, multiCellSchemaNode; multiCellSchemaNode=schemaNodesToUpdateCellsFor[++multiCellI];) {
 
