@@ -2232,11 +2232,13 @@ class TablanceBase {
 	_alignDropdown(dropdown,target=this._cellCursor) {
 
 		const alignmentContainer=this._dropdownAlignmentContainer;//container of the dropdown
-		const alignmentPos=this._getElPos(target);//and its position inside
+		const alignmentPos=this._getElPos(target);
+		const viewportPos=alignmentContainer===dropdown.offsetParent?alignmentPos
+							:this._getElPos(target,alignmentContainer);
 		
 		//if target-element is below middle of viewport or if in bulk-edit-area
 		dropdown.classList.remove("above","below","left","right");
-		if (alignmentPos.y+target.clientHeight/2>alignmentContainer.scrollTop+alignmentContainer.clientHeight/2) {
+		if (viewportPos.y+target.clientHeight/2>alignmentContainer.scrollTop+alignmentContainer.clientHeight/2) {
 			//then place dropdown above target-element
 			dropdown.style.top=alignmentPos.y-dropdown.offsetHeight+"px";
 			dropdown.classList.add("above");
@@ -2247,7 +2249,7 @@ class TablanceBase {
 		}
 
 		//if there's enough space to the right of target-element
-		if (alignmentContainer.clientWidth-alignmentPos.x>dropdown.offsetWidth) {
+		if (alignmentContainer.clientWidth-viewportPos.x>dropdown.offsetWidth) {
 			//then align the left of the dropdown with the left of the target-element
 			dropdown.style.left=alignmentPos.x+"px";
 			dropdown.classList.add("left");
@@ -3254,6 +3256,7 @@ class TablanceBase {
 
 		this._bulkEditTable=new TablanceBulk(tableContainer,bulkSchema,null,true,null);
 		this._bulkEditTable.mainInstance=this;
+		this._bulkEditTable._dropdownAlignmentContainer=this._bulkEditArea;
 		this._bulkEditTable.addData([{}]);
 
 		this._bulkEditAreaHeightPx=this._bulkEditArea.firstChild.offsetHeight;
