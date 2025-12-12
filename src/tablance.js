@@ -6,6 +6,9 @@ const SCHEMA_WRAPPER_KEYS=new Set(["raw", "parent", "main", "details", "columns"
 	"_path", "sortDiv","_dataContextPath","_dataPath", "dependencyPaths", "dependsOnCellPaths", "dependsOnDataPath",
 	"pxWidth", SCHEMA_WRAPPER_MARKER]);
 
+const TABLANCE_VERSION = typeof __TABLANCE_VERSION__!=="undefined"?__TABLANCE_VERSION__:"dev";
+const TABLANCE_BUILD = typeof __TABLANCE_BUILD__!=="undefined"?__TABLANCE_BUILD__:"dev";
+
 
 /** 
  * Base class providing shared table logic, structure management,
@@ -3987,7 +3990,6 @@ class FakeXMLHttpRequest {
  * Reflects and updates selected rows in the main Tablance instance.
  */
 class TablanceBulk extends TablanceBase {
-
 	/** @type {Tablance} main tablance owning this bulk instance */
 	mainInstance;
 	_dropdownAlignmentContainer=this.rootEl;
@@ -4013,6 +4015,9 @@ class TablanceBulk extends TablanceBase {
  * Handles full data display, user interaction, editing, details, and rendering.
  */
 export default class Tablance extends TablanceBase {
+	static version=TABLANCE_VERSION;
+	static build=TABLANCE_BUILD;
+
 	constructor() {
 		super(...arguments);
 		this._dropdownAlignmentContainer=this._onlyDetails?this.rootEl:this._scrollBody;
