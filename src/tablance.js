@@ -517,8 +517,15 @@ class TablanceBase {
 	 * 				onOpenAfter Function Function that fires when the group is opened, but after it has been rendered.
 	 * 					Gets passed the following arguments:
 	 * 					1: group-object
-	 * 				onClose Function Callback that is fired when the group closes. Gets passed the following arguments:
-	 * 					1: group-object
+	 * 				onClose Function Callback that is fired when the group closes (create or edit). Receives payload:
+	 * 					{
+	 * 						schemaNode,				// current schema-node
+	 * 						data,					// dataObj of the group
+	 * 						instanceNode,			// instance-node of the group
+	 * 						parentInstanceNode,		// parent instance-node if any
+	 * 						mainIndex,				// index of the main row
+	 * 						mode: "create"|"edit"	// whether the group was being created or already existed
+	 * 					}
   	 * 			}
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							searchbar Bool that defaults to true. If true then there will be a searchbar that
@@ -2393,7 +2400,19 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			renderText=groupObject.schemaNode.closedRender(groupObject.dataObj);
 			groupObject.el.rows[groupObject.el.rows.length-1].cells[0].innerText=renderText;
 		}
-		groupObject.schemaNode.onClose?.(groupObject);
+		let mainIndex=groupObject.rowIndex;
+		for (let root=groupObject; root.parent; root=root.parent)
+			if (root.rowIndex!=null)
+				mainIndex=root.rowIndex;
+		const closePayload={
+			schemaNode: groupObject.schemaNode,
+			data: groupObject.dataObj,
+			instanceNode: groupObject,
+			parentInstanceNode: groupObject.parent,
+			mainIndex,
+			mode: groupObject.creating?"create":"edit"
+		};
+		groupObject.schemaNode.onClose?.(closePayload);
 		return true;
 	}
 
