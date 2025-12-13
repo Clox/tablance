@@ -518,7 +518,8 @@ class TablanceBase {
 	 * 					Gets passed the following arguments:
 	 * 					1: group-object
 	 * 				onClose Function Callback that fires when attempting to close the group (create or edit).
-	 * 					Call payload.preventClose() to keep the group open and skip committing.
+	 * 					Call payload.preventClose(message?) to keep the group open and skip committing. If a message is
+	 * 					passed it will be shown as a tooltip.
 	 * 					Receives payload:
 	 * 					{
 	 * 						schemaNode,				// current schema-node
@@ -527,7 +528,7 @@ class TablanceBase {
 	 * 						parentInstanceNode,		// parent instance-node if any
 	 * 						mainIndex,				// index of the main row
 	 * 						mode: "create"|"edit",	// whether the group was being created or already existed
-	 * 						preventClose			// call to cancel closing/committing
+	 * 						preventClose(message?)	// call to cancel closing/committing, optional tooltip message
 	 * 					}
   	 * 			}
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
@@ -2403,10 +2404,17 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			mode: groupObject.creating?"create":"edit"
 		};
 		let doClose=true;
-		closePayload.preventClose=()=>doClose=false;
+		let preventMessage;
+		closePayload.preventClose=(message)=>{
+			doClose=false;
+			preventMessage=message??preventMessage;
+		};
 		groupObject.schemaNode.onClose?.(closePayload);
-		if (!doClose)
+		if (!doClose) {
+			if (preventMessage)
+				this._showTooltip(preventMessage,groupObject.el);
 			return false;
+		}
 		if (groupObject.creating&&!this._closeRepeatedInsertion(groupObject))
 			return false;
 		groupObject.el.classList.remove("open");
