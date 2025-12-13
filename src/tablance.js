@@ -1782,7 +1782,30 @@ class TablanceBase {
 			return schemaNode;
 		const clonedEntries=[...(rawNode.entries??[]),deleteControls];
 		const clonedNode={...rawNode, entries:clonedEntries};
-		return this._buildSchemaFacade(clonedNode,parentWrapped);
+		// Wrap the cloned schema so delete controls can be injected without mutating the original schema tree.
+		const wrappedClone=this._buildSchemaFacade(clonedNode,parentWrapped);
+		if (schemaNode?.[SCHEMA_WRAPPER_MARKER])
+			this._cloneDependencyMetadata(schemaNode,wrappedClone);
+		return wrappedClone;
+	}
+
+	_cloneDependencyMetadata(sourceNode,targetNode) {
+		// Delete-button clones must preserve dependency metadata (forward/backward dep paths),
+		// otherwise dependents stop updating because the cloned nodes never register dependencies.
+		const copyMeta=(srcVal)=>{
+			if (Array.isArray(srcVal))
+				return srcVal.map(v=>Array.isArray(v)?[...v]:v);
+			if (srcVal&&typeof srcVal==="object")
+				return {...srcVal};
+			return srcVal;
+		};
+		for (const key of ["dependencyPaths","dependsOnCellPaths","dependsOnDataPath"])
+			if (sourceNode?.[key]!==undefined)
+				targetNode[key]=copyMeta(sourceNode[key]);
+		const sourceChildren=this._dep_children(sourceNode);
+		const targetChildren=this._dep_children(targetNode);
+		for (let i=0;i<sourceChildren.length&&i<targetChildren.length;i++)
+			this._cloneDependencyMetadata(sourceChildren[i],targetChildren[i]);
 	}
 
 	_generateButton(schemaNode,mainIndex,parentEl,rowData,instanceNode=null) {
