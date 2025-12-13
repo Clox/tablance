@@ -210,9 +210,11 @@ document.addEventListener("DOMContentLoaded", ()=>{
 });
 
 function btnClickHandler(e,dataObject,mainIndex,schemaNode,instanceNode) {
+
 	console.log(e);
 	console.log(dataObject);
 	console.log(mainIndex);
 	console.log(schemaNode);
 	console.log(instanceNode);
+	console.log(instanceNode.prevSibling.prevSibling);
 }

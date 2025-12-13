@@ -9,6 +9,19 @@ const SCHEMA_WRAPPER_KEYS=new Set(["raw", "parent", "main", "details", "columns"
 const TABLANCE_VERSION = typeof __TABLANCE_VERSION__!=="undefined"?__TABLANCE_VERSION__:"dev";
 const TABLANCE_BUILD = typeof __TABLANCE_BUILD__!=="undefined"?__TABLANCE_BUILD__:"dev";
 
+// Shared prototype for instance-nodes so utility getters stay in sync after inserts/deletes.
+const INSTANCE_NODE_PROTOTYPE=Object.create(null);
+Object.defineProperties(INSTANCE_NODE_PROTOTYPE,{
+	previousSibling:{get() {
+		const siblings=this.parent?.children;
+		return siblings!=null&&Number.isInteger(this.index)?siblings[this.index-1]:undefined;
+	}},
+	nextSibling:{get() {
+		const siblings=this.parent?.children;
+		return siblings!=null&&Number.isInteger(this.index)?siblings[this.index+1]:undefined;
+	}}
+});
+
 
 /** 
  * Base class providing shared table logic, structure management,
@@ -125,6 +138,7 @@ class TablanceBase {
 						//						despite the root being an instance-node it cant be naviagted to. 
 						//						it simply holds the top instance-nodes
 						//  index: the index of the node in the children-array of its parent
+						//	prevSibling/nextSibling: getters for adjacent siblings (null if none)
 						//}
 	_activeDetailsCell;	//points to an object in #openDetailsNavMap and in extension the cell of an details.
 							//If this is set then it means the cursor is inside an details.
@@ -558,6 +572,10 @@ class TablanceBase {
 			this._createBulkEditArea(schema);//send in the raw schema for this one
 			this._updateSizesOfViewportAndCols();
 		}
+	}
+
+	_createInstanceNode(parent=null,index=null) {
+		return Object.assign(Object.create(INSTANCE_NODE_PROTOTYPE),{parent,index});
 	}
 
 	addData(data, highlight=false) {
@@ -1612,7 +1630,7 @@ class TablanceBase {
 		detailsDiv.addEventListener("transitionend",this._detailsAnimationEnd.bind(this));
 		const shadowLine=detailsDiv.appendChild(document.createElement("div"));
 		shadowLine.className="details-shadow";
-		const instanceNode=this._openDetailsPanes[rowIndex]={};
+		const instanceNode=this._openDetailsPanes[rowIndex]=this._createInstanceNode();
 		this._generateDetailsContent(this._schema.details,rowIndex,instanceNode,detailsDiv,[],this._data[rowIndex]);
 		instanceNode.rowIndex=rowIndex;
 		return detailsRow;
@@ -1921,8 +1939,10 @@ class TablanceBase {
 		for (let entryI=-1,childSchemaNode; childSchemaNode=containerSchemaNode.entries[++entryI];) {
 			if (childSchemaNode.type==="repeated") {
 				const repeatData=rowData[childSchemaNode.id]??(rowData[childSchemaNode.id]=[]);
-				const rptCelObj=collectionObj.children[entryI]={parent:collectionObj,index:entryI,children:[]
-												,schemaNode:childSchemaNode,dataObj:repeatData,path:[...path,entryI]};
+				const rptCelObj=collectionObj.children[entryI]=Object.assign(
+					this._createInstanceNode(collectionObj,entryI),
+					{children:[],schemaNode:childSchemaNode,dataObj:repeatData,path:[...path,entryI]}
+				);
 				rptCelObj.insertionPoint=collectionObj.containerEl.appendChild(document.createComment("repeat-insert"));
 				childSchemaNode.create&&this._generateRepeatedCreator(rptCelObj);
 				repeatData?.forEach(repeatData=>this._repeatInsert(rptCelObj,false,repeatData));
@@ -2028,7 +2048,7 @@ class TablanceBase {
 		index??=collectionOrRepeated.children.length;
 
 		// Item object (holds metadata for this item)
-		const itemObj=Object.assign(Object.create(null),{parent:collectionOrRepeated,index:index});
+		const itemObj=this._createInstanceNode(collectionOrRepeated,index);
 
 		// Optional title element
 		let title;
@@ -3467,7 +3487,7 @@ class TablanceBase {
 		this.rootEl.innerHTML="";
 		const detailsDiv=this.rootEl.appendChild(document.createElement("div"));
 		detailsDiv.classList.add("details");
-		this._generateDetailsContent(this._schema.details,0,this._openDetailsPanes[0]={},detailsDiv,[],this._data[0]);
+		this._generateDetailsContent(this._schema.details,0,this._openDetailsPanes[0]=this._createInstanceNode(),detailsDiv,[],this._data[0]);
 	}
 
 	/**Refreshes the table-rows. Should be used after sorting or filtering or such.*/
