@@ -80,7 +80,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			{type:"field",title:"repeated row",id:"foo"}
 		},
 		{type:"field",input:{type:"button",btnText:"Cool button",clickHandler:btnClickHandler}},
-		 {type:"group",title:"förordnande",bulkEdit:true,entries:[
+		 {type:"group",title:"förordnande1",bulkEdit:true,entries:[
 			{type:"repeated",id:"custodianshipChanges",bulkEdit:true,create:true
 			,sortCompare:(a,b)=>a.date>b.date?1:-1
 			,onCreate:payload=>console.log(payload)
@@ -99,7 +99,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 							options:[{text:"Ja",value:true},{text:"Nej",value:false}]
 						},dependsOn:"type",visibleIf:typeVal=>typeVal&&typeVal!="end"}
 					],
-					creationValidation:({data})=>{
+					creationValidation:({newDataItem:data})=>{
 						return !!(data.date&&data.type);
 					}
 				}

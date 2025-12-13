@@ -375,32 +375,35 @@
 		border-radius: 6px;
 		min-width: 100px;
 		min-height: 30px;
+		&::after {
+			content: "";
+			position: absolute;
+			left: 50%;
+			transform: translateX(-50%);
+			border-width: 5px;
+			border-style: solid;
+			border-color: transparent;
+		}
 		>span {
 			color: #fff;
 			text-align: center;
-			&::after {
-				content: "";
-				position: absolute;
-				left: 50%;
-				margin-left: -5px;
-				border-width: 5px;
-				border-style: solid;
-				border-color: transparent transparent transparent transparent;
-			}
+			display: block;
+			position: relative;
 		}
 		&.below {
 			margin-top: 5px;
-			>span::after {
-				margin-top: -15px;
+			&::after {
+				top: 0;
+				transform: translate(-50%, -100%);
 				border-bottom-color: black;
 			}
 		}
 		&.above {
 			margin-top: -5px;
-			>span::after {
-				top: 100%;
+			&::after {
+				bottom: 0;
+				transform: translate(-50%, 100%);
 				border-top-color: black;
-				
 			}
 		}
 	}

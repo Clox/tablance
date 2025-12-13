@@ -333,31 +333,35 @@
   min-width: 100px;
   min-height: 30px;
 }
-.tablance .tooltip > span {
-  color: #fff;
-  text-align: center;
-}
-.tablance .tooltip > span::after {
+.tablance .tooltip::after {
   content: "";
   position: absolute;
   left: 50%;
-  margin-left: -5px;
+  transform: translateX(-50%);
   border-width: 5px;
   border-style: solid;
-  border-color: transparent transparent transparent transparent;
+  border-color: transparent;
+}
+.tablance .tooltip > span {
+  color: #fff;
+  text-align: center;
+  display: block;
+  position: relative;
 }
 .tablance .tooltip.below {
   margin-top: 5px;
 }
-.tablance .tooltip.below > span::after {
-  margin-top: -15px;
+.tablance .tooltip.below::after {
+  top: 0;
+  transform: translate(-50%, -100%);
   border-bottom-color: black;
 }
 .tablance .tooltip.above {
   margin-top: -5px;
 }
-.tablance .tooltip.above > span::after {
-  top: 100%;
+.tablance .tooltip.above::after {
+  bottom: 0;
+  transform: translate(-50%, 100%);
   border-top-color: black;
 }
 .tablance .tablance-select-container {
