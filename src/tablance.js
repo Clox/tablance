@@ -2764,8 +2764,13 @@ class TablanceBase {
 			const noResults=selectContainer.appendChild(document.createElement("div"));
 			noResults.innerHTML=strctInp.noResultsText??this._opts.lang?.selectNoResultsFound??"No results found";
 			noResults.className="no-results";
-			for (const opt of strctInp.options)
-				(opt.pinned?pinnedOpts:looseOpts).push(opt);
+			for (const opt of strctInp.options) {
+				const visible=!opt.visibleIf || opt.visibleIf({dataContext:this._cellCursorDataObj,
+					schemaNode:this._activeSchemaNode, rowIndex:this._mainRowIndex, 
+					instanceNode:this._activeDetailsCell});
+				if (visible)
+					(opt.pinned?pinnedOpts:looseOpts).push(opt);
+			}
 			const ctx=Object.assign(Object.create(null),{
 				strctInp,
 				selectContainer,

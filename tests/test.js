@@ -17,7 +17,8 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	function descFunc(value, dataRow,col,rowIndex) {
 		return `fo<u>ob</u>ar ${rowIndex} - ${dataRow.descLetter}`
 	}
-	const foods=[{text:"Nothing",pinned:true},{text:"banana",value:1},{text:"apple",value:2},
+	const foods=[{text:"Nothing",pinned:true},{text:"banana",value:1,visibleIf:({rowIndex})=>rowIndex%2},
+				{text:"apple",value:2},
 				{text:"cucumber",value:3},{text:"orange",value:4},{text:"grapes",value:5},
 				{text:"melon",value:6},{text:"pineapple",value:7},{text:"carrot",value:8},
 				{text:"another banana",value:9},{text:"another apple",value:10},
@@ -36,7 +37,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"},bulkEdit:true}, 
 		{title:"numtwice", render:num=>num*2, dependsOn:"num"}];
 	const myExpansion={meta:{"foo":"details", "baz":42},type:"list",titlesColWidth:"8em",entries:[
-		
+
 		{type:"field",title:"amount+10",render:amount=>(Number(amount)+10).toFixed(2)
 			, dependsOn:"amount",/* visibleIf:()=>false */},
 		{type:"field",title:"num",id:"num", input:{type:"text"},bulkEdit:true},
