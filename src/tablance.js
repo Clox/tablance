@@ -598,6 +598,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			this._createBulkEditArea(schema);//send in the raw schema for this one
 			this._updateSizesOfViewportAndCols();
 		}
+		console.log(this._schema)
 	}
 
 	_createInstanceNode(parent=null,index=null) {
@@ -802,19 +803,22 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return wrappedNode;
 
 		function createSchemaNodeFacade(rawNode, parentWrappedNode) {
-			const newWrapper = Object.assign(Object.create(null), {raw: rawNode, [SCHEMA_WRAPPER_MARKER]: true});
+			const newWrapper = Object.create(null);
+			Object.defineProperty(newWrapper,"raw",{value:rawNode, enumerable:false, configurable:true});
+			Object.defineProperty(newWrapper,SCHEMA_WRAPPER_MARKER,{value:true, enumerable:false});
 			if (parentWrappedNode)
 				newWrapper.parent = parentWrappedNode;
-			return new Proxy(newWrapper, {
-				get:(target, prop)=>SCHEMA_WRAPPER_KEYS.has(prop)?target[prop]:target.raw[prop],
-				set(target, prop, value) {
-					if (SCHEMA_WRAPPER_KEYS.has(prop)) {
-						target[prop] = value;
-						return true;
-					}
-					throw new Error(`Cannot write ${prop} to schema-node. Add it to SCHEMA_WRAPPER_KEYS if intended.`);
-				}
-			});
+			for (const key of Reflect.ownKeys(rawNode)) {
+				if (SCHEMA_WRAPPER_KEYS.has(key))
+					continue;//avoid clobbering wrapper metadata
+				Object.defineProperty(newWrapper,key,{
+					enumerable:true,
+					configurable:true,
+					get:()=>rawNode[key],
+					set:()=>{throw new Error(`Cannot write ${String(key)} to schema-node. Add it to SCHEMA_WRAPPER_KEYS if intended.`);}
+				});
+			}
+			return newWrapper;
 		}
 	}
 
@@ -3456,11 +3460,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			for (let col of this._colSchemaNodes)
 				if (!col.width)
 					numUndefinedWidths++;
-				else if (!percentageWidthRegex.test(col))//if fixed width
+				else if (!percentageWidthRegex.test(col.width))//if fixed width
 					totalFixedWidth+=(col.pxWidth=parseInt(col.width));
 			let sumFixedAndFlexibleWidth=totalFixedWidth;
 			for (let col of this._colSchemaNodes)
-				if (col.width&&percentageWidthRegex.test(col))//if flexible width
+				if (col.width&&percentageWidthRegex.test(col.width))//if flexible width
 					sumFixedAndFlexibleWidth+=(col.pxWidth=(areaWidth-totalFixedWidth)*parseFloat(col.width)/100);
 			for (let col of this._colSchemaNodes)
 				if (!col.width)//if undefined width
