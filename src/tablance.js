@@ -22,6 +22,24 @@ Object.defineProperties(INSTANCE_NODE_PROTOTYPE,{
 	}}
 });
 
+const DEFAULT_LANG=Object.freeze({
+	fileName:"Filename",
+	fileLastModified:"Last Modified",
+	fileSize:"Size",
+	fileType:"Type",
+	fileUploadDone:"Done!",
+	fileChooseOrDrag:"<b>Press to choose a file</b> or drag it here",
+	fileDropToUpload:"Drop to upload",
+	filterPlaceholder:"Search",
+	delete:"Delete",
+	deleteAreYouSure:"Are you sure?",
+	deleteAreYouSureYes:"Yes",
+	deleteAreYouSureNo:"No",
+	datePlaceholder:"YYYY-MM-DD",
+	selectNoResultsFound:"No results found",
+	insertNew:"Insert new",
+});
+
 
 /** 
  * Base class providing shared table logic, structure management,
@@ -166,7 +184,8 @@ class TablanceBase {
 					// always be expanded. Method addData is still used to add the actual data but it will only use the
 					// last row sent. So adding multiple ones will cause it to discard all but the last.
 	_tooltip;//reference to html-element used as tooltip
-	_dropdownAlignmentContainer;						
+	_dropdownAlignmentContainer;
+	lang;//object holding strings used in the table for various purposes. See DEFAULT_LANG for default values					
 
 	/**
 	 * @param {HTMLElement} hostEl An element which the table is going to be added to
@@ -516,7 +535,7 @@ class TablanceBase {
 	 * 								fileType "Type"
 	 * 								fileUploadDone "Done!"
 	 * 								fileChooseOrDrag "<b>Press to choose a file</b> or drag it here"
-	 * 								fileDropToUpload "<b>Drop to upload</b>"
+	 * 								fileDropToUpload "Drop to upload"
 	 *								filterPlaceholder "Search"
 	 * 								delete "Delete" (used in the deletion of repeat-items or files)
 	 * 								deleteAreYouSure "Are you sure?" (Used in the deletion of repeat-items or files)
@@ -524,10 +543,11 @@ class TablanceBase {
 	 * 								deleteAreYouSureNo	"No" (Used in the deletion of repeat-items)
 	 * 								datePlaceholder "YYYY-MM-DD"
 	 * 								selectNoResultsFound "No results found"
-	 * 								insertNew "Insert New" (Used in repeat-schemaNode if create is set to true)
+	 * 								insertNew "Insert new" (Used in repeat-schemaNode if create is set to true)
 	 * 							}
-	 * */
-	constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
+ 	 * */
+constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
+		this.lang=Object.assign(Object.create(null),DEFAULT_LANG,opts?.lang??{});
 		this.hostEl=hostEl;
 		const rootEl=this.rootEl = document.createElement("div");
 		this.hostEl.appendChild(this.rootEl);
@@ -1295,7 +1315,7 @@ class TablanceBase {
 	_setupSearchbar() {
 		this._searchInput=this.rootEl.appendChild(document.createElement("input"));
 		this._searchInput.type=this._searchInput.className="search";
-		this._searchInput.placeholder=this._opts.lang?.filterPlaceholder??"Search";
+		this._searchInput.placeholder=this.lang.filterPlaceholder;
 		this._searchInput.addEventListener("input",e=>this._onSearchInput(e));
 	}
 
@@ -1759,7 +1779,7 @@ class TablanceBase {
 	 * this method creates the last entry that the user interacts with to create another entry
 	 * @param {Object} repeatedObj The object representing the repeated-container*/
 	_generateRepeatedCreator(repeatedObj) {
-		const creationTxt=repeatedObj.schemaNode.creationText??this._opts.lang?.insertNew??"Insert new";
+		const creationTxt=repeatedObj.schemaNode.creationText??this.lang.insertNew;
 		const creationSchemaNode={type:"group",closedRender:()=>creationTxt,entries:[],
 							creator:true//used to know that this entry is the creator and that it should not be sorted
 							,onOpen:this._onOpenCreationGroup,cssClass:"repeat-insertion"};
@@ -1785,15 +1805,15 @@ class TablanceBase {
 		const deleteControls={type:"lineup",cssClass:"delete-controls"
 			,onBlur:cel=>cel.selEl.querySelector(".lineup").classList.remove("delete-confirming")
 			,entries:[{type:"field",input:{type:"button",
-				btnText:schemaNode.deleteText??this._opts.lang?.delete??"Delete"
+				btnText:schemaNode.deleteText??this.lang.delete
 				,clickHandler:this._beginDeleteRepeated.bind(this)},cssClass:"delete"},
 			{type:"field",input:{type:"button"
-				,btnText:schemaNode.areYouSureNoText??this._opts.lang?.deleteAreYouSureNo??"No",
-				clickHandler:this._cancelDelete.bind(this)},cssClass:"no"
-				,title:schemaNode.deleteAreYouSureText??this._opts.lang?.deleteAreYouSure??"Are you sure?"},
+				,btnText:schemaNode.areYouSureNoText??this.lang.deleteAreYouSureNo
+				,clickHandler:this._cancelDelete.bind(this)},cssClass:"no"
+				,title:schemaNode.deleteAreYouSureText??this.lang.deleteAreYouSure},
 			{type:"field",input:{type:"button"
-				,btnText:schemaNode.areYouSureYesText??this._opts.lang?.deleteAreYouSureYes??"Yes",
-				clickHandler:deleteHandler},cssClass:"yes"}]};
+				,btnText:schemaNode.areYouSureYesText??this.lang.deleteAreYouSureYes
+				,clickHandler:deleteHandler},cssClass:"yes"}]};
 		const rawNode=schemaNode?.[SCHEMA_WRAPPER_MARKER]?schemaNode.raw:schemaNode;
 		const parentWrapped=schemaNode?.[SCHEMA_WRAPPER_MARKER]?schemaNode.parent:null;
 		if (!rawNode)
@@ -2277,7 +2297,7 @@ class TablanceBase {
 		
 		this._cellCursor.appendChild(input);
 		input.value=this._selectedCellVal??"";
-		input.placeholder=this._activeSchemaNode.input.placeholder??this._opts.lang?.datePlaceholder??"YYYY-MM-DD";
+		input.placeholder=this._activeSchemaNode.input.placeholder??this.lang.datePlaceholder;
 		input.focus();
 		
 		function onInput(_e) {
@@ -2496,11 +2516,11 @@ class TablanceBase {
 		const fileInput = fileDiv.appendChild(document.createElement("input"));
 		fileInput.type = "file";
 	
-		fileDiv.innerHTML = this._opts.lang?.fileChooseOrDrag ?? "<b>Press to choose a file</b> or drag it here";
+		fileDiv.innerHTML = this.lang.fileChooseOrDrag;
 	
 		const dropDiv = fileDiv.appendChild(document.createElement("div"));
 		dropDiv.classList.add("drop");
-		dropDiv.innerHTML = this._opts.lang?.fileDropToUpload ?? "Drop to upload";
+		dropDiv.innerHTML = this.lang.fileDropToUpload;
 	
 		// Local small handler
 		const keydown = e => {
@@ -2586,7 +2606,7 @@ class TablanceBase {
 			for (const bar of meta.bars)
 				if (bar.isConnected) {
 					bar.parentElement.classList.remove("active");
-					bar.firstChild.innerText=this._opts.lang?.fileUploadDone??"Done!";
+					bar.firstChild.innerText=this.lang.fileUploadDone;
 				}
 		};
 		const totalBytes=file.size||1;
@@ -2805,7 +2825,7 @@ class TablanceBase {
 			const mainUl=ulDiv.appendChild(document.createElement("ul"));
 			mainUl.classList.add("main");
 			const noResults=selectContainer.appendChild(document.createElement("div"));
-			noResults.innerHTML=strctInp.noResultsText??this._opts.lang?.selectNoResultsFound??"No results found";
+			noResults.innerHTML=strctInp.noResultsText??this.lang.selectNoResultsFound;
 			noResults.className="no-results";
 			for (const opt of strctInp.options) {
 				const visible=!opt.visibleIf || opt.visibleIf({dataContext:this._cellCursorDataObj,
@@ -3787,12 +3807,12 @@ class TablanceBase {
 		fileInstanceNode.fileInputSchemaNode=fileSchemaNode;
 
 		//define all the file-meta-props
-		const lang=this._opts.lang??{};
-		let metaEntries=[{type:"field",title:lang.fileName??"Filename",id:"name"},
-			{type:"field",title:lang.fileLastModified??"Last Modified",id:"lastModified",render:date=>
+		const lang=this.lang;
+		let metaEntries=[{type:"field",title:lang.fileName,id:"name"},
+			{type:"field",title:lang.fileLastModified,id:"lastModified",render:date=>
 			new Date(date).toISOString().slice(0, 16).replace('T', ' ')},
-			{type:"field",title:lang.fileSize??"Size",id:"size",render:size=>this._humanFileSize(size)},
-			{type:"field",title:lang.fileType??"Type",id:"type"}];
+			{type:"field",title:lang.fileSize,id:"size",render:size=>this._humanFileSize(size)},
+			{type:"field",title:lang.fileType,id:"type"}];
 		for (let metaI=-1,metaName; metaName=["filename","lastModified","size","type"][++metaI];)
 			if(!(fileSchemaNode.input.fileMetasToShow?.[metaName]??this._opts.defaultFileMetasToShow?.[metaName]??true))
 				metaEntries.splice(metaI,1);//potentially remove (some of) them
