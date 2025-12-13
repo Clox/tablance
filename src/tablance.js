@@ -38,6 +38,8 @@ const DEFAULT_LANG=Object.freeze({
 	datePlaceholder:"YYYY-MM-DD",
 	selectNoResultsFound:"No results found",
 	insertNew:"Insert new",
+	creationValidationFailed:"Invalid entry. Please check the fields and try again.",
+	creationValidationFailedCancelInfo:"\n Select Delete to cancel."
 });
 
 
@@ -488,14 +490,18 @@ class TablanceBase {
 	 * 				closedRender Function pass a method here that will get the data for the group as first arg.
 	 * 								it needs to return a string which will replace the group-content when it is closed
 	 * 				creationValidation Function If this group is placed within a repeated-container with create set to
-	 * 								true then this function will be executed upon commiting the creation. If the
-	 * 								function returns true then the validation succeeded and the group will be created.
-	 * 								It will get passed the following arguments:
-	 * 								1: message-function - A function that that takes a message-string as its first
-	 * 									argument. If it the validation didn't go through then this string will be
-	 * 									displayed to the user.
-	 * 								2:schemaNode, 3:rowData(all the entered data of the group), 4:mainIndex, 
-	 * 								5:instanceNode
+	 * 								true then this function will be executed upon commiting the creation. The callback
+	 * 								gets a single payload-object with the following keys:
+	 * 								{
+	 * 									schemaNode: Object - current schema-node
+	 * 									newDataItem: Object - all entered data of the new item
+	 * 									mainIndex: Number - index of the main row
+	 * 									instanceNode: Object - the repeated instance
+	 * 								}
+	 * 								The callback should return either a boolean or an object:
+	 * 									- Boolean: true passes validation; false fails and shows lang.creationValidationFailed
+	 * 									- Object: {valid:Boolean,message:String?}. If no message is supplied,
+	 * 										lang.creationValidationFailed is shown on failure.
 	 * 				bulkEdit Bool Besides setting bulkEdit on input of fields it can also be set on containers which
 	 * 							will add the container to the bulk-edit-area. Any input-fields in the container that
 	 * 							have bulkEdit true will appear in the container there. Remember that both the container
@@ -3015,23 +3021,35 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	_closeRepeatedInsertion(repeatEntry) {
 		if (Object.values(repeatEntry.dataObj).filter(x=>x!=null).length) {
-			let message;//message to show to the user if creation was unsucessful
+			let message=this.lang.creationValidationFailed;//message to show to the user if creation was unsucessful
 			for (var root=repeatEntry; root.parent; root=root.parent);//get root-object in order to retrieve rowIndex
-			let doCreate=true;
-			if (repeatEntry.schemaNode.creationValidation)
-				doCreate=repeatEntry.schemaNode.creationValidation(m=>message=m,repeatEntry.schemaNode
-																	,repeatEntry.dataObj,root.rowIndex,repeatEntry);
-			if (!doCreate) {
-				if (message)
-					this._showTooltip(message,repeatEntry.el);
-				return false;//prevent commiting/closing the group
-			}
 			const creationContainer=repeatEntry.schemaNode.type=="group"?repeatEntry:repeatEntry.parent;
 			const repeatedContainer=creationContainer.parent;
-			const dataContext=repeatedContainer?.parent?.dataObj??this._data[root.rowIndex];
+			const parentDataContext=repeatedContainer?.parent?.dataObj??this._data[root.rowIndex];
+			let doCreate=true;
+			if (repeatEntry.schemaNode.creationValidation) {
+				const payload={
+					newDataItem:repeatEntry.dataObj,
+					schemaNode: repeatEntry.schemaNode,
+					mainIndex: root.rowIndex,
+					instanceNode: repeatEntry
+				};
+				const res=repeatEntry.schemaNode.creationValidation(payload);
+				if (typeof res==="boolean")
+					doCreate=res;
+				else {
+					doCreate=!!res.valid;
+					message=res.message??message;
+				}
+			}
+			if (!doCreate) {
+				message+=this.lang.creationValidationFailedCancelInfo
+				this._showTooltip(message,repeatEntry.el);
+				return false;//prevent commiting/closing the group
+			}
 			const payload={
 				newDataItem: repeatEntry.dataObj,
-				dataContext,
+				dataContext: parentDataContext,
 				dataArray: repeatedContainer?.dataObj,
 				dataKey: repeatedContainer?.schemaNode.id,
 				itemIndex: repeatEntry.index,

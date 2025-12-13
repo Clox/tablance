@@ -99,9 +99,8 @@ document.addEventListener("DOMContentLoaded", ()=>{
 							options:[{text:"Ja",value:true},{text:"Nej",value:false}]
 						},dependsOn:"type",visibleIf:typeVal=>typeVal&&typeVal!="end"}
 					],
-					creationValidation:(message,schemaNode,data,index,instanceNode)=>{
-						message("Both fields are mandatory. Enter the data or delete to cancel.");
-						return data.date&&data.type;
+					creationValidation:({data})=>{
+						return !!(data.date&&data.type);
 					}
 				}
 			}
@@ -121,9 +120,10 @@ document.addEventListener("DOMContentLoaded", ()=>{
 							options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"}]
 							,allowSelectEmpty:false
 						}}],
-					creationValidation:(message,schemaNode,data,index,instanceNode)=>{
-						message("Both fields are mandatory. Enter the data or delete to cancel.");
-						return data.date&&data.type;
+					creationValidation:({data})=>{
+						if (data.date&&data.type)
+							return {valid:true};
+						return {valid:false,message:"Both fields are mandatory. Enter the data or delete to cancel."};
 					}
 				}
 			}
