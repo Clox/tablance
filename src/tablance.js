@@ -517,14 +517,17 @@ class TablanceBase {
 	 * 				onOpenAfter Function Function that fires when the group is opened, but after it has been rendered.
 	 * 					Gets passed the following arguments:
 	 * 					1: group-object
-	 * 				onClose Function Callback that is fired when the group closes (create or edit). Receives payload:
+	 * 				onClose Function Callback that fires when attempting to close the group (create or edit).
+	 * 					Call payload.preventClose() to keep the group open and skip committing.
+	 * 					Receives payload:
 	 * 					{
 	 * 						schemaNode,				// current schema-node
 	 * 						data,					// dataObj of the group
 	 * 						instanceNode,			// instance-node of the group
 	 * 						parentInstanceNode,		// parent instance-node if any
 	 * 						mainIndex,				// index of the main row
-	 * 						mode: "create"|"edit"	// whether the group was being created or already existed
+	 * 						mode: "create"|"edit",	// whether the group was being created or already existed
+	 * 						preventClose			// call to cancel closing/committing
 	 * 					}
   	 * 			}
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
@@ -2387,6 +2390,23 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	_closeGroup(groupObject) {
+		let mainIndex=groupObject.rowIndex;
+		for (let root=groupObject; root.parent; root=root.parent)
+			if (root.rowIndex!=null)
+				mainIndex=root.rowIndex;
+		const closePayload={
+			schemaNode: groupObject.schemaNode,
+			data: groupObject.dataObj,
+			instanceNode: groupObject,
+			parentInstanceNode: groupObject.parent,
+			mainIndex,
+			mode: groupObject.creating?"create":"edit"
+		};
+		let doClose=true;
+		closePayload.preventClose=()=>doClose=false;
+		groupObject.schemaNode.onClose?.(closePayload);
+		if (!doClose)
+			return false;
 		if (groupObject.creating&&!this._closeRepeatedInsertion(groupObject))
 			return false;
 		groupObject.el.classList.remove("open");
@@ -2400,19 +2420,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			renderText=groupObject.schemaNode.closedRender(groupObject.dataObj);
 			groupObject.el.rows[groupObject.el.rows.length-1].cells[0].innerText=renderText;
 		}
-		let mainIndex=groupObject.rowIndex;
-		for (let root=groupObject; root.parent; root=root.parent)
-			if (root.rowIndex!=null)
-				mainIndex=root.rowIndex;
-		const closePayload={
-			schemaNode: groupObject.schemaNode,
-			data: groupObject.dataObj,
-			instanceNode: groupObject,
-			parentInstanceNode: groupObject.parent,
-			mainIndex,
-			mode: groupObject.creating?"create":"edit"
-		};
-		groupObject.schemaNode.onClose?.(closePayload);
 		return true;
 	}
 
