@@ -518,8 +518,8 @@ class TablanceBase {
 	 * 					Gets passed the following arguments:
 	 * 					1: group-object
 	 * 				onClose Function Callback that fires when attempting to close the group (create or edit).
-	 * 					Call payload.preventClose(message?) to keep the group open and skip committing. If a message is
-	 * 					passed it will be shown as a tooltip.
+	 * 					Call payload.preventClose(message?) to keep the group open and skip committing.
+	 * 					If a message is passed it will be shown as a tooltip.
 	 * 					Receives payload:
 	 * 					{
 	 * 						schemaNode,				// current schema-node
@@ -528,7 +528,7 @@ class TablanceBase {
 	 * 						parentInstanceNode,		// parent instance-node if any
 	 * 						mainIndex,				// index of the main row
 	 * 						mode: "create"|"edit",	// whether the group was being created or already existed
-	 * 						preventClose(message?)	// call to cancel closing/committing, optional tooltip message
+	 * 						preventClose(message?)	// cancel closing/committing, optional tooltip message
 	 * 					}
   	 * 			}
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
@@ -2331,23 +2331,31 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	/**Aligns dropdowns like select and date-picker correctly by the cellcursor or any other target-element specified */
-	_alignDropdown(dropdown,target=this._cellCursor) {
+	_alignDropdown(dropdown,target=this._cellCursor,preferredVertical) {
 
 		const alignmentContainer=this._dropdownAlignmentContainer;//container of the dropdown
 		const alignmentPos=this._getElPos(target);
 		const viewportPos=alignmentContainer===dropdown.offsetParent?alignmentPos
 							:this._getElPos(target,alignmentContainer);
 		
-		//if target-element is below middle of viewport or if in bulk-edit-area
 		dropdown.classList.remove("above","below","left","right");
-		if (viewportPos.y+target.clientHeight/2>alignmentContainer.scrollTop+alignmentContainer.clientHeight/2) {
-			//then place dropdown above target-element
+		if (preferredVertical==="above") {
 			dropdown.style.top=alignmentPos.y-dropdown.offsetHeight+"px";
 			dropdown.classList.add("above");
-		} else {
-			//else place dropdown below target-element
+		} else if (preferredVertical==="below") {
 			dropdown.style.top=alignmentPos.y+target.clientHeight+"px";
 			dropdown.classList.add("below");
+		} else {
+			//if target-element is below middle of viewport or if in bulk-edit-area
+			if (viewportPos.y+target.clientHeight/2>alignmentContainer.scrollTop+alignmentContainer.clientHeight/2) {
+				//then place dropdown above target-element
+				dropdown.style.top=alignmentPos.y-dropdown.offsetHeight+"px";
+				dropdown.classList.add("above");
+			} else {
+				//else place dropdown below target-element
+				dropdown.style.top=alignmentPos.y+target.clientHeight+"px";
+				dropdown.classList.add("below");
+			}
 		}
 
 		//if there's enough space to the right of target-element
@@ -2390,7 +2398,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		
 	}
 
-	_closeGroup(groupObject) {
+	_closeGroup(groupObject,targetCell=null) {
 		let mainIndex=groupObject.rowIndex;
 		for (let root=groupObject; root.parent; root=root.parent)
 			if (root.rowIndex!=null)
@@ -2412,7 +2420,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		groupObject.schemaNode.onClose?.(closePayload);
 		if (!doClose) {
 			if (preventMessage)
-				this._showTooltip(preventMessage,groupObject.el);
+				this._showTooltip(preventMessage,groupObject.el,this._determinePreventPlacement(groupObject.el,targetCell));
 			return false;
 		}
 		if (groupObject.creating&&!this._closeRepeatedInsertion(groupObject))
@@ -3045,14 +3053,23 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return true;
 	}
 
-	_showTooltip(message,target=this._cellCursor) {
+	_showTooltip(message,target=this._cellCursor,preferredVertical) {
 		this._cellCursor.parentElement.appendChild(this._tooltip);
 		setTimeout(()=>this._tooltip.style.visibility="visible");//set it on a delay because mouseDownHandler might
 						//otherwise immediately set it back to hidden when bubbling up depending on where the click was
 		this._tooltip.firstChild.innerText=message;
-		this._alignDropdown(this._tooltip,target);
+		this._alignDropdown(this._tooltip,target,preferredVertical);
 		this._scrollElementIntoView(this._tooltip);
 		return true;
+	}
+
+	_determinePreventPlacement(groupEl,targetCell) {
+		if (!targetCell?.getBoundingClientRect)
+			return;
+		const targetRect=targetCell.getBoundingClientRect();
+		const groupRect=groupEl.getBoundingClientRect();
+		//if desired target is above the group then place tooltip above, otherwise below
+		return targetRect.top<groupRect.top?"above":"below";
 	}
 
 	_scrollElementIntoView(){}//default is to do nothing. Tablance (main) overrides this.
@@ -3112,11 +3129,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return true;
 	}
 
-	_closeActiveDetailsCell() {
+	_closeActiveDetailsCell(targetCell) {
 		if (this._activeDetailsCell) {
 			for (let oldCellParent=this._activeDetailsCell; oldCellParent=oldCellParent.parent;) {
 				if (oldCellParent.schemaNode.type==="group") {
-					if (!this._closeGroup(oldCellParent))//close any open group above old cell
+					if (!this._closeGroup(oldCellParent,targetCell))//close any open group above old cell
 						return false;
 					this._ignoreClicksUntil=Date.now()+500;
 				}
@@ -3140,7 +3157,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const mainRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);//save it here rather than setting it 
 					//directly because we do not want it to change if #selectCell returns false, preventing the select
 					
-		if (this._closeActiveDetailsCell()) {
+		if (this._closeActiveDetailsCell(cell)) {
 			this._selectCell(cell,this._colSchemaNodes[this._mainColIndex],this._data[mainRowIndex]);
 			this._mainRowIndex=mainRowIndex;
 		}
@@ -3167,7 +3184,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 							break;
 						}
 					if (oldParnt) {
-						if (oldParnt.schemaNode.type==="group"&&!this._closeGroup(oldParnt))
+						if (oldParnt.schemaNode.type==="group"&&!this._closeGroup(oldParnt,instanceNode.selEl??instanceNode.el))
 							return false;
 						if (oldParnt.schemaNode.onBlur)
 							oldParnt.schemaNode.onBlur?.(oldParnt,mainRowIndex);

@@ -52,7 +52,8 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	{type:"field",title:"Ort",id:"city",input:{type:"text",
 			onChange:(...args)=>console.log(args)}}
 ]},
-	{type:"group",id:"innergrejer",title:"Inre grej",entries:[{type:"field",id:"innerFoo"}]},
+	{type:"group",id:"innergrejer",title:"Inre grej",onClose:({preventClose})=>preventClose("nope!"),
+		entries:[{type:"field",id:"innerFoo"}]},
 		{type:"field",title:"File",id:"file",input:{type:"file",fileUploadHandler:xhr=>{
 				xhr.open("POST", "http://localhost:3000/tests/serve.php", true);
 			},
