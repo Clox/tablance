@@ -522,15 +522,17 @@ class TablanceBase {
 	 * 					Call payload.preventClose(message?) to keep the group open and skip committing.
 	 * 					If a message is passed it will be shown as a tooltip.
 	 * 					Receives payload:
-	 * 					{
-	 * 						schemaNode,				// current schema-node
-	 * 						data,					// dataObj of the group
-	 * 						instanceNode,			// instance-node of the group
-	 * 						parentInstanceNode,		// parent instance-node if any
-	 * 						mainIndex,				// index of the main row
-	 * 						mode: "create"|"edit",	// whether the group was being created or already existed
-	 * 						preventClose(message?)	// cancel closing/committing, optional tooltip message
-	 * 					}
+	 * 					- schemaNode: current schema-node
+	 * 					- data: dataObj of the group
+	 * 					- instanceNode: instance-node of the group
+	 * 					- parentInstanceNode: parent instance-node if any
+	 * 					- mainIndex: index of the main row
+	 * 					- mode: "create"|"edit", whether the group was being created or already existed
+	 * 					- preventClose(message?): cancel closing/committing, optional tooltip message
+	 *					- closestMeta: function(key) to read meta data closest to the schema node. In the schema
+	 * 								objects may be specified via "meta" propert and this object may contain any custom
+	 * 								data. This function allows reading that data easily. It traverses up the schema tree
+	 * 								until it finds a meta with the specified key or reaches the root.
   	 * 			}
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							searchbar Bool that defaults to true. If true then there will be a searchbar that
@@ -2421,7 +2423,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			instanceNode: groupObject,
 			parentInstanceNode: groupObject.parent,
 			mainIndex,
-			mode: groupObject.creating?"create":"edit"
+			mode: groupObject.creating?"create":"edit",
+			closestMeta: key => this._closestMeta(groupObject.schemaNode, key),
 		};
 		let doClose=true;
 		let preventMessage;
