@@ -2417,6 +2417,16 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		for (let root=groupObject; root.parent; root=root.parent)
 			if (root.rowIndex!=null)
 				mainIndex=root.rowIndex;
+		const dirty=groupObject._dirtyFields;
+		const changes={};
+		if (dirty?.size)
+			for (const node of dirty) {
+				const key=node.schemaNode._dataPath?.join(".")??node.schemaNode.id??String(node.schemaNode._autoId);
+				const rawVal=node.dataObj?.[node.schemaNode.id];
+				// For selects, store the option value instead of the full {text,value} object.
+				const val=node.schemaNode.input?.type==="select"&&rawVal?rawVal.value:rawVal;
+				changes[key]=val;
+			}
 		const closePayload={
 			schemaNode: groupObject.schemaNode,
 			data: groupObject.dataObj,
@@ -2425,6 +2435,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			mainIndex,
 			mode: groupObject.creating?"create":"edit",
 			closestMeta: key => this._closestMeta(groupObject.schemaNode, key),
+			changed: !!dirty?.size,
+			changes
 		};
 		let doClose=true;
 		let preventMessage;
