@@ -610,7 +610,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			this._createBulkEditArea(schema);//send in the raw schema for this one
 			this._updateSizesOfViewportAndCols();
 		}
-		console.log(this._schema)
 	}
 
 	_createInstanceNode(parent=null,index=null) {
@@ -3194,11 +3193,16 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			return;
 		if (group.creating)
 			return this._deleteCell(group);
-		// Restore data back to snapshot and re-render only changed fields.
+
+		// Restore data back to snapshot. It *should* only be needed if there are dirty fields so probably could run in
+		// a condition together with  _rerenderDirtyFields. But running it just in case and it's cheap anyway
 		if (group._openSnapshot)
 			this._restoreGroupSnapshot(group.dataObj,group._openSnapshot);
+		
 		this._rerenderDirtyFields(group);
 		this._finalizeGroupClose(group);
+		this._selectCell(group.el,group.schemaNode,group.dataObj);
+		this._activeDetailsCell=group;
 	}
 
 	/**
