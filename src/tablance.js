@@ -39,7 +39,8 @@ const DEFAULT_LANG=Object.freeze({
 	selectNoResultsFound:"No results found",
 	insertNew:"Insert new",
 	creationValidationFailed:"Invalid entry. Please check the fields and try again.",
-	creationValidationFailedCancelInfo:"\n Select Delete to cancel."
+	creationValidationFailedCancelInfo:"\n Select Delete to cancel.",
+	preventCloseCancelHint:"Press Ctrl+Esc to discard changes and back out."
 });
 
 
@@ -1568,6 +1569,15 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		if (this._bulkEditArea?.contains(document.activeElement))
 			return;
 		this._tooltip.style.visibility="hidden";
+		if (e.key==="Escape"&&e.ctrlKey) {
+			e.preventDefault();
+			e.stopPropagation();
+			if (this._inEditMode)
+				this._exitEditMode(false);
+			// Ctrl+Esc: discard current open-group edits (or delete creator) and close it.
+			this._discardActiveGroupEdits();
+			return;
+		}
 		if (this._inEditMode&&this._activeSchemaNode.input.type==="date") {
 			if (e.key.slice(0,5)==="Arrow") {
 				if (e.ctrlKey)
@@ -2392,6 +2402,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		groupObj.schemaNode.onOpen?.({preventDefault:()=>doOpen=false},groupObj);
 		if (!doOpen)
 			return;
+		// Capture data snapshot on first open so cancel can restore in-place without breaking references.
+		if (!groupObj._openSnapshot)
+			groupObj._openSnapshot=this._cloneGroupData(groupObj.dataObj);
 		groupObj.el.classList.add("open");
 		this._selectDetailsCell(this._getFirstSelectableDetailsCell(groupObj,true,true));
 		groupObj.schemaNode.onOpenAfter?.(groupObj);
@@ -2419,12 +2432,17 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		};
 		groupObject.schemaNode.onClose?.(closePayload);
 		if (!doClose) {
-			if (preventMessage)
-				this._showTooltip(preventMessage,groupObject.el,this._determinePreventPlacement(groupObject.el,targetCell));
+			const tooltipMessage=[preventMessage,this.lang.preventCloseCancelHint].filter(Boolean).join("\n");
+			this._showTooltip(tooltipMessage,groupObject.el,this._determinePreventPlacement(groupObject.el,targetCell));
 			return false;
 		}
 		if (groupObject.creating&&!this._closeRepeatedInsertion(groupObject))
 			return false;
+		this._finalizeGroupClose(groupObject);
+		return true;
+	}
+
+	_finalizeGroupClose(groupObject) {
 		groupObject.el.classList.remove("open");
 		this._ignoreClicksUntil=Date.now()+500;
 		if (groupObject.updateRenderOnClose) {//if group is flagged for having its closed-render updated on close
@@ -2436,7 +2454,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			renderText=groupObject.schemaNode.closedRender(groupObject.dataObj);
 			groupObject.el.rows[groupObject.el.rows.length-1].cells[0].innerText=renderText;
 		}
-		return true;
+		delete groupObject._openSnapshot;
+		delete groupObject._dirtyFields;
 	}
 
 	_repeatInsert(repeated,creating,data,entrySchemaNode=null) {
@@ -3070,6 +3089,130 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const groupRect=groupEl.getBoundingClientRect();
 		//if desired target is above the group then place tooltip above, otherwise below
 		return targetRect.top<groupRect.top?"above":"below";
+	}
+
+	/**
+	 * Marks a details instance-node as dirty within its nearest open group so that discard
+	 * can efficiently repaint only touched nodes. Dirty nodes are re-rendered in
+	 * _rerenderDirtyFields (called from _discardActiveGroupEdits) and cleared in _finalizeGroupClose.
+	 * Keeps the tracked set minimal by skipping already-tracked ancestors and pruning descendants.
+	 * @param {object} instanceNode Instance node whose rendered value just changed
+	 */
+	_markDirtyField(instanceNode) {
+		// Track fields/groups touched while a group is open so discard can repaint only those nodes.
+		// Keeps the set minimal by skipping ancestors already tracked and removing descendants.
+		let group;
+		for (let node=instanceNode; node; node=node.parent)
+			if (node.schemaNode.type==="group"&&node.el?.classList.contains("open")) {
+				group=node;
+				break;
+			}
+		if (!group)
+			return;
+		const dirty=group._dirtyFields??(group._dirtyFields=new Set());
+		//if any ancestor already tracked, skip
+		for (let node=instanceNode; node&&node!==group; node=node.parent)
+			if (dirty.has(node))
+				return;
+		//remove any tracked descendants to keep set minimal
+		for (const tracked of Array.from(dirty)) {
+			for (let node=tracked; node; node=node.parent)
+				if (node===instanceNode) {
+					dirty.delete(tracked);
+					break;
+				}
+		}
+		dirty.add(instanceNode);
+	}
+
+	/**
+	 * Creates a deep clone of group data to serve as an undo snapshot. Returns primitives as-is,
+	 * prefers structuredClone and falls back to JSON. Snapshot is stored on the group while open.
+	 * @param {*} dataObj Data object to clone
+	 * @returns {*} Deep clone suitable for later restore
+	 */
+	_cloneGroupData(dataObj) {
+		if (dataObj==null)
+			return dataObj;
+		// Prefer structuredClone; fall back to JSON for environments without it.
+		if (typeof structuredClone==="function") {
+			try {return structuredClone(dataObj);} catch(_e){}
+		}
+		return JSON.parse(JSON.stringify(dataObj));
+	}
+
+	/**
+	 * Restores a previously-cloned snapshot into an existing data object in place,
+	 * preserving external references. Recursively walks arrays/objects, deletes
+	 * removed keys, and assigns primitives.
+	 * @param {*} target Live data object to mutate
+	 * @param {*} snapshot Snapshot to restore from
+	 */
+	_restoreGroupSnapshot(target,snapshot) {
+		// Mutate target to match snapshot in place so external references stay valid.
+		if (target===snapshot||snapshot==null)
+			return;
+		if (Array.isArray(snapshot)) {
+			target.length=snapshot.length;
+			for (let i=0;i<snapshot.length;i++)
+				if (snapshot[i]&&typeof snapshot[i]==="object") {
+					if (target[i]==null||(typeof target[i]!=="object"))
+						target[i]=Array.isArray(snapshot[i])?[]:{};
+					this._restoreGroupSnapshot(target[i],snapshot[i]);
+				} else
+					target[i]=snapshot[i];
+			return;
+		}
+		if (typeof snapshot==="object") {
+			for (const key of Object.keys(target))
+				if (!(key in snapshot))
+					delete target[key];
+			for (const [key,val] of Object.entries(snapshot)) {
+				if (val&&typeof val==="object") {
+					if (target[key]==null||(typeof target[key]!=="object"))
+						target[key]=Array.isArray(val)?[]:{};
+					this._restoreGroupSnapshot(target[key],val);
+				} else
+					target[key]=val;
+			}
+			return;
+		}
+		// primitives
+		return snapshot;
+	}
+
+	/**
+	 * Cancels edits in the currently open group: deletes the creator entry if applicable,
+	 * restores data from snapshot, repaints dirty fields, refreshes main row, and closes.
+	 */
+	_discardActiveGroupEdits() {
+		let group=this._activeDetailsCell;
+		for (;group;group=group.parent)
+			if (group.schemaNode.type==="group"&&group.el.classList.contains("open"))
+				break;
+		if (!group)
+			return;
+		if (group.creating)
+			return this._deleteCell(group);
+		// Restore data back to snapshot and re-render only changed fields.
+		if (group._openSnapshot)
+			this._restoreGroupSnapshot(group.dataObj,group._openSnapshot);
+		this._rerenderDirtyFields(group);
+		this._finalizeGroupClose(group);
+	}
+
+	/**
+	 * Repaints only nodes that were marked dirty while the group was open.
+	 * @param {*} group Instance node of the open group
+	 */
+	_rerenderDirtyFields(group) {
+		// Repaint only nodes that were dirtied while open, after data restore.
+		const dirty=group._dirtyFields;
+		if (!dirty?.size)
+			return;
+		for (const node of dirty)
+			this._updateDetailsCell(node,node.dataObj);
+		dirty.clear();
 	}
 
 	_scrollElementIntoView(){}//default is to do nothing. Tablance (main) overrides this.
@@ -4182,6 +4325,10 @@ export default class Tablance extends TablanceBase {
 		if (doUpdate) {
 			this._cellCursorDataObj[this._activeSchemaNode.id]=this._inputVal;
 			if (this._activeDetailsCell){
+				
+				//so if discarding group-changes (ctrl+esc) only repaints touched nodes
+				this._markDirtyField(this._activeDetailsCell);
+
 				const doHeightUpdate=this._updateDetailsCell(this._activeDetailsCell,this._cellCursorDataObj);
 				if (doHeightUpdate&&!this._onlyDetails)
 					this._updateDetailsHeight(this._selectedCell.closest("tr.details"));
