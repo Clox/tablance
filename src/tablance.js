@@ -37,7 +37,7 @@ const DEFAULT_LANG=Object.freeze({
 	deleteAreYouSureNo:"No",
 	datePlaceholder:"YYYY-MM-DD",
 	selectNoResultsFound:"No results found",
-	selectEmpty:"(None)",
+	selectEmpty:"<None>",
 	insertNew:"Insert new",
 	creationValidationFailed:"Invalid entry. Please check the fields and try again.",
 	creationValidationFailedCancelInfo:"\n Select Delete to cancel.",
@@ -2801,7 +2801,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (filterChangedAtEdges)
 				ctx.looseOpts.splice(0,Infinity,...ctx.allOpts);
 			for (let i=-1,opt; opt=ctx.looseOpts[++i];)
-				if (!opt.text.includes(value)||opt.pinned)
+				if ((!opt.text.includes(value)||opt.pinned)&&!opt.isEmpty)
 					ctx.looseOpts.splice(i--,1);
 				else if (opt.text.toLowerCase()==value.toLowerCase())
 					ctx.canCreate=false;
@@ -3627,9 +3627,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			const emptyVal=opts.find(opt=>this._getSelectValue(opt)==null);
 			const emptyText=strctInp.emptyText??this.lang.selectEmpty;
 			if (!emptyVal)
-				opts.unshift({text:emptyText,value:null,isEmpty:true,pinned:true});
-			else if (!emptyVal.text)
-				emptyVal.text=emptyText;
+				opts.unshift({text:emptyText,value:null,isEmpty:true,cssClass:"empty-option"});
+			else {
+				if (!emptyVal.text)
+					emptyVal.text=emptyText;
+				emptyVal.cssClass??="empty-option";
+			}
 		}
 		return opts;
 	}

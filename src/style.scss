@@ -464,6 +464,11 @@
 			&.main {
 				max-height: 300px;
 				overflow-y: auto;
+				>li.empty-option {
+					border-bottom: 1px solid #ddd;
+					margin-bottom: 6px;
+					padding-bottom: 6px;
+				}
 			}
 		}
 	}

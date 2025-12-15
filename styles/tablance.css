@@ -422,6 +422,11 @@
   max-height: 300px;
   overflow-y: auto;
 }
+.tablance .tablance-select-container > div > ul.main > li.empty-option {
+  border-bottom: 1px solid #ddd;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+}
 .tablance .bulk-edit-area {
   overflow: hidden;
   width: 100%;

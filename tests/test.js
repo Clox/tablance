@@ -17,7 +17,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	function descFunc(value, dataRow,col,rowIndex) {
 		return `fo<u>ob</u>ar ${rowIndex} - ${dataRow.descLetter}`
 	}
-	const foods=[{text:"Nothing",pinned:true},{text:"banana",value:1,visibleIf:({rowIndex})=>rowIndex%2},
+	const foods=[{text:"banana",value:1,visibleIf:({rowIndex})=>rowIndex%2},
 				{text:"apple",value:2},
 				{text:"cucumber",value:3},{text:"orange",value:4},{text:"grapes",value:5},
 				{text:"melon",value:6},{text:"pineapple",value:7},{text:"carrot",value:8},
