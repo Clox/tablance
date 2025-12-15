@@ -453,9 +453,14 @@
 					background-color: #5897fb;
     				color: white;
 				}
+				&.create-option {
+					color: grey;
+					>.create-option-text {
+						color: black;
+					}
+				}
 			}
 			&.pinned>li{
-				color: grey;
 				user-select: none;
 				&:last-child {
 					border-bottom: 3px solid #ccc;

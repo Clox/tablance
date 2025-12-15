@@ -411,8 +411,13 @@
   background-color: #5897fb;
   color: white;
 }
-.tablance .tablance-select-container > div > ul.pinned > li {
+.tablance .tablance-select-container > div > ul > li.create-option {
   color: grey;
+}
+.tablance .tablance-select-container > div > ul > li.create-option > .create-option-text {
+  color: black;
+}
+.tablance .tablance-select-container > div > ul.pinned > li {
   user-select: none;
 }
 .tablance .tablance-select-container > div > ul.pinned > li:last-child {

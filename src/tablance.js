@@ -38,6 +38,7 @@ const DEFAULT_LANG=Object.freeze({
 	datePlaceholder:"YYYY-MM-DD",
 	selectNoResultsFound:"No results found",
 	selectEmpty:"<None>",
+	selectCreateOption:"Create [{text}]",
 	insertNew:"Insert new",
 	creationValidationFailed:"Invalid entry. Please check the fields and try again.",
 	creationValidationFailedCancelInfo:"\n Select Delete to cancel.",
@@ -2818,7 +2819,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			ctx.noResults.style.display=ctx.looseOpts.length?"none":"block";
 			ctx.filterText=value;
 			if (ctx.creationLi)
-				ctx.creationLi.innerText=`Create [${ctx.filterText}]`;
+				this._setCreateOptionLabel(ctx.creationLi,
+					this._formatCreateOptionText(ctx.strctInp,ctx.filterText));
 		}
 	
 		/**
@@ -2831,6 +2833,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (ctx.canCreate) {
 				if (ctx.creationLi.parentElement!=ctx.pinnedUl)
 					ctx.pinnedUl.appendChild(ctx.creationLi);
+				ctx.creationLi.classList.add("create-option");
 			} else if (ctx.creationLi.parentElement==ctx.pinnedUl)
 				ctx.pinnedUl.removeChild(ctx.creationLi);
 		}
@@ -3635,6 +3638,39 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			}
 		}
 		return opts;
+	}
+
+	_formatCreateOptionText(strctInp,text) {
+		let res;
+		if (typeof strctInp.createOptionFormatter==="function")
+			res=strctInp.createOptionFormatter(text,this._cellCursorDataObj,this._activeSchemaNode,
+				this._mainRowIndex,this._activeDetailsCell);
+		if (!res)
+			res=strctInp.createOptionText??this.lang.selectCreateOption??"Create [{text}]";
+		const normalize=(val)=>{
+			if (typeof val==="string") {
+				if (val.includes("{text}")) {
+					const [before,after]=val.split("{text}");
+					return {before,text,after};
+				}
+				return {before:val+" ",text,after:""};
+			}
+			if (typeof val==="object")
+				return {before:val.before??"",text:val.text??text,after:val.after??""};
+			return {before:"Create [",text,after:"]"};
+		};
+		return normalize(res);
+	}
+
+	_setCreateOptionLabel(li,labelParts) {
+		li.innerHTML="";
+		const beforeSpan=li.appendChild(document.createElement("span"));
+		beforeSpan.textContent=labelParts.before;
+		const textSpan=li.appendChild(document.createElement("span"));
+		textSpan.textContent=labelParts.text;
+		textSpan.classList.add("create-option-text");
+		const afterSpan=li.appendChild(document.createElement("span"));
+		afterSpan.textContent=labelParts.after;
 	}
 
 	/**Given a schemaNode like details or column, will add inputs to this._bulkEditSchemaNodes which later is iterated
