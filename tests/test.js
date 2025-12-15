@@ -93,7 +93,9 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			,onDelete:(...args)=>console.log(args)
 			,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
 			,areYouSureYesText:"Ja",areYouSureNoText:"Nej",entry:
-				{type:"group",closedRender:data=>`${data.type?.text} sedan ${data.date}`,entries:[
+				{type:"group",closedRender:data=>{
+						return `${{trustee:"God Man", administrator:"Förvaltare"}[data.type]} sedan ${data.date??""}`;
+					},entries:[
 						{type:"field",title:"Datum",id:"date",input:{type:"date",bulkEdit:true}},
 						{type:"field",title:"Typ av ställföreträdarskap",id:"type",input:{type:"select",
 							options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"},
@@ -120,7 +122,9 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			,sortCompare:(a,b)=>a.date>b.date?1:-1
 			,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
 			,areYouSureYesText:"Ja",areYouSureNoText:"Nej",entry:
-				{type:"group",closedRender:data=>`${data.type?.text} sedan ${data.date}`,entries:[
+				{type:"group",closedRender:data=>{
+						return `${{trustee:"God Man", administrator:"Förvaltare"}[data.type]} sedan ${data.date??""}`;
+					},entries:[
 						{type:"field",title:"Datum",id:"date",input:{type:"date"}},
 						{type:"field",title:"Typ av ställföreträdarskap",id:"type",input:{type:"select",
 							options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"}]
