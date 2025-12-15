@@ -2424,7 +2424,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				const key=node.schemaNode._dataPath?.join(".")??node.schemaNode.id??String(node.schemaNode._autoId);
 				const rawVal=node.dataObj?.[node.schemaNode.id];
 				// For selects, store the option value instead of the full {text,value} object.
-				const val=node.schemaNode.input?.type==="select"&&rawVal?rawVal.value:rawVal;
+				const val=node.schemaNode.input?.type==="select"?this._getSelectValue(rawVal):rawVal;
 				changes[key]=val;
 			}
 		const closePayload={
@@ -2750,13 +2750,15 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 */
 		_renderSelectOptions(ul,opts,selectedVal,ctx) {
 			let foundSelected=false;
+			const selectedValNorm=this._getSelectValue(selectedVal);
 			ul.innerHTML="";
 			for (const opt of opts) {
 				const li=ul.appendChild(document.createElement("li"));
 				if (opt.cssClass)
 					li.className=opt.cssClass;
 				li.innerText=opt.text;
-				if (selectedVal==opt) {
+				const optVal=this._getSelectValue(opt);
+				if (selectedVal==opt||selectedValNorm==optVal) {
 					foundSelected=true;
 					li.classList.add("selected","highlighted");
 					ctx.highlightLiIndex=ul.children.length-1;
@@ -3076,7 +3078,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 		this._inEditMode=false;
 		this._cellCursor.classList.remove("edit-mode");
-		if (save&&this._inputVal!=this._selectedCellVal) {
+		const inputValNorm=this._activeSchemaNode.input?.type==="select"
+			?this._getSelectValue(this._inputVal):this._inputVal;
+		const selectedValNorm=this._activeSchemaNode.input?.type==="select"
+			?this._getSelectValue(this._selectedCellVal):this._selectedCellVal;
+		if (save&&inputValNorm!=selectedValNorm) {
 			this._doEditSave();
 		}
 		this._cellCursor.innerHTML="";
@@ -3607,6 +3613,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return val&&typeof val==="object"&&!Array.isArray(val);
 	}
 
+	_getSelectValue(val) {
+		return this._isObject(val)?val.value:val;
+	}
+
 	/**Given a schemaNode like details or column, will add inputs to this._bulkEditSchemaNodes which later is iterated
 	 * and the contents added to the bulk-edit-area. 
 	 * @param {*} schema Should be details or column when called from outside, but it calls itself recursively
@@ -3634,7 +3644,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			let val,lastVal;
 			for (let rowI=-1,row; row=this._selectedRows[++rowI];) {
 				val=row[multiCellSchemaNode.id];
-				if (rowI&&val!=lastVal) {
+				const normalizedVal=multiCellSchemaNode.input?.type==="select"
+					?this._getSelectValue(val):val;
+				const normalizedLast=multiCellSchemaNode.input?.type==="select"
+					?this._getSelectValue(lastVal):lastVal;
+				if (rowI&&normalizedVal!=normalizedLast) {
 					mixed=true;
 					break;
 				}
@@ -3718,12 +3732,17 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					if (dataRow[col.id]!=null) {
 						let match=false;
 						if (col.input?.type=="select") {
-							if (typeof dataRow[col.id]=="string")
-								match=selectsOptsByVal[dataRow[col.id]].text.includes(filterString);
-							else
-								match=dataRow[col.id].text.includes(filterString);
-						} else
-							match=dataRow[col.id].includes(filterString);
+							const cellVal=dataRow[col.id];
+							const val=this._getSelectValue(cellVal);
+							const opt=selectsOptsByVal[colI]?.[val];
+							if (opt?.text)
+								match=opt.text.includes(filterString);
+							else if (this._isObject(cellVal)&&cellVal.text)
+								match=cellVal.text.includes(filterString);
+							else if (val!=null)
+								match=String(val).includes(filterString);
+						} else if (dataRow[col.id]!=null)
+							match=dataRow[col.id].toString().includes(filterString);
 						if (match) {
 							this._data.push(dataRow);
 							break;
@@ -4177,11 +4196,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				if (schemaNode.render)
 					newCellContent=schemaNode.render(newCellContent,rowData,schemaNode,mainIndex,instanceNode);
 			} else { //if (schemaNode.input?.type==="select") {
-				let selOptObj=rowData[schemaNode.id];
-				if (selOptObj&&typeof selOptObj!=="object")
-					selOptObj=rowData[schemaNode.id]=schemaNode.input.options.find(
-																				opt=>opt.value==rowData[schemaNode.id]);
-				newCellContent=selOptObj?.text??"";
+				const rawVal=rowData[schemaNode.id];
+				const selOptObj=this._isObject(rawVal)?rawVal:schemaNode.input.options.find(opt=>opt.value==rawVal);
+				newCellContent=selOptObj?.text??(rawVal??"");
 			}
 			let isDisabled=false;
 			if (this._spreadsheet&&schemaNode.type!=="expand") {
@@ -4303,13 +4320,14 @@ class TablanceBulk extends TablanceBase {
 	
 
 	_doEditSave() {
-		const inputVal=this._activeSchemaNode.input.type==="select"?this._inputVal.value:this._inputVal;
-		this._cellCursorDataObj[this._activeSchemaNode.id]=this._inputVal;
+		const inputVal=this._activeSchemaNode.input.type==="select"?this._getSelectValue(this._inputVal):this._inputVal;
+		this._cellCursorDataObj[this._activeSchemaNode.id]=inputVal;
 		for (const selectedRow of this.mainInstance._selectedRows)
 			selectedRow[this._activeSchemaNode.id]=inputVal;
 		for (const selectedTr of this.mainInstance._mainTbody.querySelectorAll("tr.selected"))
 			this.mainInstance.updateData(selectedTr.dataset.dataRowIndex,this._activeSchemaNode.id,inputVal,false,true);
 		this._updateDetailsCell(this._activeDetailsCell,this._cellCursorDataObj);
+		this._selectedCellVal=inputVal;
 	}
 }
 
@@ -4328,7 +4346,8 @@ export default class Tablance extends TablanceBase {
 	
 	_doEditSave() {
 		let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
-		const inputVal=this._activeSchemaNode.input.type==="select"?this._inputVal.value:this._inputVal;
+		const inputVal=this._activeSchemaNode.input.type==="select"
+			?this._getSelectValue(this._inputVal):this._inputVal;
 
 		this._activeSchemaNode.input.onChange?.({
 			newValue: inputVal,
@@ -4342,7 +4361,7 @@ export default class Tablance extends TablanceBase {
 		});
 
 		if (doUpdate) {
-			this._cellCursorDataObj[this._activeSchemaNode.id]=this._inputVal;
+			this._cellCursorDataObj[this._activeSchemaNode.id]=inputVal;
 			if (this._activeDetailsCell){
 				
 				//so if discarding group-changes (ctrl+esc) only repaints touched nodes
@@ -4361,9 +4380,9 @@ export default class Tablance extends TablanceBase {
 			if (this._selectedRows.indexOf(this._cellCursorDataObj)!=-1)//if edited row is checked/selected
 				this._updateBulkEditAreaCells([this._activeSchemaNode]);
 			this._updateDependentCells(this._activeSchemaNode,this._activeDetailsCell);
+			this._selectedCellVal=inputVal;
 		} else
 			this._inputVal=this._selectedCellVal;
-		this._selectedCellVal=this._inputVal;
 	}
 
 	_scrollToCursor() {

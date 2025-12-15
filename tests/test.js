@@ -25,6 +25,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 				{text:"another cucumber",value:11},{text:"another orange",value:12},
 				{text:"another set of grapes",value:13},{text:"another melon",value:14},
 				{text:"another pineapple",value:15},{text:"another carrot",value:13}];
+	const yesNoOpts=[{text:"Nej",value:0},{text:"Ja",value:1}];
 	const myTablanceCols=[{type:"select"},{type:"expand"}
 		,{id:"desc",title:"Description",width:"150px",html:true,input:{bulkEdit:false,
 			/** @type {TablanceOnChangeCallback} */
@@ -64,7 +65,11 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		}}
 		,{type:"field",title:"Select",id:"sel",input:{type:"select",options:foods,minOptsFilter:100
 							,allowCreateNew:true,allowSelectEmpty:true,selectInputPlaceholder:"Sök/Skapa"}},
-		{type:"repeated",id:"addresses",sortCompare:(a,b)=>a.zip>b.zip?1:-1,entry:{type:"group",title:"Adress"
+		
+		{title:"janej", id:"janej",type:"field", dependsOn:"role"/* ,visibleIf:role=>role&&role!="end" */
+			,input:{type:"select",options:yesNoOpts}},
+		
+			{type:"repeated",id:"addresses",sortCompare:(a,b)=>a.zip>b.zip?1:-1,entry:{type:"group",title:"Adress"
 			,entries:
 			[{type:"field",title:"Gata",id:"street"},
 			{type:"field",title:"Postnummer",id:"zip"},
@@ -183,7 +188,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	for (let i=0; i<3; i++) {
 		data=[];
 		for (let ii=0; ii<1000; ii++) {
-			data.push({num:55,myFormattedData:123456789123,desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,
+			data.push({janej:0,num:55,myFormattedData:123456789123,desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,
 				descLetter:String.fromCharCode(ii+33)
 				,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
 				,hello:"Hallå",world:"Världen",innerFoo:1337,hemadress:{street:"Inre Kaplan",zip:"060606",city:"Inre Skara"}
