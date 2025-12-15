@@ -37,6 +37,7 @@ const DEFAULT_LANG=Object.freeze({
 	deleteAreYouSureNo:"No",
 	datePlaceholder:"YYYY-MM-DD",
 	selectNoResultsFound:"No results found",
+	selectEmpty:"(None)",
 	insertNew:"Insert new",
 	creationValidationFailed:"Invalid entry. Please check the fields and try again.",
 	creationValidationFailedCancelInfo:"\n Select Delete to cancel.",
@@ -2798,7 +2799,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			const filterChangedAtEdges=!value.includes(ctx.filterText)||!hadFilter;
 			ctx.canCreate=!!value;
 			if (filterChangedAtEdges)
-				ctx.looseOpts.splice(0,Infinity,...ctx.strctInp.options);
+				ctx.looseOpts.splice(0,Infinity,...ctx.allOpts);
 			for (let i=-1,opt; opt=ctx.looseOpts[++i];)
 				if (!opt.text.includes(value)||opt.pinned)
 					ctx.looseOpts.splice(i--,1);
@@ -2914,7 +2915,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			const noResults=selectContainer.appendChild(document.createElement("div"));
 			noResults.innerHTML=strctInp.noResultsText??this.lang.selectNoResultsFound;
 			noResults.className="no-results";
-			for (const opt of strctInp.options) {
+			const allOpts=this._getSelectOptions(strctInp);
+			for (const opt of allOpts) {
 				const visible=!opt.visibleIf || opt.visibleIf({dataContext:this._cellCursorDataObj,
 					schemaNode:this._activeSchemaNode, rowIndex:this._mainRowIndex, 
 					instanceNode:this._activeDetailsCell});
@@ -2932,6 +2934,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				noResults,
 				pinnedOpts,
 				looseOpts,
+				allOpts,
 				creationLi:null,
 				canCreate:false,
 				filterText:"",
@@ -2955,6 +2958,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				ctx.filterText=ctx.filterText??ctx.input.value;
 				this._inputVal={text:ctx.filterText};
 				ctx.strctInp.options.push(this._inputVal);
+				ctx.allOpts.push(this._inputVal);
 				ctx.strctInp.createNewOptionHandler?.(this._inputVal,e,this._cellCursorDataObj,this._mainRowIndex
 																,this._activeSchemaNode,this._activeDetailsCell);
 			} else
@@ -3617,6 +3621,19 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return this._isObject(val)?val.value:val;
 	}
 
+	_getSelectOptions(strctInp) {
+		const opts=[...(strctInp.options??[])];
+		if (strctInp.allowSelectEmpty) {
+			const emptyVal=opts.find(opt=>this._getSelectValue(opt)==null);
+			const emptyText=strctInp.emptyText??this.lang.selectEmpty;
+			if (!emptyVal)
+				opts.unshift({text:emptyText,value:null,isEmpty:true,pinned:true});
+			else if (!emptyVal.text)
+				emptyVal.text=emptyText;
+		}
+		return opts;
+	}
+
 	/**Given a schemaNode like details or column, will add inputs to this._bulkEditSchemaNodes which later is iterated
 	 * and the contents added to the bulk-edit-area. 
 	 * @param {*} schema Should be details or column when called from outside, but it calls itself recursively
@@ -3720,8 +3737,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (col.type!=="expand"&&col.type!=="select") {
 				if (col.input?.type=="select") {
 					const optsByVal=selectsOptsByVal[colsToFilterBy.length]={};
-					for (const opt of col.input.options)
-						optsByVal[opt.value]=opt;
+					for (const opt of this._getSelectOptions(col.input)) {
+						const key=this._getSelectValue(opt);
+						optsByVal[key]=opt;
+					}
 				}
 				colsToFilterBy.push(col);
 			}
@@ -4197,8 +4216,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					newCellContent=schemaNode.render(newCellContent,rowData,schemaNode,mainIndex,instanceNode);
 			} else { //if (schemaNode.input?.type==="select") {
 				const rawVal=rowData[schemaNode.id];
-				const selOptObj=this._isObject(rawVal)?rawVal:schemaNode.input.options.find(opt=>opt.value==rawVal);
-				newCellContent=selOptObj?.text??(rawVal??"");
+				const selOptObj=this._isObject(rawVal)?rawVal:this._getSelectOptions(schemaNode.input)
+					.find(opt=>this._getSelectValue(opt)==this._getSelectValue(rawVal));
+				newCellContent=rawVal==null?"":(selOptObj?.text??rawVal??"");
 			}
 			let isDisabled=false;
 			if (this._spreadsheet&&schemaNode.type!=="expand") {
