@@ -2943,9 +2943,28 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				filterText:"",
 				highlightLiIndex:null,
 				highlightUlIndex:null,
-				windowMouseDown:null
+				windowMouseDown:null,
+				wheelHandler:null
 			});
 			return ctx;
+		}
+
+		_attachSelectWheelHandler(ctx) {
+			const onWheel=e=>{
+				const scrollEl=e.target.closest("ul");
+				if (!scrollEl||!ctx.selectContainer.contains(scrollEl))
+					return;
+				const {scrollTop,scrollHeight,clientHeight}=scrollEl;
+				const delta=e.deltaY;
+				// Prevent scrolling the page while wheel-scrolling inside the dropdown.
+				e.preventDefault();
+				if (scrollHeight<=clientHeight)
+					return;
+				const next=Math.max(0,Math.min(scrollHeight-clientHeight,scrollTop+delta));
+				scrollEl.scrollTop=next;
+			};
+			ctx.selectContainer.addEventListener("wheel",onWheel,{passive:false});
+			ctx.wheelHandler=onWheel;
 		}
 	
 		/**
@@ -2969,6 +2988,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			ctx.selectContainer.remove();
 			if (ctx.windowMouseDown)
 				window.removeEventListener("mousedown",ctx.windowMouseDown);
+			if (ctx.wheelHandler)
+				ctx.selectContainer.removeEventListener("wheel",ctx.wheelHandler);
 		}
 	
 		/**
@@ -3002,6 +3023,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			this._cellCursor.parentElement.appendChild(ctx.selectContainer);
 			ctx.selectContainer.className="tablance-select-container";
 			this._alignDropdown(ctx.selectContainer);
+			this._attachSelectWheelHandler(ctx);
 			const windowMouseDown=e=>{
 				let el=e.target;
 				while (el&&el!=ctx.selectContainer)
