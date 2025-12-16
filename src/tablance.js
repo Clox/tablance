@@ -465,7 +465,18 @@ class TablanceBase {
 	 * 					the group with no data inserted, or by pressing the delete/cancel-button.
 	 * 					It will get passed arguments: 1:instanceNode of the repeated-object
 	 * 				onDelete Function Callback fired when the user has deleted an entry via the interface available if
-	 * 					"create" is true. It will get passed arguments: 1:rowData,2:instanceNode
+	 * 					"create" is true. Receives a payload object:
+	 * 					- deletedDataItem: the deleted data object
+	 * 					- dataContext: the object owning the repeated array (row-data or nested object)
+	 * 					- dataKey: key on dataContext for the repeated array (repeated schema id)
+	 * 					- dataArray: the repeated array after deletion
+	 * 					- itemIndex: index the deleted item had before removal
+	 * 					- repeatedSchemaNode: the repeated container schema node
+	 * 					- entrySchemaNode: the schema node for the deleted entry (often a group)
+	 * 					- deletedInstanceNode: the instance node for the deleted entry
+	 * 					- mainIndex: index of the root row
+	 * 					- bulkEdit: true if triggered from bulk-edit
+	 * 					- closestMeta: function(key) to read meta data closest to the schema node
 	 * 				sortCompare Function Passing in a function allows for sorting the entries. As expected this
 	 * 					function will get called multiple times to compare the entries to one another.
 	 * 					It gets 4 arguments: 1: object A, 2: object B, 3: rowData, 4: instanceNode
@@ -1760,8 +1771,26 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	_repeatedOnDelete=(e,data,index,schemaNode,cel)=>{
-		this._deleteCell(cel.parent.parent);
-		cel.parent.parent.parent.schemaNode.onDelete?.(cel.parent.parent.dataObj,cel.parent.parent);
+		const entryNode=cel.parent.parent;
+		const repeatedContainer=entryNode.parent;
+		let root=entryNode;
+		for (;root.parent;root=root.parent);
+		const mainIndex=root.rowIndex;
+		const payload={
+			deletedDataItem: entryNode.dataObj,
+			dataContext: repeatedContainer?.parent?.dataObj??this._data[mainIndex],
+			dataKey: repeatedContainer?.schemaNode.id,
+			dataArray: repeatedContainer?.dataObj,
+			itemIndex: entryNode.index,
+			repeatedSchemaNode: repeatedContainer?.schemaNode,
+			entrySchemaNode: entryNode.schemaNode,
+			deletedInstanceNode: entryNode,
+			mainIndex,
+			bulkEdit: !!this.mainInstance,
+			closestMeta: key => this._closestMeta(entryNode.schemaNode, key)
+		};
+		this._deleteCell(entryNode);
+		repeatedContainer?.schemaNode.onDelete?.(payload);
 	}
 
 	_fileOnDelete=(e,data,index,strct,cel)=>{
