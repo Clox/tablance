@@ -1948,14 +1948,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		groupTable.className="details-group "+(groupSchemaNode.cssClass??"");
 		if (notYetCreated)
 			instanceNode.creating=true;
-		else if (groupSchemaNode.closedRender) {
-			groupTable.classList.add("closed-render");
-			const renderRow=tbody.insertRow();
-			renderRow.dataset.path=path.join("-");
-			renderRow.className="group-render";
-			const renderCell=renderRow.insertCell();
-			renderCell.innerText=groupSchemaNode.closedRender(rowData);
-		}
+		else if (groupSchemaNode.closedRender)
+			this._setClosedRender(instanceNode,groupSchemaNode.closedRender(rowData),path,tbody);
 		return true;
 	}
 
@@ -2492,15 +2486,27 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._ignoreClicksUntil=Date.now()+500;
 		if (groupObject.updateRenderOnClose) {//if group is flagged for having its closed-render updated on close
 			delete groupObject.updateRenderOnClose;//delete the flag so it doesn't get triggered again
-			let cell,renderText;
-			//look for ancestor-cell with rowData which repeated rows have. It's a sub-data-row of #data.
-			//if we got all the way to the root without finding any repeated-rows then use datarow directly from #data
-			for (cell=groupObject.parent;!cell.dataObj&&cell.parent;cell=cell.parent);//look for ancestor with rowData
-			renderText=groupObject.schemaNode.closedRender(groupObject.dataObj);
-			groupObject.el.rows[groupObject.el.rows.length-1].cells[0].innerText=renderText;
+			this._setClosedRender(groupObject,groupObject.schemaNode.closedRender(groupObject.dataObj));
 		}
 		delete groupObject._openSnapshot;
 		delete groupObject._dirtyFields;
+	}
+
+	_setClosedRender(groupObject,renderText,path=groupObject.path,tbody=groupObject.el.tBodies?.[0]) {
+		const renderRow=groupObject.el.querySelector("tbody>tr.group-render");
+		if (renderText==null) {
+			groupObject.el.classList.remove("closed-render");
+			renderRow?.remove();
+			return;
+		}
+		groupObject.el.classList.add("closed-render");
+		const row=renderRow??tbody?.insertRow();
+		if (!row)
+			return;
+		row.className="group-render";
+		row.dataset.path=path?.join("-")??"";
+		const cell=row.cells[0]??row.insertCell();
+		cell.innerText=renderText;
 	}
 
 	_repeatInsert(repeated,creating,data,entrySchemaNode=null) {
