@@ -1221,16 +1221,32 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		- (this._searchInput?.offsetHeight ?? 0) - this._bulkEditArea.offsetHeight + "px";
 	}
 
-	_attachInputFormatter(el, format) {
+	_attachInputFormatter(el, format, livePattern) {
 		format = this._normalizeInputFormat(format);
+		const liveRegex = livePattern instanceof RegExp
+			? livePattern
+			: (typeof livePattern === "string" ? new RegExp(livePattern) : null);
 	
-		// Numeric filtering
-		if (format.numericOnly) {
+		// Live filtering (raw value, before formatting)
+		if (format.numericOnly || liveRegex) {
 			el.addEventListener("beforeinput", e => {
-				if (e.data && /\D/.test(e.data))
+				if (!e.data)
+					return; // allow deletions/composition steps
+	
+				const start = el.selectionStart;
+				const end = el.selectionEnd;
+				const nextVal = el.value.slice(0, start) + e.data + el.value.slice(end);
+	
+				if (liveRegex && !liveRegex.test(nextVal)) {
+					e.preventDefault();
+					return;
+				}
+	
+				if (format.numericOnly && /\D/.test(e.data))
 					e.preventDefault();
 			});
-			el.setAttribute("inputmode", "numeric");
+			if (format.numericOnly)
+				el.setAttribute("inputmode", "numeric");
 		}
 	
 		// Backspace over delimiter
@@ -1257,6 +1273,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 	
 	_normalizeInputFormat(format) {
+		format = format ?? {};
 		if (!format.date)
 			return format;
 	
@@ -2581,8 +2598,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		
 		input.addEventListener("change",()=>this._inputVal=input.value);
 		input.value=this._selectedCellVal??"";
-		if (this._activeSchemaNode.input.format)
-			this._attachInputFormatter(input,this._activeSchemaNode.input.format);
+		if (this._activeSchemaNode.input.format||this._activeSchemaNode.input.livePattern)
+			this._attachInputFormatter(input,this._activeSchemaNode.input.format
+				,this._activeSchemaNode.input.livePattern);
 		input.focus();
 		if (this._activeSchemaNode.input.maxLength)
 			input.maxLength=this._activeSchemaNode.input.maxLength;
@@ -3077,8 +3095,15 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_validateInput(newVal) {
 		let message;
 		const input=this._cellCursor.querySelector("input");
-		const doCommit=this._activeSchemaNode.input.validation(newVal,m=>message=m,this._activeSchemaNode
-												,this._cellCursorDataObj,this._mainRowIndex,this._activeDetailsCell);
+		const validator=this._activeSchemaNode.input.validation;
+		let doCommit;
+		if (validator instanceof RegExp)
+			doCommit=validator.test(newVal);
+		else if (typeof validator==="function")
+			doCommit=validator(newVal,m=>message=m,this._activeSchemaNode
+													,this._cellCursorDataObj,this._mainRowIndex,this._activeDetailsCell);
+		else
+			doCommit=true;
 		if (doCommit)
 			return true;
 		input.focus();

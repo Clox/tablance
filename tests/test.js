@@ -38,7 +38,8 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"},bulkEdit:true}, 
 		{title:"numtwice", render:num=>num*2, dependsOn:"num"}];
 	const myExpansion={meta:{"foo":"details", "baz":42},type:"list",titlesColWidth:"8em",entries:[
-
+		{type:"field",title:"Phone Number",id:"phoneNumber",input:{type:"text",
+			livePattern:/^\+?\d*$/,validation:/^\+?\d+$/}},
 		{type:"field",title:"amount+10",render:amount=>(Number(amount)+10).toFixed(2)
 			, dependsOn:"amount",/* visibleIf:()=>false */},
 		{type:"field",title:"num",id:"num", input:{type:"text"},bulkEdit:true},
@@ -65,9 +66,6 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		}}
 		,{type:"field",title:"Select",id:"sel",input:{type:"select",options:foods,minOptsFilter:100
 							,allowCreateNew:true,allowSelectEmpty:true,selectInputPlaceholder:"Sök/Skapa"}},
-		
-		{title:"janej", id:"janej",type:"field", dependsOn:"role"/* ,visibleIf:role=>role&&role!="end" */
-			,input:{type:"select",options:yesNoOpts}},
 		
 			{type:"repeated",id:"addresses",sortCompare:(a,b)=>a.zip>b.zip?1:-1,entry:{type:"group",title:"Adress"
 			,entries:
