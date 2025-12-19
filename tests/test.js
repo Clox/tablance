@@ -35,7 +35,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 				{text:"another pineapple",value:15},{text:"another carrot",value:13}];
 	const yesNoOpts=[{text:"Nej",value:0},{text:"Ja",value:1}];
 	const myTablanceCols=[{type:"select"},{type:"expand"}
-		,{id:"desc",title:"Description",width:"150px",html:true,input:{bulkEdit:false,
+		,{id:"desc",title:"Description",cellId:"description", width:"150px",html:true,input:{bulkEdit:false,
 			/** @type {TablanceOnChangeCallback} */
 			onChange:handleDescriptionChange,type:"text",maxLength:5,placeholder:"placeholder"
 			,enabled:()=>Math.random()>.5},render:descFunc}
@@ -44,10 +44,14 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			,options:foods,minOptsFilter:100,allowCreateNew:true,allowSelectEmpty:true
 			,selectInputPlaceholder:"Sök/Skapa"},bulkEdit:true}
 		,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"},bulkEdit:true}, 
-		{title:"numtwice", render:num=>num*2, dependsOn:"num"}];
+		{title:"numtwice", render:num=>num*2, dependsOn:"num", onEnter:({mainIndex})=>{
+			myTablance.selectCell(mainIndex,"personnummer",{enterEditMode:true})
+		}}];
 	const myExpansion={meta:{"foo":"details", "baz":42},type:"list",titlesColWidth:"8em",entries:[
-		{type:"field",title:"OnEnter demo",id:"enter_demo",onEnter:()=>console.log("foo")},
-		{type:"field",title: "Personnummer",id:"personal_identity_number", render:renderPNum,
+		{type:"field",title:"OnEnter demo",id:"enter_demo",onEnter:({mainIndex})=>{
+			myTablance.selectCell(mainIndex,"personnummer",{enterEditMode:true})
+		}},
+		{type:"field",title: "Personnummer",id:"personal_identity_number", render:renderPNum,cellId:"personnummer",
 					input:{type:"text",
 						format:{ blocks: [8, 4], delimiter: "-", numericOnly: true,stripDelimiterOnSave:true},
 						placeholder:"ÅÅÅÅMMDD-XXXX",

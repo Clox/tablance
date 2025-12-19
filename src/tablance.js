@@ -875,6 +875,28 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			}
 	}
 
+	_findInstanceNodeByCellId(searchInNode,cellId) {
+		if (!searchInNode)
+			return;
+		const stack=[searchInNode];
+		while (stack.length) {
+			const node=stack.pop();
+			if (node.schemaNode?.cellId===cellId)
+				return node;
+			const children=node.children;
+			if (!children?.length)
+				continue;
+			// Repeated entries share structure; searching only the first is enough for locating the first match.
+			if (node.schemaNode?.type==="repeated") {
+				if (children.length)
+					stack.push(children[0]);
+				continue;
+			}
+			for (let i=children.length-1; i>=0; i--)
+				stack.push(children[i]);
+		}
+	}
+
 	/**Expands a row and returns the details instance-tree root.
 	 * @param int mainIndex
 	 * @returns Object Root instance-node (outer-most instanceNode)*/
@@ -927,6 +949,60 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	selectTopBottomCellOnlyDetails(top) {
 		this._highlightOnFocus=false;
 		this._selectFirstSelectableDetailsCell(this._openDetailsPanes[0],top);
+	}
+
+	/**Select a cell by cellId. Prefers details, falls back to main table if no details match.
+	 * @param {object|number} dataRow_or_mainIndex Row object or its index in the current view.
+	 * @param {string} cellId Identifier set on schemaNode.cellId (or column id for main table).
+	 * @param {{searchInNode?:object,enterEditMode?:boolean}|null} opts Options:
+	 * 			- searchInNode: details instance-node to scope the search to
+	 * 			- enterEditMode: whether to enter edit mode after selecting (default false) */
+	selectCell(dataRow_or_mainIndex,cellId,opts=null) {
+		const searchInNode=opts?.searchInNode??null;
+		const enterEditMode=!!opts?.enterEditMode;
+		let dataRow,mainIndex;
+		if (!isNaN(dataRow_or_mainIndex))
+			dataRow=this._data[mainIndex=dataRow_or_mainIndex];
+		else {
+			dataRow=dataRow_or_mainIndex;
+			mainIndex=this._data.indexOf(dataRow);
+		}
+		if (!dataRow||mainIndex<0)
+			return;
+
+		// Details: ensure details are rendered, then search live instance tree.
+		const root=searchInNode??this.expandRow(mainIndex);
+		if (root) {
+			const targetNode=this._findInstanceNodeByCellId(root,cellId);
+			if (targetNode) {
+				this._selectDetailsCell(targetNode);
+				if (enterEditMode&&this._activeSchemaNode?.input)
+					this._enterCell(new Event("enter",{cancelable:true}));
+				return;
+			}
+		}
+
+		// Main: find matching column by id or cellId.
+		let colIndex=-1;
+		for (let i=0,schemaNode; schemaNode=this._colSchemaNodes[i]; i++)
+			if (schemaNode.id===cellId||schemaNode.cellId===cellId) {
+				colIndex=i;
+				break;
+			}
+		if (colIndex===-1)
+			return;
+
+		let tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndex}"]:not(.details)`);
+		if (!tr) {
+			this.scrollToDataRow(dataRow,false,false);
+			this._scrollMethod();
+			tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndex}"]:not(.details)`);
+		}
+		if (tr) {
+			this._selectMainTableCell(tr.cells[colIndex]);
+			if (enterEditMode&&this._activeSchemaNode?.input)
+				this._enterCell(new Event("enter",{cancelable:true}));
+		}
 	}
 
 	
@@ -2433,6 +2509,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_enterCell(e) {
 		if (this._inEditMode||this._cellCursor.classList.contains("disabled"))
 			return;
+		const selBefore=this._selectedCell;
+		const schemaBefore=this._activeSchemaNode;
 		let doEnter=true;
 		if (this._activeSchemaNode.onEnter) {
 			const payload={
@@ -2448,7 +2526,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			};
 			this._activeSchemaNode.onEnter(payload);
 		}
-		if (!doEnter)
+		if (!doEnter||selBefore!==this._selectedCell||schemaBefore!==this._activeSchemaNode)
 			return;
 		if (this._activeSchemaNode.input) {
 			e.preventDefault();//prevent text selection upon entering editmode
