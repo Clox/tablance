@@ -4443,20 +4443,20 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 							.find(opt=>this._getSelectValue(opt)==this._getSelectValue(rawVal));
 						newCellContent=rawVal==null?"":(selOptObj?.text??rawVal??"");
 					}
-				let isDisabled=false;
-				if (this._spreadsheet&&schemaNode.type!=="expand") {
-					const enabledFuncResult=schemaNode.input?.enabled?.(schemaNode,rowData,mainIndex,instanceNode);
-					const hasOnEnter=schemaNode.type==="field"&&!!schemaNode.onEnter;
-					if (enabledFuncResult==false||enabledFuncResult?.enabled==false)
-						isDisabled=true;
-					else if (!schemaNode.input&&!hasOnEnter)
-						isDisabled=true;
-				}
-				(selEl??el).classList.toggle("disabled",isDisabled);
-				if (schemaNode.html)
-					el.innerHTML=newCellContent??"";
-				else
-					el.innerText=newCellContent??"";
+					let isDisabled=false;
+					if (this._spreadsheet&&schemaNode.type!=="expand") {
+						const enabledFuncResult=schemaNode.input?.enabled?.(schemaNode,rowData,mainIndex,instanceNode);
+						const hasOnEnter=!!schemaNode.onEnter;
+						if (enabledFuncResult==false||enabledFuncResult?.enabled==false)
+							isDisabled=true;
+						else if (!schemaNode.input&&!hasOnEnter)
+							isDisabled=true;
+					}
+					(selEl??el).classList.toggle("disabled",isDisabled);
+					if (schemaNode.html)
+						el.innerHTML=newCellContent??"";
+					else
+						el.innerText=newCellContent??"";
 				}
 	}
 
