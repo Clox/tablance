@@ -197,6 +197,8 @@ class TablanceBase {
 	 * @param {{}[]} columns An array of objects where each object has the following structure: {
 	 * 			id String A unique identifier for the column. The value in the data that has this key will be used as
 	 * 				the value in the cell.
+	 * 			onEnter Function Callback fired when the cell is entered (before edit mode). Receives
+	 * 				{event,value,dataKey,dataContext,schemaNode,instanceNode,mainIndex,closestMeta,preventEnter}.
 	 * 			title String The header-string of the column
 	 * 			width String The width of the column. This can be in either px or % units.
 	 * 				In case of % it will be calculated on the remaining space after all the fixed widths
@@ -2081,7 +2083,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			outerContainerEl.className="empty";	// Will be hidden while group is closed until content becomes non-empty
 
 			const td=outerContainerEl.insertCell();
-			td.classList.toggle("disabled",schemaNode.type=="field"&&!schemaNode.input);
+			td.classList.toggle("disabled",schemaNode.type=="field"&&!schemaNode.input&&!schemaNode.onEnter);
 
 			// Add separator for non-group members
 			if (schemaNode.type!="group")
@@ -2430,6 +2432,23 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	_enterCell(e) {
 		if (this._inEditMode||this._cellCursor.classList.contains("disabled"))
+			return;
+		let doEnter=true;
+		if (this._activeSchemaNode.onEnter) {
+			const payload={
+				event:e,
+				value:this._selectedCellVal,
+				dataKey:this._activeSchemaNode.id,
+				dataContext:this._cellCursorDataObj,
+				schemaNode:this._activeSchemaNode,
+				instanceNode:this._activeDetailsCell,
+				mainIndex:this._mainRowIndex,
+				closestMeta:key=>this._closestMeta(this._activeSchemaNode,key),
+				preventEnter:()=>doEnter=false
+			};
+			this._activeSchemaNode.onEnter(payload);
+		}
+		if (!doEnter)
 			return;
 		if (this._activeSchemaNode.input) {
 			e.preventDefault();//prevent text selection upon entering editmode
@@ -4332,32 +4351,35 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	
 
 	_updateCell(schemaNode,el,selEl,rowData,mainIndex,instanceNode=null) {
-		if (schemaNode.input?.type==="button") {
-			this._generateButton(schemaNode,mainIndex,el,rowData,instanceNode);
-		} else {
-			let newCellContent;
-			if (schemaNode.render||schemaNode.input?.type!="select") {
-				newCellContent=this._getTargetVal(true,schemaNode, instanceNode, rowData);
-				if (schemaNode.render)
-					newCellContent=schemaNode.render(newCellContent,rowData,schemaNode,mainIndex,instanceNode);
-			} else { //if (schemaNode.input?.type==="select") {
-				const rawVal=rowData[schemaNode.id];
-				const selOptObj=this._isObject(rawVal)?rawVal:this._getSelectOptions(schemaNode.input)
-					.find(opt=>this._getSelectValue(opt)==this._getSelectValue(rawVal));
-				newCellContent=rawVal==null?"":(selOptObj?.text??rawVal??"");
-			}
-			let isDisabled=false;
-			if (this._spreadsheet&&schemaNode.type!=="expand") {
-				const enabledFuncResult=schemaNode.input?.enabled?.(schemaNode,rowData,mainIndex,instanceNode);
-				if (!schemaNode.input||enabledFuncResult==false||enabledFuncResult?.enabled==false)
-					isDisabled=true;
-			}
-			(selEl??el).classList.toggle("disabled",isDisabled);
-			if (schemaNode.html)
-				el.innerHTML=newCellContent??"";
-			else
-				el.innerText=newCellContent??"";
-		}
+				if (schemaNode.input?.type==="button") {
+					this._generateButton(schemaNode,mainIndex,el,rowData,instanceNode);
+				} else {
+					let newCellContent;
+					if (schemaNode.render||schemaNode.input?.type!="select") {
+						newCellContent=this._getTargetVal(true,schemaNode, instanceNode, rowData);
+						if (schemaNode.render)
+							newCellContent=schemaNode.render(newCellContent,rowData,schemaNode,mainIndex,instanceNode);
+					} else { //if (schemaNode.input?.type==="select") {
+						const rawVal=rowData[schemaNode.id];
+						const selOptObj=this._isObject(rawVal)?rawVal:this._getSelectOptions(schemaNode.input)
+							.find(opt=>this._getSelectValue(opt)==this._getSelectValue(rawVal));
+						newCellContent=rawVal==null?"":(selOptObj?.text??rawVal??"");
+					}
+				let isDisabled=false;
+				if (this._spreadsheet&&schemaNode.type!=="expand") {
+					const enabledFuncResult=schemaNode.input?.enabled?.(schemaNode,rowData,mainIndex,instanceNode);
+					const hasOnEnter=schemaNode.type==="field"&&!!schemaNode.onEnter;
+					if (enabledFuncResult==false||enabledFuncResult?.enabled==false)
+						isDisabled=true;
+					else if (!schemaNode.input&&!hasOnEnter)
+						isDisabled=true;
+				}
+				(selEl??el).classList.toggle("disabled",isDisabled);
+				if (schemaNode.html)
+					el.innerHTML=newCellContent??"";
+				else
+					el.innerText=newCellContent??"";
+				}
 	}
 
 	/**Updates the html-element of a main-table-cell

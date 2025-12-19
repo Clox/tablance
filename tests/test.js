@@ -46,6 +46,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"},bulkEdit:true}, 
 		{title:"numtwice", render:num=>num*2, dependsOn:"num"}];
 	const myExpansion={meta:{"foo":"details", "baz":42},type:"list",titlesColWidth:"8em",entries:[
+		{type:"field",title:"OnEnter demo",id:"enter_demo",onEnter:()=>console.log("foo")},
 		{type:"field",title: "Personnummer",id:"personal_identity_number", render:renderPNum,
 					input:{type:"text",
 						format:{ blocks: [8, 4], delimiter: "-", numericOnly: true,stripDelimiterOnSave:true},
