@@ -17,6 +17,14 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	function descFunc(value, dataRow,col,rowIndex) {
 		return `fo<u>ob</u>ar ${rowIndex} - ${dataRow.descLetter}`
 	}
+	var renderPNum=(pnumInt)=>{
+	if (!pnumInt)
+		return "";
+	if (String(pnumInt).length===8)//if coming straight from db then it's an int and length wont work, so cast to string
+		return pnumInt+"-XXXX";
+	return String(pnumInt).substring(0, 8) + "-" + String(pnumInt).substring(8);
+	
+};
 	const foods=[{text:"banana",value:1,visibleIf:({rowIndex})=>rowIndex%2},
 				{text:"apple",value:2},
 				{text:"cucumber",value:3},{text:"orange",value:4},{text:"grapes",value:5},
@@ -38,6 +46,11 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"},bulkEdit:true}, 
 		{title:"numtwice", render:num=>num*2, dependsOn:"num"}];
 	const myExpansion={meta:{"foo":"details", "baz":42},type:"list",titlesColWidth:"8em",entries:[
+		{type:"field",title: "Personnummer",id:"personal_identity_number", render:renderPNum,
+					input:{type:"text",
+						format:{ blocks: [8, 4], delimiter: "-", numericOnly: true,stripDelimiterOnSave:true},
+						placeholder:"ÅÅÅÅMMDD-XXXX",
+					}},
 		{type:"field",title:"Phone Number",id:"phoneNumber",input:{type:"text",
 			livePattern:/^\+?\d*$/,validation:/^\+?\d+$/}},
 		{type:"field",title:"amount+10",render:amount=>(Number(amount)+10).toFixed(2)

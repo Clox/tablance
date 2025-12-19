@@ -1223,8 +1223,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	_attachInputFormatter(el, format, livePattern) {
 		format = this._normalizeInputFormat(format);
-		const liveRegex = livePattern instanceof RegExp
-			? livePattern
+		if (Array.isArray(format.blocks) && format._maxBlockLen === undefined)
+			format._maxBlockLen = format.blocks.reduce((a, b) => a + b, 0);
+
+		const liveRegex = livePattern instanceof RegExp ? livePattern
 			: (typeof livePattern === "string" ? new RegExp(livePattern) : null);
 	
 		// Live filtering (raw value, before formatting)
@@ -1237,10 +1239,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				const end = el.selectionEnd;
 				const nextVal = el.value.slice(0, start) + e.data + el.value.slice(end);
 	
-				if (liveRegex && !liveRegex.test(nextVal)) {
-					e.preventDefault();
-					return;
-				}
+				if (liveRegex && !liveRegex.test(nextVal))
+					return e.preventDefault();
 	
 				if (format.numericOnly && /\D/.test(e.data))
 					e.preventDefault();
@@ -1299,13 +1299,18 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	
 		// Generic block formatting
 		if (Array.isArray(format.blocks)) {
+			if (value.length > format._maxBlockLen)
+				value = value.slice(0, format._maxBlockLen);
+
 			let out = "", i = 0;
 			const delim = format.delimiter ?? "";
-			for (const block of format.blocks) {
+			const blocks = format.blocks;
+			for (let b = 0; b < blocks.length; b++) {
+				const block = blocks[b];
 				const part = value.slice(i, i + block);
 				out += part;
 				i += part.length;
-				if (part.length === block && delim)
+				if (part.length === block && b < blocks.length - 1 && delim && i < value.length)
 					out += delim;
 			}
 			return out;
