@@ -3396,12 +3396,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_markDirtyField(instanceNode) {
 		// Track fields/groups touched while a group is open so discard can repaint only those nodes.
 		// Keeps the set minimal by skipping ancestors already tracked and removing descendants.
-		let group;
-		for (let node=instanceNode; node; node=node.parent)
-			if (node.schemaNode.type==="group"&&node.el?.classList.contains("open")) {
-				group=node;
-				break;
-			}
+		const group=this._getOpenGroupAncestor(instanceNode);
 		if (!group)
 			return;
 		const dirty=group._dirtyFields??(group._dirtyFields=new Set());
@@ -3481,10 +3476,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 * restores data from snapshot, repaints dirty fields, refreshes main row, and closes.
 	 */
 	_discardActiveGroupEdits() {
-		let group=this._activeDetailsCell;
-		for (;group;group=group.parent)
-			if (group.schemaNode.type==="group"&&group.el.classList.contains("open"))
-				break;
+		const group=this._getOpenGroupAncestor(this._activeDetailsCell);
 		if (!group)
 			return;
 		if (group.creating)
