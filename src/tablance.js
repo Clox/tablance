@@ -3376,6 +3376,16 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return targetRect.top<groupRect.top?"above":"below";
 	}
 
+	_getOpenGroupAncestor(instanceNode) {
+		for (let group=instanceNode; group; group=group.parent)
+			if (group.schemaNode?.type==="group"&&group.el?.classList.contains("open"))
+				return group;
+	}
+
+	_hasNonNullValues(obj) {
+		return Object.values(obj??{}).some(val=>val!=null);
+	}
+
 	/**
 	 * Marks a details instance-node as dirty within its nearest open group so that discard
 	 * can efficiently repaint only touched nodes. Dirty nodes are re-rendered in
@@ -3508,7 +3518,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_scrollElementIntoView(){}//default is to do nothing. Tablance (main) overrides this.
 
 	_closeRepeatedInsertion(repeatEntry) {
-		if (Object.values(repeatEntry.dataObj).filter(x=>x!=null).length) {
+		if (this._hasNonNullValues(repeatEntry.dataObj)) {
 			let message=this.lang.creationValidationFailed;//message to show to the user if creation was unsucessful
 			for (var root=repeatEntry; root.parent; root=root.parent);//get root-object in order to retrieve rowIndex
 			const creationContainer=repeatEntry.schemaNode.type=="group"?repeatEntry:repeatEntry.parent;
@@ -4758,13 +4768,20 @@ export default class Tablance extends TablanceBase {
 		if (tr.classList.contains("details"))
 			tr=tr.previousSibling;
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
-		if (dataRowIndex==this._mainRowIndex&&this._activeDetailsCell)
+		const hasOpenDetails=dataRowIndex==this._mainRowIndex&&this._activeDetailsCell;
+		if (hasOpenDetails) {
 			this._exitEditMode(false);//cancel out of edit-mode so field-validation doesn't cause problems
+			const openGroup=this._getOpenGroupAncestor(this._activeDetailsCell);
+			if (openGroup?.creating&&!this._hasNonNullValues(openGroup.dataObj))
+				this._discardActiveGroupEdits();//remove empty creator before contracting
+		}
 		if (!this._schema.details||!this._rowMetaGet(dataRowIndex)?.h)
 			return;
 		this._unsortCol(null,"expand");
-		if (this._mainRowIndex==dataRowIndex&&this._activeDetailsCell) {//if cell-cursor is inside the details
+		if (hasOpenDetails) {//if cell-cursor is inside the details
 			this._selectMainTableCell(tr.cells[this._mainColIndex]);//then move it out
+			if (this._activeDetailsCell)//closing group failed (validation), so keep details open
+				return;
 			this._scrollToCursor();
 		}
 		const contentDiv=tr.nextSibling.querySelector(".content");
