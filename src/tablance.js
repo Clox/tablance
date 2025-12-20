@@ -864,6 +864,40 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				return node.meta[metaKey];
 	}
 
+	// Build a callback payload with sensible defaults derived from an instance-node.
+	_makeCallbackPayload(instanceNode, extra={}, overrides={}) {
+		const schemaNode=overrides.schemaNode??instanceNode?.schemaNode;
+		let mainIndex=overrides.mainIndex;
+		if (mainIndex==null) {
+			if (Number.isInteger(instanceNode?.rowIndex))
+				mainIndex=instanceNode.rowIndex;
+			else if (instanceNode) {
+				let root=instanceNode;
+				for (;root?.parent; root=root.parent);
+				if (Number.isInteger(root?.rowIndex))
+					mainIndex=root.rowIndex;
+			}
+			if (mainIndex==null)
+				mainIndex=this._mainRowIndex??0;
+		}
+		const repeatedContainer=overrides.repeatedContainer??getRepeatedContainer(instanceNode);
+		const dataContext=overrides.dataContext?? repeatedContainer?.parent?.dataObj
+			?? instanceNode?.parent?.dataObj
+			?? this._data?.[mainIndex];
+		const dataKey=overrides.dataKey??repeatedContainer?.schemaNode?.id??schemaNode?.id;
+		const dataArray=overrides.dataArray??repeatedContainer?.dataObj;
+		const bulkEdit=overrides.bulkEdit??!!this.mainInstance;
+		return {tablance:this,schemaNode,instanceNode,dataContext,dataKey,mainIndex,bulkEdit,dataArray,
+			closestMeta: key => this._closestMeta(schemaNode,key),...extra
+		};
+
+		function getRepeatedContainer(node) {
+			for (let cur=node; cur; cur=cur.parent)
+				if (cur.schemaNode?.type==="repeated")
+					return cur;
+		}
+	}
+
 	_findDescendantInstanceNodeById(searchInObj,idToFind) {
 		for (const child of searchInObj.children)
 			if (child.schemaNode.id==idToFind)//if true then its the repeated-obj we're looking for
@@ -1890,22 +1924,13 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_repeatedOnDelete=(e,data,index,schemaNode,cel)=>{
 		const entryNode=cel.parent.parent;
 		const repeatedContainer=entryNode.parent;
-		let root=entryNode;
-		for (;root.parent;root=root.parent);
-		const mainIndex=root.rowIndex;
-		const payload={
+		const payload=this._makeCallbackPayload(entryNode,{
 			deletedDataItem: entryNode.dataObj,
-			dataContext: repeatedContainer?.parent?.dataObj??this._data[mainIndex],
-			dataKey: repeatedContainer?.schemaNode.id,
-			dataArray: repeatedContainer?.dataObj,
 			itemIndex: entryNode.index,
 			repeatedSchemaNode: repeatedContainer?.schemaNode,
 			entrySchemaNode: entryNode.schemaNode,
-			deletedInstanceNode: entryNode,
-			mainIndex,
-			bulkEdit: !!this.mainInstance,
-			closestMeta: key => this._closestMeta(entryNode.schemaNode, key)
-		};
+			deletedInstanceNode: entryNode
+		},{repeatedContainer});
 		this._deleteCell(entryNode);
 		repeatedContainer?.schemaNode.onDelete?.(payload);
 	}
@@ -2523,28 +2548,27 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 	}
 
-	_enterCell(e) {
-		if (this._inEditMode||this._cellCursor.classList.contains("disabled"))
-			return;
-		const selBefore=this._selectedCell;
-		const schemaBefore=this._activeSchemaNode;
-		let doEnter=true;
-		if (this._activeSchemaNode.onEnter) {
-			const payload={
-				event:e,
-				value:this._selectedCellVal,
-				dataKey:this._activeSchemaNode.id,
-				dataContext:this._cellCursorDataObj,
-				schemaNode:this._activeSchemaNode,
-				instanceNode:this._activeDetailsCell,
-				mainIndex:this._mainRowIndex,
-				closestMeta:key=>this._closestMeta(this._activeSchemaNode,key),
-				preventEnter:()=>doEnter=false
-			};
-			this._activeSchemaNode.onEnter(payload);
-		}
-		if (!doEnter||selBefore!==this._selectedCell||schemaBefore!==this._activeSchemaNode)
-			return;
+		_enterCell(e) {
+			if (this._inEditMode||this._cellCursor.classList.contains("disabled"))
+				return;
+			const selBefore=this._selectedCell;
+			const schemaBefore=this._activeSchemaNode;
+			let doEnter=true;
+			if (this._activeSchemaNode.onEnter) {
+				const payload=this._makeCallbackPayload(this._activeDetailsCell,{
+					event:e,
+					value:this._selectedCellVal,
+					preventEnter:()=>doEnter=false
+				},{
+					schemaNode:this._activeSchemaNode,
+					dataContext:this._cellCursorDataObj,
+					dataKey:this._activeSchemaNode.id,
+					mainIndex:this._mainRowIndex
+				});
+				this._activeSchemaNode.onEnter(payload);
+			}
+			if (!doEnter||selBefore!==this._selectedCell||schemaBefore!==this._activeSchemaNode)
+				return;
 		if (this._activeSchemaNode.input) {
 			e.preventDefault();//prevent text selection upon entering editmode
 			if (this._activeSchemaNode.input.type==="button")
@@ -3459,12 +3483,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			const parentDataContext=repeatedContainer?.parent?.dataObj??this._data[root.rowIndex];
 			let doCreate=true;
 			if (repeatEntry.schemaNode.creationValidation) {
-				const payload={
-					newDataItem:repeatEntry.dataObj,
-					schemaNode: repeatEntry.schemaNode,
-					mainIndex: root.rowIndex,
-					instanceNode: repeatEntry
-				};
+				const payload=this._makeCallbackPayload(repeatEntry,{
+					newDataItem:repeatEntry.dataObj
+				},{
+					mainIndex: root.rowIndex
+				});
 				const res=repeatEntry.schemaNode.creationValidation(payload);
 				if (typeof res==="boolean")
 					doCreate=res;
@@ -3478,20 +3501,20 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				this._showTooltip(message,repeatEntry.el);
 				return false;//prevent commiting/closing the group
 			}
-			const payload={
+			const payload=this._makeCallbackPayload(repeatEntry,{
 				newDataItem: repeatEntry.dataObj,
-				dataContext: parentDataContext,
-				dataArray: repeatedContainer?.dataObj,
-				dataKey: repeatedContainer?.schemaNode.id,
 				itemIndex: repeatEntry.index,
 				repeatedSchemaNode: repeatedContainer?.schemaNode,
 				entrySchemaNode: creationContainer.schemaNode,
 				newInstanceNode: repeatEntry,
-				mainIndex: root.rowIndex,
-				bulkEdit: false,
-				closestMeta: key => this._closestMeta(creationContainer.schemaNode, key),
 				cancelCreate: ()=>doCreate=false
-			};
+			},{
+				dataContext: parentDataContext,
+				mainIndex: root.rowIndex,
+				repeatedContainer,
+				bulkEdit: false,
+				dataKey: repeatedContainer?.schemaNode.id
+			});
 			repeatEntry.creating=false;
 			creationContainer.schemaNode.onCreate?.(payload);
 			if (!doCreate) {
