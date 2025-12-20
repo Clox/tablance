@@ -2074,16 +2074,24 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			this._cloneDependencyMetadata(sourceChildren[i],targetChildren[i]);
 	}
 
-	_generateButton(schemaNode,mainIndex,parentEl,rowData,instanceNode=null) {
-		const btn=parentEl.appendChild(document.createElement("button"));
-		btn.tabIndex="-1";//so it can't be tabbed to
-		btn.innerHTML=schemaNode.input.btnText;
-		btn.addEventListener("click",e=>schemaNode.input.clickHandler?.(e,rowData,mainIndex,schemaNode,instanceNode));
+		_generateButton(schemaNode,mainIndex,parentEl,rowData,instanceNode=null) {
+			const btn=parentEl.appendChild(document.createElement("button"));
+			btn.tabIndex="-1";//so it can't be tabbed to
+			btn.innerHTML=schemaNode.input.btnText;
+			btn.addEventListener("click",e=>{
+				const payload=this._makeCallbackPayload(instanceNode,{event:e},{
+					schemaNode,
+					dataContext:rowData,
+					mainIndex,
+					dataKey:schemaNode.id
+				});
+				schemaNode.input.clickHandler?.(payload);
+			});
 
-		//prevent gaining focus upon clicking it whhich would cause problems. It should be "focused" by having the
-		//cellcursor on its cell which triggers it with enter-key anyway
-		btn.addEventListener("mousedown",e=>e.preventDefault());
-		return true;
+			//prevent gaining focus upon clicking it whhich would cause problems. It should be "focused" by having the
+			//cellcursor on its cell which triggers it with enter-key anyway
+			btn.addEventListener("mousedown",e=>e.preventDefault());
+			return true;
 	}
 
 		/**

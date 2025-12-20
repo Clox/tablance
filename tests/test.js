@@ -25,36 +25,9 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	return String(pnumInt).substring(0, 8) + "-" + String(pnumInt).substring(8);
 	
 };
-function btnClickHandler(e,dataObject,mainIndex,schemaNode,instanceNode) {
-	// Expand the row and locate the repeated container inside group "förordnande1"
-	const root=myTablance.expandRow(mainIndex);
-	if (!root) {
-		console.warn("No details root found for row", mainIndex);
-		return;
+	function btnClickHandler({mainIndex,tablance}) {
+		tablance.getDetailCell(mainIndex,"förordnande1").createNewEntry();
 	}
-	const findNode=(start, predicate)=>{
-		if (!start)
-			return null;
-		const stack=[start];
-		while (stack.length) {
-			const node=stack.pop();
-			if (predicate(node))
-				return node;
-			if (node.children)
-				for (let i=node.children.length-1; i>=0; i--)
-					stack.push(node.children[i]);
-		}
-		return null;
-	};
-	const forordnandeGroup=findNode(root,node=>node.schemaNode?.title==="förordnande1");
-	const repeated=findNode(forordnandeGroup??root,node=>node.schemaNode?.type==="repeated"
-		&&node.schemaNode.id==="custodianshipChanges");
-	if (!repeated?.createNewEntry) {
-		console.warn("Could not find repeated custodianshipChanges inside förordnande1");
-		return;
-	}
-	repeated.createNewEntry(e);
-}
 	const foods=[{text:"banana",value:1,visibleIf:({rowIndex})=>rowIndex%2},
 				{text:"apple",value:2},
 				{text:"cucumber",value:3},{text:"orange",value:4},{text:"grapes",value:5},
@@ -63,7 +36,6 @@ function btnClickHandler(e,dataObject,mainIndex,schemaNode,instanceNode) {
 				{text:"another cucumber",value:11},{text:"another orange",value:12},
 				{text:"another set of grapes",value:13},{text:"another melon",value:14},
 				{text:"another pineapple",value:15},{text:"another carrot",value:13}];
-	const yesNoOpts=[{text:"Nej",value:0},{text:"Ja",value:1}];
 	const myTablanceCols=[{type:"select"},{type:"expand"}
 		,{id:"desc",title:"Description",cellId:"description", width:"150px",html:true,input:{bulkEdit:false,
 			/** @type {TablanceOnChangeCallback} */
@@ -133,8 +105,8 @@ function btnClickHandler(e,dataObject,mainIndex,schemaNode,instanceNode) {
 		},
 		{type:"field",input:{type:"button",btnText:"Cool button",clickHandler:btnClickHandler}},
 		 {type:"group",title:"förordnande1",bulkEdit:true,entries:[
-			{type:"repeated",id:"custodianshipChanges",bulkEdit:true,create:true
-			,sortCompare:(a,b)=>a.date>b.date?1:-1
+			{type:"repeated",id:"custodianshipChanges",bulkEdit:true,create:true,cellId:"förordnande1",
+			sortCompare:(a,b)=>a.date>b.date?1:-1
 			,onCreate:payload=>console.log(payload)
 			,onDelete:(...args)=>console.log(args)
 			,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
@@ -264,5 +236,4 @@ function btnClickHandler(e,dataObject,mainIndex,schemaNode,instanceNode) {
 	// 	,myExpansion,null,true);
 	// 	myTablance2.addData(data);
 });
-
 
