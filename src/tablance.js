@@ -951,6 +951,23 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._selectFirstSelectableDetailsCell(this._openDetailsPanes[0],top);
 	}
 
+	/**Return the first details instance-node matching cellId for a row (expands row if needed). */
+	getDetailCell(dataRow_or_mainIndex,cellId,searchInNode=null) {
+		let dataRow,mainIndex;
+		if (!isNaN(dataRow_or_mainIndex))
+			dataRow=this._data[mainIndex=dataRow_or_mainIndex];
+		else {
+			dataRow=dataRow_or_mainIndex;
+			mainIndex=this._data.indexOf(dataRow);
+		}
+		if (!dataRow||mainIndex<0)
+			return;
+		const root=searchInNode??this.expandRow(mainIndex);
+		if (!root)
+			return;
+		return this._findInstanceNodeByCellId(root,cellId);
+	}
+
 	/**Select a cell by cellId. Prefers details, falls back to main table if no details match.
 	 * @param {object|number} dataRow_or_mainIndex Row object or its index in the current view.
 	 * @param {string} cellId Identifier set on schemaNode.cellId (or column id for main table).
