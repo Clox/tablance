@@ -25,6 +25,36 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	return String(pnumInt).substring(0, 8) + "-" + String(pnumInt).substring(8);
 	
 };
+function btnClickHandler(e,dataObject,mainIndex,schemaNode,instanceNode) {
+	// Expand the row and locate the repeated container inside group "förordnande1"
+	const root=myTablance.expandRow(mainIndex);
+	if (!root) {
+		console.warn("No details root found for row", mainIndex);
+		return;
+	}
+	const findNode=(start, predicate)=>{
+		if (!start)
+			return null;
+		const stack=[start];
+		while (stack.length) {
+			const node=stack.pop();
+			if (predicate(node))
+				return node;
+			if (node.children)
+				for (let i=node.children.length-1; i>=0; i--)
+					stack.push(node.children[i]);
+		}
+		return null;
+	};
+	const forordnandeGroup=findNode(root,node=>node.schemaNode?.title==="förordnande1");
+	const repeated=findNode(forordnandeGroup??root,node=>node.schemaNode?.type==="repeated"
+		&&node.schemaNode.id==="custodianshipChanges");
+	if (!repeated?.createNewEntry) {
+		console.warn("Could not find repeated custodianshipChanges inside förordnande1");
+		return;
+	}
+	repeated.createNewEntry(e);
+}
 	const foods=[{text:"banana",value:1,visibleIf:({rowIndex})=>rowIndex%2},
 				{text:"apple",value:2},
 				{text:"cucumber",value:3},{text:"orange",value:4},{text:"grapes",value:5},
@@ -235,12 +265,4 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	// 	myTablance2.addData(data);
 });
 
-function btnClickHandler(e,dataObject,mainIndex,schemaNode,instanceNode) {
 
-	console.log(e);
-	console.log(dataObject);
-	console.log(mainIndex);
-	console.log(schemaNode);
-	console.log(instanceNode);
-	console.log(instanceNode.prevSibling.prevSibling);
-}

@@ -21,6 +21,24 @@ Object.defineProperties(INSTANCE_NODE_PROTOTYPE,{
 		return siblings!=null&&Number.isInteger(this.index)?siblings[this.index+1]:undefined;
 	}}
 });
+const SELECTABLE_DETAILS_NODE_PROTOTYPE=Object.assign(Object.create(INSTANCE_NODE_PROTOTYPE),{
+	select() {
+		return this.tablance?._selectDetailsCell(this);
+	}
+});
+const FIELD_INSTANCE_NODE_PROTOTYPE=Object.create(SELECTABLE_DETAILS_NODE_PROTOTYPE);
+const GROUP_INSTANCE_NODE_PROTOTYPE=Object.create(SELECTABLE_DETAILS_NODE_PROTOTYPE);
+const REPEATED_INSTANCE_NODE_PROTOTYPE=Object.create(INSTANCE_NODE_PROTOTYPE);
+REPEATED_INSTANCE_NODE_PROTOTYPE.createNewEntry=function(e,_groupObject) {
+	e?.preventDefault?.();
+	let repeatData=this.dataObj;
+	if (!repeatData) {
+		const parentDataObj=this.parent?.dataObj;
+		repeatData=parentDataObj?.[this.schemaNode.id]??(parentDataObj?parentDataObj[this.schemaNode.id]=[]:[]);
+		this.dataObj=repeatData;
+	}
+	this.tablance?._repeatInsert(this,true,repeatData[repeatData.length]={});
+};
 
 const DEFAULT_LANG=Object.freeze({
 	fileName:"Filename",
@@ -629,8 +647,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 	}
 
-	_createInstanceNode(parent=null,index=null) {
-		return Object.assign(Object.create(INSTANCE_NODE_PROTOTYPE),{parent,index});
+	_createInstanceNode(parent=null,index=null,proto=INSTANCE_NODE_PROTOTYPE) {
+		const instanceNode=Object.create(proto);
+		instanceNode.parent=parent;
+		instanceNode.index=index;
+		Object.defineProperty(instanceNode,"tablance",{value:this});
+		return instanceNode;
 	}
 
 	addData(data, highlight=false) {
@@ -1906,10 +1928,16 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			scopedRowData=target;
 		}
 		if (!path.length)
-			instanceNode.rowIndex=mainIndex;
+		instanceNode.rowIndex=mainIndex;
 		instanceNode.path=[...path];
 		instanceNode.dataObj=scopedRowData;
 		instanceNode.schemaNode=schemaNode;
+		const protoForType=schemaNode.type==="field"?FIELD_INSTANCE_NODE_PROTOTYPE
+			:schemaNode.type==="group"?GROUP_INSTANCE_NODE_PROTOTYPE
+			:schemaNode.type==="repeated"?REPEATED_INSTANCE_NODE_PROTOTYPE
+			:INSTANCE_NODE_PROTOTYPE;
+		if (Object.getPrototypeOf(instanceNode)===INSTANCE_NODE_PROTOTYPE&&protoForType!==INSTANCE_NODE_PROTOTYPE)
+			Object.setPrototypeOf(instanceNode,protoForType);
 		if (schemaNode.visibleIf)
 			this._applyVisibleIf(instanceNode);
 		switch (schemaNode.type) {
@@ -1948,11 +1976,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._selectDetailsCell(fileCell);
 	}
 
-	_onOpenCreationGroup=(e,groupObject)=>{
-		e.preventDefault();
-		this._repeatInsert(groupObject.parent,true,groupObject.parent.dataObj[groupObject.parent.dataObj.length]={});
-	}
-
 	/**
 	 * This is "supposed" to get called when a repeated-schemaNode is found however in #generateDetailsList,
 	 * repeated schema-nodes are looked for and handled by that method instead so that titles can be added to the list
@@ -1987,7 +2010,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const creationTxt=repeatedObj.schemaNode.creationText??this.lang.insertNew;
 		const creationSchemaNode={type:"group",closedRender:()=>creationTxt,entries:[],
 							creator:true//used to know that this entry is the creator and that it should not be sorted
-							,onOpen:this._onOpenCreationGroup,cssClass:"repeat-insertion"};
+							,onOpen:repeatedObj.createNewEntry.bind(repeatedObj),cssClass:"repeat-insertion"};
 		const wrappedCreationSchemaNode=this._buildSchemaFacade(creationSchemaNode);//WRAPPED
 		const el=this._repeatInsert(repeatedObj,false,{},wrappedCreationSchemaNode);
 		el.parentElement.classList.add("empty");//this will make it hidden if inside a group that is closed
@@ -2080,7 +2103,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 * 		schemaNode with no create option).
 	 */
 	_generateDetailsGroup(groupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,notYetCreated) {
-		instanceNode.select=()=>this._selectDetailsCell(instanceNode);
 		const groupTable=parentEl.appendChild(document.createElement("table"));
 		const tbody=instanceNode.containerEl=groupTable.appendChild(document.createElement("tbody"));
 		groupTable.dataset.path=path.join("-");
@@ -2159,7 +2181,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (childSchemaNode.type==="repeated") {
 				const repeatData=rowData[childSchemaNode.id]??(rowData[childSchemaNode.id]=[]);
 				const rptCelObj=collectionObj.children[entryI]=Object.assign(
-					this._createInstanceNode(collectionObj,entryI),
+					this._createInstanceNode(collectionObj,entryI,REPEATED_INSTANCE_NODE_PROTOTYPE),
 					{children:[],schemaNode:childSchemaNode,dataObj:repeatData,path:[...path,entryI]}
 				);
 				rptCelObj.insertionPoint=collectionObj.containerEl.appendChild(document.createComment("repeat-insert"));
@@ -2267,7 +2289,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		index??=collectionOrRepeated.children.length;
 
 		// Item object (holds metadata for this item)
-		const itemObj=this._createInstanceNode(collectionOrRepeated,index);
+		const prototypeForChild=schemaNode.type==="field"?FIELD_INSTANCE_NODE_PROTOTYPE
+			:schemaNode.type==="group"?GROUP_INSTANCE_NODE_PROTOTYPE
+			:INSTANCE_NODE_PROTOTYPE;
+		const itemObj=this._createInstanceNode(collectionOrRepeated,index,prototypeForChild);
 
 		// Optional title element
 		let title;
@@ -2309,7 +2334,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	_generateField(fieldSchemaNode,mainIndex,instanceNode,parentEl,path,rowData) {
-		instanceNode.select=()=>this._selectDetailsCell(instanceNode);
 		instanceNode.el=parentEl;
 		this._updateDetailsCell(instanceNode,rowData);
 		instanceNode[instanceNode.selEl?"selEl":"el"].dataset.path=path.join("-");
