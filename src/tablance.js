@@ -60,7 +60,8 @@ const DEFAULT_LANG=Object.freeze({
 	insertNew:"Insert new",
 	creationValidationFailed:"Invalid entry. Please check the fields and try again.",
 	creationValidationFailedCancelInfo:"\n Select Delete to cancel.",
-	preventCloseCancelHint:"Press Ctrl+Esc to discard changes and back out."
+	fieldValidationFailedHint:"Press Esc to cancel.",
+	groupValidationFailedHint:"Press Ctrl+Esc to discard changes and back out.",
 });
 
 
@@ -2663,7 +2664,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		};
 		groupObject.schemaNode.onClose?.(closePayload);
 		if (!doClose) {
-			const tooltipMessage=[preventMessage,this.lang.preventCloseCancelHint].filter(Boolean).join("\n");
+			const tooltipMessage=[preventMessage,this.lang.groupValidationFailedHint].filter(Boolean).join("\n");
 			this._showTooltip(tooltipMessage,groupObject.el,this._determinePreventPlacement(groupObject.el,targetCell));
 			return false;
 		}
@@ -3276,14 +3277,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			doCommit=validator.test(newVal);
 		else if (typeof validator==="function")
 			doCommit=validator(newVal,m=>message=m,this._activeSchemaNode
-													,this._cellCursorDataObj,this._mainRowIndex,this._activeDetailsCell);
+												,this._cellCursorDataObj,this._mainRowIndex,this._activeDetailsCell);
 		else
 			doCommit=true;
 		if (doCommit)
 			return true;
 		input.focus();
 		if (message)
-			this._showTooltip(message);
+			this._showTooltip([message,this.lang.fieldValidationFailedHint].filter(Boolean).join("\n"));
 	}
 
 	/**

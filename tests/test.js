@@ -36,7 +36,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 				{text:"another cucumber",value:11},{text:"another orange",value:12},
 				{text:"another set of grapes",value:13},{text:"another melon",value:14},
 				{text:"another pineapple",value:15},{text:"another carrot",value:13}];
-	const myTablanceCols=[{type:"select"},{type:"expand"}
+	const myTablanceCols=[{type:"select", width:45},{type:"expand", width:45}
 		,{id:"desc",title:"Description",cellId:"description", width:"150px",html:true,input:{bulkEdit:false,
 			/** @type {TablanceOnChangeCallback} */
 			onChange:handleDescriptionChange,type:"text",maxLength:5,placeholder:"placeholder"
@@ -48,7 +48,15 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"},bulkEdit:true}, 
 		{title:"numtwice", render:num=>num*2, dependsOn:"num", onEnter:({mainIndex})=>{
 			myTablance.selectCell(mainIndex,"personnummer",{enterEditMode:true})
-		}}];
+		}},
+		{title: "5 chars",input:{type:"text",
+							validation:(newVal,message)=> {
+								message("Det ska vara 5 tecken.");
+								return newVal.toString().length==5;
+							}
+						}
+			},
+		];
 	const myExpansion={meta:{"foo":"details", "baz":42},type:"list",titlesColWidth:"8em",entries:[
 		{type:"field",title:"OnEnter demo",id:"enter_demo",onEnter:({mainIndex})=>{
 			myTablance.selectCell(mainIndex,"personnummer",{enterEditMode:true})
@@ -148,10 +156,8 @@ document.addEventListener("DOMContentLoaded", ()=>{
 							options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"}]
 							,allowSelectEmpty:false
 						}}],
-					creationValidation:({data})=>{
-						if (data.date&&data.type)
-							return {valid:true};
-						return {valid:false,message:"Both fields are mandatory. Enter the data or delete to cancel."};
+					creationValidation:({newDataItem:data})=>{
+						return !!(data.date&&data.type);
 					}
 				}
 			}
