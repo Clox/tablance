@@ -4186,7 +4186,18 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_doRowScrollDetails(trToMove,newMainIndex,oldMainIndex,topShift) {
 		const detailsHeight=this._rowMetaGet(newMainIndex)?.h;
 		if (detailsHeight>0) {
-			this._renderDetails(trToMove,newMainIndex);
+
+			if (trToMove.dataset.dataRowIndex==this._mainRowIndex&&this._activeDetailsCell) {
+				//if the details-pane just scrolled into view contains the cell-cursor. In this case we want to restore
+				//the old instance to retain the state of opened groups and such.
+				trToMove.classList.add("expanded");
+				trToMove.after(this._activeDetailsCell.el.closest("tr.details"));
+				let detailsRoot;
+				for (detailsRoot=this._activeDetailsCell;detailsRoot.parent;detailsRoot=detailsRoot.parent);
+				this._openDetailsPanes[newMainIndex]=detailsRoot;
+			} else
+				this._renderDetails(trToMove,newMainIndex);
+
 		} else if (detailsHeight==-1) {
 			this._scrollBody.scrollTop+=this._expandRow(trToMove,false);
 		} else
@@ -4220,23 +4231,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 * to set #selectedCell to the correct element
 	 * @param {HTMLTableRowElement} tr */
 	_lookForActiveCellInRow(tr) {
-		if (tr.dataset.dataRowIndex==this._mainRowIndex) {
-			if (!this._activeDetailsCell)
+		if (tr.dataset.dataRowIndex==this._mainRowIndex&&!this._activeDetailsCell)
 				this._selectedCell=tr.cells[this._mainColIndex];
-			else {//if inside details
-				//generate the path to the instanceNode in #activeDetailsCell by stepping through its parents to root
-				let path=[];
-				for (let instanceNode=this._activeDetailsCell; instanceNode.parent; instanceNode=instanceNode.parent)
-					path.unshift(instanceNode.index);
-				//now follow the same path in the new #openDetailsNavMap[rowIndex], eg the instanceNodes..
-				let instanceNode=this._openDetailsPanes[this._mainRowIndex];
-				for (let step of path)
-					instanceNode=instanceNode.children[step];
-				this._selectedCell=instanceNode.el;
-				this._activeDetailsCell=instanceNode;//should be identical but this allows for the old one to be gc'd
-			}
-			this._adjustCursorPosSize(this._selectedCell);
-		}
+			//this._adjustCursorPosSize(this._selectedCell);
 	}
 
 	_refreshTableSizerNoDetails() {	
