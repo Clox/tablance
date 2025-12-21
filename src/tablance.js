@@ -4192,8 +4192,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				//the old instance to retain the state of opened groups and such.
 				trToMove.classList.add("expanded");
 				trToMove.after(this._activeDetailsCell.el.closest("tr.details"));
-				let detailsRoot;
-				for (detailsRoot=this._activeDetailsCell;detailsRoot.parent;detailsRoot=detailsRoot.parent);
+				for (var detailsRoot=this._activeDetailsCell;detailsRoot.parent;detailsRoot=detailsRoot.parent);
 				this._openDetailsPanes[newMainIndex]=detailsRoot;
 			} else
 				this._renderDetails(trToMove,newMainIndex);
@@ -4205,21 +4204,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		
 		this._tableSizer.style.height=parseInt(this._tableSizer.style.height)+topShift+"px";
 		this._tableSizer.style.top=parseInt(this._tableSizer.style.top)-topShift+"px";
-
-		if (oldMainIndex===this._mainRowIndex) {//cell-cursor is on moved row
-			this._selectedCell=null;
-			for (let cell=this._activeDetailsCell; cell&&(cell=cell.parent);)
-				if (cell.creating) {
-					cell.creating=false;//otherwise cell.select() below will not work
-					this._exitEditMode(false);//in case field is validated. Could prevent cell.select() too otherwise
-					cell.parent.dataObj.splice(cell.parent.dataObj.indexOf(cell.dataObj),1);
-					while (cell&&(cell=cell.parent))
-						if (cell.select) {
-							cell.select();
-							break;
-						}
-				}
-		}
 
 		this._lookForActiveCellInRow(trToMove);//look for active cell (cellcursor) in the row. This is needed
 		//in order to reassign the dom-element and such and also adjust the pos of the cellcursor in case
