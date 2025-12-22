@@ -1576,12 +1576,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	_spreadsheetOnFocus(_e) {
+		console.log(_e.target)
 		const tabbedTo=this._highlightOnFocus;
-		if (this._mainRowIndex==null&&this._mainColIndex==null&&this._data.length&&tabbedTo)
-				if (this._onlyDetails)
-					this.selectTopBottomCellOnlyDetails(true);
-				else
-					this._selectMainTableCell(this._mainTbody.rows[0].cells[0]);
 		//when the table is tabbed to, whatever focus-outline that the css has set for it should show, but then when the
 		//user starts to navigate using the keyboard we want to hide it because it is a bit distracting when both it and
 		//a cell is highlighted. Thats why #spreadsheetKeyDown sets outline to none, and this line undos that
@@ -1595,7 +1591,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		//other page is open, and the tablance gets focus because then it will be visible through the active page
 		//this._cellCursor.style.display="block";
 		
-		if (tabbedTo)
+		if (tabbedTo&&(this._mainRowIndex!=null||this._mainColIndex!=null))
 			this._scrollToCursor();
 	}
 
@@ -1757,6 +1753,25 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		if (this._bulkEditArea?.contains(document.activeElement))
 			return;
 		this._tooltip.style.visibility="hidden";
+		const keysThatEnterFromOutline=["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Escape",
+								"NumpadAdd","NumpadSubtract","Enter","NumpadEnter","Space"];
+
+		if (!this._inEditMode&&this._mainRowIndex==null&&this._mainColIndex==null) {
+			if (e.code==="Tab")
+				return;
+
+			// First navigation keystroke after focusing the table should select the top-left cell (or top details cell).
+			if (keysThatEnterFromOutline.includes(e.code)&&this._data.length) {
+				if (this._onlyDetails)
+					this.selectTopBottomCellOnlyDetails(true);
+				else
+					this._selectMainTableCell(this._mainTbody.rows[0].cells[0]);
+			}
+		}
+
+		this._highlightOnFocus=false;
+		this.rootEl.style.outline="none";//see #spreadsheetOnFocus
+
 		if (this._inEditMode&&this._activeSchemaNode.input.type==="date") {
 			if (e.key.slice(0,5)==="Arrow") {
 				if (e.ctrlKey)
@@ -1766,7 +1781,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			} else if (e.key==="Backspace")
 				e.stopPropagation();
 		}
-		this.rootEl.style.outline="none";//see #spreadsheetOnFocus
 		if (!this._inEditMode) {
 			this._spreadsheetKeyDown_non_edit_mode(e);
 		} else {
@@ -1777,7 +1791,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (inputKeyPressed||e.key=="Escape")
 				this._scrollToCursor();
 			switch (e.key) {
-				case "Enter":
+				case "Tab":
+					e.preventDefault();
+					this._moveCellCursor(e.shiftKey?-1:1,0,e);
+				break; case "Enter":
 					this._moveCellCursor(0,e.shiftKey?-1:1,e);
 				break; case "Escape":
 					this._exitEditMode(false);
@@ -1807,6 +1824,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				this._moveCellCursor(-1,0,e);
 			break; case "ArrowRight":
 				this._moveCellCursor(1,0,e);
+			break; case "Tab":
+				e.preventDefault();
+				this._moveCellCursor(e.shiftKey?-1:1,0,e);
 			break; case "Escape":
 				this._groupEscape();
 			break; case "NumpadAdd":
@@ -3082,28 +3102,33 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		 * @param {KeyboardEvent} e
 		 * @param {Object} ctx
 		 */
-		_handleSelectKeyDown(e,ctx) {
-			if (e.key==="ArrowDown"||e.key==="ArrowUp") {
-				e.preventDefault();
-				const direction=e.key==="ArrowDown"?1:-1;
-				const currentIndex=ctx.highlightLiIndex==null?0:ctx.highlightLiIndex;
-				const newIndex=currentIndex+direction;
-				if (ctx.highlightUlIndex??true) {
-					if (ctx.looseOpts.length&&newIndex<ctx.looseOpts.length&&newIndex>=0)
-						this._highlightSelectOption(ctx,1,newIndex,true);
-					else if (newIndex==-1&&ctx.pinnedUl.children.length)
-						this._highlightSelectOption(ctx,0,ctx.pinnedUl.children.length-1,true);
-				} else if (newIndex>=0&&newIndex<ctx.pinnedUl.children.length)
-					this._highlightSelectOption(ctx,0,newIndex,true);
-				else if (newIndex>=ctx.pinnedUl.children.length&&ctx.looseOpts.length)
-					this._highlightSelectOption(ctx,1,0,true);
-			} else if (e.key==="Enter") {
-				this._closeSelectDropdown(ctx,e);
-				this._moveCellCursor(0,e.shiftKey?-1:1);
-				e.stopPropagation();
-			} else if (e.key==="Escape")
-				this._closeSelectDropdown(ctx,e);
-		}
+			_handleSelectKeyDown(e,ctx) {
+				if (e.key==="ArrowDown"||e.key==="ArrowUp") {
+					e.preventDefault();
+					const direction=e.key==="ArrowDown"?1:-1;
+					const currentIndex=ctx.highlightLiIndex==null?0:ctx.highlightLiIndex;
+					const newIndex=currentIndex+direction;
+					if (ctx.highlightUlIndex??true) {
+						if (ctx.looseOpts.length&&newIndex<ctx.looseOpts.length&&newIndex>=0)
+							this._highlightSelectOption(ctx,1,newIndex,true);
+						else if (newIndex==-1&&ctx.pinnedUl.children.length)
+							this._highlightSelectOption(ctx,0,ctx.pinnedUl.children.length-1,true);
+					} else if (newIndex>=0&&newIndex<ctx.pinnedUl.children.length)
+						this._highlightSelectOption(ctx,0,newIndex,true);
+					else if (newIndex>=ctx.pinnedUl.children.length&&ctx.looseOpts.length)
+						this._highlightSelectOption(ctx,1,0,true);
+				} else if (e.key==="Enter") {
+					this._closeSelectDropdown(ctx,e);
+					this._moveCellCursor(0,e.shiftKey?-1:1);
+					e.stopPropagation();
+				} else if (e.key==="Tab") {
+					e.preventDefault();
+					this._closeSelectDropdown(ctx,e);
+					this._moveCellCursor(e.shiftKey?-1:1,0,e);
+					e.stopPropagation();
+				} else if (e.key==="Escape")
+					this._closeSelectDropdown(ctx,e);
+			}
 	
 		/**
 		 * Handle mouse movement over list items by updating the highlighted option.
