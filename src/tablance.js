@@ -1757,15 +1757,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		if (this._bulkEditArea?.contains(document.activeElement))
 			return;
 		this._tooltip.style.visibility="hidden";
-		if (e.key==="Escape"&&e.ctrlKey) {
-			e.preventDefault();
-			e.stopPropagation();
-			if (this._inEditMode)
-				this._exitEditMode(false);
-			// Ctrl+Esc: discard current open-group edits (or delete creator) and close it.
-			this._discardActiveGroupEdits();
-			return;
-		}
 		if (this._inEditMode&&this._activeSchemaNode.input.type==="date") {
 			if (e.key.slice(0,5)==="Arrow") {
 				if (e.ctrlKey)
@@ -1777,46 +1768,65 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 		this.rootEl.style.outline="none";//see #spreadsheetOnFocus
 		if (!this._inEditMode) {
-			switch (e.code) {
-				case "ArrowUp":
-					this._moveCellCursor(0,-1,e);
-				break; case "ArrowDown":
-					this._moveCellCursor(0,1,e);
-				break; case "ArrowLeft":
-					this._moveCellCursor(-1,0,e);
-				break; case "ArrowRight":
-					this._moveCellCursor(1,0,e);
-				break; case "Escape":
-					this._groupEscape();
-				break; case "NumpadAdd":
-					this._scrollToCursor();
-					this. _expandRow(this._selectedCell.closest(".main-table>tbody>tr"));
-				break; case "NumpadSubtract":
-					this._scrollToCursor();
-					this._contractRow(this._selectedCell.closest(".main-table>tbody>tr"));
-				break; case "Enter": case "NumpadEnter": case "Space":
-					if (e.code=="Space")
-						e.preventDefault();//prevent scrolling when pressing space
-					this._scrollToCursor();
-					if (this._activeSchemaNode.type=="expand")
-						// the preventDefault() above can SOMETIMES suppress transitionend;
-						// deferring one frame ensures the animation completes and details is closed properly.
-						return requestAnimationFrame(()=>this._toggleRowExpanded(this._selectedCell.parentElement));
-					if (this._activeSchemaNode.type=="select")
-						return this._rowCheckboxChange(this._selectedCell,e.shiftKey);
-					if (e.code.endsWith("Enter")||this._activeSchemaNode.input?.type==="button") {
-						e.preventDefault();//prevent newline from being entered into textareas
-						return this._enterCell(e);
-					}
-			}
+			this._spreadsheetKeyDown_non_edit_mode(e);
 		} else {
+			// Scroll back to the active cell if the user types (non-modifier key) or hits Escape while editing;
+			// this also catches blocked keystrokes so the cursor stays in view even when input is denied.
+			const inputKeyPressed=!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.isComposing&&
+				(e.key.length === 1 || ["Backspace","Delete","Space"].includes(e.code));
+			if (inputKeyPressed||e.key=="Escape")
+				this._scrollToCursor();
 			switch (e.key) {
 				case "Enter":
 					this._moveCellCursor(0,e.shiftKey?-1:1,e);
 				break; case "Escape":
 					this._exitEditMode(false);
+					if (e.ctrlKey) {
+						e.preventDefault();
+						e.stopPropagation();
+						if (this._inEditMode)
+							this._exitEditMode(false);
+						// Ctrl+Esc: discard current open-group edits (or delete creator) and close it.
+						this._discardActiveGroupEdits();
+					}
 			}
 		}
+	}
+
+	_spreadsheetKeyDown_non_edit_mode(e) {
+		const scrollKeys=["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Escape",
+							"NumpadAdd","NumpadSubtract","Enter","NumpadEnter"];
+		if (scrollKeys.includes(e.code))
+			this._scrollToCursor();
+		switch (e.code) {
+			case "ArrowUp":
+				this._moveCellCursor(0,-1,e);
+			break; case "ArrowDown":
+				this._moveCellCursor(0,1,e);
+			break; case "ArrowLeft":
+				this._moveCellCursor(-1,0,e);
+			break; case "ArrowRight":
+				this._moveCellCursor(1,0,e);
+			break; case "Escape":
+				this._groupEscape();
+			break; case "NumpadAdd":
+				this. _expandRow(this._selectedCell.closest(".main-table>tbody>tr"));
+			break; case "NumpadSubtract":
+				this._contractRow(this._selectedCell.closest(".main-table>tbody>tr"));
+			break; case "Enter": case "NumpadEnter": case "Space":
+				if (e.code=="Space")
+					e.preventDefault();//prevent scrolling when pressing space
+				if (this._activeSchemaNode.type=="expand")
+					// the preventDefault() above can SOMETIMES suppress transitionend;
+					// deferring one frame ensures the animation completes and details is closed properly.
+					return requestAnimationFrame(()=>this._toggleRowExpanded(this._selectedCell.parentElement));
+				if (this._activeSchemaNode.type=="select")
+					return this._rowCheckboxChange(this._selectedCell,e.shiftKey);
+				if (e.code.endsWith("Enter")||this._activeSchemaNode.input?.type==="button") {
+					e.preventDefault();//prevent newline from being entered into textareas
+					return this._enterCell(e);
+				}
+			}
 	}
 
 	_groupEscape() {
