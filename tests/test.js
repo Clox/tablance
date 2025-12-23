@@ -15,7 +15,7 @@ const handleDescriptionChange=(payload)=>{
 import Tablance from "../src/tablance.js";
 document.addEventListener("DOMContentLoaded", ()=>{
 	function descFunc(value, dataRow,col,rowIndex) {
-		return `fo<u>ob</u>ar ${rowIndex} - ${dataRow.descLetter}`
+		return `fo<u>ob</u>ar ${rowIndex} - ${dataRow.descLetter??"foo"}`
 	}
 	var renderPNum=(pnumInt)=>{
 	if (!pnumInt)
@@ -200,7 +200,8 @@ document.addEventListener("DOMContentLoaded", ()=>{
 					};
 	const tablanceContainer=document.getElementById("tablanceContainer1");
 
-	const schema={main:{columns:myTablanceCols},details:myExpansion, meta:{foo:"root"}};
+	const schema={main:{columns:myTablanceCols, toolbar:{defaultInsert:true}}
+					,details:myExpansion, meta:{foo:"root"}};
 	
 	const myTablance=new Tablance(tablanceContainer,schema, true, true
 					,{defaultFileMetasToShow:{filename:false},lang:lang, useFakeFileUploadTest:true});

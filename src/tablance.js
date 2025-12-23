@@ -624,8 +624,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			// 	this._colSchemaNodes.push(processedCol);
 			// }
 			this._colSchemaNodes=this._schema.main.columns;
-			if (this._opts.searchbar!=false)
-				this._setupSearchbar();
+			this._setupToolbar();
 			this._createTableHeader();
 			this._createTableBody();
 			(new ResizeObserver(this._updateSizesOfViewportAndCols.bind(this))).observe(hostEl);
@@ -656,19 +655,29 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return instanceNode;
 	}
 
-	addData(data, highlight=false) {
+	/**Add data-rows to the main table.
+	 * @param {object[]} data Rows to insert.
+	 * @param {boolean} highlight If true, clear filter, highlight, and scroll to the first new row.
+	 * @param {boolean} prepend If true, insert rows at the start of the dataset instead of the end. */
+	addData(data, highlight=false, prepend=false) {
 		if (this._onlyDetails)
 			return this._setDataForOnlyDetails(data)
 		const oldLen=this._data.length;
-		if (highlight)
-			this._searchInput.value=this._filter="";//remove any filter
-		this._data=this._allData=this._allData.concat(data);
+		if (highlight) {
+			this._filter="";
+			if (this._searchInput)
+				this._searchInput.value="";
+		}
+		if (prepend)
+			this._data=this._allData=data.concat(this._allData);
+		else
+			this._data=this._allData=this._allData.concat(data);
 		//this._data.push(...data);//much faster than above but causes "Maximum call stack size exceeded" for large data
 		let sortingOccured=this._sortData();
 		if (this._filter)
 			this._filterData(this._filter);
 		else {
-			if (sortingOccured)
+			if (sortingOccured||prepend)
 				this._refreshTable();
 			else
 				this._maybeAddTrs();
@@ -1522,15 +1531,45 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	
 		
 	
-	_setupSearchbar() {
-		this._searchInput=this.rootEl.appendChild(document.createElement("input"));
-		this._searchInput.type=this._searchInput.className="search";
-		this._searchInput.placeholder=this.lang.filterPlaceholder;
-		this._searchInput.addEventListener("input",e=>this._onSearchInput(e));
+	_setupToolbar() {
+		const toolbarCfg=this._schema.main?.toolbar;
+		const defaultInsertEnabled=!!toolbarCfg?.defaultInsert;
+		const shouldRenderSearch=this._opts.searchbar!=false;
+		if (!defaultInsertEnabled&&!shouldRenderSearch)
+			return;
+
+		const bar=this.rootEl.appendChild(document.createElement("div"));
+		bar.className="toolbar";
+
+		const btnWrap=bar.appendChild(document.createElement("div"));
+		btnWrap.className="toolbar-left";
+
+		if (defaultInsertEnabled) {
+			const insertBtn=document.createElement("button");
+			insertBtn.type="button";
+			insertBtn.className="toolbar-insert-btn";
+			insertBtn.textContent=this.lang.insertNew;
+			insertBtn.addEventListener("click",()=>this._onToolbarInsertClick());
+			btnWrap.appendChild(insertBtn);
+		}
+
+		if (shouldRenderSearch) {
+			this._searchInput=bar.appendChild(document.createElement("input"));
+			this._searchInput.type="search";
+			this._searchInput.className="search";
+			this._searchInput.placeholder=this.lang.filterPlaceholder;
+			this._searchInput.addEventListener("input",e=>this._onSearchInput(e));
+		}
 	}
 
 	_onSearchInput(_e) {
 		this._filterData(this._searchInput.value);
+	}
+
+	_onToolbarInsertClick() {
+		if (this._onlyDetails)
+			return;
+		this.addData([{}],true, true);
 	}
 
 	_setupSpreadsheet(onlyDetails) {

@@ -80,6 +80,24 @@
 	.search {
 		float: right;
 	}
+	>.toolbar {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 8px;
+		margin-bottom: 4px;
+		.search {
+			float: none;
+		}
+		.toolbar-left {
+			display: inline-flex;
+			gap: 8px;
+			align-items: center;
+		}
+		.toolbar-insert-btn {
+			cursor: pointer;
+		}
+	}
 	thead {
 		background: #ddd;
 	}

@@ -76,6 +76,24 @@
 .tablance .search {
   float: right;
 }
+.tablance > .toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.tablance > .toolbar .search {
+  float: none;
+}
+.tablance > .toolbar .toolbar-left {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+.tablance > .toolbar .toolbar-insert-btn {
+  cursor: pointer;
+}
 .tablance thead {
   background: #ddd;
 }
