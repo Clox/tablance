@@ -202,13 +202,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 
 	const schema={main:{columns:myTablanceCols, toolbar:{
 		defaultInsert:true,
-		items:[
-			{
-				input:{type:"button",btnText:"Insert new2",
-					clickHandler:({tablance})=>tablance?.addData([{}],true,true)
-				}
-			}
-		]
+		items:[]
 	}}
 					,details:myExpansion, meta:{foo:"root"}};
 	

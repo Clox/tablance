@@ -57,7 +57,8 @@ const DEFAULT_LANG=Object.freeze({
 	selectNoResultsFound:"No results found",
 	selectEmpty:"<None>",
 	selectCreateOption:"Create [{text}]",
-	insertNew:"Insert new",
+	insertEntry:"Insert new",
+	insertRow:"Insert new",
 	creationValidationFailed:"Invalid entry. Please check the fields and try again.",
 	creationValidationFailedCancelInfo:"\n Select Delete to cancel.",
 	fieldValidationFailedHint:"Press Esc to cancel.",
@@ -479,7 +480,7 @@ class TablanceBase {
 	 * 					- cancelCreate: function() to abort the creation (removes the new item)
 	 * 				onCreateOpen Function If the entry of the repeated is group and "create" is set to true, then this
 	 * 					callback-function will be called when a new group is added, i.e. when the user interacts with
-	 * 					insertNew-cell, not when the data is actually created, that triggers "onCreate".
+	 * 					insertEntry-cell, not when the data is actually created, that triggers "onCreate".
 	 * 					It will get passed arguments: 1:instanceNode of the repeated-object
 	 * 				onCreateCancel Function If the entry of the repeated is group and "create" is set to true, then this
 	 * 					callback-function will be called when the creation of a new entry is canceled, either by leaving
@@ -503,7 +504,7 @@ class TablanceBase {
 	 * 					It gets 4 arguments: 1: object A, 2: object B, 3: rowData, 4: instanceNode
 	 * 					Return >0 to sort A after B, <0 to sort B after A, or ===0 to keep original order of A and B
 	 * 				creationText String Used if "create" is true. the text of the creation-cell. Default is "Insert new"
-	 * 					May also be set via opts->lang->insertNew
+	 * 					May also be set via opts->lang->insertEntry
 	 * 				deleteText String used if "create" is true. the text of the deletion-button. Default is "Delete"
 	 * 					can also be set via param opts->lang->delete
 	 * 				deleteAreYouSureText String Used if "create" is true. Text above yes/no-btns.
@@ -597,7 +598,8 @@ class TablanceBase {
 	 * 								deleteAreYouSureNo	"No" (Used in the deletion of repeat-items)
 	 * 								datePlaceholder "YYYY-MM-DD"
 	 * 								selectNoResultsFound "No results found"
-	 * 								insertNew "Insert new" (Used in repeat-schemaNode if create is set to true)
+	 * 								insertEntry "Insert new" (Used in repeat-schemaNode if create is set to true)
+	 * 								insertRow "Insert new" (Used for default toolbar insert button)
 	 * 							}
  	 * */
 constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
@@ -1533,10 +1535,16 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	
 	_setupToolbar() {
 		const toolbarCfg=this._schema.main?.toolbar;
-		const defaultInsertEnabled=!!toolbarCfg?.defaultInsert;
-		const customItems=toolbarCfg?.items??[];
-		const shouldRenderSearch=this._opts.searchbar!=false;
-		if (!defaultInsertEnabled&&!customItems.length&&!shouldRenderSearch)
+
+		//clone schema.main.toolbar.items so that we can make changes to it depending on certain options,  
+		// without actually modifying the passed in schema. Keep it user-owned.
+		const toolbarItems=[...(toolbarCfg?.items??[])];
+		if (toolbarCfg?.defaultInsert) {
+			toolbarItems.unshift({
+				input:{type:"button",btnText:this.lang.insertRow,clickHandler:()=>this.addData([{}],true,true)},
+			});
+		}
+		if (!toolbarItems.length&&this._opts.searchbar==false)
 			return;
 
 		const bar=this.rootEl.appendChild(document.createElement("div"));
@@ -1545,7 +1553,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const btnWrap=bar.appendChild(document.createElement("div"));
 		btnWrap.className="toolbar-left";
 
-		for (const item of customItems) {
+		for (const item of toolbarItems) {
 			const fieldSchema=item?.field??item;//accept both wrapped and plain field schemas
 			if (!fieldSchema || fieldSchema.input?.type!=="button")
 				continue;//currently only buttons make sense in toolbar
@@ -1566,16 +1574,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			btnWrap.appendChild(btn);
 		}
 
-		if (defaultInsertEnabled) {
-			const insertBtn=document.createElement("button");
-			insertBtn.type="button";
-			insertBtn.className="toolbar-insert-btn";
-			insertBtn.textContent=this.lang.insertNew;
-			insertBtn.addEventListener("click",()=>this._onToolbarInsertClick());
-			btnWrap.appendChild(insertBtn);
-		}
-
-		if (shouldRenderSearch) {
+		if (this._opts.searchbar!=false) {
 			this._searchInput=bar.appendChild(document.createElement("input"));
 			this._searchInput.type="search";
 			this._searchInput.className="search";
@@ -1586,12 +1585,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	_onSearchInput(_e) {
 		this._filterData(this._searchInput.value);
-	}
-
-	_onToolbarInsertClick() {
-		if (this._onlyDetails)
-			return;
-		this.addData([{}],true, true);
 	}
 
 	_setupSpreadsheet(onlyDetails) {
@@ -2099,7 +2092,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 * this method creates the last entry that the user interacts with to create another entry
 	 * @param {Object} repeatedObj The object representing the repeated-container*/
 	_generateRepeatedCreator(repeatedObj) {
-		const creationTxt=repeatedObj.schemaNode.creationText??this.lang.insertNew;
+		const creationTxt=repeatedObj.schemaNode.creationText??this.lang.insertEntry;
 		const creationSchemaNode={type:"group",closedRender:()=>creationTxt,entries:[],
 							creator:true//used to know that this entry is the creator and that it should not be sorted
 							,onOpen:repeatedObj.createNewEntry.bind(repeatedObj),cssClass:"repeat-insertion"};
