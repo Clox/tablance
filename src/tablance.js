@@ -1534,8 +1534,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_setupToolbar() {
 		const toolbarCfg=this._schema.main?.toolbar;
 		const defaultInsertEnabled=!!toolbarCfg?.defaultInsert;
+		const customItems=toolbarCfg?.items??[];
 		const shouldRenderSearch=this._opts.searchbar!=false;
-		if (!defaultInsertEnabled&&!shouldRenderSearch)
+		if (!defaultInsertEnabled&&!customItems.length&&!shouldRenderSearch)
 			return;
 
 		const bar=this.rootEl.appendChild(document.createElement("div"));
@@ -1543,6 +1544,27 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 		const btnWrap=bar.appendChild(document.createElement("div"));
 		btnWrap.className="toolbar-left";
+
+		for (const item of customItems) {
+			const fieldSchema=item?.field??item;//accept both wrapped and plain field schemas
+			if (!fieldSchema || fieldSchema.input?.type!=="button")
+				continue;//currently only buttons make sense in toolbar
+
+			const btn=document.createElement("button");
+			btn.type="button";
+			btn.className=`toolbar-custom-btn ${fieldSchema.cssClass??""}`.trim();
+			btn.textContent=fieldSchema.input.btnText ?? fieldSchema.title ?? fieldSchema.id ?? "";
+			btn.addEventListener("click",e=>{
+				const payload=this._makeCallbackPayload(null,{event:e},{
+					schemaNode:fieldSchema,
+					dataContext:null,
+					dataKey:fieldSchema.id,
+					mainIndex:null
+				});
+				fieldSchema.input.clickHandler?.(payload);
+			});
+			btnWrap.appendChild(btn);
+		}
 
 		if (defaultInsertEnabled) {
 			const insertBtn=document.createElement("button");

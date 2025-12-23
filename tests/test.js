@@ -200,7 +200,16 @@ document.addEventListener("DOMContentLoaded", ()=>{
 					};
 	const tablanceContainer=document.getElementById("tablanceContainer1");
 
-	const schema={main:{columns:myTablanceCols, toolbar:{defaultInsert:true}}
+	const schema={main:{columns:myTablanceCols, toolbar:{
+		defaultInsert:true,
+		items:[
+			{
+				input:{type:"button",btnText:"Insert new2",
+					clickHandler:({tablance})=>tablance?.addData([{}],true,true)
+				}
+			}
+		]
+	}}
 					,details:myExpansion, meta:{foo:"root"}};
 	
 	const myTablance=new Tablance(tablanceContainer,schema, true, true
@@ -243,4 +252,3 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	// 	,myExpansion,null,true);
 	// 	myTablance2.addData(data);
 });
-
