@@ -440,8 +440,8 @@ class TablanceBase {
 	 * 							visible either if the number of options exceed minOptsFilter or allowCreateNew is true
 	 * 					}
 	 * 					----Properties specific to input "button"----
-	 * 						btnText String If type is "button" then this will be the text on it
-	 * 						clickHandler Function A callback-function that will get called  when the button is pressed. 
+	 * 						text String If type is "button" then this will be the text on it
+	 * 						onClick Function A callback-function that will get called  when the button is pressed. 
 	 * 							It will get passed arguments 1:event, 2:dataObject
 	 * 							,3:mainDataIndex,4:schemaNode,5:instanceNode(if inside details)
   	 * 				}
@@ -1541,7 +1541,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const toolbarItems=[...(toolbarCfg?.items??[])];
 		if (toolbarCfg?.defaultInsert) {
 			toolbarItems.unshift({
-				input:{type:"button",btnText:this.lang.insertRow,clickHandler:()=>this.addData([{}],true,true)},
+				input:{type:"button",text:this.lang.insertRow,onClick:()=>this.addData([{}],true,true)},
 			});
 		}
 		if (!toolbarItems.length&&this._opts.searchbar==false)
@@ -2100,15 +2100,15 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const deleteControls={type:"lineup",cssClass:"delete-controls"
 			,onBlur:cel=>cel.selEl.querySelector(".lineup").classList.remove("delete-confirming")
 			,entries:[{type:"field",input:{type:"button",
-				btnText:schemaNode.deleteText??this.lang.delete
-				,clickHandler:this._beginDeleteRepeated.bind(this)},cssClass:"delete"},
+				text:schemaNode.deleteText??this.lang.delete
+				,onClick:this._beginDeleteRepeated.bind(this)},cssClass:"delete"},
 			{type:"field",input:{type:"button"
-				,btnText:schemaNode.areYouSureNoText??this.lang.deleteAreYouSureNo
-				,clickHandler:this._cancelDelete.bind(this)},cssClass:"no"
+				,text:schemaNode.areYouSureNoText??this.lang.deleteAreYouSureNo
+				,onClick:this._cancelDelete.bind(this)},cssClass:"no"
 				,title:schemaNode.deleteAreYouSureText??this.lang.deleteAreYouSure},
 			{type:"field",input:{type:"button"
-				,btnText:schemaNode.areYouSureYesText??this.lang.deleteAreYouSureYes
-				,clickHandler:deleteHandler},cssClass:"yes"}]};
+				,text:schemaNode.areYouSureYesText??this.lang.deleteAreYouSureYes
+				,onClick:deleteHandler},cssClass:"yes"}]};
 		const rawNode=schemaNode?.[SCHEMA_WRAPPER_MARKER]?schemaNode.raw:schemaNode;
 		const parentWrapped=schemaNode?.[SCHEMA_WRAPPER_MARKER]?schemaNode.parent:null;
 		if (!rawNode)
@@ -2144,7 +2144,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		_generateButton(schemaNode,mainIndex,parentEl,rowData,instanceNode=null) {
 			const btn=parentEl.appendChild(document.createElement("button"));
 			btn.tabIndex="-1";//so it can't be tabbed to
-			btn.innerHTML=schemaNode.input.btnText;
+			btn.innerHTML=schemaNode.input.text;
 			btn.addEventListener("click",e=>{
 				const payload=this._makeCallbackPayload(instanceNode,{event:e},{
 					schemaNode,
@@ -2152,7 +2152,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					mainIndex,
 					dataKey:schemaNode.id
 				});
-				schemaNode.input.clickHandler?.(payload);
+				schemaNode.input.onClick?.(payload);
 			});
 
 			//prevent gaining focus upon clicking it whhich would cause problems. It should be "focused" by having the
@@ -4442,8 +4442,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		//define the group-structure for the file
 		
 		const fileGroup=this._schemaCopyWithDeleteButton({type:"group",entries:[]},this._fileOnDelete);
-		fileGroup.entries[0].entries.unshift({type:"field",input:{type:"button",btnText:"Open"
-				,clickHandler:(e,file,mainIndex,schemaNode,btnObj)=>{
+		fileGroup.entries[0].entries.unshift({type:"field",input:{type:"button",text:"Open"
+				,onClick:(e,file,mainIndex,schemaNode,btnObj)=>{
 					rowData??=this._data[mainIndex];
 					fileSchemaNode.input.openHandler?.(e,file,fileSchemaNode,fileInstanceNode.dataObj,mainIndex,btnObj);
 			}},
