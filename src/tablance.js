@@ -4795,6 +4795,8 @@ export default class Tablance extends TablanceBase {
 		const mainIndex=this._mainRowIndex;
 		const rowData=Number.isInteger(mainIndex)?this._data?.[mainIndex]:null;
 		const mainRow=!openGroup?rowData:null;
+		const prevVal=this._cellCursorDataObj[this._activeSchemaNode.id];
+		this._cellCursorDataObj[this._activeSchemaNode.id]=inputVal;
 		const rowJustCommitted=mainRow?this._commitRowIfNew(mainRow,{
 				mainIndex,
 				changes:{[this._activeSchemaNode.id]:inputVal},
@@ -4816,7 +4818,6 @@ export default class Tablance extends TablanceBase {
 		});
 
 		if (doUpdate) {
-			this._cellCursorDataObj[this._activeSchemaNode.id]=inputVal;
 			if (this._activeDetailsCell){
 				
 				//so if discarding group-changes (ctrl+esc) only repaints touched nodes
@@ -4836,8 +4837,11 @@ export default class Tablance extends TablanceBase {
 				this._updateBulkEditAreaCells([this._activeSchemaNode]);
 			this._updateDependentCells(this._activeSchemaNode,this._activeDetailsCell);
 			this._selectedCellVal=inputVal;
-		} else
+		} else {
+			// Revert data if change was cancelled.
+			this._cellCursorDataObj[this._activeSchemaNode.id]=prevVal;
 			this._inputVal=this._selectedCellVal;
+		}
 	}
 
 	_scrollToCursor() {
