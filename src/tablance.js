@@ -211,6 +211,7 @@ class TablanceBase {
 	_tooltip;//reference to html-element used as tooltip
 	_dropdownAlignmentContainer;
 	lang;//object holding strings used in the table for various purposes. See DEFAULT_LANG for default values					
+	_rowMeta=new WeakMap();//tracks row lifecycle metadata per data object
 
 	/**
 	 * @param {HTMLElement} hostEl An element which the table is going to be added to
@@ -569,6 +570,9 @@ class TablanceBase {
 	 * 								data. This function allows reading that data easily. It traverses up the schema tree
 	 * 								until it finds a meta with the specified key or reaches the root.
   	 * 			}
+	 * 			Schema root may also define:
+	 * 				onRowCommit Function Callback fired once when a new row is first committed. Receives the standard
+	 * 					payload from _makeCallbackPayload plus row, reason, changes, etc.
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							searchbar Bool that defaults to true. If true then there will be a searchbar that
 	 * 								can be used to filter the data.
@@ -601,7 +605,7 @@ class TablanceBase {
 	 * 								insertEntry "Insert new" (Used in repeat-schemaNode if create is set to true)
 	 * 								insertRow "Insert new" (Used for default toolbar insert button)
 	 * 							}
- 	 * */
+	 * */
 constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this.lang=Object.assign(Object.create(null),DEFAULT_LANG,opts?.lang??{});
 		this.hostEl=hostEl;
@@ -693,6 +697,15 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 	}
 
+	/**Explicitly create and insert a new, uncommitted row. */
+	insertNewRow(rowData={}, options) {
+		const {highlight=true,prepend=true}=options??{};
+		const newRow=rowData?structuredClone(rowData):Object.assign(Object.create(null),{});
+		this._rowMeta.set(newRow,{isNew:true});
+		this.addData([newRow],highlight,prepend);
+		return newRow;
+	}
+
 	/**Change or add any data in the table
 	 * @param {int|object} dataRow_or_mainIndex Either the actual data-object that should be updated, or its index in
 	 * 											the current view
@@ -715,6 +728,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			dataRow=this._data[mainIndx=dataRow_or_mainIndex];
 		else //if (typeof dataRow_or_mainIndex=="object")
 			mainIndx=this._data.indexOf(dataRow=dataRow_or_mainIndex);
+		const dataPathKey=typeof dataPath=="string"?dataPath:dataPath?.join(".");
 		dataPath=typeof dataPath=="string"?dataPath.split(/\.|(?=\[\d*\])/):dataPath;
 
 		if (!onlyRefresh) {//if we're not only refreshing the cell but actually modifying/adding data
@@ -730,6 +744,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				else//not last step and key is index or property-name
 					dataPortion=dataPortion[key]??(dataPortion[key]=i%2?[]:{});
 			}
+			if (dataRow)
+				this._commitRowIfNew(dataRow,{
+					mainIndex: mainIndx,
+					changes:{[dataPathKey??""]:newData},
+					reason:"updateData"
+				});
 		}
 
 		if (mainIndx<this._scrollRowIndex||mainIndx>=this._scrollRowIndex+this._numRenderedRows)
@@ -1541,7 +1561,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const toolbarItems=[...(toolbarCfg?.items??[])];
 		if (toolbarCfg?.defaultInsert) {
 			toolbarItems.unshift({
-				input:{type:"button",text:this.lang.insertRow,onClick:()=>this.addData([{}],true,true)},
+				input:{type:"button",text:this.lang.insertRow,onClick:()=>this.insertNewRow()},
 			});
 		}
 		if (!toolbarItems.length&&this._opts.searchbar==false)
@@ -1611,8 +1631,24 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return val;
 	}
 
+	_commitRowIfNew(rowData,ctx={}) {
+		const meta=this._rowMeta.get(rowData);
+		if (!meta?.isNew)
+			return false;
+		meta.isNew=false;
+		const payload=this._makeCallbackPayload(null,{
+			row: rowData,
+			...ctx,
+		},{
+			mainIndex: ctx.mainIndex,
+			dataContext: rowData,
+			schemaNode: this._schema
+		});
+		this._schema?.onRowCommit?.(payload);
+		return true;
+	}
+
 	_spreadsheetOnFocus(_e) {
-		console.log(_e.target)
 		const tabbedTo=this._highlightOnFocus;
 		//when the table is tabbed to, whatever focus-outline that the css has set for it should show, but then when the
 		//user starts to navigate using the keyboard we want to hide it because it is a bit distracting when both it and
@@ -2696,7 +2732,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		
 	}
 
-	_closeGroup(groupObject,targetCell=null) {
+	_buildGroupPayload(groupObject) {
 		let mainIndex=groupObject.rowIndex;
 		for (let root=groupObject; root.parent; root=root.parent)
 			if (root.rowIndex!=null)
@@ -2711,7 +2747,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				const val=node.schemaNode.input?.type==="select"?this._getSelectValue(rawVal):rawVal;
 				changes[key]=val;
 			}
-		const closePayload={
+		const closeState={doClose:true,preventMessage:undefined};
+		const payload={
 			schemaNode: groupObject.schemaNode,
 			data: groupObject.dataObj,
 			instanceNode: groupObject,
@@ -2722,15 +2759,30 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			changed: !!dirty?.size,
 			changes
 		};
-		let doClose=true;
-		let preventMessage;
-		closePayload.preventClose=(message)=>{
-			doClose=false;
-			preventMessage=message??preventMessage;
+		payload.preventClose=(message)=>{
+			closeState.doClose=false;
+			closeState.preventMessage=message??closeState.preventMessage;
 		};
-		groupObject.schemaNode.onClose?.(closePayload);
-		if (!doClose) {
-			const tooltipMessage=[preventMessage,this.lang.groupValidationFailedHint].filter(Boolean).join("\n");
+		return {payload,closeState};
+	}
+
+	_closeGroup(groupObject,targetCell=null) {
+		const {payload,closeState}=this._buildGroupPayload(groupObject);
+		if (payload.changed) {
+			const row=this._data?.[payload.mainIndex];
+			if (row)
+				payload.rowJustCommitted=this._commitRowIfNew(row,{
+					mainIndex: payload.mainIndex,
+					changes: payload.changes,
+					reason: "commit",
+					group: groupObject
+				});
+		}
+		groupObject.schemaNode.onCommit?.(payload);
+		payload.reason="commit";
+		groupObject.schemaNode.onClose?.(payload);
+		if (!closeState.doClose) {
+			const tooltipMessage=[closeState.preventMessage,this.lang.groupValidationFailedHint].filter(Boolean).join("\n");
 			this._showTooltip(tooltipMessage,groupObject.el,this._determinePreventPlacement(groupObject.el,targetCell));
 			return false;
 		}
@@ -3550,8 +3602,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const group=this._getOpenGroupAncestor(this._activeDetailsCell);
 		if (!group)
 			return;
-		if (group.creating)
+		const {payload}=this._buildGroupPayload(group);
+		payload.reason="discard";
+		if (group.creating) {
+			group.schemaNode.onClose?.(payload);
 			return this._deleteCell(group);
+		}
 
 		// Restore data back to snapshot. It *should* only be needed if there are dirty fields so probably could run in
 		// a condition together with  _rerenderDirtyFields. But running it just in case and it's cheap anyway
@@ -3559,6 +3615,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			this._restoreGroupSnapshot(group.dataObj,group._openSnapshot);
 		
 		this._rerenderDirtyFields(group);
+		group.schemaNode.onClose?.(payload);
 		this._finalizeGroupClose(group);
 		this._selectCell(group.el,group.schemaNode,group.dataObj);
 		this._activeDetailsCell=group;
@@ -4695,8 +4752,17 @@ class TablanceBulk extends TablanceBase {
 	_doEditSave() {
 		const inputVal=this._activeSchemaNode.input.type==="select"?this._getSelectValue(this._inputVal):this._inputVal;
 		this._cellCursorDataObj[this._activeSchemaNode.id]=inputVal;
-		for (const selectedRow of this.mainInstance._selectedRows)
+		for (const selectedRow of this.mainInstance._selectedRows) {
 			selectedRow[this._activeSchemaNode.id]=inputVal;
+			const mainIndex=this.mainInstance._data.indexOf(selectedRow);
+			if (mainIndex!==-1)
+				this.mainInstance._commitRowIfNew(selectedRow,{
+					mainIndex,
+					changes:{[this._activeSchemaNode.id]:inputVal},
+					reason:"bulk-edit",
+					schemaNode:this._activeSchemaNode
+				});
+		}
 		for (const selectedTr of this.mainInstance._mainTbody.querySelectorAll("tr.selected"))
 			this.mainInstance.updateData(selectedTr.dataset.dataRowIndex,this._activeSchemaNode.id,inputVal,false,true);
 		this._updateDetailsCell(this._activeDetailsCell,this._cellCursorDataObj);
@@ -4721,6 +4787,15 @@ export default class Tablance extends TablanceBase {
 		let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
 		const inputVal=this._activeSchemaNode.input.type==="select"
 			?this._getSelectValue(this._inputVal):this._inputVal;
+		const openGroup=this._getOpenGroupAncestor(this._activeDetailsCell);
+		const mainIndex=this._mainRowIndex;
+		const mainRow=!openGroup&&Number.isInteger(mainIndex)?this._data?.[mainIndex]:null;
+		const rowJustCommitted=mainRow?this._commitRowIfNew(mainRow,{
+				mainIndex,
+				changes:{[this._activeSchemaNode.id]:inputVal},
+				reason:"edit",
+				schemaNode:this._activeSchemaNode
+			}):false;
 
 		this._activeSchemaNode.input.onChange?.({
 			newValue: inputVal,
@@ -4730,6 +4805,7 @@ export default class Tablance extends TablanceBase {
 			schemaNode: this._activeSchemaNode,
 			instanceNode: this._activeDetailsCell,
 			closestMeta: key => this._closestMeta(this._activeSchemaNode, key),
+			rowJustCommitted,
 			cancelUpdate: () => doUpdate=false
 		});
 

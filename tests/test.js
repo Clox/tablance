@@ -204,7 +204,11 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		defaultInsert:true,
 		items:[]
 	}}
-					,details:myExpansion, meta:{foo:"root"}};
+					,details:myExpansion, meta:{foo:"root"}
+					,onRowCommit:payload=>console.log("onRowCommit",payload)
+					,onChange:payload=>console.log("root.onChange",payload)
+					,onCommit:payload=>console.log("group.onCommit",payload)
+					,onClose:payload=>console.log("group.onClose",payload)};
 	
 	const myTablance=new Tablance(tablanceContainer,schema, true, true
 					,{defaultFileMetasToShow:{filename:false},lang:lang, useFakeFileUploadTest:true});
