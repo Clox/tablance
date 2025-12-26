@@ -935,13 +935,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				mainIndex=this._mainRowIndex??0;
 		}
 		const repeatedContainer=overrides.repeatedContainer??getRepeatedContainer(instanceNode);
+		const rowData=overrides.rowData??(Number.isInteger(mainIndex)?this._data?.[mainIndex]:undefined);
 		const dataContext=overrides.dataContext?? repeatedContainer?.parent?.dataObj
 			?? instanceNode?.parent?.dataObj
-			?? this._data?.[mainIndex];
+			?? rowData;
 		const dataKey=overrides.dataKey??repeatedContainer?.schemaNode?.id??schemaNode?.id;
 		const dataArray=overrides.dataArray??repeatedContainer?.dataObj;
 		const bulkEdit=overrides.bulkEdit??!!this.mainInstance;
-		return {tablance:this,schemaNode,instanceNode,dataContext,dataKey,mainIndex,bulkEdit,dataArray,
+		return {tablance:this,schemaNode,instanceNode,dataContext,rowData,dataKey,mainIndex,bulkEdit,dataArray,
 			closestMeta: key => this._closestMeta(schemaNode,key),...extra
 		};
 
@@ -1642,6 +1643,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		},{
 			mainIndex: ctx.mainIndex,
 			dataContext: rowData,
+			rowData,
 			schemaNode: this._schema
 		});
 		this._schema?.onRowCommit?.(payload);
@@ -2748,12 +2750,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				changes[key]=val;
 			}
 		const closeState={doClose:true,preventMessage:undefined};
+		const rowData=Number.isInteger(mainIndex)?this._data?.[mainIndex]:undefined;
 		const payload={
 			schemaNode: groupObject.schemaNode,
 			data: groupObject.dataObj,
 			instanceNode: groupObject,
 			parentInstanceNode: groupObject.parent,
 			mainIndex,
+			rowData,
 			mode: groupObject.creating?"create":"edit",
 			closestMeta: key => this._closestMeta(groupObject.schemaNode, key),
 			changed: !!dirty?.size,
@@ -4789,7 +4793,8 @@ export default class Tablance extends TablanceBase {
 			?this._getSelectValue(this._inputVal):this._inputVal;
 		const openGroup=this._getOpenGroupAncestor(this._activeDetailsCell);
 		const mainIndex=this._mainRowIndex;
-		const mainRow=!openGroup&&Number.isInteger(mainIndex)?this._data?.[mainIndex]:null;
+		const rowData=Number.isInteger(mainIndex)?this._data?.[mainIndex]:null;
+		const mainRow=!openGroup?rowData:null;
 		const rowJustCommitted=mainRow?this._commitRowIfNew(mainRow,{
 				mainIndex,
 				changes:{[this._activeSchemaNode.id]:inputVal},
@@ -4802,6 +4807,7 @@ export default class Tablance extends TablanceBase {
 			oldValue: this._selectedCellVal,
 			dataKey: this._activeSchemaNode.id,
 			dataContext: this._cellCursorDataObj,
+			rowData,
 			schemaNode: this._activeSchemaNode,
 			instanceNode: this._activeDetailsCell,
 			closestMeta: key => this._closestMeta(this._activeSchemaNode, key),
