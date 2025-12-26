@@ -573,6 +573,7 @@ class TablanceBase {
 	 * 			Schema root may also define:
 	 * 				onRowCommit Function Callback fired once when a new row is first committed. Receives the standard
 	 * 					payload from _makeCallbackPayload plus row, reason, changes, etc.
+	 * 				schema Object The full schema tree passed to the constructor (wrapper facade).
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							searchbar Bool that defaults to true. If true then there will be a searchbar that
 	 * 								can be used to filter the data.
@@ -942,7 +943,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const dataKey=overrides.dataKey??repeatedContainer?.schemaNode?.id??schemaNode?.id;
 		const dataArray=overrides.dataArray??repeatedContainer?.dataObj;
 		const bulkEdit=overrides.bulkEdit??!!this.mainInstance;
-		return {tablance:this,schemaNode,instanceNode,dataContext,rowData,dataKey,mainIndex,bulkEdit,dataArray,
+		return {tablance:this,schema:this._schema,schemaNode,instanceNode,dataContext,rowData,dataKey,mainIndex,
+			bulkEdit,dataArray,
 			closestMeta: key => this._closestMeta(schemaNode,key),...extra
 		};
 
