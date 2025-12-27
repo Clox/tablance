@@ -1907,6 +1907,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				e.preventDefault();
 				this._moveCellCursor(e.shiftKey?-1:1,0,e);
 			break; case "Escape":
+				if (e.ctrlKey) {
+					e.preventDefault();
+					e.stopPropagation();
+					this._discardActiveGroupEdits();
+					return;
+				}
 				this._groupEscape();
 			break; case "NumpadAdd":
 				this. _expandRow(this._selectedCell.closest(".main-table>tbody>tr"));
