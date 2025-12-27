@@ -564,6 +564,7 @@ class TablanceBase {
 	 * 					Receives payload:
 	 * 					- schemaNode: current schema-node
 	 * 					- data: dataObj of the group
+	 * 					- parentData: immediate parent data object (never the repeated array), null at root
 	 * 					- instanceNode: instance-node of the group
 	 * 					- parentInstanceNode: parent instance-node if any
 	 * 					- mainIndex: index of the main row
@@ -578,8 +579,9 @@ class TablanceBase {
   	 * 			}
 	 * 			Schema root may also define:
 	 * 				onDataCommit Function Root-level persistence hook fired on the final commit flush (root->leaf).
-	 * 					Receives payload from _makeCallbackPayload plus a changes diff. Use this instead of
-	 * 					group.onCommit when persisting data.
+	 * 					Receives payload from _makeCallbackPayload plus a changes diff and parentData. Use this instead
+	 * 					of group.onCommit when persisting data. parentData is always the owning object (never the
+	 * 					repeated array), and null for root rows so persistence never has to inspect schema structure.
 	 * 				onRowCommit Function Callback fired once when a new row is first committed. Receives the standard
 	 * 					payload from _makeCallbackPayload plus row, reason, changes, etc.
 	 * 				schema Object The full schema tree passed to the constructor (wrapper facade).
@@ -2764,6 +2766,24 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return schemaNode?.input?.type==="select"?this._getSelectValue(rawVal):rawVal;
 	}
 
+	_resolveParentData(instanceNode,targetData) {
+		// Find the nearest ancestor that owns the data object (never the repeated array itself).
+		let parent=instanceNode?.parent??null;
+		// Skip repeated wrappers so persistence never receives array containers as parents.
+		while (parent?.schemaNode?.type==="repeated")
+			parent=parent.parent;
+		// Walk past ancestors that share the same data object (e.g. top-level details list) to reach a real owner.
+		while (parent && parent.dataObj===targetData) {
+			parent=parent.parent;
+			while (parent?.schemaNode?.type==="repeated")
+				parent=parent.parent;
+		}
+		const candidate=parent?.dataObj;
+		// Arrays are structural; only objects qualify as parentData. This keeps persistence focused on data+parentData
+		// without relying on rowData or schema shape.
+		return candidate&&typeof candidate==="object"&&!Array.isArray(candidate)?candidate:null;
+	}
+
 	_collectGroupChanges(groupObject) {
 		const dirty=groupObject?._dirtyFields;
 		if (!dirty?.size)
@@ -2788,6 +2808,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const closeState={doClose:true,preventMessage:undefined};
 		const payload=this._makeCallbackPayload(groupObject,{
 			data: groupObject.dataObj,
+			parentData: this._resolveParentData(groupObject,groupObject.dataObj),
 			parentInstanceNode: groupObject.parent,
 			mode: groupObject.creating?"create":"edit",
 			changed,
@@ -2854,6 +2875,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_queueDataCommit(payload,instanceNode=null,depthOverride=null) {
 		// Queue a non-group commit and flush immediately when no outer transactions are open.
 		// This keeps onDataCommit as the single persistence surface regardless of schema node type.
+		payload.parentData=this._resolveParentData(instanceNode,payload?.data)??null;
 		const txn=this._queueCommitIntent(payload,{instanceNode,depth: depthOverride});
 		if (!txn.stack.length)
 			this._flushBufferedGroupCommits();
