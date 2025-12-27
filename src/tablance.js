@@ -19,6 +19,9 @@ Object.defineProperties(INSTANCE_NODE_PROTOTYPE,{
 	nextSibling:{get() {
 		const siblings=this.parent?.children;
 		return siblings!=null&&Number.isInteger(this.index)?siblings[this.index+1]:undefined;
+	}},
+	closestMeta:{value(metaKey) {
+		return this.tablance?._closestMeta(this.schemaNode, metaKey);
 	}}
 });
 const SELECTABLE_DETAILS_NODE_PROTOTYPE=Object.assign(Object.create(INSTANCE_NODE_PROTOTYPE),{
