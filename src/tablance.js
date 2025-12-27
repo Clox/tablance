@@ -573,8 +573,13 @@ class TablanceBase {
 	 * 								objects may be specified via "meta" propert and this object may contain any custom
 	 * 								data. This function allows reading that data easily. It traverses up the schema tree
 	 * 								until it finds a meta with the specified key or reaches the root.
+	 * 				onCommit Function Fires when the group's changes are finalized. Prefer the root-level
+	 * 					onDataCommit hook for persistence; this exists for UI/backwards-compatibility.
   	 * 			}
 	 * 			Schema root may also define:
+	 * 				onDataCommit Function Root-level persistence hook fired on the final commit flush (root->leaf).
+	 * 					Receives payload from _makeCallbackPayload plus a changes diff. Use this instead of
+	 * 					group.onCommit when persisting data.
 	 * 				onRowCommit Function Callback fired once when a new row is first committed. Receives the standard
 	 * 					payload from _makeCallbackPayload plus row, reason, changes, etc.
 	 * 				schema Object The full schema tree passed to the constructor (wrapper facade).
@@ -2747,17 +2752,29 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		
 	}
 
+	_getCommitChangeKey(schemaNode) {
+		if (!schemaNode)
+			return;
+		return schemaNode._dataPath?.join(".")??schemaNode.id
+			??(schemaNode._autoId!=null?String(schemaNode._autoId):undefined);
+	}
+
+	_normalizeCommitValue(schemaNode,rawVal) {
+		// For selects, store the option value instead of the full {text,value} object.
+		return schemaNode?.input?.type==="select"?this._getSelectValue(rawVal):rawVal;
+	}
+
 	_collectGroupChanges(groupObject) {
 		const dirty=groupObject?._dirtyFields;
 		if (!dirty?.size)
 			return {changed:false,changes:{}};
 		const changes={};
 		for (const node of dirty) {
-			const key=node.schemaNode._dataPath?.join(".")??node.schemaNode.id??String(node.schemaNode._autoId);
+			const key=this._getCommitChangeKey(node.schemaNode);
+			if (key==null)
+				continue;
 			const rawVal=node.dataObj?.[node.schemaNode.id];
-			// For selects, store the option value instead of the full {text,value} object.
-			const val=node.schemaNode.input?.type==="select"?this._getSelectValue(rawVal):rawVal;
-			changes[key]=val;
+			changes[key]=this._normalizeCommitValue(node.schemaNode,rawVal);
 		}
 		return {changed:true,changes};
 	}
@@ -2813,15 +2830,33 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return true;
 	}
 
-	_bufferGroupCommit(groupObject,payload) {
-		// Buffer commit intent until the outermost group closes; keep sequence for stable ordering.
+	_queueCommitIntent(payload,{group=null,instanceNode=null,depth=null,schemaNode=null}={}) {
+		// Central place to collect commit payloads so flush ordering stays deterministic.
 		const txn=this._editTransaction??(this._editTransaction={stack:[],intents:[],seq:0});
+		const schema=schemaNode??payload?.schemaNode??instanceNode?.schemaNode??group?.schemaNode;
+		const commitDepth=depth??instanceNode?.path?.length??group?.path?.length??0;
 		txn.intents.push({
-			group: groupObject,
+			group,
+			instanceNode: instanceNode??group,
+			schemaNode: schema,
 			payload,
-			depth: groupObject.path?.length??0,
+			depth: commitDepth,
 			seq: txn.seq++
 		});
+		return txn;
+	}
+
+	_bufferGroupCommit(groupObject,payload) {
+		// Buffer commit intent until the outermost group closes; keep sequence for stable ordering.
+		this._queueCommitIntent(payload,{group: groupObject, instanceNode: groupObject});
+	}
+
+	_queueDataCommit(payload,instanceNode=null,depthOverride=null) {
+		// Queue a non-group commit and flush immediately when no outer transactions are open.
+		// This keeps onDataCommit as the single persistence surface regardless of schema node type.
+		const txn=this._queueCommitIntent(payload,{instanceNode,depth: depthOverride});
+		if (!txn.stack.length)
+			this._flushBufferedGroupCommits();
 	}
 
 	_removeGroupFromTransaction(groupObject,discardIntents=false) {
@@ -2837,16 +2872,21 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	_flushBufferedGroupCommits() {
-		// Commit in root->leaf order once no open groups remain; repeated nodes are structural only.
+		// Emit commits in root->leaf order once no open groups remain; repeated nodes are structural only.
+		// group.onCommit is still emitted for compatibility, but root.onDataCommit is the persistence hook.
 		const txn=this._editTransaction;
 		if (!txn?.intents.length)
 			return;
 		// Flush only after the outermost group commits so parents fire before children and cancels can discard safely.
 		const commits=txn.intents
-			.filter(({group})=>group?.schemaNode?.type!=="repeated")
+			.filter(({schemaNode})=>schemaNode?.type!=="repeated")
 			.sort((a,b)=>a.depth-b.depth||a.seq-b.seq);
-		for (const {group,payload} of commits)
+		const onDataCommit=this._schema?.onDataCommit;
+		for (const {group,payload} of commits) {
+			const dataCommitPayload=onDataCommit?{...payload,changes:{...(payload?.changes??{})}}:payload;
+			onDataCommit?.(dataCommitPayload);
 			group?.schemaNode?.onCommit?.(payload);
+		}
 		txn.intents.length=0;
 		this._editTransaction=null;
 	}
@@ -3711,6 +3751,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._finalizeGroupClose(group);
 		this._selectCell(group.el,group.schemaNode,group.dataObj);
 		this._activeDetailsCell=group;
+		if (!this._editTransaction?.stack?.length)
+			this._flushBufferedGroupCommits();
 	}
 
 	/**
@@ -4845,17 +4887,36 @@ class TablanceBulk extends TablanceBase {
 
 	_doEditSave() {
 		const inputVal=this._activeSchemaNode.input.type==="select"?this._getSelectValue(this._inputVal):this._inputVal;
+		const commitKey=this.mainInstance._getCommitChangeKey(this._activeSchemaNode);
+		const commitVal=this.mainInstance._normalizeCommitValue(this._activeSchemaNode,inputVal);
 		this._cellCursorDataObj[this._activeSchemaNode.id]=inputVal;
 		for (const selectedRow of this.mainInstance._selectedRows) {
 			selectedRow[this._activeSchemaNode.id]=inputVal;
 			const mainIndex=this.mainInstance._data.indexOf(selectedRow);
-			if (mainIndex!==-1)
-				this.mainInstance._commitRowIfNew(selectedRow,{
+			if (mainIndex!==-1) {
+				const changes=commitKey?{[commitKey]:commitVal}:{};
+				const hasChanges=!!Object.keys(changes).length;
+				const rowJustCommitted=this.mainInstance._commitRowIfNew(selectedRow,{
 					mainIndex,
-					changes:{[this._activeSchemaNode.id]:inputVal},
+					changes,
 					reason:"bulk-edit",
 					schemaNode:this._activeSchemaNode
 				});
+				const payload=this.mainInstance._makeCallbackPayload(null,{
+					data: selectedRow,
+					changes,
+					changed: hasChanges,
+					rowJustCommitted
+				},{
+					schemaNode: this._activeSchemaNode,
+					dataContext: selectedRow,
+					rowData: selectedRow,
+					mainIndex,
+					dataKey: this._activeSchemaNode.id,
+					bulkEdit: true
+				});
+				this.mainInstance._queueDataCommit(payload,null);
+			}
 		}
 		for (const selectedTr of this.mainInstance._mainTbody.querySelectorAll("tr.selected"))
 			this.mainInstance.updateData(selectedTr.dataset.dataRowIndex,this._activeSchemaNode.id,inputVal,false,true);
@@ -4887,9 +4948,13 @@ export default class Tablance extends TablanceBase {
 		const mainRow=!openGroup?rowData:null;
 		const prevVal=this._cellCursorDataObj[this._activeSchemaNode.id];
 		this._cellCursorDataObj[this._activeSchemaNode.id]=inputVal;
+		const commitKey=this._getCommitChangeKey(this._activeSchemaNode);
+		const commitVal=this._normalizeCommitValue(this._activeSchemaNode,this._cellCursorDataObj[this._activeSchemaNode.id]);
+		const commitChanges=commitKey?{[commitKey]:commitVal}:{};
+		const hasCommitChanges=!!Object.keys(commitChanges).length;
 		const rowJustCommitted=mainRow?this._commitRowIfNew(mainRow,{
 				mainIndex,
-				changes:{[this._activeSchemaNode.id]:inputVal},
+				changes: commitChanges,
 				reason:"edit",
 				schemaNode:this._activeSchemaNode
 			}):false;
@@ -4911,7 +4976,8 @@ export default class Tablance extends TablanceBase {
 			if (this._activeDetailsCell){
 				
 				//so if discarding group-changes (ctrl+esc) only repaints touched nodes
-				this._markDirtyField(this._activeDetailsCell);
+				if (openGroup)
+					this._markDirtyField(this._activeDetailsCell);
 
 				const doHeightUpdate=this._updateDetailsCell(this._activeDetailsCell,this._cellCursorDataObj);
 				if (doHeightUpdate&&!this._onlyDetails)
@@ -4927,6 +4993,22 @@ export default class Tablance extends TablanceBase {
 				this._updateBulkEditAreaCells([this._activeSchemaNode]);
 			this._updateDependentCells(this._activeSchemaNode,this._activeDetailsCell);
 			this._selectedCellVal=inputVal;
+			if (!openGroup) {
+				const payload=this._makeCallbackPayload(this._activeDetailsCell,{
+					data: this._cellCursorDataObj,
+					changes: commitChanges,
+					changed: hasCommitChanges,
+					rowJustCommitted
+				},{
+					schemaNode: this._activeSchemaNode,
+					dataContext: this._cellCursorDataObj,
+					rowData,
+					mainIndex,
+					dataKey: this._activeSchemaNode.id,
+					instanceNode: this._activeDetailsCell
+				});
+				this._queueDataCommit(payload,this._activeDetailsCell);
+			}
 		} else {
 			// Revert data if change was cancelled.
 			this._cellCursorDataObj[this._activeSchemaNode.id]=prevVal;

@@ -58,9 +58,9 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			},
 		];
 	const myExpansion={meta:{"foo":"details", "baz":42},type:"list",titlesColWidth:"8em",entries:[
-		{type:"repeated",title:"repeated group with nested repeated group",create:true,entry:
+		{type:"repeated",id:"bar1",title:"repeated group with nested repeated group",create:true,entry:
 			{type:"group",onCommit:()=>console.log("outer group"),entries:[
-					{type:"repeated",title:"inner repeated group",create:true,entry:
+					{type:"repeated",id:"bar2",title:"inner repeated group",create:true,entry:
 						{type:"group",onCommit:()=>console.log("inner group"),entries:[
 							{type:"field", title:"inner field",id:"foooo",input:"text"}
 						]}
@@ -150,10 +150,20 @@ document.addEventListener("DOMContentLoaded", ()=>{
 				}
 			}
 		]}, 
-		{type:"list",onBlur:(a,b,c,d,e,)=>{
-			a=a;
-		},
-			title:"förordnande-lista",titlesColWidth:0,entries:[
+
+
+			{type:"list",title:"förordnande-lista",titlesColWidth:0,entries:[
+			{type:"repeated",id:"custodianshipChanges",create:true,entry:
+				{type:"group",entries:[
+						{type:"field",title:"Datum",id:"date",input:{type:"date"}},
+						{type:"field",title:"Typ av ställföreträdarskap",id:"type",input:{type:"text",}}
+					],
+				}
+			}
+		]},
+
+
+/* 		{type:"list",title:"förordnande-lista",titlesColWidth:0,entries:[
 			{type:"repeated",id:"custodianshipChanges",create:true,onCreate:payload=>console.log(payload)
 			,onDelete:(...args)=>console.log(args)
 			,sortCompare:(a,b)=>a.date>b.date?1:-1
@@ -172,7 +182,9 @@ document.addEventListener("DOMContentLoaded", ()=>{
 					}
 				}
 			}
-		]},
+		]}, */
+
+
 		{type:"lineup",title:"Bunch ",entries:[
 			{type:"field",title:"First thing",id:"first"},
 			{type:"field",title:"Second thing",id:"second",/* visibleIf:()=>false */},
@@ -211,7 +223,9 @@ document.addEventListener("DOMContentLoaded", ()=>{
 					};
 	const tablanceContainer=document.getElementById("tablanceContainer1");
 
-	const schema={main:{columns:myTablanceCols, toolbar:{
+	const schema={
+		onDataCommit:payload=>console.log(payload),
+		main:{columns:myTablanceCols, toolbar:{
 		defaultInsert:true,
 		items:[]
 	}}
