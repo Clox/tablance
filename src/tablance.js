@@ -223,7 +223,7 @@ class TablanceBase {
 	 * 			id String A unique identifier for the column. The value in the data that has this key will be used as
 	 * 				the value in the cell.
 	 * 			onEnter Function Callback fired when the cell is entered (before edit mode). Receives
-	 * 				{event,value,dataKey,dataContext,schemaNode,instanceNode,mainIndex,closestMeta,preventEnter}.
+	 * 				{event,value,schemaNode,instanceNode,mainIndex,closestMeta,preventEnter}.
 	 * 			title String The header-string of the column
 	 * 			width String The width of the column. This can be in either px or % units.
 	 * 				In case of % it will be calculated on the remaining space after all the fixed widths
@@ -366,8 +366,6 @@ class TablanceBase {
 	 * 							It receives a single object with:
 	 * 							- newValue: the incoming value
 	 * 							- oldValue: the previous value
-	 * 							- dataKey: schemaNode.id of the edited field
-	 * 							- dataContext: the data object being edited (row or nested object)
 	 * 							- schemaNode: schema node for the edited field
 	 * 							- instanceNode: the instance node if in details
 	 * 							- closestMeta: function(key) to read meta data closest to the schema node. In the schema
@@ -472,9 +470,8 @@ class TablanceBase {
 	 * 					"create" is true. It is considered committed when the cell-cursor has left the repeat-row after
 	 * 					having created it. Receives a single object:
 	 * 					- newDataItem: the newly created data object
-	 * 					- dataContext: the object owning the repeated array (row-data or nested object)
-	 * 					- dataKey: key on dataContext for the repeated array (repeated schema id)
-	 * 					- dataArray: the array the item-data was inserted into
+	 * 					- dataKey: optional key for the repeated array (creation context)
+	 * 					- dataArray: optional repeated array reference (creation context)
 	 * 					- itemIndex: index of the new item within dataArray
 	 * 					- repeatedSchemaNode: the repeated container schema node
 	 * 					- entrySchemaNode: the schema node for the created entry (often a group)
@@ -494,9 +491,8 @@ class TablanceBase {
 	 * 				onDelete Function Callback fired when the user has deleted an entry via the interface available if
 	 * 					"create" is true. Receives a payload object:
 	 * 					- deletedDataItem: the deleted data object
-	 * 					- dataContext: the object owning the repeated array (row-data or nested object)
-	 * 					- dataKey: key on dataContext for the repeated array (repeated schema id)
-	 * 					- dataArray: the repeated array after deletion
+	 * 					- dataKey: optional key for the repeated array (creation context)
+	 * 					- dataArray: optional repeated array reference
 	 * 					- itemIndex: index the deleted item had before removal
 	 * 					- repeatedSchemaNode: the repeated container schema node
 	 * 					- entrySchemaNode: the schema node for the deleted entry (often a group)
@@ -566,9 +562,8 @@ class TablanceBase {
 	 * 					- data: dataObj of the group
 	 * 					- parentData: immediate parent data object (never the repeated array), null at root
 	 * 					- instanceNode: instance-node of the group
-	 * 					- parentInstanceNode: parent instance-node if any
 	 * 					- mainIndex: index of the main row
-	 * 					- mode: "create"|"edit", whether the group was being created or already existed
+	 * 					- mode: "create"|"update", whether the group was being created or already existed
 	 * 					- preventClose(message?): cancel closing/committing, optional tooltip message
 	 *					- closestMeta: function(key) to read meta data closest to the schema node. In the schema
 	 * 								objects may be specified via "meta" propert and this object may contain any custom
@@ -582,7 +577,10 @@ class TablanceBase {
 	 * 					Receives payload from _makeCallbackPayload plus a changes diff and parentData. Use this instead
 	 * 					of group.onCommit when persisting data. parentData is captured when the node is created so
 	 * 					no ancestor walk is needed; it is always the owning object (never the repeated array), and
-	 * 					null for root rows so persistence never has to inspect schema structure.
+	 * 					null for root rows so persistence never has to inspect schema structure. dataKey/dataArray are
+	 * 					included for creation context only so persistence can avoid inspecting schema shape. The
+	 * 					onDataCommit payload is intentionally strict: legacy flags (changed/rowJustCommitted/etc)
+	 * 					are not emitted, and creation-only fields are excluded for updates.
 	 * 				onRowCommit Function Callback fired once when a new row is first committed. Receives the standard
 	 * 					payload from _makeCallbackPayload plus row, reason, changes, etc.
 	 * 				schema Object The full schema tree passed to the constructor (wrapper facade).
@@ -760,8 +758,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (dataRow)
 				this._commitRowIfNew(dataRow,{
 					mainIndex: mainIndx,
-					changes:{[dataPathKey??""]:newData},
-					reason:"updateData"
+					changes:{[dataPathKey??""]:newData}
 				});
 		}
 
@@ -947,24 +944,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (mainIndex==null)
 				mainIndex=this._mainRowIndex??0;
 		}
-		const repeatedContainer=overrides.repeatedContainer??getRepeatedContainer(instanceNode);
 		const rowData=overrides.rowData??(Number.isInteger(mainIndex)?this._data?.[mainIndex]:undefined);
-		const dataContext=overrides.dataContext?? repeatedContainer?.parent?.dataObj
-			?? instanceNode?.parent?.dataObj
-			?? rowData;
-		const dataKey=overrides.dataKey??repeatedContainer?.schemaNode?.id??schemaNode?.id;
-		const dataArray=overrides.dataArray??repeatedContainer?.dataObj;
 		const bulkEdit=overrides.bulkEdit??!!this.mainInstance;
-		return {tablance:this,schema:this._schema,schemaNode,instanceNode,dataContext,rowData,dataKey,mainIndex,
-			bulkEdit,dataArray,
-			closestMeta: key => this._closestMeta(schemaNode,key),...extra
-		};
-
-		function getRepeatedContainer(node) {
-			for (let cur=node; cur; cur=cur.parent)
-				if (cur.schemaNode?.type==="repeated")
-					return cur;
-		}
+		// Base payload is intentionally minimal; creation-only context (dataKey/dataArray) is injected only
+		// for onDataCommit so other callbacks are not burdened with persistence-only fields.
+		return {tablance:this,schemaTree:this._schema,schemaNode,instanceNode,rowData,mainIndex,bulkEdit,
+			closestMeta: key => this._closestMeta(schemaNode,key),...extra};
 	}
 
 	_findDescendantInstanceNodeById(searchInObj,idToFind) {
@@ -1656,7 +1641,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			...ctx,
 		},{
 			mainIndex: ctx.mainIndex,
-			dataContext: rowData,
 			rowData,
 			schemaNode: this._schema
 		});
@@ -2087,8 +2071,13 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			itemIndex: entryNode.index,
 			repeatedSchemaNode: repeatedContainer?.schemaNode,
 			entrySchemaNode: entryNode.schemaNode,
-			deletedInstanceNode: entryNode
-		},{repeatedContainer});
+			deletedInstanceNode: entryNode,
+			dataArray: repeatedContainer?.dataObj,
+			dataKey: repeatedContainer?.schemaNode?.id
+		},{
+			mainIndex: entryNode.rowIndex,
+			rowData: repeatedContainer?.parent?.dataObj
+		});
 		this._deleteCell(entryNode);
 		repeatedContainer?.schemaNode.onDelete?.(payload);
 	}
@@ -2211,9 +2200,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			btn.addEventListener("click",e=>{
 				const payload=this._makeCallbackPayload(instanceNode,{event:e},{
 					schemaNode,
-					dataContext:rowData,
-					mainIndex,
-					dataKey:schemaNode.id
+					mainIndex
 				});
 				schemaNode.input.onClick?.(payload);
 			});
@@ -2325,6 +2312,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				// Capture parentData at creation time so persistence never walks ancestors later.
 				const ownerData=collectionObj.dataObj;
 				rptCelObj.parentData=ownerData&&typeof ownerData==="object"&&!Array.isArray(ownerData)?ownerData:null;
+				rptCelObj.dataArray=Array.isArray(repeatData)?repeatData:undefined;
 				rptCelObj.insertionPoint=collectionObj.containerEl.appendChild(document.createComment("repeat-insert"));
 				childSchemaNode.create&&this._generateRepeatedCreator(rptCelObj);
 				repeatData?.forEach(repeatData=>this._repeatInsert(rptCelObj,false,repeatData));
@@ -2438,6 +2426,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const ownerData=collectionOrRepeated.schemaNode.type==="repeated"
 			?collectionOrRepeated.parent?.dataObj:collectionOrRepeated.dataObj;
 		itemObj.parentData=ownerData&&typeof ownerData==="object"&&!Array.isArray(ownerData)?ownerData:null;
+		if (collectionOrRepeated.schemaNode.type==="repeated")
+			itemObj.dataArray=Array.isArray(collectionOrRepeated.dataObj)?collectionOrRepeated.dataObj:undefined;
 
 		// Optional title element
 		let title;
@@ -2730,8 +2720,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					preventEnter:()=>doEnter=false
 				},{
 					schemaNode:this._activeSchemaNode,
-					dataContext:this._cellCursorDataObj,
-					dataKey:this._activeSchemaNode.id,
 					mainIndex:this._mainRowIndex
 				});
 				this._activeSchemaNode.onEnter(payload);
@@ -2801,25 +2789,27 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				mainIndex=root.rowIndex;
 		const {changed,changes}=this._collectGroupChanges(groupObject);
 		const closeState={doClose:true,preventMessage:undefined};
-		const payload=this._makeCallbackPayload(groupObject,{
+		const mode=groupObject.creating?"create":"update";
+		const normalizedChanges=groupObject.creating?null:changes;
+		const basePayload=this._makeCallbackPayload(groupObject,{
 			data: groupObject.dataObj,
 			parentData: groupObject.parentData??null,
-			parentInstanceNode: groupObject.parent,
-			mode: groupObject.creating?"create":"edit",
-			changed,
-			changes,
-			preventClose:(message)=>{
-				closeState.doClose=false;
-				closeState.preventMessage=message??closeState.preventMessage;
-			}
+			mode,
+			changes: normalizedChanges
 		},{
 			schemaNode: groupObject.schemaNode,
-			dataContext: groupObject.dataObj,
 			mainIndex,
 			rowData: Number.isInteger(mainIndex)?this._data?.[mainIndex]:undefined,
 			instanceNode: groupObject
 		});
-		return {payload,closeState};
+		const closePayload={...basePayload,
+			// preventClose is on the onClose payload only; it is not propagated to onDataCommit.
+			preventClose:(message)=>{
+				closeState.doClose=false;
+				closeState.preventMessage=message??closeState.preventMessage;
+			}
+		};
+		return {payload: basePayload,closePayload,closeState,changed};
 	}
 
 	_enterEditTransaction(groupObject) {
@@ -2856,10 +2846,21 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			const capturedParent=instanceNode?.parentData??group?.parentData??null;
 			payload.parentData=Array.isArray(capturedParent)?null:capturedParent;
 		}
+		if (!payload.mode)
+			payload.mode="update";
+		// Creation-only context should only be present for create commits.
+		const intentDataKey=payload.mode==="create"
+			?instanceNode?.schemaNode?.id??schema?.id
+			:undefined;
+		const intentDataArray=payload.mode==="create"
+			?instanceNode?.dataArray
+			:undefined;
 		txn.intents.push({
 			group,
 			instanceNode: instanceNode??group,
 			schemaNode: schema,
+			dataKey: intentDataKey,
+			dataArray: intentDataArray,
 			payload,
 			depth: commitDepth,
 			seq: txn.seq++
@@ -2879,6 +2880,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			const capturedParent=instanceNode?.parentData??null;
 			payload.parentData=Array.isArray(capturedParent)?null:capturedParent;
 		}
+		if (!payload.mode)
+			payload.mode="update";
+		if (payload.mode==="create")
+			payload.changes=null;
 		const txn=this._queueCommitIntent(payload,{instanceNode,depth: depthOverride});
 		if (!txn.stack.length)
 			this._flushBufferedGroupCommits();
@@ -2907,8 +2912,18 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			.filter(({schemaNode})=>schemaNode?.type!=="repeated")
 			.sort((a,b)=>a.depth-b.depth||a.seq-b.seq);
 		const onDataCommit=this._schema?.onDataCommit;
-		for (const {group,payload} of commits) {
-			const dataCommitPayload=onDataCommit?{...payload,changes:{...(payload?.changes??{})}}:payload;
+		for (const intent of commits) {
+			const {group,payload,dataKey,dataArray}=intent;
+			// dataKey/dataArray are creation context only (useful for inserts); they remain optional.
+			const creationContext=payload.mode==="create"?{
+				...(dataKey!==undefined?{dataKey}:{}),
+				...(dataArray!==undefined?{dataArray}:{}),
+			}:{};
+			const dataCommitPayload=onDataCommit?{
+				...payload,
+				changes: payload?.changes==null?null:{...(payload?.changes??{})},
+				...creationContext
+			}:payload;
 			onDataCommit?.(dataCommitPayload);
 			group?.schemaNode?.onCommit?.(payload);
 		}
@@ -2918,20 +2933,18 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	_closeGroup(groupObject,targetCell=null) {
 		this._enterEditTransaction(groupObject);
-		const {payload,closeState}=this._buildGroupPayload(groupObject);
-		if (payload.changed) {
+		const {payload,closePayload,closeState,changed}=this._buildGroupPayload(groupObject);
+		if (changed) {
 			const row=this._data?.[payload.mainIndex];
 			if (row)
-				payload.rowJustCommitted=this._commitRowIfNew(row,{
+				this._commitRowIfNew(row,{
 					mainIndex: payload.mainIndex,
 					changes: payload.changes,
-					reason: "commit",
 					group: groupObject
 				});
 		}
 		const commitPayload={...payload};
-		payload.reason="commit";
-		groupObject.schemaNode.onClose?.(payload);
+		groupObject.schemaNode.onClose?.(closePayload);
 		if (!closeState.doClose) {
 			const tooltipMessage=[closeState.preventMessage,this.lang.groupValidationFailedHint].filter(Boolean).join("\n");
 			this._showTooltip(tooltipMessage,groupObject.el,this._determinePreventPlacement(groupObject.el,targetCell));
@@ -3829,13 +3842,13 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				repeatedSchemaNode: repeatedContainer?.schemaNode,
 				entrySchemaNode: creationContainer.schemaNode,
 				newInstanceNode: repeatEntry,
-				cancelCreate: ()=>doCreate=false
+				cancelCreate: ()=>doCreate=false,
+				dataArray: repeatedContainer?.dataObj,
+				dataKey: repeatedContainer?.schemaNode?.id
 			},{
-				dataContext: parentDataContext,
 				mainIndex: root.rowIndex,
-				repeatedContainer,
-				bulkEdit: false,
-				dataKey: repeatedContainer?.schemaNode.id
+				rowData: parentDataContext,
+				bulkEdit: false
 			});
 			repeatEntry.creating=false;
 			creationContainer.schemaNode.onCreate?.(payload);
@@ -4920,24 +4933,21 @@ class TablanceBulk extends TablanceBase {
 			const mainIndex=this.mainInstance._data.indexOf(selectedRow);
 			if (mainIndex!==-1) {
 				const changes=commitKey?{[commitKey]:commitVal}:{};
-				const hasChanges=!!Object.keys(changes).length;
-				const rowJustCommitted=this.mainInstance._commitRowIfNew(selectedRow,{
+				const rowCreated=this.mainInstance._commitRowIfNew(selectedRow,{
 					mainIndex,
 					changes,
-					reason:"bulk-edit",
 					schemaNode:this._activeSchemaNode
 				});
+				const mode=rowCreated?"create":"update";
+				const normalizedChanges=mode==="create"?null:changes;
 				const payload=this.mainInstance._makeCallbackPayload(null,{
 					data: selectedRow,
-					changes,
-					changed: hasChanges,
-					rowJustCommitted
+					changes: normalizedChanges,
+					mode
 				},{
 					schemaNode: this._activeSchemaNode,
-					dataContext: selectedRow,
 					rowData: selectedRow,
 					mainIndex,
-					dataKey: this._activeSchemaNode.id,
 					bulkEdit: true
 				});
 				this.mainInstance._queueDataCommit(payload,null);
@@ -4976,24 +4986,20 @@ export default class Tablance extends TablanceBase {
 		const commitKey=this._getCommitChangeKey(this._activeSchemaNode);
 		const commitVal=this._normalizeCommitValue(this._activeSchemaNode,this._cellCursorDataObj[this._activeSchemaNode.id]);
 		const commitChanges=commitKey?{[commitKey]:commitVal}:{};
-		const hasCommitChanges=!!Object.keys(commitChanges).length;
-		const rowJustCommitted=mainRow?this._commitRowIfNew(mainRow,{
+		const rowCreated=mainRow?this._commitRowIfNew(mainRow,{
 				mainIndex,
 				changes: commitChanges,
-				reason:"edit",
 				schemaNode:this._activeSchemaNode
 			}):false;
+		const mode=rowCreated?"create":"update";
 
 		this._activeSchemaNode.input.onChange?.({
 			newValue: inputVal,
 			oldValue: this._selectedCellVal,
-			dataKey: this._activeSchemaNode.id,
-			dataContext: this._cellCursorDataObj,
 			rowData,
 			schemaNode: this._activeSchemaNode,
 			instanceNode: this._activeDetailsCell,
 			closestMeta: key => this._closestMeta(this._activeSchemaNode, key),
-			rowJustCommitted,
 			cancelUpdate: () => doUpdate=false
 		});
 
@@ -5015,21 +5021,19 @@ export default class Tablance extends TablanceBase {
 				this._unsortCol(this._activeSchemaNode.id);
 			}
 			if (this._selectedRows.indexOf(this._cellCursorDataObj)!=-1)//if edited row is checked/selected
-				this._updateBulkEditAreaCells([this._activeSchemaNode]);
+			this._updateBulkEditAreaCells([this._activeSchemaNode]);
 			this._updateDependentCells(this._activeSchemaNode,this._activeDetailsCell);
 			this._selectedCellVal=inputVal;
 			if (!openGroup) {
+				const normalizedChanges=mode==="create"?null:commitChanges;
 				const payload=this._makeCallbackPayload(this._activeDetailsCell,{
 					data: this._cellCursorDataObj,
-					changes: commitChanges,
-					changed: hasCommitChanges,
-					rowJustCommitted
+					changes: normalizedChanges,
+					mode
 				},{
 					schemaNode: this._activeSchemaNode,
-					dataContext: this._cellCursorDataObj,
 					rowData,
 					mainIndex,
-					dataKey: this._activeSchemaNode.id,
 					instanceNode: this._activeDetailsCell
 				});
 				this._queueDataCommit(payload,this._activeDetailsCell);
