@@ -58,6 +58,17 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			},
 		];
 	const myExpansion={meta:{"foo":"details", "baz":42},type:"list",titlesColWidth:"8em",entries:[
+		{type:"repeated",title:"repeated group with nested repeated group",create:true,entry:
+			{type:"group",onCommit:()=>console.log("outer group"),entries:[
+					{type:"repeated",title:"inner repeated group",create:true,entry:
+						{type:"group",onCommit:()=>console.log("inner group"),entries:[
+							{type:"field", title:"inner field",id:"foooo",input:"text"}
+						]}
+					},
+				],
+			},
+		},
+
 		{type:"field",title:"OnEnter demo",id:"enter_demo",onEnter:({mainIndex})=>{
 			myTablance.selectCell(mainIndex,"personnummer",{enterEditMode:true})
 		}},

@@ -191,6 +191,7 @@ class TablanceBase {
 	/* #generatingDetails=false;//this is a flag that gets set to true when a row gets expanded or an already expanded
 		//row gets scrolled into view, in short whenever the details-elements are generated. Then it gets unset when
 		//creation finishes. The reason for having this flag is so that update */
+	_editTransaction;//tracks buffered group commits so inner scopes can still be cancelled
 	_ignoreClicksUntil;//when being inside an open group and trying to double-click on another cell further down to
 
 
@@ -2736,6 +2737,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		groupObj.schemaNode.onOpen?.({preventDefault:()=>doOpen=false},groupObj);
 		if (!doOpen)
 			return;
+		this._enterEditTransaction(groupObj);
 		// Capture data snapshot on first open so cancel can restore in-place without breaking references.
 		if (!groupObj._openSnapshot)
 			groupObj._openSnapshot=this._cloneGroupData(groupObj.dataObj);
@@ -2787,7 +2789,70 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return {payload,closeState};
 	}
 
+	_enterEditTransaction(groupObject) {
+		// Track the currently open group stack; outermost close will flush buffered commits.
+		const txn=this._editTransaction??(this._editTransaction={stack:[],intents:[],seq:0});
+		if (!txn.stack.includes(groupObject))
+			txn.stack.push(groupObject);
+		return txn;
+	}
+
+	_isDescendantGroup(group,ancestor) {
+		// Check if one group path is nested under another so cancels can drop child intents.
+		if (!group||!ancestor)
+			return false;
+		if (group===ancestor)
+			return true;
+		const groupPath=group.path;
+		const ancestorPath=ancestor.path;
+		if (!Array.isArray(groupPath)||!Array.isArray(ancestorPath)||ancestorPath.length>groupPath.length)
+			return false;
+		for (let i=0;i<ancestorPath.length;i++)
+			if (groupPath[i]!==ancestorPath[i])
+				return false;
+		return true;
+	}
+
+	_bufferGroupCommit(groupObject,payload) {
+		// Buffer commit intent until the outermost group closes; keep sequence for stable ordering.
+		const txn=this._editTransaction??(this._editTransaction={stack:[],intents:[],seq:0});
+		txn.intents.push({
+			group: groupObject,
+			payload,
+			depth: groupObject.path?.length??0,
+			seq: txn.seq++
+		});
+	}
+
+	_removeGroupFromTransaction(groupObject,discardIntents=false) {
+		// Remove a group (and optionally its descendants) from the open stack and buffered intents.
+		const txn=this._editTransaction;
+		if (!txn)
+			return;
+		txn.stack=txn.stack.filter(openGroup=>!this._isDescendantGroup(openGroup,groupObject));
+		if (discardIntents)
+			txn.intents=txn.intents.filter(({group})=>!this._isDescendantGroup(group,groupObject));
+		if (!txn.stack.length&&(!txn.intents.length))
+			this._editTransaction=null;
+	}
+
+	_flushBufferedGroupCommits() {
+		// Commit in root->leaf order once no open groups remain; repeated nodes are structural only.
+		const txn=this._editTransaction;
+		if (!txn?.intents.length)
+			return;
+		// Flush only after the outermost group commits so parents fire before children and cancels can discard safely.
+		const commits=txn.intents
+			.filter(({group})=>group?.schemaNode?.type!=="repeated")
+			.sort((a,b)=>a.depth-b.depth||a.seq-b.seq);
+		for (const {group,payload} of commits)
+			group?.schemaNode?.onCommit?.(payload);
+		txn.intents.length=0;
+		this._editTransaction=null;
+	}
+
 	_closeGroup(groupObject,targetCell=null) {
+		this._enterEditTransaction(groupObject);
 		const {payload,closeState}=this._buildGroupPayload(groupObject);
 		if (payload.changed) {
 			const row=this._data?.[payload.mainIndex];
@@ -2799,7 +2864,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					group: groupObject
 				});
 		}
-		groupObject.schemaNode.onCommit?.(payload);
+		const commitPayload={...payload};
 		payload.reason="commit";
 		groupObject.schemaNode.onClose?.(payload);
 		if (!closeState.doClose) {
@@ -2810,6 +2875,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		if (groupObject.creating&&!this._closeRepeatedInsertion(groupObject))
 			return false;
 		this._finalizeGroupClose(groupObject);
+		// Buffer commit so outer groups can still cancel; flush once the outermost edit scope commits.
+		this._bufferGroupCommit(groupObject,commitPayload);
+		this._removeGroupFromTransaction(groupObject);
+		if (!this._editTransaction?.stack.length)
+			this._flushBufferedGroupCommits();
 		return true;
 	}
 
@@ -3623,6 +3693,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const group=this._getOpenGroupAncestor(this._activeDetailsCell);
 		if (!group)
 			return;
+		this._removeGroupFromTransaction(group,true);
 		const {payload}=this._buildGroupPayload(group);
 		payload.reason="discard";
 		if (group.creating) {
@@ -3778,8 +3849,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 		//in case this was called via instanceNode.select() it might be necessary to make sure parent-groups are open
 		for (let parentCell=instanceNode; parentCell=parentCell.parent;)
-			if (parentCell.schemaNode.type=="group")
+			if (parentCell.schemaNode.type=="group") {
 				parentCell.el.classList.add("open");
+				this._enterEditTransaction(parentCell);
+			}
 
 		this._adjustCursorPosSize(instanceNode.selEl??instanceNode.el);
 		this._activeDetailsCell=instanceNode;
