@@ -569,13 +569,11 @@ class TablanceBase {
 	 * 								objects may be specified via "meta" propert and this object may contain any custom
 	 * 								data. This function allows reading that data easily. It traverses up the schema tree
 	 * 								until it finds a meta with the specified key or reaches the root.
-	 * 				onCommit Function Fires when the group's changes are finalized. Prefer the root-level
-	 * 					onDataCommit hook for persistence; this exists for UI/backwards-compatibility.
   	 * 			}
 	 * 			Schema root may also define:
 	 * 				onDataCommit Function Root-level persistence hook fired on the final commit flush (root->leaf).
-	 * 					Receives payload from _makeCallbackPayload plus a changes diff and parentData. Use this instead
-	 * 					of group.onCommit when persisting data. parentData is captured when the node is created so
+	 * 					Receives payload from _makeCallbackPayload plus a changes diff and parentData. parentData is
+	 * 					captured when the node is created so
 	 * 					no ancestor walk is needed; it is always the owning object (never the repeated array), and
 	 * 					null for root rows so persistence never has to inspect schema structure. dataKey/dataArray are
 	 * 					included for creation context only so persistence can avoid inspecting schema shape. The
@@ -2903,13 +2901,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	_flushBufferedGroupCommits() {
 		// Emit commits in root->leaf order once no open groups remain; repeated nodes are structural only.
-		// group.onCommit is still emitted for compatibility, but root.onDataCommit is the persistence hook.
+		// Persistence is centralized here;
 		const txn=this._editTransaction;
 		if (!txn?.intents.length)
 			return;
 		// Flush only after the outermost group commits so parents fire before children and cancels can discard safely.
-		const commits=txn.intents
-			.filter(({schemaNode})=>schemaNode?.type!=="repeated")
+		const commits=txn.intents.filter(({schemaNode})=>schemaNode?.type!=="repeated")
 			.sort((a,b)=>a.depth-b.depth||a.seq-b.seq);
 		const onDataCommit=this._schema?.onDataCommit;
 		for (const intent of commits) {
@@ -2919,13 +2916,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				...(dataKey!==undefined?{dataKey}:{}),
 				...(dataArray!==undefined?{dataArray}:{}),
 			}:{};
-			const dataCommitPayload=onDataCommit?{
-				...payload,
-				changes: payload?.changes==null?null:{...(payload?.changes??{})},
-				...creationContext
-			}:payload;
-			onDataCommit?.(dataCommitPayload);
-			group?.schemaNode?.onCommit?.(payload);
+			onDataCommit?.({...payload,changes: payload?.changes==null?null:{...(payload?.changes??{})},
+				...creationContext});
 		}
 		txn.intents.length=0;
 		this._editTransaction=null;
