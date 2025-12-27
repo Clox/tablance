@@ -2739,39 +2739,45 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		
 	}
 
+	_collectGroupChanges(groupObject) {
+		const dirty=groupObject?._dirtyFields;
+		if (!dirty?.size)
+			return {changed:false,changes:{}};
+		const changes={};
+		for (const node of dirty) {
+			const key=node.schemaNode._dataPath?.join(".")??node.schemaNode.id??String(node.schemaNode._autoId);
+			const rawVal=node.dataObj?.[node.schemaNode.id];
+			// For selects, store the option value instead of the full {text,value} object.
+			const val=node.schemaNode.input?.type==="select"?this._getSelectValue(rawVal):rawVal;
+			changes[key]=val;
+		}
+		return {changed:true,changes};
+	}
+
 	_buildGroupPayload(groupObject) {
 		let mainIndex=groupObject.rowIndex;
 		for (let root=groupObject; root.parent; root=root.parent)
 			if (root.rowIndex!=null)
 				mainIndex=root.rowIndex;
-		const dirty=groupObject._dirtyFields;
-		const changes={};
-		if (dirty?.size)
-			for (const node of dirty) {
-				const key=node.schemaNode._dataPath?.join(".")??node.schemaNode.id??String(node.schemaNode._autoId);
-				const rawVal=node.dataObj?.[node.schemaNode.id];
-				// For selects, store the option value instead of the full {text,value} object.
-				const val=node.schemaNode.input?.type==="select"?this._getSelectValue(rawVal):rawVal;
-				changes[key]=val;
-			}
+		const {changed,changes}=this._collectGroupChanges(groupObject);
 		const closeState={doClose:true,preventMessage:undefined};
-		const rowData=Number.isInteger(mainIndex)?this._data?.[mainIndex]:undefined;
-		const payload={
-			schemaNode: groupObject.schemaNode,
+		const payload=this._makeCallbackPayload(groupObject,{
 			data: groupObject.dataObj,
-			instanceNode: groupObject,
 			parentInstanceNode: groupObject.parent,
-			mainIndex,
-			rowData,
 			mode: groupObject.creating?"create":"edit",
-			closestMeta: key => this._closestMeta(groupObject.schemaNode, key),
-			changed: !!dirty?.size,
-			changes
-		};
-		payload.preventClose=(message)=>{
-			closeState.doClose=false;
-			closeState.preventMessage=message??closeState.preventMessage;
-		};
+			changed,
+			changes,
+			preventClose:(message)=>{
+				closeState.doClose=false;
+				closeState.preventMessage=message??closeState.preventMessage;
+			}
+		},{
+			schemaNode: groupObject.schemaNode,
+			dataContext: groupObject.dataObj,
+			mainIndex,
+			rowData: Number.isInteger(mainIndex)?this._data?.[mainIndex]:undefined,
+			instanceNode: groupObject
+		});
 		return {payload,closeState};
 	}
 
