@@ -580,8 +580,9 @@ class TablanceBase {
 	 * 			Schema root may also define:
 	 * 				onDataCommit Function Root-level persistence hook fired on the final commit flush (root->leaf).
 	 * 					Receives payload from _makeCallbackPayload plus a changes diff and parentData. Use this instead
-	 * 					of group.onCommit when persisting data. parentData is always the owning object (never the
-	 * 					repeated array), and null for root rows so persistence never has to inspect schema structure.
+	 * 					of group.onCommit when persisting data. parentData is captured when the node is created so
+	 * 					no ancestor walk is needed; it is always the owning object (never the repeated array), and
+	 * 					null for root rows so persistence never has to inspect schema structure.
 	 * 				onRowCommit Function Callback fired once when a new row is first committed. Receives the standard
 	 * 					payload from _makeCallbackPayload plus row, reason, changes, etc.
 	 * 				schema Object The full schema tree passed to the constructor (wrapper facade).
@@ -2056,6 +2057,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		instanceNode.path=[...path];
 		instanceNode.dataObj=scopedRowData;
 		instanceNode.schemaNode=schemaNode;
+		if (instanceNode.parentData===undefined) {
+			const owner=instanceNode.parent?.schemaNode?.type==="repeated"
+				?instanceNode.parent.parent?.dataObj:instanceNode.parent?.dataObj;
+			instanceNode.parentData=owner&&typeof owner==="object"&&!Array.isArray(owner)?owner:null;
+		}
 		const protoForType=schemaNode.type==="field"?FIELD_INSTANCE_NODE_PROTOTYPE
 			:schemaNode.type==="group"?GROUP_INSTANCE_NODE_PROTOTYPE
 			:schemaNode.type==="repeated"?REPEATED_INSTANCE_NODE_PROTOTYPE
@@ -2316,6 +2322,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					this._createInstanceNode(collectionObj,entryI,REPEATED_INSTANCE_NODE_PROTOTYPE),
 					{children:[],schemaNode:childSchemaNode,dataObj:repeatData,path:[...path,entryI]}
 				);
+				// Capture parentData at creation time so persistence never walks ancestors later.
+				const ownerData=collectionObj.dataObj;
+				rptCelObj.parentData=ownerData&&typeof ownerData==="object"&&!Array.isArray(ownerData)?ownerData:null;
 				rptCelObj.insertionPoint=collectionObj.containerEl.appendChild(document.createComment("repeat-insert"));
 				childSchemaNode.create&&this._generateRepeatedCreator(rptCelObj);
 				repeatData?.forEach(repeatData=>this._repeatInsert(rptCelObj,false,repeatData));
@@ -2425,6 +2434,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			:schemaNode.type==="group"?GROUP_INSTANCE_NODE_PROTOTYPE
 			:INSTANCE_NODE_PROTOTYPE;
 		const itemObj=this._createInstanceNode(collectionOrRepeated,index,prototypeForChild);
+		// Capture parentData when the instance is created (never search later).
+		const ownerData=collectionOrRepeated.schemaNode.type==="repeated"
+			?collectionOrRepeated.parent?.dataObj:collectionOrRepeated.dataObj;
+		itemObj.parentData=ownerData&&typeof ownerData==="object"&&!Array.isArray(ownerData)?ownerData:null;
 
 		// Optional title element
 		let title;
@@ -2766,24 +2779,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return schemaNode?.input?.type==="select"?this._getSelectValue(rawVal):rawVal;
 	}
 
-	_resolveParentData(instanceNode,targetData) {
-		// Find the nearest ancestor that owns the data object (never the repeated array itself).
-		let parent=instanceNode?.parent??null;
-		// Skip repeated wrappers so persistence never receives array containers as parents.
-		while (parent?.schemaNode?.type==="repeated")
-			parent=parent.parent;
-		// Walk past ancestors that share the same data object (e.g. top-level details list) to reach a real owner.
-		while (parent && parent.dataObj===targetData) {
-			parent=parent.parent;
-			while (parent?.schemaNode?.type==="repeated")
-				parent=parent.parent;
-		}
-		const candidate=parent?.dataObj;
-		// Arrays are structural; only objects qualify as parentData. This keeps persistence focused on data+parentData
-		// without relying on rowData or schema shape.
-		return candidate&&typeof candidate==="object"&&!Array.isArray(candidate)?candidate:null;
-	}
-
 	_collectGroupChanges(groupObject) {
 		const dirty=groupObject?._dirtyFields;
 		if (!dirty?.size)
@@ -2808,7 +2803,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const closeState={doClose:true,preventMessage:undefined};
 		const payload=this._makeCallbackPayload(groupObject,{
 			data: groupObject.dataObj,
-			parentData: this._resolveParentData(groupObject,groupObject.dataObj),
+			parentData: groupObject.parentData??null,
 			parentInstanceNode: groupObject.parent,
 			mode: groupObject.creating?"create":"edit",
 			changed,
@@ -2856,6 +2851,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const txn=this._editTransaction??(this._editTransaction={stack:[],intents:[],seq:0});
 		const schema=schemaNode??payload?.schemaNode??instanceNode?.schemaNode??group?.schemaNode;
 		const commitDepth=depth??instanceNode?.path?.length??group?.path?.length??0;
+		if (payload.parentData===undefined) {
+			// parentData is captured when the node is created; avoid any runtime ancestor searching.
+			const capturedParent=instanceNode?.parentData??group?.parentData??null;
+			payload.parentData=Array.isArray(capturedParent)?null:capturedParent;
+		}
 		txn.intents.push({
 			group,
 			instanceNode: instanceNode??group,
@@ -2874,8 +2874,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	_queueDataCommit(payload,instanceNode=null,depthOverride=null) {
 		// Queue a non-group commit and flush immediately when no outer transactions are open.
-		// This keeps onDataCommit as the single persistence surface regardless of schema node type.
-		payload.parentData=this._resolveParentData(instanceNode,payload?.data)??null;
+		// parentData must already be captured on the instance; we avoid searching ancestors here.
+		if (payload.parentData===undefined) {
+			const capturedParent=instanceNode?.parentData??null;
+			payload.parentData=Array.isArray(capturedParent)?null:capturedParent;
+		}
 		const txn=this._queueCommitIntent(payload,{instanceNode,depth: depthOverride});
 		if (!txn.stack.length)
 			this._flushBufferedGroupCommits();
