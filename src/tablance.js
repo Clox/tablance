@@ -2884,6 +2884,19 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		// Flush only after the outermost group commits so parents fire before children and cancels can discard safely.
 		const commits=txn.intents.filter(({schemaNode})=>schemaNode?.type!=="repeated")
 			.sort((a,b)=>a.depth-b.depth||a.seq-b.seq);
+		const hasAnyRealCommit=commits.some(({payload})=>{
+			if (!payload)
+				return false;
+			if (payload.mode!=="update")
+				return true;
+			const changes=payload.changes;
+			return changes&&Object.keys(changes).length>0;
+		});
+		if (!hasAnyRealCommit) {
+			txn.intents.length=0;
+			this._editTransaction=null;
+			return;
+		}
 		const onDataCommit=this._schema?.onDataCommit;
 		const emitDataCommit=(payload,dataKey,dataArray)=>{
 			if (!onDataCommit)
@@ -2897,9 +2910,15 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		};
 		for (const intent of commits) {
 			const {payload,dataKey,dataArray}=intent;
+			if (payload?.mode==="update") {
+				const payloadChanges=payload?.changes;
+				if (!payloadChanges||!Object.keys(payloadChanges).length)
+					continue;
+			}
 			const rowData=payload.rowData;
-			const rowMeta=this._rowMeta.get(rowData);
-			if (rowMeta?.isNew) {
+			const rowMeta=rowData?this._rowMeta.get(rowData):undefined;
+			const rowWasNew=!!rowMeta?.isNew;
+			if (rowWasNew) {
 				// Persist the owning row first; it is the authoritative create when a row is new.
 				const rowPayload=this._makeCallbackPayload(null,{
 					data: rowData,
