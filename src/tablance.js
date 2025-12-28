@@ -2908,13 +2908,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					changes: null
 				},{
 					schemaNode: this._schema,
-					mainIndex: payload?.mainIndex,
+					mainIndex: payload.mainIndex,
 					rowData,
-					bulkEdit: payload?.bulkEdit
+					bulkEdit: payload.bulkEdit
 				});
 				emitDataCommit(rowPayload);
 				rowMeta.isNew=false;
-				if (payload?.data===rowData)
+				// If this payload is the row itself, skip it; child commits still emit after the row create.
+				if (payload.data===rowData)
 					continue;
 			}
 			emitDataCommit(payload,dataKey,dataArray);
