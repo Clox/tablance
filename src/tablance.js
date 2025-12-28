@@ -2897,10 +2897,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		};
 		for (const intent of commits) {
 			const {payload,dataKey,dataArray}=intent;
-			const rowData=payload?.rowData;
-			const rowMeta=rowData?this._rowMeta.get(rowData):undefined;
+			const rowData=payload.rowData;
+			const rowMeta=this._rowMeta.get(rowData);
 			if (rowMeta?.isNew) {
-				// Always persist the owning row before any of its child commits so upstream handlers see a real parent.
+				// Persist the owning row first; it is the authoritative create when a row is new.
 				const rowPayload=this._makeCallbackPayload(null,{
 					data: rowData,
 					parentData: null,
@@ -2914,6 +2914,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				});
 				emitDataCommit(rowPayload);
 				rowMeta.isNew=false;
+				if (payload?.data===rowData)
+					continue;
 			}
 			emitDataCommit(payload,dataKey,dataArray);
 		}
