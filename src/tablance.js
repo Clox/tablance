@@ -577,10 +577,9 @@ class TablanceBase {
 	 * 					no ancestor walk is needed; it is always the owning object (never the repeated array), and
 	 * 					null for root rows so persistence never has to inspect schema structure. dataKey/dataArray are
 	 * 					included for creation context only so persistence can avoid inspecting schema shape. The
-	 * 					onDataCommit payload is intentionally strict: legacy flags (changed/rowJustCommitted/etc)
-	 * 					are not emitted, and creation-only fields are excluded for updates.
-	 * 				onRowCommit Function Callback fired once when a new row is first committed. Receives the standard
-	 * 					payload from _makeCallbackPayload plus row, reason, changes, etc.
+	 * 					onDataCommit payload is intentionally strict: legacy flags are not emitted, and creation-only
+	 * 					fields are excluded for updates. Row creation is emitted via onDataCommit before any child
+	 * 					commit when the row is still marked new.
 	 * 				schema Object The full schema tree passed to the constructor (wrapper facade).
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							searchbar Bool that defaults to true. If true then there will be a searchbar that
@@ -737,7 +736,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			dataRow=this._data[mainIndx=dataRow_or_mainIndex];
 		else //if (typeof dataRow_or_mainIndex=="object")
 			mainIndx=this._data.indexOf(dataRow=dataRow_or_mainIndex);
-		const dataPathKey=typeof dataPath=="string"?dataPath:dataPath?.join(".");
 		dataPath=typeof dataPath=="string"?dataPath.split(/\.|(?=\[\d*\])/):dataPath;
 
 		if (!onlyRefresh) {//if we're not only refreshing the cell but actually modifying/adding data
@@ -753,11 +751,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				else//not last step and key is index or property-name
 					dataPortion=dataPortion[key]??(dataPortion[key]=i%2?[]:{});
 			}
-			if (dataRow)
-				this._commitRowIfNew(dataRow,{
-					mainIndex: mainIndx,
-					changes:{[dataPathKey??""]:newData}
-				});
 		}
 
 		if (mainIndx<this._scrollRowIndex||mainIndx>=this._scrollRowIndex+this._numRenderedRows)
@@ -1627,23 +1620,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		} else if (linkIndex!=-1&&val!=null)
 			this._rowsMeta.vals[linkIndex][key]=val;	
 		return val;
-	}
-
-	_commitRowIfNew(rowData,ctx={}) {
-		const meta=this._rowMeta.get(rowData);
-		if (!meta?.isNew)
-			return false;
-		meta.isNew=false;
-		const payload=this._makeCallbackPayload(null,{
-			row: rowData,
-			...ctx,
-		},{
-			mainIndex: ctx.mainIndex,
-			rowData,
-			schemaNode: this._schema
-		});
-		this._schema?.onRowCommit?.(payload);
-		return true;
 	}
 
 	_spreadsheetOnFocus(_e) {
@@ -2909,15 +2885,37 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const commits=txn.intents.filter(({schemaNode})=>schemaNode?.type!=="repeated")
 			.sort((a,b)=>a.depth-b.depth||a.seq-b.seq);
 		const onDataCommit=this._schema?.onDataCommit;
-		for (const intent of commits) {
-			const {group,payload,dataKey,dataArray}=intent;
-			// dataKey/dataArray are creation context only (useful for inserts); they remain optional.
+		const emitDataCommit=(payload,dataKey,dataArray)=>{
+			if (!onDataCommit)
+				return;
 			const creationContext=payload.mode==="create"?{
 				...(dataKey!==undefined?{dataKey}:{}),
 				...(dataArray!==undefined?{dataArray}:{}),
 			}:{};
-			onDataCommit?.({...payload,changes: payload?.changes==null?null:{...(payload?.changes??{})},
+			onDataCommit({...payload,changes: payload?.changes==null?null:{...(payload?.changes??{})},
 				...creationContext});
+		};
+		for (const intent of commits) {
+			const {payload,dataKey,dataArray}=intent;
+			const rowData=payload?.rowData;
+			const rowMeta=rowData?this._rowMeta.get(rowData):undefined;
+			if (rowMeta?.isNew) {
+				// Always persist the owning row before any of its child commits so upstream handlers see a real parent.
+				const rowPayload=this._makeCallbackPayload(null,{
+					data: rowData,
+					parentData: null,
+					mode: "create",
+					changes: null
+				},{
+					schemaNode: this._schema,
+					mainIndex: payload?.mainIndex,
+					rowData,
+					bulkEdit: payload?.bulkEdit
+				});
+				emitDataCommit(rowPayload);
+				rowMeta.isNew=false;
+			}
+			emitDataCommit(payload,dataKey,dataArray);
 		}
 		txn.intents.length=0;
 		this._editTransaction=null;
@@ -2925,16 +2923,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	_closeGroup(groupObject,targetCell=null) {
 		this._enterEditTransaction(groupObject);
-		const {payload,closePayload,closeState,changed}=this._buildGroupPayload(groupObject);
-		if (changed) {
-			const row=this._data?.[payload.mainIndex];
-			if (row)
-				this._commitRowIfNew(row,{
-					mainIndex: payload.mainIndex,
-					changes: payload.changes,
-					group: groupObject
-				});
-		}
+		const {payload,closePayload,closeState}=this._buildGroupPayload(groupObject);
 		const commitPayload={...payload};
 		groupObject.schemaNode.onClose?.(closePayload);
 		if (!closeState.doClose) {
@@ -4925,12 +4914,8 @@ class TablanceBulk extends TablanceBase {
 			const mainIndex=this.mainInstance._data.indexOf(selectedRow);
 			if (mainIndex!==-1) {
 				const changes=commitKey?{[commitKey]:commitVal}:{};
-				const rowCreated=this.mainInstance._commitRowIfNew(selectedRow,{
-					mainIndex,
-					changes,
-					schemaNode:this._activeSchemaNode
-				});
-				const mode=rowCreated?"create":"update";
+				const rowIsNew=this.mainInstance._rowMeta.get(selectedRow)?.isNew??false;
+				const mode=rowIsNew?"create":"update";
 				const normalizedChanges=mode==="create"?null:changes;
 				const payload=this.mainInstance._makeCallbackPayload(null,{
 					data: selectedRow,
@@ -4978,12 +4963,8 @@ export default class Tablance extends TablanceBase {
 		const commitKey=this._getCommitChangeKey(this._activeSchemaNode);
 		const commitVal=this._normalizeCommitValue(this._activeSchemaNode,this._cellCursorDataObj[this._activeSchemaNode.id]);
 		const commitChanges=commitKey?{[commitKey]:commitVal}:{};
-		const rowCreated=mainRow?this._commitRowIfNew(mainRow,{
-				mainIndex,
-				changes: commitChanges,
-				schemaNode:this._activeSchemaNode
-			}):false;
-		const mode=rowCreated?"create":"update";
+		const rowIsNew=mainRow?this._rowMeta.get(mainRow)?.isNew:false;
+		const mode=rowIsNew?"create":"update";
 
 		this._activeSchemaNode.input.onChange?.({
 			newValue: inputVal,

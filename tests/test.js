@@ -152,7 +152,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		]}, 
 
 
-			{type:"list",title:"förordnande-lista",titlesColWidth:0,entries:[
+		{type:"list",title:"förordnande-lista",titlesColWidth:0,entries:[
 			{type:"repeated",id:"custodianshipChanges",create:true,entry:
 				{type:"group",entries:[
 						{type:"field",title:"Datum",id:"date",input:{type:"date"}},
@@ -230,7 +230,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		items:[]
 	}}
 					,details:myExpansion, meta:{foo:"root"}
-					,onRowCommit:payload=>console.log("onRowCommit",payload)
+//					,onRowCommit:payload=>console.log("onRowCommit",payload)
 					,onChange:payload=>console.log("root.onChange",payload)
 					,onCommit:payload=>console.log("group.onCommit",payload)
 					,onClose:payload=>console.log("group.onClose",payload)};
