@@ -4354,7 +4354,15 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	_filterData(filterString) {
+
+		//currently all of the rows will have to be closed. This is because Tablance doesn't have the logic needed now
+		//to recalculate the virtualization based on artibrary rows that are expanded with variable heights. It only
+		//has the logic to recalculate when expanding rows one by one, which are currently in view. This is mostly
+		//it actually needs to generate and render the dom to calculate height. I think in the future it should guess
+		//height of expansions(details) based on the knowledge it already has, and then adjust accordingly when
+		//scrolling. This will also allow for a button in the titlebar that expands all.
 		this._openDetailsPanes={};
+
 		this._rowsMeta={keys:[],vals:[]};
 		for (const tr of this._mainTbody.querySelectorAll("tr.details"))
 		 	tr.remove();
