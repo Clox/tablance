@@ -3677,8 +3677,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				return group;
 	}
 
-	_hasNonNullValues(obj) {
-		return Object.values(obj??{}).some(val=>val!=null);
+	_objectHasData(obj) {
+		for (const val of Object.values(obj))
+			if (val != null && !(Array.isArray(val) && val.length === 0))
+				return true;
+		return false;
 	}
 
 	/**
@@ -3813,7 +3816,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_scrollElementIntoView(){}//default is to do nothing. Tablance (main) overrides this.
 
 	_closeRepeatedInsertion(repeatEntry) {
-		if (this._hasNonNullValues(repeatEntry.dataObj)) {
+		if (this._objectHasData(repeatEntry.dataObj)) {
 			let message=this.lang.creationValidationFailed;//message to show to the user if creation was unsucessful
 			for (var root=repeatEntry; root.parent; root=root.parent);//get root-object in order to retrieve rowIndex
 			const creationContainer=repeatEntry.schemaNode.type=="group"?repeatEntry:repeatEntry.parent;
@@ -5098,7 +5101,7 @@ export default class Tablance extends TablanceBase {
 		if (hasOpenDetails) {
 			this._exitEditMode(false);//cancel out of edit-mode so field-validation doesn't cause problems
 			const openGroup=this._getOpenGroupAncestor(this._activeDetailsCell);
-			if (openGroup?.creating&&!this._hasNonNullValues(openGroup.dataObj))
+			if (openGroup?.creating&&!this._objectHasData(openGroup.dataObj))
 				this._discardActiveGroupEdits();//remove empty creator before contracting
 		}
 		if (!this._schema.details||!this._rowMetaGet(dataRowIndex)?.h)
