@@ -4306,6 +4306,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		 	tr.remove();
 		this._filter=filterString;
 		const filterNeedle=!caseSensitive&&typeof filterString==="string"?filterString.toLowerCase():filterString;
+		const htmlToTextDiv=this._htmlToTextDiv??=(typeof document!=="undefined"?document.createElement("div"):null);
+		const htmlToText=str=>{
+			if (!htmlToTextDiv||typeof str!=="string")
+				return str;
+			// When a column renders HTML (e.g. adds <u> tags), strip markup so filtering matches the visible text.
+			htmlToTextDiv.innerHTML=str;
+			return htmlToTextDiv.textContent??"";
+		};
 		const matchesFilter=value=>{
 			if (value==null)
 				return false;
@@ -4349,7 +4357,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					} else {
 						const rawVal=col.render?this._getTargetVal(true,col,null,dataRow):dataRow[col.id];
 						const displayVal=col.render?col.render(rawVal,dataRow,col,mainIndex,null):rawVal;
-						match=matchesFilter(displayVal);
+						const filterVal=col.html?htmlToText(displayVal):displayVal;
+						match=matchesFilter(filterVal);
 					}
 					if (match) {
 						this._data.push(dataRow);
