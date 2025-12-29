@@ -4039,8 +4039,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const clickedIndex=e.currentTarget.cellIndex;
 		if (this._colSchemaNodes[clickedIndex].type=="select"&&e.target.tagName.toLowerCase()=="input")
 			return this._toggleRowsSelected(e.target.checked,0,this._data.length-1);
-		if (e.target.closest(".expand-div"))
-			return this._expandOrContractAll(!e.target.closest("tr").classList.contains("expanded"));
 		let sortingColIndex=-1,sortingCol;
 		while (sortingCol=this._sortingCols[++sortingColIndex]) {
 			if (sortingCol.index===clickedIndex) {
@@ -4065,30 +4063,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		e.preventDefault();//prevent text-selection when shift-clicking and double-clicking
 		this._sortData();
 		this._refreshTable();
-	}
-
-	_expandOrContractAll(expand) {
-		this._scrollBody.scrollTop=0;
-		this._scrollMethod();
-		let rows;
-		if (expand) {
-			rows=this._tableSizer.querySelectorAll(".main-table>tbody>tr:not(.details):not(.expanded)");
-			for (const row of rows)
-				this._expandRow(row);
-			for (const dataRow of this._data) {
-				const index=this._rowsMeta.keys.indexOf(dataRow);
-				if (index!=-1) {
-					this._rowsMeta.vals[index].h??=-1;
-				} else {
-					this._rowsMeta.keys.push(dataRow);
-					this._rowsMeta.vals.push({h:-1});
-				}
-			}
-
-		}
-		
-
-		//#expandRow(tr,dataRowIndex) {
 	}
 
 	_updateHeaderSortHtml() {
