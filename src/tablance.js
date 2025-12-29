@@ -2037,8 +2037,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 	}
 
-	_repeatedOnDelete=(e,data,index,schemaNode,cel)=>{
-		const entryNode=cel.parent.parent;
+	_repeatedOnDelete=({instanceNode})=>{
+		const entryNode=instanceNode.parent.parent;
 		const repeatedContainer=entryNode.parent;
 		const payload=this._makeCallbackPayload(entryNode,{
 			deletedDataItem: entryNode.dataObj,
@@ -2056,16 +2056,16 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		repeatedContainer?.schemaNode.onDelete?.(payload);
 	}
 
-	_fileOnDelete=(e,data,index,strct,cel)=>{
-		const fileCell=cel.parent.parent;
+	_fileOnDelete=(payload)=>{
+		const fileCell=payload.instanceNode.parent.parent;
 		const inputSchemaNode=fileCell.fileInputSchemaNode;
 		const dataRow=fileCell.parent.dataObj;
 		delete dataRow[inputSchemaNode.id];
 		const fileTd=fileCell.el.parentElement;
 		fileTd.innerHTML="";
 		fileTd.classList.remove("group-cell");
-		this._generateDetailsContent(inputSchemaNode,index,fileCell,fileTd,fileCell.path,dataRow);
-		inputSchemaNode.deleteHandler?.(e,data,inputSchemaNode,fileCell.parent.dataObj,index,fileCell);
+		this._generateDetailsContent(inputSchemaNode,payload.mainIndex,fileCell,fileTd,fileCell.path,dataRow);
+		inputSchemaNode.deleteHandler?.(payload);
 		this._selectDetailsCell(fileCell);
 	}
 
@@ -2109,17 +2109,17 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		el.parentElement.classList.add("empty");//this will make it hidden if inside a group that is closed
 	}
 
-	_beginDeleteRepeated(e,data,mainIndex,schemaNode,cell) {
-		if (!cell.parent.parent.creating) {
-			cell.parent.containerEl.classList.add("delete-confirming");
-			this._selectDetailsCell(cell.parent.children[1]);//select "No" button
+	_beginDeleteRepeated({instanceNode}) {
+		if (!instanceNode.parent.parent.creating) {
+			instanceNode.parent.containerEl.classList.add("delete-confirming");
+			this._selectDetailsCell(instanceNode.parent.children[1]);//select "No" button
 		} else
-			this._deleteCell(cell.parent.parent);
+			this._deleteCell(instanceNode.parent.parent);
 	}
 
-	_cancelDelete(e,data,mainIndex,schemaNode,cell) {
-			cell.parent.containerEl.classList.remove("delete-confirming");
-			this._selectDetailsCell(cell.parent.children[0]);
+	_cancelDelete({instanceNode}) {
+			instanceNode.parent.containerEl.classList.remove("delete-confirming");
+			this._selectDetailsCell(instanceNode.parent.children[0]);
 	}
 
 	_schemaCopyWithDeleteButton(schemaNode,deleteHandler) {
