@@ -2112,7 +2112,15 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_beginDeleteRepeated({instanceNode}) {
 		if (!instanceNode.parent.parent.creating) {
 			instanceNode.parent.containerEl.classList.add("delete-confirming");
-			this._selectDetailsCell(instanceNode.parent.children[1]);//select "No" button
+
+			//select "No" button (or rather the first visible button). We're doing this in a loop because depending on
+			// the circumstance the index of it may be different. For file-deletion the button-container also contains
+			//open-button, but not for when deleting other repeated-entries.
+			for (const buttonInstanceNode of instanceNode.parent.children)
+				if (buttonInstanceNode.el.offsetParent) {
+					this._selectDetailsCell(buttonInstanceNode);
+					break;
+				}
 		} else
 			this._deleteCell(instanceNode.parent.parent);
 	}
