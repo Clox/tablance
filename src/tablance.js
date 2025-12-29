@@ -2777,8 +2777,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			instanceNode: groupObject
 		});
 		const closePayload={...basePayload,
-			// preventClose is on the onClose payload only; it is not propagated to onDataCommit.
-			preventClose:(message)=>{
+			// the below are on the onClose payload only; they are not propagated to onDataCommit.
+			changed,preventClose:(message)=>{
 				closeState.doClose=false;
 				closeState.preventMessage=message??closeState.preventMessage;
 			}
