@@ -156,13 +156,6 @@ class TablanceBase {
 			//#expandedRowIndicesHeights instead
 	_scrollMethod;//this will be set to a reference of the scroll-method that will be used. This depends on settings for
 				//staticRowHeight and details
-	_rowsMeta={keys:[],vals:[]};//This holds meta-data for the data-rows. The structure is essentially like a hashmap
-			//from Java where objects are used as keys which in this case it is the data-row-object. This is done by
-			//having 2 arrays: keys & vals. A references to a row is placed in "keys" and meta-data placed in "vals"
-			//and index X in "keys" always corresponds to index X in "values". As for the meta-data itself this is
-			//another object:
-			//	h Integer 	If this is present then the row is expanded, otherwise not. The value is the combined height
-			//				of the main row and its details-row.
 	_filesMeta={keys:[],vals:[]};//Similiar to rowsMeta as it is structured the same but used for files that the user
 								//has uploaded during the current session. This is to keep track of upload-progress.
 								//keys are filled with File-objects while vals is filled with objects containing
@@ -215,7 +208,7 @@ class TablanceBase {
 	_tooltip;//reference to html-element used as tooltip
 	_dropdownAlignmentContainer;
 	lang;//object holding strings used in the table for various purposes. See DEFAULT_LANG for default values					
-	_rowMeta=new WeakMap();//tracks row lifecycle metadata per data object
+	_rowMeta=new WeakMap();//tracks row metadata (isNew flags, expanded heights, etc.) keyed by row data objects
 
 	/**
 	 * @param {HTMLElement} hostEl An element which the table is going to be added to
@@ -1002,7 +995,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					this._highlightRowIndex(i);
 				return;
 			}
-			scrollY+=this._rowMetaGet(i)?.h??this._rowHeight;
+			scrollY+=this._rowMeta.get(otherDataRow)?.h??this._rowHeight;
 		}
 	}
 
@@ -1602,26 +1595,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._tooltip.appendChild(document.createElement("span"));
 	}
 
-	_rowMetaGet(dataIndex) {
-		return this._rowsMeta.vals[this._rowsMeta.keys.indexOf(this._data[dataIndex])];
-	}
-
-	_rowMetaSet(dataIndex,key,val) {
-		const linkIndex=this._rowsMeta.keys.indexOf(this._data[dataIndex]);
-		if (linkIndex==-1&&val!=null) {
-			this._rowsMeta.vals.push({[key]:val});
-			this._rowsMeta.keys.push(this._data[dataIndex]);
-		} else if (linkIndex!=-1&&val==null) {
-			delete this._rowsMeta.vals[linkIndex][key];
-			if (!Object.keys(this._rowsMeta.vals[linkIndex]).length) {
-				this._rowsMeta.vals.splice(linkIndex,1);
-				this._rowsMeta.keys.splice(linkIndex,1);
-			}
-		} else if (linkIndex!=-1&&val!=null)
-			this._rowsMeta.vals[linkIndex][key]=val;	
-		return val;
-	}
-
 	_spreadsheetOnFocus(_e) {
 		const tabbedTo=this._highlightOnFocus;
 		//when the table is tabbed to, whatever focus-outline that the css has set for it should show, but then when the
@@ -1673,9 +1646,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			let newColIndex=this._mainColIndex;
 			if (this._activeDetailsCell) {//moving from inside details.might move to another cell inside,or outside
 					this._selectAdjacentDetailsCell(this._activeDetailsCell,vSign==1);
-			} else if (vSign===1&&this._rowMetaGet(this._mainRowIndex)?.h){//moving down into details
+			} else if (vSign===1&&this._rowMeta.get(this._data[this._mainRowIndex])?.h){//moving down into details
 				this._selectFirstSelectableDetailsCell(this._openDetailsPanes[this._mainRowIndex],true);
-			} else if (vSign===-1&&this._rowMetaGet(this._mainRowIndex-1)?.h){//moving up into details
+			} else if (vSign===-1&&this._rowMeta.get(this._data[this._mainRowIndex-1])?.h){//moving up into details
 				this._selectFirstSelectableDetailsCell(this._openDetailsPanes[this._mainRowIndex-1],false);
 			} else {//moving from and to maintable-cells
 				this._selectMainTableCell(
@@ -1967,12 +1940,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 			const detailsTr=e.target.closest("tr");
 			const mainTr=detailsTr.previousSibling;
-			const dataRowIndex=mainTr.dataset.dataRowIndex;
+			const dataRowIndex=parseInt(mainTr.dataset.dataRowIndex);
+			const rowData=this._data[dataRowIndex];
+			const rowMeta=rowData?this._rowMeta.get(rowData):undefined;
 			mainTr.classList.remove("expanded");
 			this._tableSizer.style.height=parseInt(this._tableSizer.style.height)
-				 -this._rowMetaGet(dataRowIndex).h+this._rowHeight+"px";
+				 -(rowMeta?.h??this._rowHeight)+this._rowHeight+"px";
 			detailsTr.remove();
-			this._rowMetaSet(dataRowIndex,"h",null);
+			if (rowMeta){delete rowMeta.h; if (!Object.keys(rowMeta).length) this._rowMeta.delete(rowData);}
 			delete this._openDetailsPanes[dataRowIndex];
 		}
 	}
@@ -2585,10 +2560,13 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_updateDetailsHeight(detailsTr) {
 		const contentDiv=detailsTr.querySelector(".content");
 		const mainRowIndex=parseInt(detailsTr.dataset.dataRowIndex);
+		const rowData=this._data[mainRowIndex];
+		if (!rowData) return;
+		const rowMeta=this._rowMeta.get(rowData)??(this._rowMeta.set(rowData,{}),this._rowMeta.get(rowData));
 		contentDiv.style.height="auto";//set to auto in case of in middle of animation, get correct height
-		const prevRowHeight=this._rowMetaGet(mainRowIndex).h;
+		const prevRowHeight=rowMeta.h??this._rowHeight;
 		const newRowHeight=this._rowHeight+detailsTr.offsetHeight+this._borderSpacingY;
-		this._rowMetaSet(mainRowIndex,"h",newRowHeight);
+		rowMeta.h=newRowHeight;
 		this._tableSizer.style.height=parseInt(this._tableSizer.style.height)//adjust scroll-height reflect change...
 			+newRowHeight-prevRowHeight+"px";//...in height of the table
 	}
@@ -2941,9 +2919,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			}
 			const rowData=payload.rowData;
 			const rowMeta=rowData?this._rowMeta.get(rowData):undefined;
-			const rowWasNew=!!rowMeta?.isNew;
-			if (rowWasNew) {
-				// Persist the owning row first; it is the authoritative create when a row is new.
+			if (rowMeta?.isNew) {
+				// Persist the owning row first
 				const rowPayload=this._makeCallbackPayload(null,{
 					data: rowData,
 					parentData: null,
@@ -4099,9 +4076,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		function compare(a,b) {
 			for (let sortCol of sortCols) {
 				if (sortCol.type==="expand") {
-					let aV;
-					if ((aV=!!this._rowMetaGet(this._data.indexOf(a))?.h)!=!!this._rowMetaGet(this._data.indexOf(b))?.h)
-						return (aV?-1:1)*(sortCol.order=="asc"?1:-1);
+					const aExpanded=!!this._rowMeta.get(a)?.h;
+					const bExpanded=!!this._rowMeta.get(b)?.h;
+					if (aExpanded!==bExpanded)
+						return (aExpanded?-1:1)*(sortCol.order=="asc"?1:-1);
 				} else if (sortCol.type==="select") {
 					let aSel;
 					if ((aSel=this._selectedRows.indexOf(a)!=-1)!=(this._selectedRows.indexOf(b)!=-1))
@@ -4337,7 +4315,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		//scrolling. This will also allow for a button in the titlebar that expands all.
 		this._openDetailsPanes={};
 
-		this._rowsMeta={keys:[],vals:[]};
+		for (const row of this._allData) {
+			const meta=row?this._rowMeta.get(row):undefined;
+			if (meta&&"h"in meta) {
+				delete meta.h;
+				if (!Object.keys(meta).length)
+					this._rowMeta.delete(row);
+			}
+		}
 		for (const tr of this._mainTbody.querySelectorAll("tr.details"))
 		 	tr.remove();
 		this._filter=filterString;
@@ -4453,13 +4438,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const newScrY=Math.max(this._scrollBody.scrollTop-this._scrollMarginPx,0);
 		if (newScrY>parseInt(this._scrollY)) {//if scrolling down
 			while (newScrY-parseInt(this._tableSizer.style.top)
-			>(this._rowMetaGet(this._scrollRowIndex)?.h??this._rowHeight)) {//if a whole top row is outside
+			>(this._rowMeta.get(this._data[this._scrollRowIndex])?.h??this._rowHeight)) {//if a whole top row is outside
 				if (this._scrollRowIndex+this._numRenderedRows>this._data.length-1)
 					break;
 				let topShift;//height of the row that is at the top before scroll and which will be removed which is the
 																	// amount of pixels the whole table is shiftet by
 				//check if the top row (the one that is to be moved to the bottom) is expanded
-				if (topShift=this._rowMetaGet(this._scrollRowIndex)?.h) {
+				const topMeta=this._rowMeta.get(this._data[this._scrollRowIndex]);
+				if (topShift=topMeta?.h) {
 					delete this._openDetailsPanes[this._scrollRowIndex];
 					this._mainTbody.rows[1].remove();
 				} else
@@ -4479,7 +4465,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				this._scrollRowIndex--;
 
 				//check if the bottom row (the one that is to be moved to the top) is expanded
-				if (this._rowMetaGet(this._scrollRowIndex+this._numRenderedRows)?.h) {
+				if (this._rowMeta.get(this._data[this._scrollRowIndex+this._numRenderedRows])?.h) {
 					delete this._openDetailsPanes[this._scrollRowIndex+this._numRenderedRows];
 					this._mainTbody.lastChild.remove();//remove the details-tr
 				}
@@ -4489,7 +4475,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				this._updateRowValues(trToMove,this._scrollRowIndex);//the data of the new row;
 
 				//height of the row that is added at the top which is amount of pixels the whole table is shiftet by
-				const topShift=this._rowMetaGet(this._scrollRowIndex)?.h??this._rowHeight;
+				const topShift=this._rowMeta.get(this._data[this._scrollRowIndex])?.h??this._rowHeight;
 
 				this._doRowScrollDetails(trToMove,this._scrollRowIndex,this._scrollRowIndex+this._numRenderedRows,topShift);
 			}
@@ -4499,7 +4485,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	/**Used by #onScrollStaticRowHeightDetails whenever a row is actually added/removed(or rather moved)*/
 	_doRowScrollDetails(trToMove,newMainIndex,oldMainIndex,topShift) {
-		const detailsHeight=this._rowMetaGet(newMainIndex)?.h;
+		const newRow=this._data[newMainIndex];
+		const detailsHeight=newRow?this._rowMeta.get(newRow)?.h:undefined;
 		if (detailsHeight>0) {
 
 			if (trToMove.dataset.dataRowIndex==this._mainRowIndex&&this._activeDetailsCell) {
@@ -4581,9 +4568,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					cell.classList.add("select-col");
 				}
 			}
-			this._updateRowValues(lastTr,this._scrollRowIndex+this._numRenderedRows-1);
-			if (this._rowMetaGet(this._scrollRowIndex+this._numRenderedRows-1)?.h)
-				this._renderDetails(lastTr,this._scrollRowIndex+this._numRenderedRows-1);
+			const newRowIndex=this._scrollRowIndex+this._numRenderedRows-1;
+			this._updateRowValues(lastTr,newRowIndex);
+			if (this._rowMeta.get(this._data[newRowIndex])?.h)
+				this._renderDetails(lastTr,newRowIndex);
 			this._lookForActiveCellInRow(lastTr);//look for active cell (cellcursor) in the row
 			if (!this._rowHeight) {//if there were no rows prior to this
 				this._rowHeight=lastTr.offsetHeight+this._borderSpacingY;
@@ -4603,7 +4591,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_maybeRemoveTrs() {
 		const scrH=this._scrollBody.offsetHeight+this._scrollMarginPx*2;
 		while ((this._numRenderedRows-2)*this._rowHeight>scrH) {
-			if (this._rowMetaGet(this._scrollRowIndex+this._numRenderedRows-1)?.h) {
+			if (this._rowMeta.get(this._data[this._scrollRowIndex+this._numRenderedRows-1])?.h) {
 				this._mainTbody.lastChild.remove();
 				delete this._openDetailsPanes[this._scrollRowIndex+this._numRenderedRows];
 			}
@@ -5078,10 +5066,15 @@ export default class Tablance extends TablanceBase {
 
 	_expandRow(tr,animate=true) {
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
-		if (!this._schema.details||this._rowMetaGet(dataRowIndex)?.h>0)
+		const rowData=this._data[dataRowIndex];
+		if (!rowData||!this._schema.details)
+			return;
+		const rowMeta=this._rowMeta.get(rowData)??(this._rowMeta.set(rowData,{}),this._rowMeta.get(rowData));
+		if (rowMeta.h>0)
 			return;
 		const expRow=this._renderDetails(tr,dataRowIndex);
-		const expHeight=this._rowMetaSet(dataRowIndex,"h",this._rowHeight+expRow.offsetHeight+this._borderSpacingY);
+		const expHeight=this._rowHeight+expRow.offsetHeight+this._borderSpacingY;
+		rowMeta.h=expHeight;
 		const contentDiv=expRow.querySelector(".content");
 		if (!this._detailsBordersHeight)//see declarataion of _detailsTopBottomBorderWidth
 			this._detailsBordersHeight=expHeight-contentDiv.offsetHeight;
@@ -5111,7 +5104,8 @@ export default class Tablance extends TablanceBase {
 			if (openGroup?.creating&&!this._objectHasData(openGroup.dataObj))
 				this._discardActiveGroupEdits();//remove empty creator before contracting
 		}
-		if (!this._schema.details||!this._rowMetaGet(dataRowIndex)?.h)
+		const rowMeta=this._rowMeta.get(this._data[dataRowIndex]);
+		if (!this._schema.details||!rowMeta?.h)
 			return;
 		this._unsortCol(null,"expand");
 		if (hasOpenDetails) {//if cell-cursor is inside the details
@@ -5122,7 +5116,7 @@ export default class Tablance extends TablanceBase {
 		}
 		const contentDiv=tr.nextSibling.querySelector(".content");
 		if (contentDiv.style.height==="auto") {//if fully expanded
-			contentDiv.style.height=this._rowMetaGet(dataRowIndex).h-this._detailsBordersHeight+"px";
+			contentDiv.style.height=rowMeta.h-this._detailsBordersHeight+"px";
 			setTimeout(()=>contentDiv.style.height=0);
 		} else if (parseInt(contentDiv.style.height)==0)//if previous closing-animation has reached 0 but transitionend 
 		//hasn't been called yet which happens easily, for instance by selecting expand-button and holding space/enter
