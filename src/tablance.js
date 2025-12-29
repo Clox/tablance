@@ -4314,14 +4314,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			return haystack.includes(filterNeedle);
 		};
 		const colsToFilterBy=[];
-		const selectsOptsByVal={};//for each col that is of the select type, a entry will be placed in this with the
-			//col-index as key and an object as val. the object holds all the options but they are keyed by their value
-			//rather than being in an indexed array. This is so filtering can resolve option text/value in O(1) instead
-			// of walking select options for every row/cell.
+		const selectsOptsByVal={};//for each select-input col without a render, an entry will be placed in this with
+			//the col-index as key and an object as val. the object holds all the options but they are keyed by their
+			//value rather than being in an indexed array. This is so filtering can resolve option text/value in O(1)
+			//instead of walking select options for every row/cell.
 
 		for (let col of this._colSchemaNodes)
 			if (col.type!=="expand"&&col.type!=="select") {
-				if (col.input?.type=="select") {
+				if (col.input?.type=="select"&&!col.render) {
 					const optsByVal=selectsOptsByVal[colsToFilterBy.length]={};
 					for (const opt of this._getSelectOptions(col.input)) {
 						const key=this._getSelectValue(opt);
@@ -4332,28 +4332,31 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			}
 		if (filterString) {
 			this._data=[];
-			for (let dataRow of this._allData)
+			for (let mainIndex=0; mainIndex<this._allData.length; mainIndex++) {
+				const dataRow=this._allData[mainIndex];
 				for (let colI=-1,col; col=colsToFilterBy[++colI];) {
-					if (dataRow[col.id]!=null) {
-						let match=false;
-						if (col.input?.type=="select") {
-							const cellVal=dataRow[col.id];
-							const val=this._getSelectValue(cellVal);
-							const opt=selectsOptsByVal[colI]?.[val];
-							if (opt?.text)
-								match=matchesFilter(opt.text);
-							else if (this._isObject(cellVal)&&cellVal.text)
-								match=matchesFilter(cellVal.text);
-							else if (val!=null)
-								match=matchesFilter(val);
-						} else if (dataRow[col.id]!=null)
-							match=matchesFilter(dataRow[col.id]);
-						if (match) {
-							this._data.push(dataRow);
-							break;
-						}
+					let match=false;
+					if (col.input?.type=="select"&&!col.render) {
+						const cellVal=dataRow[col.id];
+						const val=this._getSelectValue(cellVal);
+						const opt=selectsOptsByVal[colI]?.[val];
+						if (opt?.text)
+							match=matchesFilter(opt.text);
+						else if (this._isObject(cellVal)&&cellVal.text)
+							match=matchesFilter(cellVal.text);
+						else if (val!=null)
+							match=matchesFilter(val);
+					} else {
+						const rawVal=col.render?this._getTargetVal(true,col,null,dataRow):dataRow[col.id];
+						const displayVal=col.render?col.render(rawVal,dataRow,col,mainIndex,null):rawVal;
+						match=matchesFilter(displayVal);
+					}
+					if (match) {
+						this._data.push(dataRow);
+						break;
 					}
 				}
+			}
 		} else
 			this._data=this._allData;
 		this._scrollRowIndex=0;
