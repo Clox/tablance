@@ -4284,7 +4284,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 	}
 
-	_filterData(filterString) {
+	_filterData(filterString, caseSensitive=true) {
 
 		//currently all of the rows will have to be closed. This is because Tablance doesn't have the logic needed now
 		//to recalculate the virtualization based on artibrary rows that are expanded with variable heights. It only
@@ -4305,10 +4305,19 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		for (const tr of this._mainTbody.querySelectorAll("tr.details"))
 		 	tr.remove();
 		this._filter=filterString;
+		const filterNeedle=!caseSensitive&&typeof filterString==="string"?filterString.toLowerCase():filterString;
+		const matchesFilter=value=>{
+			if (value==null)
+				return false;
+			const haystackStr=typeof value==="string"?value:String(value);
+			const haystack=caseSensitive?haystackStr:haystackStr.toLowerCase();
+			return haystack.includes(filterNeedle);
+		};
 		const colsToFilterBy=[];
 		const selectsOptsByVal={};//for each col that is of the select type, a entry will be placed in this with the
-			//col-index as key and an object as val. the object holds all the options but they are keyed by teir value
-			//rather than being in an indexed array.This is to simplify and likely improve speed of filtering by the col
+			//col-index as key and an object as val. the object holds all the options but they are keyed by their value
+			//rather than being in an indexed array. This is so filtering can resolve option text/value in O(1) instead
+			// of walking select options for every row/cell.
 
 		for (let col of this._colSchemaNodes)
 			if (col.type!=="expand"&&col.type!=="select") {
@@ -4332,13 +4341,13 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 							const val=this._getSelectValue(cellVal);
 							const opt=selectsOptsByVal[colI]?.[val];
 							if (opt?.text)
-								match=opt.text.includes(filterString);
+								match=matchesFilter(opt.text);
 							else if (this._isObject(cellVal)&&cellVal.text)
-								match=cellVal.text.includes(filterString);
+								match=matchesFilter(cellVal.text);
 							else if (val!=null)
-								match=String(val).includes(filterString);
+								match=matchesFilter(val);
 						} else if (dataRow[col.id]!=null)
-							match=dataRow[col.id].toString().includes(filterString);
+							match=matchesFilter(dataRow[col.id]);
 						if (match) {
 							this._data.push(dataRow);
 							break;
