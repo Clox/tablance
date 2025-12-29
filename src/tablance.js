@@ -156,10 +156,7 @@ class TablanceBase {
 			//#expandedRowIndicesHeights instead
 	_scrollMethod;//this will be set to a reference of the scroll-method that will be used. This depends on settings for
 				//staticRowHeight and details
-	_filesMeta={keys:[],vals:[]};//Similiar to rowsMeta as it is structured the same but used for files that the user
-								//has uploaded during the current session. This is to keep track of upload-progress.
-								//keys are filled with File-objects while vals is filled with objects containing
-								//metadata: uploadedBytes
+	_fileMeta=new WeakMap();//Tracks upload progress per File object (uploadedBytes, progress bars, etc.)
 	_selectedRows=[];//array of the actual data-objects of rows that are currently selected/checked using the select-col
 	_scrollY=0;//this keeps track of the "old" scrollTop of the table when a scroll occurs to know 
 	_numRenderedRows=0;//number of tr-elements in the table excluding tr's that are details (details too are tr's)
@@ -3075,24 +3072,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		input.placeholder=this._activeSchemaNode.input.placeholder??"";
 	}
 
-	_mapAdd(map,key,val) {
-		map.keys.push(key);
-		map.vals.push(val);
-	}
-
-	_mapGet(map,key) {
-		const index=map.keys.indexOf(key);
-		if (index!=-1)
-			return map.vals[index];
-	}
-
-	_mapRemove(map,key) {
-		const index=map.keys.indexOf(key);
-		map.keys.splice(index,1);
-		map.vals.splice(index,1);
-	}
-
-
 	/**
 	 * Enter "file edit mode" for a file-input cell.
 	 *
@@ -3191,7 +3170,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._inputVal = file;
 	
 		const meta = Object.assign(Object.create(null), {uploadedBytes: 0,bars: []});
-		this._mapAdd(this._filesMeta, file, meta);
+		this._fileMeta.set(file, meta);
 
 		const xhr = !this._opts.useFakeFileUploadTest ? new XMLHttpRequest()
 			: new FakeXMLHttpRequest({totalBytes:file.size||1,rate:this._opts.fakeUploadRate,
@@ -3210,7 +3189,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				}
 		};
 		const finalizeUpload=()=>{
-			this._mapRemove(this._filesMeta,file);
+			this._fileMeta.delete(file);
 			for (const bar of meta.bars)
 				if (bar.isConnected) {
 					bar.parentElement.classList.remove("active");
@@ -4686,7 +4665,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const fileData=rowData[fileInstanceNode.schemaNode.id];
 		//call _buildSchemaTreeFacade on fileGroup here?
 		this._generateDetailsContent(wrappedFileGroup,dataIndex,fileInstanceNode,cellEl,fileInstanceNode.path,fileData);
-		const fileMeta=this._mapGet(this._filesMeta,fileData);
+		const fileMeta=this._fileMeta.get(fileData);
 		if (fileMeta!=null) {
 			const progressbarOuter=cellEl.appendChild(document.createElement("div"));
 			progressbarOuter.classList.add("progressbar","active");
