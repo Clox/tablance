@@ -2884,13 +2884,27 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		// Flush only after the outermost group commits so parents fire before children and cancels can discard safely.
 		const commits=txn.intents.filter(({schemaNode})=>schemaNode?.type!=="repeated")
 			.sort((a,b)=>a.depth-b.depth||a.seq-b.seq);
-		const hasAnyRealCommit=commits.some(({payload})=>{
+		const groupsTouched=new Set(commits.map(({group})=>group).filter(Boolean));
+		const isRevertedUpdate=intent=>{
+			const {group,payload}=intent;
+			if (payload?.mode!=="update"||!group?._openSnapshot)
+				return false;
+			try {
+				return JSON.stringify(group._openSnapshot)===JSON.stringify(group.dataObj);
+			} catch(_e) {
+				return false;
+			}
+		};
+		const hasAnyRealCommit=commits.some(intent=>{
+			const {payload}=intent;
 			if (!payload)
 				return false;
 			if (payload.mode!=="update")
 				return true;
 			const changes=payload.changes;
-			return changes&&Object.keys(changes).length>0;
+			if (!changes||!Object.keys(changes).length)
+				return false;
+			return !isRevertedUpdate(intent);
 		});
 		if (!hasAnyRealCommit) {
 			txn.intents.length=0;
@@ -2913,6 +2927,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (payload?.mode==="update") {
 				const payloadChanges=payload?.changes;
 				if (!payloadChanges||!Object.keys(payloadChanges).length)
+					continue;
+				if (isRevertedUpdate(intent))
 					continue;
 			}
 			const rowData=payload.rowData;
@@ -2939,6 +2955,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			}
 			emitDataCommit(payload,dataKey,dataArray);
 		}
+		for (const group of groupsTouched)
+			delete group?._openSnapshot;
 		txn.intents.length=0;
 		this._editTransaction=null;
 	}
@@ -2971,7 +2989,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			delete groupObject.updateRenderOnClose;//delete the flag so it doesn't get triggered again
 			this._setClosedRender(groupObject,groupObject.schemaNode.closedRender(groupObject.dataObj));
 		}
-		delete groupObject._openSnapshot;
 		delete groupObject._dirtyFields;
 	}
 
