@@ -4284,7 +4284,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 	}
 
-	_filterData(filterString, caseSensitive=true) {
+	_filterData(filterString, includeDetails=true,caseSensitive=false) {
 
 		//currently all of the rows will have to be closed. This is because Tablance doesn't have the logic needed now
 		//to recalculate the virtualization based on artibrary rows that are expanded with variable heights. It only
@@ -4314,6 +4314,19 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			htmlToTextDiv.innerHTML=str;
 			return htmlToTextDiv.textContent??"";
 		};
+		const selectOptsCache=new WeakMap();//cache select options by value per schema node so per-row lookups stay O(1)
+		const getSelectOptionsByVal=schemaNode=>{
+			let cached=selectOptsCache.get(schemaNode);
+			if (cached)
+				return cached;
+			const map=Object.create(null);
+			for (const opt of this._getSelectOptions(schemaNode.input)) {
+				const key=this._getSelectValue(opt);
+				map[key]=opt;
+			}
+			selectOptsCache.set(schemaNode,map);
+			return map;
+		};
 		const matchesFilter=value=>{
 			if (value==null)
 				return false;
@@ -4321,50 +4334,88 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			const haystack=caseSensitive?haystackStr:haystackStr.toLowerCase();
 			return haystack.includes(filterNeedle);
 		};
-		const colsToFilterBy=[];
-		const selectsOptsByVal={};//for each select-input col without a render, an entry will be placed in this with
-			//the col-index as key and an object as val. the object holds all the options but they are keyed by their
-			//value rather than being in an indexed array. This is so filtering can resolve option text/value in O(1)
-			//instead of walking select options for every row/cell.
-
-		for (let col of this._colSchemaNodes)
-			if (col.type!=="expand"&&col.type!=="select") {
-				if (col.input?.type=="select"&&!col.render) {
-					const optsByVal=selectsOptsByVal[colsToFilterBy.length]={};
-					for (const opt of this._getSelectOptions(col.input)) {
-						const key=this._getSelectValue(opt);
-						optsByVal[key]=opt;
-					}
-				}
-				colsToFilterBy.push(col);
+		const shouldSkipField=schemaNode=>
+			schemaNode?.input?.type==="button"//buttons carry no filterable text
+			||schemaNode?.dependsOnCellPaths;//needs live instance nodes; skip for now
+		const matchesFieldValue=(schemaNode,dataObj,mainIndex)=>{
+			if (!schemaNode||shouldSkipField(schemaNode)||dataObj==null)
+				return false;
+			if (schemaNode.input?.type=="select"&&!schemaNode.render) {
+				const cellVal=dataObj?.[schemaNode.id];
+				const val=this._getSelectValue(cellVal);
+				const opt=getSelectOptionsByVal(schemaNode)?.[val];
+				if (opt?.text)
+					return matchesFilter(opt.text);
+				else if (this._isObject(cellVal)&&cellVal.text)
+					return matchesFilter(cellVal.text);
+				else if (val!=null)
+					return matchesFilter(val);
+				return false;
 			}
+			const rawVal=this._getTargetVal(true,schemaNode,null,dataObj);
+			const displayVal=schemaNode.render?schemaNode.render(rawVal,dataObj,schemaNode,mainIndex,null):rawVal;
+			const filterVal=schemaNode.html?htmlToText(displayVal):displayVal;//strip tags if html-rendered
+			return matchesFilter(filterVal);
+		};
+		// Some details containers re-root their data with dataPath; adjust before reading children.
+		const applyDataPath=(schemaNode,dataObj)=>{
+			if (!schemaNode?.dataPath)
+				return dataObj;
+			const path=Array.isArray(schemaNode.dataPath)?schemaNode.dataPath:String(schemaNode.dataPath).split(".").filter(Boolean);
+			let cur=dataObj;
+			for (const key of path) {
+				if (!cur||typeof cur!=="object")
+					return undefined;
+				cur=cur[key];
+			}
+			return cur;
+		};
+		// Depth-first walk of details schema; repeated nodes fan out across all entries.
+		const detailsMatch=(schemaNode,dataObj,mainIndex)=>{
+			if (!schemaNode)
+				return false;
+			const scopedData=applyDataPath(schemaNode,dataObj);
+			switch (schemaNode.type) {
+				case "field":
+					return matchesFieldValue(schemaNode,scopedData,mainIndex);
+				case "repeated": {
+					const repeatArr=scopedData?.[schemaNode.id];
+					if (!Array.isArray(repeatArr))
+						return false;
+					for (const item of repeatArr)//fan out over each repeated entry
+						if (detailsMatch(schemaNode.entry,item,mainIndex))
+							return true;
+					return false;
+				}
+				case "group":
+				case "list":
+				case "lineup":
+					for (const child of schemaNode.entries)//depth-first search down details schema
+						if (detailsMatch(child,scopedData,mainIndex))
+							return true;
+					return false;
+			}
+			return false;
+		};
+		const colsToFilterBy=[];
+		for (let col of this._colSchemaNodes)
+			if (col.type!=="expand"&&col.type!=="select")
+				colsToFilterBy.push(col);
 		if (filterString) {
 			this._data=[];
 			for (let mainIndex=0; mainIndex<this._allData.length; mainIndex++) {
 				const dataRow=this._allData[mainIndex];
+				let match=false;
 				for (let colI=-1,col; col=colsToFilterBy[++colI];) {
-					let match=false;
-					if (col.input?.type=="select"&&!col.render) {
-						const cellVal=dataRow[col.id];
-						const val=this._getSelectValue(cellVal);
-						const opt=selectsOptsByVal[colI]?.[val];
-						if (opt?.text)
-							match=matchesFilter(opt.text);
-						else if (this._isObject(cellVal)&&cellVal.text)
-							match=matchesFilter(cellVal.text);
-						else if (val!=null)
-							match=matchesFilter(val);
-					} else {
-						const rawVal=col.render?this._getTargetVal(true,col,null,dataRow):dataRow[col.id];
-						const displayVal=col.render?col.render(rawVal,dataRow,col,mainIndex,null):rawVal;
-						const filterVal=col.html?htmlToText(displayVal):displayVal;
-						match=matchesFilter(filterVal);
-					}
-					if (match) {
-						this._data.push(dataRow);
+					if (matchesFieldValue(col,dataRow,mainIndex)) {
+						match=true;
 						break;
 					}
 				}
+				if (!match&&includeDetails&&this._schema.details)
+					match=detailsMatch(this._schema.details,dataRow,mainIndex);
+				if (match)
+					this._data.push(dataRow);
 			}
 		} else
 			this._data=this._allData;
