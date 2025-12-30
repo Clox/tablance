@@ -4311,12 +4311,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		 	tr.remove();
 		this._filter=filterString;
 		const filterNeedle=!caseSensitive&&typeof filterString==="string"?filterString.toLowerCase():filterString;
+		const searchDelim="\u0001";//separator to prevent cross-field substring matches when caching
 		let rowSearchText;
-		const appendToRowSearch=value=>{
-			if (rowSearchText===null)
-				return;
-			rowSearchText+=value==null?"":String(value);
-		};
 		const htmlToTextDiv=this._htmlToTextDiv??=(typeof document!=="undefined"?document.createElement("div"):null);
 		const htmlToText=str=>{
 			if (!htmlToTextDiv||typeof str!=="string")
@@ -4339,7 +4335,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			return map;
 		};
 		const matchesFilter=value=>{
-			appendToRowSearch(value);
+			rowSearchText+=(value==null?"":String(value))+searchDelim;
 			if (value==null)
 				return false;
 			const haystackStr=typeof value==="string"?value:String(value);
@@ -4418,8 +4414,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			for (let mainIndex=0; mainIndex<this._allData.length; mainIndex++) {
 				const dataRow=this._allData[mainIndex];
 				const cachedSearchText=this._rowFilterCache.get(dataRow);
-				if (cachedSearchText!=null) {
-					console.log(cachedSearchText)
+				if (cachedSearchText!=null&&cachedSearchText.includes(searchDelim)) {
 					const haystack=caseSensitive?cachedSearchText:cachedSearchText.toLowerCase();
 					if (haystack.includes(filterNeedle))
 						this._data.push(dataRow);
@@ -4437,7 +4432,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				if (!match&&includeDetails&&this._schema.details)
 					match=detailsMatch(this._schema.details,dataRow,mainIndex);
 				if (match) {
-					rowSearchText=null;
 					this._data.push(dataRow);
 				} else
 					this._rowFilterCache.set(dataRow,rowSearchText);
