@@ -4,7 +4,7 @@
 /** @typedef {import("../src/tablance-types").TablanceOnChangeCallback} TablanceOnChangeCallback */
 
 /** @type {TablanceOnChangeCallback} */
-const handleDescriptionChange=(payload)=>{
+const handleDescriptionChange=payload=>{
 	const {newValue,oldValue,dataKey,dataContext,schemaNode,instanceNode,closestMeta}=payload;
 	console.log(payload);
 	console.log({newValue,oldValue,dataKey,dataContext,schemaNode,instanceNode,closestMeta});
@@ -88,11 +88,11 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		stripDelimiterOnSave:true}}},
 {type:"group",dataPath:"hemadress",title:"Hemadress",bulkEdit:true,entries:[
 	{type:"field",title:"Gata",id:"street",input:{type:"text",
-			onChange:(...args)=>console.log(args)}},
+			onChange:payload=>console.log(payload)}},
 	{type:"field",title:"Postnummer",id:"zip",input:{type:"text",
-			onChange:(...args)=>console.log(args)}},
+			onChange:payload=>console.log(payload)}},
 	{type:"field",title:"Ort",id:"city",input:{type:"text",
-			onChange:(...args)=>console.log(args)}}
+			onChange:payload=>console.log(payload)}}
 ]},
 	{type:"group",id:"innergrejer",title:"Inre grej",onClose:({preventClose})=>preventClose("nope!"),
 		entries:[{type:"field",id:"innerFoo"}]},
@@ -119,7 +119,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			]}},
 		
 		
-		{type:"field",title:"Date",id:"date",input:{type:"date",onChange:(...args)=>console.log(args)}},
+		{type:"field",title:"Date",id:"date",input:{type:"date",onChange:payload=>console.log(payload)}},
 		{type:"repeated",id:"repeatedField",sortCompare:(a,b)=>a.bar>b.bar?1:-1,entry:
 			{type:"field",title:"repeated row",id:"foo"}
 		},

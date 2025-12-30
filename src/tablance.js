@@ -5109,15 +5109,9 @@ export default class Tablance extends TablanceBase {
 		const rowIsNew=mainRow?this._rowMeta.get(mainRow)?.isNew:false;
 		const mode=rowIsNew?"create":"update";
 
-		this._activeSchemaNode.input.onChange?.({
-			newValue: inputVal,
-			oldValue: this._selectedCellVal,
-			rowData,
-			schemaNode: this._activeSchemaNode,
-			instanceNode: this._activeDetailsCell,
-			closestMeta: key => this._closestMeta(this._activeSchemaNode, key),
-			cancelUpdate: () => doUpdate=false
-		});
+		this._activeSchemaNode.input.onChange?.(this._makeCallbackPayload(this._activeDetailsCell,{
+			newValue: inputVal,oldValue: this._selectedCellVal,cancelUpdate: () => doUpdate=false
+		},{schemaNode: this._activeSchemaNode,mainIndex,rowData}));
 
 		if (doUpdate) {
 			if (this._activeDetailsCell){
