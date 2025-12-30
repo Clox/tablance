@@ -30,11 +30,11 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		tablance.getDetailCell(mainIndex,"förordnande1").createNewEntry();
 	}
 	const foods=[{text:"banana",value:1,visibleIf:({rowIndex})=>rowIndex%2},
-				{text:"apple",value:2},
-				{text:"cucumber",value:3},{text:"orange",value:4},{text:"grapes",value:5},
-				{text:"melon",value:6},{text:"pineapple",value:7},{text:"carrot",value:8},
-				{text:"another banana",value:9},{text:"another apple",value:10},
-				{text:"another cucumber",value:11},{text:"another orange",value:12},
+			{text:"apple",value:2},
+			{text:"cucumber",value:3},{text:"orange",value:4},{text:"grapes",value:5},
+			{text:"melon",value:6},{text:"pineapple",value:7},{text:"carrot",value:8},
+			{text:"another banana",value:9},{text:"another apple",value:10},
+			{text:"another cucumber",value:11},{text:"another orange",value:12},
 				{text:"another set of grapes",value:13},{text:"another melon",value:14},
 				{text:"another pineapple",value:15},{text:"another carrot",value:13}];
 	const myTablanceCols=[{type:"select", width:45},{type:"expand", width:45}
@@ -81,7 +81,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		{type:"field",title:"Phone Number",id:"phoneNumber",input:{type:"text",
 			livePattern:/^\+?\d*$/,validation:/^\+?\d+$/}},
 		{type:"field",title:"amount+10",render:({value})=>(Number(value)+10).toFixed(2)
-			, dependsOn:"amount",/* visibleIf:()=>false */},
+			, dependsOn:"amount",/* visibleIf:({value})=>false */},
 		{type:"field",title:"num",id:"num", input:{type:"text"},bulkEdit:true},
 	{type:"field",title:"Format field",id:"myFormattedData"
 		,input:{type:"text", format:{ blocks: [8, 4], delimiter: "-", numericOnly: true , 

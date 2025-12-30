@@ -245,6 +245,10 @@ class TablanceBase {
 	 * 				* title String displayed title if placed in a container which displays the title
 	 *
 	 * 				* visibleIf Function Optional callback that determines whether this entry should be visible.
+	 * 					Receives a payload from _makeCallbackPayload plus:
+	 * 					- value: resolved cell value (id wins when present, select uses option.value when available)
+	 * 					- idValue: rowData[schemaNode.id] (if id is set)
+	 * 					- dependedValue: the resolved dependee value when dependsOn* is used
 	 * 					The function is called whenever the entry is rendered or any of its dependencies
 	 * 					(see `dependsOn`) change. It receives the following arguments:
 	 * 						(1: The value from data pointed to by "id"(or if dependsOn is set the value of that cell)
@@ -5259,15 +5263,22 @@ export default class Tablance extends TablanceBase {
 		let val=this._getTargetVal(false,schemaNode,instanceNode);
 		if (schemaNode.input?.type==="select"&&val?.value)
 			val=val.value;
-	
+		const idValue=schemaNode.id!=null?instanceNode.dataObj?.[schemaNode.id]:undefined;
+		const dependedValue=(schemaNode.dependsOnDataPath||schemaNode.dependsOnCellPaths)?val:undefined;
+		const payload=this._makeCallbackPayload(instanceNode,{value: val,idValue,dependedValue},{
+			schemaNode,
+			mainIndex,
+			rowData: instanceNode.dataObj
+		});
+
 		instanceNode.hidden = !!instanceNode.hidden;
-	
+
 		//the !! is needed or else undefined will be treated the same as true
-		if (!!schemaNode.visibleIf(val,instanceNode.dataObj,schemaNode,mainIndex,instanceNode) == instanceNode.hidden) {
+		if (!!schemaNode.visibleIf(payload) == instanceNode.hidden) {
 			instanceNode.hidden=!instanceNode.hidden;
 			instanceNode.outerContainerEl.style.display=instanceNode.hidden?"none":"";
 		}
-	
+
 		return !instanceNode.hidden;
 	}
 }
