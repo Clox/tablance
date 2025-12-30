@@ -936,6 +936,19 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			closestMeta: key => this._closestMeta(schemaNode,key),...extra};
 	}
 
+	_getDisplayValue(schemaNode,dataObj,mainIndex,stripHtml=false) {
+		const rawVal=this._getTargetVal(true,schemaNode,null,dataObj);
+		let displayVal=schemaNode?.render?schemaNode.render(rawVal,dataObj,schemaNode,mainIndex,null):rawVal;
+		if (stripHtml&&schemaNode?.html&&typeof displayVal==="string") {
+			const htmlToTextDiv=this._htmlToTextDiv??=(typeof document!=="undefined"?document.createElement("div"):null);
+			if (htmlToTextDiv) {
+				htmlToTextDiv.innerHTML=displayVal;
+				displayVal=htmlToTextDiv.textContent??"";
+			}
+		}
+		return displayVal;
+	}
+
 	_findDescendantInstanceNodeById(searchInObj,idToFind) {
 		for (const child of searchInObj.children)
 			if (child.schemaNode.id==idToFind)//if true then its the repeated-obj we're looking for
@@ -4054,6 +4067,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const sortCols=this._sortingCols;
 		if (!sortCols.length)
 			return false;
+		const mainIndexMap=new WeakMap();
+		for (let i=0;i<this._allData.length;i++)
+			mainIndexMap.set(this._allData[i],i);
 		this._data.sort(compare.bind(this));
 		if (this._mainRowIndex>=0)//if there is a selected row
 			this._mainRowIndex=this._data.indexOf(this._cellCursorDataObj);//then find it's new pos
@@ -4076,8 +4092,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					if ((aSel=this._selectedRows.indexOf(a)!=-1)!=(this._selectedRows.indexOf(b)!=-1))
 						return (aSel?-1:1)*(sortCol.order=="asc"?1:-1);
 				} else {
-					const aVal=normalizeVal(a[sortCol.id]);
-					const bVal=normalizeVal(b[sortCol.id]);
+					const schemaNode=this._colSchemaNodes[sortCol.index];
+					const aVal=normalizeVal(this._getDisplayValue(schemaNode,a,mainIndexMap.get(a),true));
+					const bVal=normalizeVal(this._getDisplayValue(schemaNode,b,mainIndexMap.get(b),true));
 					if (aVal==bVal)
 						continue;
 					return (aVal>bVal?1:-1)*(sortCol.order=="asc"?1:-1);
@@ -4337,14 +4354,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			&&typeof prevNeedle==="string"
 			&&filterNeedle.includes(prevNeedle);
 		let rowSearchText;
-		const htmlToTextDiv=this._htmlToTextDiv??=(typeof document!=="undefined"?document.createElement("div"):null);
-		const htmlToText=str=>{
-			if (!htmlToTextDiv||typeof str!=="string")
-				return str;
-			// When a column renders HTML (e.g. adds <u> tags), strip markup so filtering matches the visible text.
-			htmlToTextDiv.innerHTML=str;
-			return htmlToTextDiv.textContent??"";
-		};
 		const selectOptsCache=new WeakMap();//cache select options by value per schema node so per-row lookups stay O(1)
 		const getSelectOptionsByVal=schemaNode=>{
 			let cached=selectOptsCache.get(schemaNode);
@@ -4384,9 +4393,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					return matchesFilter(val);
 				return false;
 			}
-			const rawVal=this._getTargetVal(true,schemaNode,null,dataObj);
-			const displayVal=schemaNode.render?schemaNode.render(rawVal,dataObj,schemaNode,mainIndex,null):rawVal;
-			const filterVal=schemaNode.html?htmlToText(displayVal):displayVal;//strip tags if html-rendered
+			const filterVal=this._getDisplayValue(schemaNode,dataObj,mainIndex,true);//strip tags if html-rendered
 			return matchesFilter(filterVal);
 		};
 		// Some details containers re-root their data with dataPath; adjust before reading children.

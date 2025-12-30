@@ -15,7 +15,7 @@ const handleDescriptionChange=(payload)=>{
 import Tablance from "../src/tablance.js";
 document.addEventListener("DOMContentLoaded", ()=>{
 	function descFunc(value, dataRow,col,rowIndex) {
-		return `fo<u>ob</u>ar ${rowIndex} - ${dataRow.descLetter??"foo"}`
+		return `fo<u>ob</u>ar ${dataRow.index} - ${dataRow.descLetter??"foo"}`
 	}
 	var renderPNum=(pnumInt)=>{
 	if (!pnumInt)
@@ -249,7 +249,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	for (let i=0; i<3; i++) {
 		data=[];
 		for (let ii=0; ii<1000; ii++) {
-			data.push({janej:0,num:55,myFormattedData:123456789123,desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,
+			data.push({index:1000*i+ii,janej:0,num:55,myFormattedData:123456789123,desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,
 				descLetter:String.fromCharCode(ii+33)
 				,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
 				,hello:"Hallå",world:"Världen",innerFoo:1337,hemadress:{street:"Inre Kaplan",zip:"060606",city:"Inre Skara"}
