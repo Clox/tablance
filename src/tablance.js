@@ -4050,7 +4050,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 	}
 
-	_sortData() {
+	_sortData(caseSensitive=false) {
 		const sortCols=this._sortingCols;
 		if (!sortCols.length)
 			return false;
@@ -4060,6 +4060,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return true;
 		
 		function compare(a,b) {
+			const normalizeVal=val=>{
+				if (typeof val==="string"&&!caseSensitive)
+					return val.toLowerCase();
+				return val;
+			};
 			for (let sortCol of sortCols) {
 				if (sortCol.type==="expand") {
 					const aExpanded=!!this._rowMeta.get(a)?.h;
@@ -4070,8 +4075,13 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					let aSel;
 					if ((aSel=this._selectedRows.indexOf(a)!=-1)!=(this._selectedRows.indexOf(b)!=-1))
 						return (aSel?-1:1)*(sortCol.order=="asc"?1:-1);
-				} else if (a[sortCol.id]!=b[sortCol.id])
-					return (a[sortCol.id]>b[sortCol.id]?1:-1)*(sortCol.order=="asc"?1:-1);
+				} else {
+					const aVal=normalizeVal(a[sortCol.id]);
+					const bVal=normalizeVal(b[sortCol.id]);
+					if (aVal==bVal)
+						continue;
+					return (aVal>bVal?1:-1)*(sortCol.order=="asc"?1:-1);
+				}
 			}
 		}
 	}
