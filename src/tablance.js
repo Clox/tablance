@@ -128,6 +128,8 @@ class TablanceBase {
 										//multiple of these objects for having it sorted on multiple ones.
 	_searchInput;//the input-element used for filtering data
 	_filter;//the currently applied filter. Same as #searchInput.value but also used for comparing old & new values
+	_filterCaseSensitive;//tracks last caseSensitive flag to know if narrowing is safe in _filterData
+	_filterIncludeDetails;//tracks last includeDetails flag to know if narrowing is safe in _filterData
 	
 	_cellCursor;//The element that for spreadsheets shows which cell is selected
 	_mainRowIndex;//the index of the row that the cellcursor is at
@@ -4309,9 +4311,21 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 		for (const tr of this._mainTbody.querySelectorAll("tr.details"))
 		 	tr.remove();
+		const prevFilter=this._filter;
+		const prevCaseSensitive=this._filterCaseSensitive;
+		const prevIncludeDetails=this._filterIncludeDetails;
 		this._filter=filterString;
+		this._filterCaseSensitive=caseSensitive;
+		this._filterIncludeDetails=includeDetails;
 		const filterNeedle=!caseSensitive&&typeof filterString==="string"?filterString.toLowerCase():filterString;
 		const searchDelim="\u0001";//separator to prevent cross-field substring matches when caching
+		const prevNeedle=!prevCaseSensitive&&typeof prevFilter==="string"?prevFilter.toLowerCase():prevFilter;
+		const canNarrow=!!filterString&&!!prevFilter
+			&&prevCaseSensitive===caseSensitive
+			&&prevIncludeDetails===includeDetails
+			&&typeof filterNeedle==="string"
+			&&typeof prevNeedle==="string"
+			&&filterNeedle.includes(prevNeedle);
 		let rowSearchText;
 		const htmlToTextDiv=this._htmlToTextDiv??=(typeof document!=="undefined"?document.createElement("div"):null);
 		const htmlToText=str=>{
@@ -4410,32 +4424,36 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (col.type!=="expand"&&col.type!=="select")
 				colsToFilterBy.push(col);
 		if (filterString) {
-			this._data=[];
-			for (let mainIndex=0; mainIndex<this._allData.length; mainIndex++) {
-				const dataRow=this._allData[mainIndex];
+			const dataSource=canNarrow?this._data:this._allData;
+			const nextData=[];
+			for (let dataIndex=0; dataIndex<dataSource.length; dataIndex++) {
+				const dataRow=dataSource[dataIndex];
+				const mainIndex=canNarrow?this._allData.indexOf(dataRow):dataIndex;
+				const effectiveMainIndex=mainIndex<0?dataIndex:mainIndex;
 				const cachedSearchText=this._rowFilterCache.get(dataRow);
 				if (cachedSearchText!=null&&cachedSearchText.includes(searchDelim)) {
 					const haystack=caseSensitive?cachedSearchText:cachedSearchText.toLowerCase();
 					if (haystack.includes(filterNeedle))
-						this._data.push(dataRow);
+						nextData.push(dataRow);
 					continue;
 				}
 
 				rowSearchText="";
 				let match=false;
 				for (let colI=-1,col; col=colsToFilterBy[++colI];) {
-					if (matchesFieldValue(col,dataRow,mainIndex)) {
+					if (matchesFieldValue(col,dataRow,effectiveMainIndex)) {
 						match=true;
 						break;
 					}
 				}
 				if (!match&&includeDetails&&this._schema.details)
-					match=detailsMatch(this._schema.details,dataRow,mainIndex);
+					match=detailsMatch(this._schema.details,dataRow,effectiveMainIndex);
 				if (match) {
-					this._data.push(dataRow);
+					nextData.push(dataRow);
 				} else
 					this._rowFilterCache.set(dataRow,rowSearchText);
 			}
+			this._data=nextData;
 		} else
 			this._data=this._allData;
 		this._scrollRowIndex=0;
