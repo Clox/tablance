@@ -14,10 +14,11 @@ const handleDescriptionChange=(payload)=>{
 
 import Tablance from "../src/tablance.js";
 document.addEventListener("DOMContentLoaded", ()=>{
-	function descFunc(value, dataRow,col,rowIndex) {
-		return `fo<u>ob</u>ar ${dataRow.index} - ${dataRow.descLetter??"foo"}`
+	function descFunc({value,rowData,mainIndex}) {
+		return `fo<u>ob</u>ar ${rowData.index} - ${rowData.descLetter??"foo"}`
 	}
-	var renderPNum=(pnumInt)=>{
+	var renderPNum=({value})=>{
+	const pnumInt=value;
 	if (!pnumInt)
 		return "";
 	if (String(pnumInt).length===8)//if coming straight from db then it's an int and length wont work, so cast to string
@@ -46,7 +47,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			,options:foods,minOptsFilter:100,allowCreateNew:true,allowSelectEmpty:true
 			,selectInputPlaceholder:"Sök/Skapa"},bulkEdit:true}
 		,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"},bulkEdit:true}, 
-		{title:"numtwice", render:num=>num*2, dependsOn:"num", onEnter:({mainIndex})=>{
+		{title:"numtwice", render:({value})=>value*2, dependsOn:"num", onEnter:({mainIndex})=>{
 			myTablance.selectCell(mainIndex,"personnummer",{enterEditMode:true})
 		}},
 		{title: "5 chars",input:{type:"text",
@@ -79,7 +80,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 					}},
 		{type:"field",title:"Phone Number",id:"phoneNumber",input:{type:"text",
 			livePattern:/^\+?\d*$/,validation:/^\+?\d+$/}},
-		{type:"field",title:"amount+10",render:amount=>(Number(amount)+10).toFixed(2)
+		{type:"field",title:"amount+10",render:({value})=>(Number(value)+10).toFixed(2)
 			, dependsOn:"amount",/* visibleIf:()=>false */},
 		{type:"field",title:"num",id:"num", input:{type:"text"},bulkEdit:true},
 	{type:"field",title:"Format field",id:"myFormattedData"
@@ -112,9 +113,9 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			{type:"field",title:"Postnummer",id:"zip"},
 				{type:"field",title:"Ort",id:"city",cellId:"addrCity",input:{type:"text", onChange:args=>console.log(args.closestMeta("foo"))}},
 				{type:"field",title:"Ort i versaler"
-					,render:city=>city.toUpperCase()
+					,render:({value})=>value.toUpperCase()
 					,dependsOn:"addrCity"},
-				{type:"field",title:"test1", render:val=>val, dependsOn:"amount"}
+				{type:"field",title:"test1", render:({value})=>value, dependsOn:"amount"}
 			]}},
 		
 		

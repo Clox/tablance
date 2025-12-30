@@ -224,14 +224,11 @@ class TablanceBase {
 	 * 			input: See param details -> input. This is the same as that one except textareas are only valid for
 	 * 												details-cells and not directly in a maintable-cell
 	 * 			render Function Function that can be set to render the content of the cell. The return-value is what
-	 * 					will be displayed in the cell. Similiarly to columns->render it gets passed the following:
-	 * 					1: The value from data pointed to by "id". If id is not set but dependsOn is then this will 
-	 * 						instead get passed the value that the id of the depended cell points to, 
-	 * 					2: data-row, 
-	 * 					3: schemaNode,
-	 * 					4: main-index 
+	 * 					will be displayed in the cell. It receives a payload from _makeCallbackPayload plus:
+	 * 					- value: resolved cell value (id wins when present, otherwise dependsOn*)
+	 * 					- idValue: rowData[schemaNode.id] (if id is set)
+	 * 					- dependedValue: the resolved dependee value when dependsOn* is used
 	 * 			html Bool Default is false. If true then the content of the cell will be rendered as html
-	 * 1: The value from data pointed to by "id", 2: data-row, 3: schemaNode,4: main-index, 5: instanceNode
 	 * 			type String The default is "data". Possible values are:
 	 * 				"data" - As it it implies, simply to display data but also input-elements such as fields or buttons
 	 * 				"expand" - The column will be buttons used for expanding/contracting the rows. See param details
@@ -936,9 +933,22 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			closestMeta: key => this._closestMeta(schemaNode,key),...extra};
 	}
 
-	_getDisplayValue(schemaNode,dataObj,mainIndex,stripHtml=false) {
-		const rawVal=this._getTargetVal(true,schemaNode,null,dataObj);
-		let displayVal=schemaNode?.render?schemaNode.render(rawVal,dataObj,schemaNode,mainIndex,null):rawVal;
+	_getCellValueBundle(schemaNode,dataObj,mainIndex,instanceNode=null) {
+		if (!schemaNode)
+			return {value: undefined, idValue: undefined, dependedValue: undefined};
+		const idValue=schemaNode.id!=null?dataObj?.[schemaNode.id]:undefined;
+		const dependedValue=(schemaNode.dependsOnDataPath||schemaNode.dependsOnCellPaths)
+			?this._getTargetVal(false,schemaNode,instanceNode,dataObj)
+			:undefined;
+		const value=this._getTargetVal(true,schemaNode,instanceNode,dataObj);
+		return {value,idValue,dependedValue};
+	}
+
+	_getDisplayValue(schemaNode,dataObj,mainIndex,stripHtml=false,instanceNode=null) {
+		const {value,idValue,dependedValue}=this._getCellValueBundle(schemaNode,dataObj,mainIndex,instanceNode);
+		const payload=this._makeCallbackPayload(instanceNode??null,{value,idValue,dependedValue,rowData: dataObj},{
+			schemaNode,mainIndex,rowData: dataObj});
+		let displayVal=schemaNode?.render?schemaNode.render(payload):value;
 		if (stripHtml&&schemaNode?.html&&typeof displayVal==="string") {
 			const htmlToTextDiv=this._htmlToTextDiv??=(typeof document!=="undefined"?document.createElement("div"):null);
 			if (htmlToTextDiv) {
@@ -4768,11 +4778,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 		//define all the file-meta-props
 		const lang=this.lang;
-		let metaEntries=[{type:"field",title:lang.fileName,id:"name"},
-			{type:"field",title:lang.fileLastModified,id:"lastModified",render:date=>
-			new Date(date).toISOString().slice(0, 16).replace('T', ' ')},
-			{type:"field",title:lang.fileSize,id:"size",render:size=>this._humanFileSize(size)},
-			{type:"field",title:lang.fileType,id:"type"}];
+			let metaEntries=[{type:"field",title:lang.fileName,id:"name"},
+				{type:"field",title:lang.fileLastModified,id:"lastModified",render:({value})=>
+				new Date(value).toISOString().slice(0, 16).replace('T', ' ')},
+				{type:"field",title:lang.fileSize,id:"size",render:({value})=>this._humanFileSize(value)},
+				{type:"field",title:lang.fileType,id:"type"}];
 		for (let metaI=-1,metaName; metaName=["filename","lastModified","size","type"][++metaI];)
 			if(!(fileSchemaNode.input.fileMetasToShow?.[metaName]??this._opts.defaultFileMetasToShow?.[metaName]??true))
 				metaEntries.splice(metaI,1);//potentially remove (some of) them
@@ -4898,9 +4908,13 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				} else {
 					let newCellContent;
 					if (schemaNode.render||schemaNode.input?.type!="select") {
-						newCellContent=this._getTargetVal(true,schemaNode, instanceNode, rowData);
-						if (schemaNode.render)
-							newCellContent=schemaNode.render(newCellContent,rowData,schemaNode,mainIndex,instanceNode);
+						const {value,idValue,dependedValue}=this._getCellValueBundle(schemaNode,rowData,mainIndex,instanceNode);
+						if (schemaNode.render) {
+							const payload=this._makeCallbackPayload(instanceNode,{value,idValue,dependedValue,rowData},{
+								schemaNode,mainIndex,rowData});
+							newCellContent=schemaNode.render(payload);
+						} else
+							newCellContent=value;
 					} else { //if (schemaNode.input?.type==="select") {
 						const rawVal=rowData[schemaNode.id];
 						const selOptObj=this._isObject(rawVal)?rawVal:this._getSelectOptions(schemaNode.input)
