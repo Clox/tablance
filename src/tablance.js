@@ -157,6 +157,7 @@ class TablanceBase {
 	_scrollMethod;//this will be set to a reference of the scroll-method that will be used. This depends on settings for
 				//staticRowHeight and details
 	_fileMeta=new WeakMap();//Tracks upload progress per File object (uploadedBytes, progress bars, etc.)
+	_rowFilterCache=new WeakMap();//per-row filter text cache keyed by row data objects
 	_selectedRows=[];//array of the actual data-objects of rows that are currently selected/checked using the select-col
 	_scrollY=0;//this keeps track of the "old" scrollTop of the table when a scroll occurs to know 
 	_numRenderedRows=0;//number of tr-elements in the table excluding tr's that are details (details too are tr's)
@@ -2930,12 +2931,16 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					bulkEdit: payload.bulkEdit
 				});
 				emitDataCommit(rowPayload);
+				if (rowData)
+					this._rowFilterCache?.delete(rowData);
 				rowMeta.isNew=false;
 				// If this payload is the row itself, skip it; child commits still emit after the row create.
 				if (payload.data===rowData)
 					continue;
 			}
 			emitDataCommit(payload,dataKey,dataArray);
+			if (rowData)
+				this._rowFilterCache?.delete(rowData);
 		}
 		for (const group of groupsTouched)
 			delete group?._openSnapshot;
@@ -4306,6 +4311,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		 	tr.remove();
 		this._filter=filterString;
 		const filterNeedle=!caseSensitive&&typeof filterString==="string"?filterString.toLowerCase():filterString;
+		let rowSearchText;
+		const appendToRowSearch=value=>{
+			if (rowSearchText===null)
+				return;
+			rowSearchText+=value==null?"":String(value);
+		};
 		const htmlToTextDiv=this._htmlToTextDiv??=(typeof document!=="undefined"?document.createElement("div"):null);
 		const htmlToText=str=>{
 			if (!htmlToTextDiv||typeof str!=="string")
@@ -4328,6 +4339,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			return map;
 		};
 		const matchesFilter=value=>{
+			appendToRowSearch(value);
 			if (value==null)
 				return false;
 			const haystackStr=typeof value==="string"?value:String(value);
@@ -4405,6 +4417,16 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			this._data=[];
 			for (let mainIndex=0; mainIndex<this._allData.length; mainIndex++) {
 				const dataRow=this._allData[mainIndex];
+				const cachedSearchText=this._rowFilterCache.get(dataRow);
+				if (cachedSearchText!=null) {
+					console.log(cachedSearchText)
+					const haystack=caseSensitive?cachedSearchText:cachedSearchText.toLowerCase();
+					if (haystack.includes(filterNeedle))
+						this._data.push(dataRow);
+					continue;
+				}
+
+				rowSearchText="";
 				let match=false;
 				for (let colI=-1,col; col=colsToFilterBy[++colI];) {
 					if (matchesFieldValue(col,dataRow,mainIndex)) {
@@ -4414,8 +4436,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				}
 				if (!match&&includeDetails&&this._schema.details)
 					match=detailsMatch(this._schema.details,dataRow,mainIndex);
-				if (match)
+				if (match) {
+					rowSearchText=null;
 					this._data.push(dataRow);
+				} else
+					this._rowFilterCache.set(dataRow,rowSearchText);
 			}
 		} else
 			this._data=this._allData;
