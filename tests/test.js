@@ -59,8 +59,8 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			},
 		];
 	const myExpansion={meta:{"foo":"details", "baz":42},type:"list",titlesColWidth:"8em",entries:[
-		{type:"repeated",id:"bar1",title:"repeated group with nested repeated group",create:true,entry:
-			{type:"group",onCommit:()=>console.log("outer group"),entries:[
+		{type:"repeated",id:"bar1",create:true,entry:
+			{type:"group",title:"repeated group with nested repeated group",onCommit:()=>console.log("outer group"),entries:[
 					{type:"repeated",id:"bar2",title:"inner repeated group",create:true,entry:
 						{type:"group",onCommit:()=>console.log("inner group"),entries:[
 							{type:"field", title:"inner field",id:"foooo",input:"text"}
