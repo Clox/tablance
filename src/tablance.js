@@ -1798,6 +1798,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		//prevent this from running in outer Tablance if an inner Tablance-instance is selected
 		if (this._bulkEditArea?.contains(document.activeElement))
 			return;
+		if (this._searchInput && document.activeElement === this._searchInput) {
+			// Block navigation when the search bar is active; add keys here to passthrough in the future.
+			const searchPassthroughKeys=[];
+			if (!searchPassthroughKeys.includes(e.key))
+				return;
+		}
 		this._tooltip.style.visibility="hidden";
 		const keysThatEnterFromOutline=["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Escape",
 								"NumpadAdd","NumpadSubtract","Enter","NumpadEnter","Space"];
