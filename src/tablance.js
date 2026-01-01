@@ -86,8 +86,11 @@ class TablanceBase {
 	_cols=[];//array of col-elements for each column
 	_headerTr;//the tr for the top header-row
 	_headerTable;//the tabe for the #headerTr. This table only contains that one row.
-	_allData=[];//contains all, unfiltered data that has been added via addData()
-	_data=[];//with no filter applied(empty seachbar) then this is reference to _allData, otherwise is a subset of it
+	_sourceData=[];//complete dataset provided to the table; table never mutates this array and it reflects all rows provided
+	_viewData=[];//rows belonging to the active viewMode, derived from _sourceData before any filtering/search
+	_filteredData=[];//rows after applying search/filter pipeline to _viewData; rendering consumes this dataset
+	_currentViewMode="default";//active viewMode key
+	_viewDefinitions=Object.create(null);//lookup table of viewMode predicates keyed by view name
 	_scrollRowIndex=0;//the index in the #data of the top row in the view
 	_scrollBody;//resides directly inside #container and is the element with the scrollbar. It contains #scrollingDiv
 	_scrollingContent;//a div that is inside #scrollbody and holds #tablesizer and #cellCursor if spreadsheet
@@ -128,8 +131,6 @@ class TablanceBase {
 										//multiple of these objects for having it sorted on multiple ones.
 	_searchInput;//the input-element used for filtering data
 	_filter;//the currently applied filter. Same as #searchInput.value but also used for comparing old & new values
-	_filterCaseSensitive;//tracks last caseSensitive flag to know if narrowing is safe in _filterData
-	_filterIncludeDetails;//tracks last includeDetails flag to know if narrowing is safe in _filterData
 	
 	_cellCursor;//The element that for spreadsheets shows which cell is selected
 	_mainRowIndex;//the index of the row that the cellcursor is at
@@ -618,6 +619,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._opts=opts??{};
 		rootEl.classList.add("tablance");
 		this._schema=this._buildSchemaFacade(schema);
+		this._viewDefinitions=this._buildViewDefinitions(schema?.views);
+		this._currentViewMode="default";
+		this._rebuildViewData();
+		this._filteredData=this._viewData;
 		if (!schema.main?.columns) {
 			this._setupSpreadsheet(true);
 			this._onlyDetails=true;
@@ -663,6 +668,23 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return instanceNode;
 	}
 
+	_buildViewDefinitions(schemaViews) {
+		const views=Object.create(null);
+		if (schemaViews&&typeof schemaViews==="object")
+			for (const [key,predicate] of Object.entries(schemaViews))
+				if (typeof predicate==="function")
+					views[key]=predicate;
+		if (!("default" in views))
+			views.default=()=>true;
+		return views;
+	}
+
+	_rebuildViewData() {
+		const predicate=this._viewDefinitions?.[this._currentViewMode];
+		const source=this._sourceData??[];
+		this._viewData=typeof predicate==="function"?source.filter(predicate):[...source];
+	}
+
 	/**Add data-rows to the main table.
 	 * @param {object[]} data Rows to insert.
 	 * @param {boolean} highlight If true, clear filter, highlight, and scroll to the first new row.
@@ -670,33 +692,54 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	addData(data, highlight=false, prepend=false) {
 		if (this._onlyDetails)
 			return this._setDataForOnlyDetails(data)
-		const oldLen=this._data.length;
+		const oldLen=this._filteredData.length;
 		if (highlight) {
 			this._filter="";
 			if (this._searchInput)
 				this._searchInput.value="";
 		}
 		if (prepend)
-			this._data=this._allData=data.concat(this._allData);
+			this._sourceData=data.concat(this._sourceData);
 		else
-			this._data=this._allData=this._allData.concat(data);
-		//this._data.push(...data);//much faster than above but causes "Maximum call stack size exceeded" for large data
-		let sortingOccured=this._sortData();
-		if (this._filter)
-			this._filterData(this._filter);
-		else {
+			this._sourceData=this._sourceData.concat(data);
+		this._rebuildViewData();
+		const filterVal=this._filter??"";
+		if (filterVal) {
+			this._filterData(filterVal);
+		} else {
+			this._filteredData=this._viewData;
+			const sortingOccured=this._sortData();
 			if (sortingOccured||prepend)
 				this._refreshTable();
 			else
 				this._maybeAddTrs();
-			const numNewInData=this._data.length-oldLen;
+			const numNewInData=this._filteredData.length-oldLen;
 			this._tableSizer.style.height=parseInt(this._tableSizer.style.height||0)+numNewInData*this._rowHeight+"px";
 		}
 		if (highlight) {
-			for (let dataRow of data)
-				this._highlightRowIndex(this._data.indexOf(dataRow));
-			this.scrollToDataRow(data[0],false);//false for not highlighting, above line does the highlight anyway
+			for (let dataRow of data) {
+				const rowIndex=this._filteredData.indexOf(dataRow);
+				if (rowIndex!==-1)
+					this._highlightRowIndex(rowIndex);
+			}
+			if (this._filteredData.indexOf(data[0])!==-1)
+				this.scrollToDataRow(data[0],false);//false for not highlighting, above line does the highlight anyway
 		}
+	}
+
+	setViewMode(viewModeKey) {
+		const views=this._viewDefinitions??{};
+		const viewKeys=Object.keys(views);
+		if (!(viewModeKey in views)) {
+			const validKeys=viewKeys.join(", ");
+			throw new Error(`Unknown viewMode "${viewModeKey}". Valid viewModes: ${validKeys}`);
+		}
+		if (viewModeKey===this._currentViewMode)
+			return;
+		this._currentViewMode=viewModeKey;
+		this._rebuildViewData();
+		const filterVal=this._filter??"";
+		this._filterData(filterVal);
 	}
 
 	/**Explicitly create and insert a new, uncommitted row. */
@@ -727,9 +770,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		let mainIndx;//the index of dataRow
 		let updatedEls=[];
 		if (!isNaN(dataRow_or_mainIndex))
-			dataRow=this._data[mainIndx=dataRow_or_mainIndex];
+			dataRow=this._filteredData[mainIndx=dataRow_or_mainIndex];
 		else //if (typeof dataRow_or_mainIndex=="object")
-			mainIndx=this._data.indexOf(dataRow=dataRow_or_mainIndex);
+			mainIndx=this._filteredData.indexOf(dataRow=dataRow_or_mainIndex);
 		dataPath=typeof dataPath=="string"?dataPath.split(/\.|(?=\[\d*\])/):dataPath;
 
 		if (!onlyRefresh) {//if we're not only refreshing the cell but actually modifying/adding data
@@ -929,7 +972,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (mainIndex==null)
 				mainIndex=this._mainRowIndex??0;
 		}
-		const rowData=overrides.rowData??(Number.isInteger(mainIndex)?this._data?.[mainIndex]:undefined);
+		const rowData=overrides.rowData??(Number.isInteger(mainIndex)?this._filteredData?.[mainIndex]:undefined);
 		const bulkEdit=overrides.bulkEdit??!!this.mainInstance;
 		// Base payload is intentionally minimal; creation-only context (dataKey/dataArray) is injected only
 		// for onDataCommit so other callbacks are not burdened with persistence-only fields.
@@ -1004,7 +1047,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			return this._openDetailsPanes[0];
 		let tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndex}"]`);
 		if (!tr) {
-			this.scrollToDataRow(this._data[mainIndex],false,false);
+			this.scrollToDataRow(this._filteredData[mainIndex],false,false);
 			this._scrollMethod();//needed to get everythig to render before having to wait for next frame
 			tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndex}"]`);
 		}
@@ -1014,7 +1057,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	scrollToDataRow(dataRow,highlight=true,smooth=true) {
 		let scrollY=0;
-		for (let i=-1,otherDataRow;otherDataRow=this._data[++i];) {
+		for (let i=-1,otherDataRow;otherDataRow=this._filteredData[++i];) {
 			if (otherDataRow==dataRow) {
 				scrollY=scrollY-this._scrollBody.offsetHeight/2+this._rowHeight;
 				this._scrollBody.scrollTo({top:scrollY,behavior:smooth?"smooth":"auto"});
@@ -1054,10 +1097,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	getDetailCell(dataRow_or_mainIndex,cellId,searchInNode=null) {
 		let dataRow,mainIndex;
 		if (!isNaN(dataRow_or_mainIndex))
-			dataRow=this._data[mainIndex=dataRow_or_mainIndex];
+			dataRow=this._filteredData[mainIndex=dataRow_or_mainIndex];
 		else {
 			dataRow=dataRow_or_mainIndex;
-			mainIndex=this._data.indexOf(dataRow);
+			mainIndex=this._filteredData.indexOf(dataRow);
 		}
 		if (!dataRow||mainIndex<0)
 			return;
@@ -1078,10 +1121,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const enterEditMode=!!opts?.enterEditMode;
 		let dataRow,mainIndex;
 		if (!isNaN(dataRow_or_mainIndex))
-			dataRow=this._data[mainIndex=dataRow_or_mainIndex];
+			dataRow=this._filteredData[mainIndex=dataRow_or_mainIndex];
 		else {
 			dataRow=dataRow_or_mainIndex;
-			mainIndex=this._data.indexOf(dataRow);
+			mainIndex=this._filteredData.indexOf(dataRow);
 		}
 		if (!dataRow||mainIndex<0)
 			return;
@@ -1673,9 +1716,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			let newColIndex=this._mainColIndex;
 			if (this._activeDetailsCell) {//moving from inside details.might move to another cell inside,or outside
 					this._selectAdjacentDetailsCell(this._activeDetailsCell,vSign==1);
-			} else if (vSign===1&&this._rowMeta.get(this._data[this._mainRowIndex])?.h){//moving down into details
+			} else if (vSign===1&&this._rowMeta.get(this._filteredData[this._mainRowIndex])?.h){//moving down into details
 				this._selectFirstSelectableDetailsCell(this._openDetailsPanes[this._mainRowIndex],true);
-			} else if (vSign===-1&&this._rowMeta.get(this._data[this._mainRowIndex-1])?.h){//moving up into details
+			} else if (vSign===-1&&this._rowMeta.get(this._filteredData[this._mainRowIndex-1])?.h){//moving up into details
 				this._selectFirstSelectableDetailsCell(this._openDetailsPanes[this._mainRowIndex-1],false);
 			} else {//moving from and to maintable-cells
 				this._selectMainTableCell(
@@ -1813,7 +1856,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				return;
 
 			// First navigation keystroke after focusing the table should select the top-left cell (or top details cell).
-			if (keysThatEnterFromOutline.includes(e.code)&&this._data.length) {
+			if (keysThatEnterFromOutline.includes(e.code)&&this._filteredData.length) {
 				if (this._onlyDetails)
 					this.selectTopBottomCellOnlyDetails(true);
 				else
@@ -1958,7 +2001,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const shadowLine=detailsDiv.appendChild(document.createElement("div"));
 		shadowLine.className="details-shadow";
 		const instanceNode=this._openDetailsPanes[rowIndex]=this._createInstanceNode();
-		this._generateDetailsContent(this._schema.details,rowIndex,instanceNode,detailsDiv,[],this._data[rowIndex]);
+		this._generateDetailsContent(this._schema.details,rowIndex,instanceNode,detailsDiv,[],this._filteredData[rowIndex]);
 		instanceNode.rowIndex=rowIndex;
 		return detailsRow;
 	}
@@ -1974,7 +2017,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			const detailsTr=e.target.closest("tr");
 			const mainTr=detailsTr.previousSibling;
 			const dataRowIndex=parseInt(mainTr.dataset.dataRowIndex);
-			const rowData=this._data[dataRowIndex];
+			const rowData=this._filteredData[dataRowIndex];
 			const rowMeta=rowData?this._rowMeta.get(rowData):undefined;
 			mainTr.classList.remove("expanded");
 			this._tableSizer.style.height=parseInt(this._tableSizer.style.height)
@@ -2526,12 +2569,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				tr.querySelector(".select-col input").checked=checked;
 				tr.classList.toggle("selected",checked);
 			}
-			if (checked&&this._selectedRows.indexOf(this._data[i])==-1) {
-				this._selectedRows.push(this._data[i]);
+			if (checked&&this._selectedRows.indexOf(this._filteredData[i])==-1) {
+				this._selectedRows.push(this._filteredData[i]);
 				this._numRowsSelected++;
 				this._numRowsInViewSelected++;
-			} else if (!checked&&this._selectedRows.indexOf(this._data[i])!=-1) {
-				this._selectedRows.splice(this._selectedRows.indexOf(this._data[i]),1);
+			} else if (!checked&&this._selectedRows.indexOf(this._filteredData[i])!=-1) {
+				this._selectedRows.splice(this._selectedRows.indexOf(this._filteredData[i]),1);
 				this._numRowsSelected--;
 				this._numRowsInViewSelected--;
 			}
@@ -2543,7 +2586,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	_updateNumRowsSelectionState() {
 		const checkbox=this._headerTr.querySelector(".select-col input");
-		if (this._numRowsInViewSelected==this._data.length||!this._numRowsInViewSelected) {
+		if (this._numRowsInViewSelected==this._filteredData.length||!this._numRowsInViewSelected) {
 			checkbox.indeterminate=false;
 			checkbox.checked=this._numRowsInViewSelected;
 		} else
@@ -2593,7 +2636,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_updateDetailsHeight(detailsTr) {
 		const contentDiv=detailsTr.querySelector(".content");
 		const mainRowIndex=parseInt(detailsTr.dataset.dataRowIndex);
-		const rowData=this._data[mainRowIndex];
+		const rowData=this._filteredData[mainRowIndex];
 		if (!rowData) return;
 		const rowMeta=this._rowMeta.get(rowData)??(this._rowMeta.set(rowData,{}),this._rowMeta.get(rowData));
 		contentDiv.style.height="auto";//set to auto in case of in middle of animation, get correct height
@@ -2792,7 +2835,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		},{
 			schemaNode: groupObject.schemaNode,
 			mainIndex,
-			rowData: Number.isInteger(mainIndex)?this._data?.[mainIndex]:undefined,
+			rowData: Number.isInteger(mainIndex)?this._filteredData?.[mainIndex]:undefined,
 			instanceNode: groupObject
 		});
 		const closePayload={...basePayload,
@@ -3842,7 +3885,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			for (var root=repeatEntry; root.parent; root=root.parent);//get root-object in order to retrieve rowIndex
 			const creationContainer=repeatEntry.schemaNode.type=="group"?repeatEntry:repeatEntry.parent;
 			const repeatedContainer=creationContainer.parent;
-			const parentDataContext=repeatedContainer?.parent?.dataObj??this._data[root.rowIndex];
+			const parentDataContext=repeatedContainer?.parent?.dataObj??this._filteredData[root.rowIndex];
 			let doCreate=true;
 			if (repeatEntry.schemaNode.creationValidation) {
 				const payload=this._makeCallbackPayload(repeatEntry,{
@@ -3919,7 +3962,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					//directly because we do not want it to change if #selectCell returns false, preventing the select
 					
 		if (this._closeActiveDetailsCell(cell)) {
-			this._selectCell(cell,this._colSchemaNodes[this._mainColIndex],this._data[mainRowIndex]);
+			this._selectCell(cell,this._colSchemaNodes[this._mainColIndex],this._filteredData[mainRowIndex]);
 			this._mainRowIndex=mainRowIndex;
 		}
 	}
@@ -4034,7 +4077,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_onThClick(e) {
 		const clickedIndex=e.currentTarget.cellIndex;
 		if (this._colSchemaNodes[clickedIndex].type=="select"&&e.target.tagName.toLowerCase()=="input")
-			return this._toggleRowsSelected(e.target.checked,0,this._data.length-1);
+			return this._toggleRowsSelected(e.target.checked,0,this._filteredData.length-1);
 		let sortingColIndex=-1,sortingCol;
 		while (sortingCol=this._sortingCols[++sortingColIndex]) {
 			if (sortingCol.index===clickedIndex) {
@@ -4088,14 +4131,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		if (!sortCols.length)
 			return false;
 		const mainIndexMap=new WeakMap();
-		for (let i=0;i<this._allData.length;i++)
-			mainIndexMap.set(this._allData[i],i);
-		this._data.sort(compare.bind(this));
-		if (this._mainRowIndex>=0)//if there is a selected row
-			this._mainRowIndex=this._data.indexOf(this._cellCursorDataObj);//then find it's new pos
-		return true;
-		
-		function compare(a,b) {
+		for (let i=0;i<this._viewData.length;i++)
+			mainIndexMap.set(this._viewData[i],i);
+		const compare=(a,b)=>{
 			const normalizeVal=val=>{
 				if (typeof val==="string"&&!caseSensitive)
 					return val.toLowerCase();
@@ -4120,7 +4158,13 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					return (aVal>bVal?1:-1)*(sortCol.order=="asc"?1:-1);
 				}
 			}
-		}
+		};
+		this._viewData.sort(compare);
+		if (this._filteredData!==this._viewData)
+			this._filteredData.sort(compare);
+		if (this._mainRowIndex>=0)//if there is a selected row
+			this._mainRowIndex=this._filteredData.indexOf(this._cellCursorDataObj);//then find it's new pos
+		return true;
 	}
 
 	_createTableBody() {
@@ -4348,7 +4392,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		//scrolling. This will also allow for a button in the titlebar that expands all.
 		this._openDetailsPanes={};
 
-		for (const row of this._allData) {
+		for (const row of this._sourceData) {
 			const meta=row?this._rowMeta.get(row):undefined;
 			if (meta&&"h"in meta) {
 				delete meta.h;
@@ -4358,21 +4402,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 		for (const tr of this._mainTbody.querySelectorAll("tr.details"))
 		 	tr.remove();
-		const prevFilter=this._filter;
-		const prevCaseSensitive=this._filterCaseSensitive;
-		const prevIncludeDetails=this._filterIncludeDetails;
 		this._filter=filterString;
-		this._filterCaseSensitive=caseSensitive;
-		this._filterIncludeDetails=includeDetails;
 		const filterNeedle=!caseSensitive&&typeof filterString==="string"?filterString.toLowerCase():filterString;
 		const searchDelim="\u0001";//separator to prevent cross-field substring matches when caching
-		const prevNeedle=!prevCaseSensitive&&typeof prevFilter==="string"?prevFilter.toLowerCase():prevFilter;
-		const canNarrow=!!filterString&&!!prevFilter
-			&&prevCaseSensitive===caseSensitive
-			&&prevIncludeDetails===includeDetails
-			&&typeof filterNeedle==="string"
-			&&typeof prevNeedle==="string"
-			&&filterNeedle.includes(prevNeedle);
 		let rowSearchText;
 		const selectOptsCache=new WeakMap();//cache select options by value per schema node so per-row lookups stay O(1)
 		const getSelectOptionsByVal=schemaNode=>{
@@ -4460,13 +4492,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		for (let col of this._colSchemaNodes)
 			if (col.type!=="expand"&&col.type!=="select")
 				colsToFilterBy.push(col);
+		const viewData=this._viewData??[];
 		if (filterString) {
-			const dataSource=canNarrow?this._data:this._allData;
+			const dataSource=viewData;
 			const nextData=[];
 			for (let dataIndex=0; dataIndex<dataSource.length; dataIndex++) {
 				const dataRow=dataSource[dataIndex];
-				const mainIndex=canNarrow?this._allData.indexOf(dataRow):dataIndex;
-				const effectiveMainIndex=mainIndex<0?dataIndex:mainIndex;
+				const mainIndex=dataIndex;
+				const effectiveMainIndex=mainIndex;
 				const cachedSearchText=this._rowFilterCache.get(dataRow);
 				if (cachedSearchText!=null&&cachedSearchText.includes(searchDelim)) {
 					const haystack=caseSensitive?cachedSearchText:cachedSearchText.toLowerCase();
@@ -4490,20 +4523,23 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				} else
 					this._rowFilterCache.set(dataRow,rowSearchText);
 			}
-			this._data=nextData;
+			this._filteredData=nextData;
 		} else
-			this._data=this._allData;
+			this._filteredData=viewData;
+		this._sortData();
 		this._scrollRowIndex=0;
 		this._refreshTable();
 		this._refreshTableSizerNoDetails();
 	}
 
 	_setDataForOnlyDetails(data) {
-		this._allData=this._data=[data[data.length-1]];
+		this._sourceData=[data[data.length-1]];
+		this._viewData=this._sourceData;
+		this._filteredData=this._viewData;
 		this.rootEl.innerHTML="";
 		const detailsDiv=this.rootEl.appendChild(document.createElement("div"));
 		detailsDiv.classList.add("details");
-		this._generateDetailsContent(this._schema.details,0,this._openDetailsPanes[0]=this._createInstanceNode(),detailsDiv,[],this._data[0]);
+		this._generateDetailsContent(this._schema.details,0,this._openDetailsPanes[0]=this._createInstanceNode(),detailsDiv,[],this._filteredData[0]);
 	}
 
 	/**Refreshes the table-rows. Should be used after sorting or filtering or such.*/
@@ -4535,7 +4571,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 * @returns */
 	_onScrollStaticRowHeightNoDetails() {
 		const scrY=Math.max(this._scrollBody.scrollTop-this._scrollMarginPx,0);
-		const newScrollRowIndex=Math.min(parseInt(scrY/this._rowHeight),this._data.length-this._mainTbody.rows.length);
+		const newScrollRowIndex=Math.min(parseInt(scrY/this._rowHeight),this._filteredData.length-this._mainTbody.rows.length);
 		
 		if (newScrollRowIndex==this._scrollRowIndex)
 			return;
@@ -4563,13 +4599,13 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const newScrY=Math.max(this._scrollBody.scrollTop-this._scrollMarginPx,0);
 		if (newScrY>parseInt(this._scrollY)) {//if scrolling down
 			while (newScrY-parseInt(this._tableSizer.style.top)
-			>(this._rowMeta.get(this._data[this._scrollRowIndex])?.h??this._rowHeight)) {//if a whole top row is outside
-				if (this._scrollRowIndex+this._numRenderedRows>this._data.length-1)
+			>(this._rowMeta.get(this._filteredData[this._scrollRowIndex])?.h??this._rowHeight)) {//if a whole top row is outside
+				if (this._scrollRowIndex+this._numRenderedRows>this._filteredData.length-1)
 					break;
 				let topShift;//height of the row that is at the top before scroll and which will be removed which is the
 																	// amount of pixels the whole table is shiftet by
 				//check if the top row (the one that is to be moved to the bottom) is expanded
-				const topMeta=this._rowMeta.get(this._data[this._scrollRowIndex]);
+				const topMeta=this._rowMeta.get(this._filteredData[this._scrollRowIndex]);
 				if (topShift=topMeta?.h) {
 					delete this._openDetailsPanes[this._scrollRowIndex];
 					this._mainTbody.rows[1].remove();
@@ -4590,7 +4626,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				this._scrollRowIndex--;
 
 				//check if the bottom row (the one that is to be moved to the top) is expanded
-				if (this._rowMeta.get(this._data[this._scrollRowIndex+this._numRenderedRows])?.h) {
+				if (this._rowMeta.get(this._filteredData[this._scrollRowIndex+this._numRenderedRows])?.h) {
 					delete this._openDetailsPanes[this._scrollRowIndex+this._numRenderedRows];
 					this._mainTbody.lastChild.remove();//remove the details-tr
 				}
@@ -4600,7 +4636,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				this._updateRowValues(trToMove,this._scrollRowIndex);//the data of the new row;
 
 				//height of the row that is added at the top which is amount of pixels the whole table is shiftet by
-				const topShift=this._rowMeta.get(this._data[this._scrollRowIndex])?.h??this._rowHeight;
+				const topShift=this._rowMeta.get(this._filteredData[this._scrollRowIndex])?.h??this._rowHeight;
 
 				this._doRowScrollDetails(trToMove,this._scrollRowIndex,this._scrollRowIndex+this._numRenderedRows,topShift);
 			}
@@ -4610,7 +4646,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	/**Used by #onScrollStaticRowHeightDetails whenever a row is actually added/removed(or rather moved)*/
 	_doRowScrollDetails(trToMove,newMainIndex,oldMainIndex,topShift) {
-		const newRow=this._data[newMainIndex];
+		const newRow=this._filteredData[newMainIndex];
 		const detailsHeight=newRow?this._rowMeta.get(newRow)?.h:undefined;
 		if (detailsHeight>0) {
 
@@ -4649,7 +4685,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	_refreshTableSizerNoDetails() {	
 		this._tableSizer.style.top=this._scrollRowIndex*this._rowHeight+"px";
-		this._tableSizer.style.height=(this._data.length-this._scrollRowIndex)*this._rowHeight+"px";
+		this._tableSizer.style.height=(this._filteredData.length-this._scrollRowIndex)*this._rowHeight+"px";
 	}
 
 	_createExpandContractButton() {
@@ -4676,7 +4712,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_maybeAddTrs() {
 		let lastTr=this._mainTbody.lastChild;
 		const scrH=this._scrollBody.offsetHeight+this._scrollMarginPx*2;
-		const dataLen=this._data.length;
+		const dataLen=this._filteredData.length;
 		//if there are fewer trs than datarows, and if there is empty space below bottom tr
 		while ((this._numRenderedRows-1)*this._rowHeight<scrH&&this._scrollRowIndex+this._numRenderedRows<dataLen) {
 			lastTr=this._mainTable.insertRow();
@@ -4695,7 +4731,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			}
 			const newRowIndex=this._scrollRowIndex+this._numRenderedRows-1;
 			this._updateRowValues(lastTr,newRowIndex);
-			if (this._rowMeta.get(this._data[newRowIndex])?.h)
+			if (this._rowMeta.get(this._filteredData[newRowIndex])?.h)
 				this._renderDetails(lastTr,newRowIndex);
 			this._lookForActiveCellInRow(lastTr);//look for active cell (cellcursor) in the row
 			if (!this._rowHeight) {//if there were no rows prior to this
@@ -4716,7 +4752,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_maybeRemoveTrs() {
 		const scrH=this._scrollBody.offsetHeight+this._scrollMarginPx*2;
 		while ((this._numRenderedRows-2)*this._rowHeight>scrH) {
-			if (this._rowMeta.get(this._data[this._scrollRowIndex+this._numRenderedRows-1])?.h) {
+			if (this._rowMeta.get(this._filteredData[this._scrollRowIndex+this._numRenderedRows-1])?.h) {
 				this._mainTbody.lastChild.remove();
 				delete this._openDetailsPanes[this._scrollRowIndex+this._numRenderedRows];
 			}
@@ -4730,7 +4766,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 * @param {HTMLTableRowElement} tr The tr-element whose cells that should be updated*/
 	_updateRowValues(tr,mainIndex) {
 		tr.dataset.dataRowIndex=mainIndex;
-		const selected=this._selectedRows.indexOf(this._data[mainIndex])!=-1;
+		const selected=this._selectedRows.indexOf(this._filteredData[mainIndex])!=-1;
 		tr.classList.toggle("selected",!!selected);
 		for (let colI=0; colI<this._colSchemaNodes.length; colI++) {
 			let td=tr.cells[colI];
@@ -4801,7 +4837,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const fileGroup=this._schemaCopyWithDeleteButton({type:"group",entries:[]},this._fileOnDelete);
 		fileGroup.entries[0].entries.unshift({type:"field",input:{type:"button",text:"Open"
 				,onClick:(e,file,mainIndex,schemaNode,btnObj)=>{
-					rowData??=this._data[mainIndex];
+					rowData??=this._filteredData[mainIndex];
 					fileSchemaNode.input.openHandler?.(e,file,fileSchemaNode,fileInstanceNode.dataObj,mainIndex,btnObj);
 			}},
 		});
@@ -4954,7 +4990,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_updateMainRowCell(cellEl,colSchemaNode) {
 		cellEl.firstChild.innerHTML="";
 		const mainIndex=cellEl.closest(".main-table>tbody>tr").dataset.dataRowIndex;
-		this._updateCell(colSchemaNode,cellEl.firstChild,cellEl,this._data[mainIndex],mainIndex);
+		this._updateCell(colSchemaNode,cellEl.firstChild,cellEl,this._filteredData[mainIndex],mainIndex);
 	}
 
 	_highlightRowIndex(index) {
@@ -5105,7 +5141,7 @@ export default class Tablance extends TablanceBase {
 			?this._getSelectValue(this._inputVal):this._inputVal;
 		const openGroup=this._getOpenGroupAncestor(this._activeDetailsCell);
 		const mainIndex=this._mainRowIndex;
-		const rowData=Number.isInteger(mainIndex)?this._data?.[mainIndex]:null;
+		const rowData=Number.isInteger(mainIndex)?this._filteredData?.[mainIndex]:null;
 		const mainRow=!openGroup?rowData:null;
 		const prevVal=this._cellCursorDataObj[this._activeSchemaNode.id];
 		this._cellCursorDataObj[this._activeSchemaNode.id]=inputVal;
@@ -5189,7 +5225,7 @@ export default class Tablance extends TablanceBase {
 
 	_expandRow(tr,animate=true) {
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
-		const rowData=this._data[dataRowIndex];
+		const rowData=this._filteredData[dataRowIndex];
 		if (!rowData||!this._schema.details)
 			return;
 		const rowMeta=this._rowMeta.get(rowData)??(this._rowMeta.set(rowData,{}),this._rowMeta.get(rowData));
@@ -5227,7 +5263,7 @@ export default class Tablance extends TablanceBase {
 			if (openGroup?.creating&&!this._objectHasData(openGroup.dataObj))
 				this._discardActiveGroupEdits();//remove empty creator before contracting
 		}
-		const rowMeta=this._rowMeta.get(this._data[dataRowIndex]);
+		const rowMeta=this._rowMeta.get(this._filteredData[dataRowIndex]);
 		if (!this._schema.details||!rowMeta?.h)
 			return;
 		this._unsortCol(null,"expand");
