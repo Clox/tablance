@@ -711,21 +711,15 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			this._sourceData=this._sourceData.concat(data);
 		
 		// Fast path: slot only the new rows into the active view instead of rebuilding from scratch.
-		const predicate=this._viewDefinitions[this._currentViewModeKey].filter;
-		const viewMatches=[];
-		for (let i=0;i<data.length;i++)
-			if (predicate(data[i]))
-				viewMatches.push(data[i]);
+		const viewMatches = data.filter(this._viewDefinitions[this._currentViewModeKey].filter);
 		const viewLenBefore=this._viewData.length;
 		this._viewData=prepend?viewMatches.concat(this._viewData):this._viewData.concat(viewMatches);
-		const filterVal=this._filter??"";
-		if (filterVal) {
-			this._resetFilterState();
+		if (this._filter) {
 			const selectOptsCache=new WeakMap();
 			const newFiltered=[];
 			for (let i=0;i<viewMatches.length;i++) {
 				const mainIndex=prepend?i:viewLenBefore+i;
-				if (this._rowSatisfiesFilters(filterVal,viewMatches[i],mainIndex,true,false,selectOptsCache))
+				if (this._rowSatisfiesFilters(this._filter,viewMatches[i],mainIndex,true,false,selectOptsCache))
 					newFiltered.push(viewMatches[i]);
 			}
 			this._filteredData=prepend?newFiltered.concat(this._filteredData):this._filteredData.concat(newFiltered);
