@@ -89,7 +89,7 @@ class TablanceBase {
 	_sourceData=[];//complete dataset provided to the table; table never mutates this array and it reflects all rows provided
 	_viewData=[];//rows belonging to the active viewMode, derived from _sourceData before any filtering/search
 	_filteredData=[];//rows after applying search/filter pipeline to _viewData; rendering consumes this dataset
-	_currentViewMode="default";//active viewMode key
+	_currentViewModeKey="default";//active viewMode key
 	_viewDefinitions=Object.create(null);//lookup table of viewMode predicates keyed by view name
 	_scrollRowIndex=0;//the index in the #data of the top row in the view
 	_scrollBody;//resides directly inside #container and is the element with the scrollbar. It contains #scrollingDiv
@@ -620,7 +620,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		rootEl.classList.add("tablance");
 		this._schema=this._buildSchemaFacade(schema);
 		this._viewDefinitions=this._buildViewDefinitions(schema?.views);
-		this._currentViewMode="default";
+		this._currentViewModeKey="default";
 		this._rebuildViewData();
 		this._filteredData=this._viewData;
 		if (!schema.main?.columns) {
@@ -671,18 +671,25 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_buildViewDefinitions(schemaViews) {
 		const views=Object.create(null);
 		if (schemaViews&&typeof schemaViews==="object")
-			for (const [key,predicate] of Object.entries(schemaViews))
-				if (typeof predicate==="function")
-					views[key]=predicate;
+			for (const [key,viewDef] of Object.entries(schemaViews)) {
+				const filterFn=typeof viewDef==="function"?viewDef:viewDef?.filter;
+				if (typeof filterFn==="function")
+					views[key]={filter: filterFn};
+			}
 		if (!("default" in views))
-			views.default=()=>true;
+			views.default={filter:()=>true};
 		return views;
 	}
 
 	_rebuildViewData() {
-		const predicate=this._viewDefinitions?.[this._currentViewMode];
-		const source=this._sourceData??[];
-		this._viewData=typeof predicate==="function"?source.filter(predicate):[...source];
+		const predicate=this._viewDefinitions?.[this._currentViewModeKey].filter;
+		const nextView=[];
+		for (let i=0;i<this._sourceData.length;i++) {
+			const row=this._sourceData[i];
+			if (predicate(row))
+				nextView.push(row);
+		}
+		this._viewData=nextView;
 	}
 
 	/**Add data-rows to the main table.
@@ -728,18 +735,15 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	setViewMode(viewModeKey) {
-		const views=this._viewDefinitions??{};
-		const viewKeys=Object.keys(views);
-		if (!(viewModeKey in views)) {
-			const validKeys=viewKeys.join(", ");
+		if (viewModeKey===this._currentViewModeKey)
+			return;
+		if (!(viewModeKey in this._viewDefinitions)) {
+			const validKeys=Object.keys(this._viewDefinitions).join(", ");
 			throw new Error(`Unknown viewMode "${viewModeKey}". Valid viewModes: ${validKeys}`);
 		}
-		if (viewModeKey===this._currentViewMode)
-			return;
-		this._currentViewMode=viewModeKey;
+		this._currentViewModeKey=viewModeKey;
 		this._rebuildViewData();
-		const filterVal=this._filter??"";
-		this._filterData(filterVal);
+		this._filterData(this._filter);
 	}
 
 	/**Explicitly create and insert a new, uncommitted row. */
