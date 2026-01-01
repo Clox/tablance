@@ -268,7 +268,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		}
 		myTablance.addData(data);
 	}
-	myTablance._allData[0].file={lastModified:1669981639918,name:"foo.txt",size:1337,type: "text"};
+	myTablance._sourceData[0].file={lastModified:1669981639918,name:"foo.txt",size:1337,type: "text"};
 
 
 	const tablanceContainer2=document.getElementById("tablanceContainer2");

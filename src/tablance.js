@@ -716,10 +716,22 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		for (let i=0;i<data.length;i++)
 			if (predicate(data[i]))
 				viewMatches.push(data[i]);
+		const viewLenBefore=this._viewData.length;
 		this._viewData=prepend?viewMatches.concat(this._viewData):this._viewData.concat(viewMatches);
 		const filterVal=this._filter??"";
 		if (filterVal) {
-			this._filterData(filterVal);
+			this._resetFilterState();
+			const selectOptsCache=new WeakMap();
+			const newFiltered=[];
+			for (let i=0;i<viewMatches.length;i++) {
+				const mainIndex=prepend?i:viewLenBefore+i;
+				if (this._rowSatisfiesFilters(filterVal,viewMatches[i],mainIndex,true,false,selectOptsCache))
+					newFiltered.push(viewMatches[i]);
+			}
+			this._filteredData=prepend?newFiltered.concat(this._filteredData):this._filteredData.concat(newFiltered);
+			this._sortData();
+			this._refreshTable();
+			this._refreshTableSizerNoDetails();
 		} else {
 			this._filteredData=this._viewData;
 			const sortingOccured=this._sortData();
@@ -750,7 +762,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 		this._currentViewModeKey=viewModeKey;
 		this._rebuildViewData();
-		this._filterData(this._filter);
+		this._applyFilters(this._filter);
 	}
 
 	/**Explicitly create and insert a new, uncommitted row. */
@@ -1651,7 +1663,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	_onSearchInput(_e) {
-		this._filterData(this._searchInput.value);
+		this._applyFilters(this._searchInput.value);
 	}
 
 	_setupSpreadsheet(onlyDetails) {
@@ -4393,7 +4405,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 	}
 
-	_filterData(filterString, includeDetails=true,caseSensitive=false) {
+	/**
+	 * Run the full filter pipeline: reset filter state, apply the filter to the current view,
+	 * then sort and refresh rendered output.
+	 * @param {*} filterString The filter string to apply (empty/falsey clears filtering).
+	 * @param {boolean} includeDetails Whether to include details entries when matching.
+	 * @param {boolean} caseSensitive Whether text matching should be case sensitive.
+	 */
+	_applyFilters(filterString, includeDetails=true,caseSensitive=false) {
 
 		//currently all of the rows will have to be closed. This is because Tablance doesn't have the logic needed now
 		//to recalculate the virtualization based on artibrary rows that are expanded with variable heights. It only
@@ -4414,10 +4433,41 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		for (const tr of this._mainTbody.querySelectorAll("tr.details"))
 		 	tr.remove();
 		this._filter=filterString;
+		const viewData=this._viewData??[];
+		if (filterString) {
+			const selectOptsCache=new WeakMap();
+			const nextData=[];
+			for (let dataIndex=0; dataIndex<viewData.length; dataIndex++) {
+				const dataRow=viewData[dataIndex];
+				if (this._rowSatisfiesFilters(filterString,dataRow,dataIndex,includeDetails,caseSensitive,selectOptsCache))
+					nextData.push(dataRow);
+			}
+			this._filteredData=nextData;
+		} else
+			this._filteredData=viewData;
+		this._sortData();
+		this._scrollRowIndex=0;
+		this._refreshTable();
+		this._refreshTableSizerNoDetails();
+	}
+
+	/**
+	 * Check whether a single row satisfies the current filter/search criteria.
+	 * @param {*} filterString  The filter string (empty/falsey means always match).
+	 * @param {object} dataRow  Row data object to test.
+	 * @param {number} mainIndex Index of the row within the active view.
+	 * @param {boolean} includeDetails Whether to search nested details entries.
+	 * @param {boolean} caseSensitive Whether text matching should be case sensitive.
+	 * @param {WeakMap} selectOptsCache Optional per-call cache for select options by schema node.
+	 * @returns {boolean} True if the row matches the filter.
+	 */
+	_rowSatisfiesFilters(filterString,dataRow,mainIndex,includeDetails=true,caseSensitive=false,selectOptsCache) {
+		if (!filterString)
+			return true;
 		const filterNeedle=!caseSensitive&&typeof filterString==="string"?filterString.toLowerCase():filterString;
 		const searchDelim="\u0001";//separator to prevent cross-field substring matches when caching
 		let rowSearchText;
-		const selectOptsCache=new WeakMap();//cache select options by value per schema node so per-row lookups stay O(1)
+		selectOptsCache??=new WeakMap();//cache select options by value per schema node so per-row lookups stay O(1)
 		const getSelectOptionsByVal=schemaNode=>{
 			let cached=selectOptsCache.get(schemaNode);
 			if (cached)
@@ -4503,44 +4553,26 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		for (let col of this._colSchemaNodes)
 			if (col.type!=="expand"&&col.type!=="select")
 				colsToFilterBy.push(col);
-		const viewData=this._viewData??[];
-		if (filterString) {
-			const dataSource=viewData;
-			const nextData=[];
-			for (let dataIndex=0; dataIndex<dataSource.length; dataIndex++) {
-				const dataRow=dataSource[dataIndex];
-				const mainIndex=dataIndex;
-				const effectiveMainIndex=mainIndex;
-				const cachedSearchText=this._rowFilterCache.get(dataRow);
-				if (cachedSearchText!=null&&cachedSearchText.includes(searchDelim)) {
-					const haystack=caseSensitive?cachedSearchText:cachedSearchText.toLowerCase();
-					if (haystack.includes(filterNeedle))
-						nextData.push(dataRow);
-					continue;
-				}
+		const cachedSearchText=this._rowFilterCache.get(dataRow);
+		if (cachedSearchText!=null&&cachedSearchText.includes(searchDelim)) {
+			const haystack=caseSensitive?cachedSearchText:cachedSearchText.toLowerCase();
+			if (haystack.includes(filterNeedle))
+				return true;
+		}
 
-				rowSearchText="";
-				let match=false;
-				for (let colI=-1,col; col=colsToFilterBy[++colI];) {
-					if (matchesFieldValue(col,dataRow,effectiveMainIndex)) {
-						match=true;
-						break;
-					}
-				}
-				if (!match&&includeDetails&&this._schema.details)
-					match=detailsMatch(this._schema.details,dataRow,effectiveMainIndex);
-				if (match) {
-					nextData.push(dataRow);
-				} else
-					this._rowFilterCache.set(dataRow,rowSearchText);
+		rowSearchText="";
+		let match=false;
+		for (let colI=-1,col; col=colsToFilterBy[++colI];) {
+			if (matchesFieldValue(col,dataRow,mainIndex)) {
+				match=true;
+				break;
 			}
-			this._filteredData=nextData;
-		} else
-			this._filteredData=viewData;
-		this._sortData();
-		this._scrollRowIndex=0;
-		this._refreshTable();
-		this._refreshTableSizerNoDetails();
+		}
+		if (!match&&includeDetails&&this._schema.details)
+			match=detailsMatch(this._schema.details,dataRow,mainIndex);
+		if (!match)
+			this._rowFilterCache.set(dataRow,rowSearchText);
+		return match;
 	}
 
 	_setDataForOnlyDetails(data) {
