@@ -709,7 +709,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			this._sourceData=data.concat(this._sourceData);
 		else
 			this._sourceData=this._sourceData.concat(data);
-		this._rebuildViewData();
+		
+		// Fast path: slot only the new rows into the active view instead of rebuilding from scratch.
+		const predicate=this._viewDefinitions[this._currentViewModeKey].filter;
+		const viewMatches=[];
+		for (let i=0;i<data.length;i++)
+			if (predicate(data[i]))
+				viewMatches.push(data[i]);
+		this._viewData=prepend?viewMatches.concat(this._viewData):this._viewData.concat(viewMatches);
 		const filterVal=this._filter??"";
 		if (filterVal) {
 			this._filterData(filterVal);
