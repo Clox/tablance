@@ -4548,20 +4548,16 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (col.type!=="expand"&&col.type!=="select")
 				colsToFilterBy.push(col);
 		const cachedSearchText=this._rowFilterCache.get(dataRow);
-		if (cachedSearchText!=null&&cachedSearchText.includes(searchDelim)) {
-			const haystack=caseSensitive?cachedSearchText:cachedSearchText.toLowerCase();
-			if (haystack.includes(filterNeedle))
-				return true;
-		}
+		if (cachedSearchText!=null&&cachedSearchText.includes(searchDelim))
+			return haystack.includes(caseSensitive?cachedSearchText:cachedSearchText.toLowerCase());
 
 		rowSearchText="";
 		let match=false;
-		for (let colI=-1,col; col=colsToFilterBy[++colI];) {
+		for (let colI=-1,col; col=colsToFilterBy[++colI];)
 			if (matchesFieldValue(col,dataRow,mainIndex)) {
 				match=true;
 				break;
 			}
-		}
 		if (!match&&includeDetails&&this._schema.details)
 			match=detailsMatch(this._schema.details,dataRow,mainIndex);
 		if (!match)
