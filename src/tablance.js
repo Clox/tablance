@@ -211,6 +211,56 @@ class TablanceBase {
 	lang;//object holding strings used in the table for various purposes. See DEFAULT_LANG for default values					
 	_rowMeta=new WeakMap();//tracks row metadata (isNew flags, expanded heights, etc.) keyed by row data objects
 
+
+	/**
+	 * Set of unique select input definitions used for filtering.
+	 *
+	 * Purpose:
+	 * This cache exists to support efficient filtering of rows that depend on
+	 * select-type inputs. During filtering, the current option values for each
+	 * select input need to be resolved once per filter pass, rather than by
+	 * repeatedly walking the schema tree.
+	 *
+	 * Design details:
+	 *
+	 * • Each entry is the `input` object of a schema node with `input.type === "select"`
+	 * • The set is keyed by the input object itself (not by options or schema nodes)
+	 * • This allows external code to freely mutate or replace `input.options`
+	 *   without invalidating the cache
+	 *
+	 * Usage:
+	 *
+	 * • Iterated during filtering to derive the active option key/value mappings
+	 * • Decouples filter logic from schema traversal
+	 * • Prevents repeated schema walks on every filter keystroke
+	 *
+	 * Populated by `_collectFilterSchemaCaches`.
+	 *
+	 * @type {Set<Object>}
+	 */
+	_selectInputs;
+
+	/**
+	 * Ordered list of schema nodes that are eligible for text search.
+	 *
+	 * Includes:
+	 * • All field nodes in `schemaRoot.main.columns` (unless `input.type === "button"`)
+	 * • Field nodes found within the `schemaRoot.details` subtree
+	 *
+	 * Excludes:
+	 * • Non-field container nodes (e.g. lists)
+	 * • Fields with `input.type === "button"`
+	 *
+	 * The list is ordered according to schema traversal and is intended
+	 * for repeated iteration during filtering/search operations.
+	 *
+	 * Populated by `_collectFilterSchemaCaches`.
+	 *
+	 * @type {Object[]}
+	 */
+	_searchableFieldNodes;
+
+
 	/**
 	 * @param {HTMLElement} hostEl An element which the table is going to be added to
 	 * @param {{}[]} columns An array of objects where each object has the following structure: {
@@ -958,6 +1008,66 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			return newWrapper;
 		}
 	}
+
+
+	/**
+	 * Collects schema-derived caches used by filtering and searching.
+	 *
+	 * This function walks the validated schema and extracts:
+	 *
+	 * • All unique select input definitions (keyed by the `input` object itself)
+	 * • All schema nodes that should be considered searchable fields
+	 *
+	 * Structural assumptions (enforced elsewhere by schema validation):
+	 *
+	 * • `schemaRoot.main.columns` contains field nodes only
+	 *   - Columns never have `entry` or `entries`
+	 *   - All column fields are implicitly searchable (unless input.type==="button")
+	 *
+	 * • `schemaRoot.details` is a single schema node (often a list)
+	 *   - Only the details subtree may contain `entry` / `entries`
+	 *   - Only nodes of type "field" inside details are searchable
+	 *
+	 * • A node may have either `entry` or `entries`, never both
+	 *
+	 * Notes:
+	 *
+	 * • Select inputs are keyed by the `input` object, not by options or nodes,
+	 *   to allow external mutation or replacement of the options array.
+	 * @param {Object} schemaRoot
+	 *   The validated root schema facade.
+	 *
+	 * @returns {{
+	 *   selectInputs: Set<Object>,
+	 *   searchableFieldNodes: Object[]
+	 * }}
+	 *   An object containing:
+	 *   - `selectInputs`: unique select input definitions
+	 *   - `searchableFieldNodes`: ordered list of schema nodes eligible for search
+	 */
+	_collectFilterSchemaCaches(schemaRoot) {
+		this._selectInputs=new Set();
+		this._searchableFieldNodes=[];
+		const stack=[schemaRoot.details];
+
+		const processNode=(node,isDetails)=>{
+			const input=node.input;
+			if (input?.type==="select")
+				this._selectInputs.add(input);
+			if ((node.type==="field"||!isDetails) && input?.type!=="button")
+				this._searchableFieldNodes.push(node);
+			if (isDetails)
+				if (node.entry)
+					stack.push(node.entry);
+				else if (node.entries)
+					stack.push(...node.entries);
+		};
+		for (const col of schemaRoot.main.columns)
+			processNode(col,false);
+		while (stack.length)
+			processNode(stack.pop(),true);
+	}
+
 
 
 
@@ -5166,6 +5276,7 @@ export default class Tablance extends TablanceBase {
 	constructor() {
 		super(...arguments);
 		this._dropdownAlignmentContainer=this._onlyDetails?this.rootEl:this._scrollBody;
+		this._collectFilterSchemaCaches(this._schema);
 	}
 	
 	_doEditSave() {
