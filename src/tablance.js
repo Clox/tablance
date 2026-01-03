@@ -765,11 +765,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const viewLenBefore=this._viewData.length;
 		this._viewData=prepend?viewMatches.concat(this._viewData):this._viewData.concat(viewMatches);
 		if (this._filter) {
-			const selectOptsCache=new WeakMap();
+			const selectOptsCache=this._createSelectOptsCache();
 			const newFiltered=[];
 			for (let i=0;i<viewMatches.length;i++) {
 				const mainIndex=prepend?i:viewLenBefore+i;
-				if (this._rowSatisfiesFilters(this._filter,viewMatches[i],mainIndex,true,false,selectOptsCache))
+				if (this._rowSatisfiesFilters(this._filter,viewMatches[i],mainIndex,selectOptsCache))
 					newFiltered.push(viewMatches[i]);
 			}
 			this._filteredData=prepend?newFiltered.concat(this._filteredData):this._filteredData.concat(newFiltered);
@@ -4510,6 +4510,25 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	/**
+	 * Build a lookup of select options keyed by the options array itself.
+	 * Uses the pre-collected select inputs to avoid walking the entire schema tree.
+	 * @returns {WeakMap<object, Record<string, any>>} WeakMap keyed by options arrays with value->option maps.
+	 */
+	_createSelectOptsCache() {
+		const cache=new WeakMap();
+		for (const input of this._selectInputs) {
+			const opts=input?.options;
+			if (cache.has(opts))
+				continue;
+			const optionsByVal=Object.create(null);
+			for (const opt of opts)
+				optionsByVal[opt.value]=opt.text;
+			cache.set(opts,optionsByVal);
+		}
+		return cache;
+	}
+
+	/**
 	 * Run the full filter pipeline: reset filter state, apply the filter to the current view,
 	 * then sort and refresh rendered output.
 	 * @param {*} filterString The filter string to apply (empty/falsey clears filtering).
@@ -4539,11 +4558,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._filter=filterString;
 		const viewData=this._viewData??[];
 		if (filterString) {
-			const selectOptsCache=new WeakMap();
+			const selectOptsCache=this._createSelectOptsCache();
 			const nextData=[];
 			for (let dataIndex=0; dataIndex<viewData.length; dataIndex++) {
 				const dataRow=viewData[dataIndex];
-				if (this._rowSatisfiesFilters(filterString,dataRow,dataIndex,includeDetails,caseSensitive,selectOptsCache))
+				if (this._rowSatisfiesFilters(filterString,dataRow,dataIndex,selectOptsCache))
 					nextData.push(dataRow);
 			}
 			this._filteredData=nextData;
@@ -4560,30 +4579,15 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 * @param {*} filterString  The filter string (empty/falsey means always match).
 	 * @param {object} dataRow  Row data object to test.
 	 * @param {number} mainIndex Index of the row within the active view.
+	 * @param {WeakMap<object, Record<string, any>>} selectOptsCache Cache for select options keyed by options array.
 	 * @param {boolean} includeDetails Whether to search nested details entries.
 	 * @param {boolean} caseSensitive Whether text matching should be case sensitive.
-	 * @param {WeakMap} selectOptsCache Optional per-call cache for select options by schema node.
 	 * @returns {boolean} True if the row matches the filter.
 	 */
-	_rowSatisfiesFilters(filterString,dataRow,mainIndex,includeDetails=true,caseSensitive=false,selectOptsCache) {
-		if (!filterString)
-			return true;
+	_rowSatisfiesFilters(filterString,dataRow,mainIndex,selectOptsCache,includeDetails=true,caseSensitive=false) {
 		const filterNeedle=!caseSensitive&&typeof filterString==="string"?filterString.toLowerCase():filterString;
 		const searchDelim="\u0001";//separator to prevent cross-field substring matches when caching
 		let rowSearchText;
-		selectOptsCache??=new WeakMap();//cache select options by value per schema node so per-row lookups stay O(1)
-		const getSelectOptionsByVal=schemaNode=>{
-			let cached=selectOptsCache.get(schemaNode);
-			if (cached)
-				return cached;
-			const map=Object.create(null);
-			for (const opt of this._getSelectOptions(schemaNode.input)) {
-				const key=this._getSelectValue(opt);
-				map[key]=opt;
-			}
-			selectOptsCache.set(schemaNode,map);
-			return map;
-		};
 		const matchesFilter=value=>{
 			rowSearchText+=(value==null?"":String(value))+searchDelim;
 			if (value==null)
@@ -4600,15 +4604,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				return false;
 			if (schemaNode.input?.type=="select"&&!schemaNode.render) {
 				const cellVal=dataObj?.[schemaNode.id];
-				const val=this._getSelectValue(cellVal);
-				const opt=getSelectOptionsByVal(schemaNode)?.[val];
-				if (opt?.text)
-					return matchesFilter(opt.text);
-				else if (this._isObject(cellVal)&&cellVal.text)
-					return matchesFilter(cellVal.text);
-				else if (val!=null)
-					return matchesFilter(val);
-				return false;
+				const text=selectOptsCache.get(schemaNode.input.options)[cellVal];
+				if (!text)
+					return false;
+				return matchesFilter(text);
 			}
 			const filterVal=this._getDisplayValue(schemaNode,dataObj,mainIndex,true);//strip tags if html-rendered
 			return matchesFilter(filterVal);
@@ -4658,8 +4657,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (col.type!=="expand"&&col.type!=="select")
 				colsToFilterBy.push(col);
 		const cachedSearchText=this._rowFilterCache.get(dataRow);
-		if (cachedSearchText!=null&&cachedSearchText.includes(searchDelim))
-			return haystack.includes(caseSensitive?cachedSearchText:cachedSearchText.toLowerCase());
+		if (cachedSearchText!=null&&cachedSearchText.includes(searchDelim)) {
+			const haystack=caseSensitive?cachedSearchText:cachedSearchText.toLowerCase();
+			return haystack.includes(filterNeedle);
+		}
 
 		rowSearchText="";
 		let match=false;
