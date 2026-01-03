@@ -1048,7 +1048,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_collectFilterSchemaCaches(schemaRoot) {
 		this._selectInputs=new Set();
 		this._searchableFieldNodes=[];
-		const stack=[schemaRoot.details];
+		const stack=schemaRoot.details?[schemaRoot.details]:[];
 
 		const processNode=(node,isDetails)=>{
 			const input=node.input;
