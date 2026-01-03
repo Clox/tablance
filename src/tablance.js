@@ -4348,7 +4348,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		mainPage.classList.add("main");
 		mainPage.style.display="block";
 
-		const bulkEditFields=this._buildBulkEditSchemaNodes(schema.details);
+		const bulkEditFields=schema.details?this._buildBulkEditSchemaNodes(schema.details):[];
 		for (const column of schema.main.columns)
 			bulkEditFields.push(...this._buildBulkEditSchemaNodes(column));
 
