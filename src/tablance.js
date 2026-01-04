@@ -295,6 +295,8 @@ class TablanceBase {
 	 * 			Properties that are valid for all types of entries:
 	 * 				* title String displayed title if placed in a container which displays the title
 	 *
+	 
+	 //todo visibleIf should get payload. (I think it already does but is not reflected in the docs here) The payload should also get valueBundle
 	 * 				* visibleIf Function Optional callback that determines whether this entry should be visible.
 	 * 					Receives a payload from _makeCallbackPayload plus:
 	 * 					- value: resolved cell value (id wins when present, select uses option.value when available)
@@ -420,12 +422,13 @@ class TablanceBase {
 	 * 							- cancelUpdate: function() to prevent the value from being persisted
 	 * 						onBlur Function Callback fired when cellcursor goes from being inside the container
 	 * 							to outside. It will get passed arguments 1:instanceNode, 2:mainIndex
-	 * 						enabled Function - If present then this function will be run and if it returns falsey then
-	 * 							the cell will not be editable. It may also return an object structured as:
-	 * 							{enabled:Bool, message:String}. The message will be displayed to the user 
-	 * 							if edit is attempted and enabled is set to false, disabling the field
-	 * 							It gets passed the following arguments - 
-	 * 							1:schemaNode,2:rowData,3:mainIndex,4:instanceNode(if in details)
+	 * 						enabledIf Function Optional callback that decides if the cell is editable.
+	 * 							Receives a payload from _makeCallbackPayload plus:
+	 * 							- value: resolved cell value (id wins when present, select uses option.value when 
+	 * 																										available)
+	 * 							- idValue: rowData[schemaNode.id] (if id is set)
+	 * 							- dependedValue: the resolved dependee value when dependsOn* is used
+	 * 							Return false (or {enabled:false, message:String}) to disable the field.
 	 * 					----Properties specific to input "text"----
 	 * 						format object When defined, Tablance automatically applies the specified pattern to 
 	 * 							the <input> element as the user types. It can enforce numeric-only input, insert
@@ -5118,8 +5121,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			}
 			let isDisabled=false;
 			if (this._spreadsheet&&schemaNode.type!=="expand") {
-				const enabledFuncResult=schemaNode.input?.enabled?.(schemaNode,rowData,mainIndex,instanceNode);
 				const hasOnEnter=!!schemaNode.onEnter;
+				let enabledFuncResult;
+				if (schemaNode.input?.enabledIf) {
+					const valuePayload=valueBundle??this._getCellValueBundle(schemaNode,rowData,mainIndex,instanceNode);
+					const enabledPayload=this._makeCallbackPayload(instanceNode,valuePayload,
+						{schemaNode,mainIndex,rowData});
+					enabledFuncResult=schemaNode.input.enabledIf(enabledPayload);
+				}
 				if (enabledFuncResult==false||enabledFuncResult?.enabled==false)
 					isDisabled=true;
 				else if (!schemaNode.input&&!hasOnEnter)
