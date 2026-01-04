@@ -1,10 +1,6 @@
 
 /** Symbol used to tag wrapper objects to avoid ever double-wrapping. Symbol used over string but not really needed. */
 const SCHEMA_WRAPPER_MARKER=Symbol("schemaWrapper");
-/** Set of properties allowed on wrapper nodes; access outside this set is forwarded to the raw schema node. */
-const SCHEMA_WRAPPER_KEYS=new Set(["raw", "parent", "main", "details", "columns", "entry", "entries", "_autoId",
-	"_path", "sortDiv","_dataContextPath","_dataPath", "dependencyPaths", "dependsOnCellPaths", "dependsOnDataPath",
-	"pxWidth", SCHEMA_WRAPPER_MARKER]);
 
 const TABLANCE_VERSION = typeof __TABLANCE_VERSION__!=="undefined"?__TABLANCE_VERSION__:"dev";
 const TABLANCE_BUILD = typeof __TABLANCE_BUILD__!=="undefined"?__TABLANCE_BUILD__:"dev";
@@ -932,13 +928,13 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 */
 	_buildSchemaFacade(rawNode, parentWrappedNode=null) {
 
+		// Already wrapped? Return as-is to avoid double wrapping.
+		if (rawNode && rawNode[SCHEMA_WRAPPER_MARKER])
+			return rawNode;
+
 		// Reject null/undefined & non-objects. Could be left for isPojo-check but that throws error on undefined
 		if (!rawNode || typeof rawNode!="object")
 			return null;
-
-		// Already wrapped? Return as-is to avoid double wrapping.
-		if (rawNode[SCHEMA_WRAPPER_MARKER])
-			return rawNode;
 
 		// Accept only POJOs and arrays.
 		// This ensures we only traverse expected schema structures
@@ -948,7 +944,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		if (!isPojo && !Array.isArray(rawNode))
 			return null;
 
-		//const wrappedNode = Object.assign(Object.create(null), {raw: rawNode,parent: parentWrappedNode});
 		const wrappedNode = createSchemaNodeFacade(rawNode, parentWrappedNode);
 
 		// ---- CHILD NODE PROCESSING ----
@@ -992,23 +987,28 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 		return wrappedNode;
 
-		function createSchemaNodeFacade(rawNode, parentWrappedNode) {
-			const newWrapper = Object.create(null);
-			Object.defineProperty(newWrapper,"raw",{value:rawNode, enumerable:false, configurable:true});
-			Object.defineProperty(newWrapper,SCHEMA_WRAPPER_MARKER,{value:true, enumerable:false});
-			if (parentWrappedNode)
-				newWrapper.parent = parentWrappedNode;
-			for (const key of Reflect.ownKeys(rawNode)) {
-				if (SCHEMA_WRAPPER_KEYS.has(key))
-					continue;//avoid clobbering wrapper metadata
-				Object.defineProperty(newWrapper,key,{
-					enumerable:true,
-					configurable:true,
-					get:()=>rawNode[key],
-					set:()=>{throw new Error(`Cannot write ${String(key)} to schema-node. Add it to SCHEMA_WRAPPER_KEYS if intended.`);}
-				});
-			}
-			return newWrapper;
+		function createSchemaNodeFacade(rawNode, parentProxy) {
+			const wrapper = Object.create(null);
+			Object.defineProperty(wrapper,"raw",{value:rawNode, enumerable:false, configurable:true});
+			Object.defineProperty(wrapper,SCHEMA_WRAPPER_MARKER,{value:true, enumerable:false});
+			if (parentProxy)
+				wrapper.parent = parentProxy;
+			return new Proxy(wrapper,{
+				get(target,prop) {
+					if (prop in target)
+						return target[prop];
+					if (rawNode && Object.prototype.hasOwnProperty.call(rawNode,prop))
+						return rawNode[prop];
+					return undefined;
+				},
+				set(target,prop,value) {
+					target[prop]=value;
+					return true;
+				},
+				has(target,prop) {
+					return prop in target || prop in rawNode;
+				}
+			});
 		}
 	}
 
