@@ -993,6 +993,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			Object.defineProperty(wrapper,SCHEMA_WRAPPER_MARKER,{value:true, enumerable:false});
 			if (parentProxy)
 				wrapper.parent = parentProxy;
+			if (!Object.prototype.hasOwnProperty.call(rawNode,"type"))
+				wrapper.type="field";
 			return new Proxy(wrapper,{
 				get(target,prop) {
 					if (prop in target)
