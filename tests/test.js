@@ -38,15 +38,15 @@ document.addEventListener("DOMContentLoaded", ()=>{
 				{text:"another set of grapes",value:13},{text:"another melon",value:14},
 				{text:"another pineapple",value:15},{text:"another carrot",value:13}];
 	const myTablanceCols=[{type:"select", width:45},{type:"expand", width:45}
-		,{id:"desc",title:"Description",nodeId:"description", width:"150px",html:true,input:{bulkEdit:false,
+		,{dataKey:"desc",title:"Description",nodeId:"description", width:"150px",html:true,input:{bulkEdit:false,
 			/** @type {TablanceOnChangeCallback} */
 			onChange:handleDescriptionChange,type:"text",maxLength:5,placeholder:"placeholder"
 			,enabledIf:()=>Math.random()>.5},render:descFunc, cssClass:()=>"fooclass"}
-		,{id:"amount",title:"Amount",width:"85px",input:{bulkEdit:true},bulkEdit:true},{id:"balance",title:"Balance",width:"85px"}
-		,{id:"food",title:"Food",width:"120px",input:{multiCellWidth:100,type:"select"
+		,{dataKey:"amount",title:"Amount",width:"85px",input:{bulkEdit:true},bulkEdit:true},{dataKey:"balance",title:"Balance",width:"85px"}
+		,{dataKey:"food",title:"Food",width:"120px",input:{multiCellWidth:100,type:"select"
 			,options:foods,minOptsFilter:100,allowCreateNew:true,allowSelectEmpty:true
 			,selectInputPlaceholder:"Sök/Skapa"},bulkEdit:true}
-		,{id:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"},bulkEdit:true}, 
+		,{dataKey:"mainDate",title:"Main Date",width:"120px",input:{multiCellWidth:100,type:"date"},bulkEdit:true}, 
 		{title:"numtwice", render:({value})=>value*2, dependsOn:"num", onEnter:({mainIndex})=>{
 			myTablance.selectCell(mainIndex,"personnummer",{enterEditMode:true})
 		}},
@@ -59,44 +59,44 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			},
 		];
 	const myExpansion={meta:{"foo":"details", "baz":42},type:"list",titlesColWidth:"8em",entries:[
-		{type:"repeated",id:"bar1",create:true,entry:
+		{type:"repeated",dataKey:"bar1",create:true,entry:
 			{type:"group",title:"repeated group with nested repeated group",onCommit:()=>console.log("outer group"),entries:[
-					{type:"repeated",id:"bar2",title:"inner repeated group",create:true,entry:
+					{type:"repeated",dataKey:"bar2",title:"inner repeated group",create:true,entry:
 						{type:"group",onCommit:()=>console.log("inner group"),entries:[
-							{type:"field", title:"inner field",id:"foooo",input:"text"}
+							{type:"field", title:"inner field",dataKey:"foooo",input:"text"}
 						]}
 					},
 				],
 			},
 		},
 
-		{type:"field",title:"OnEnter demo",id:"enter_demo",onEnter:({mainIndex})=>{
+		{type:"field",title:"OnEnter demo",dataKey:"enter_demo",onEnter:({mainIndex})=>{
 			myTablance.selectCell(mainIndex,"personnummer",{enterEditMode:true})
 		}},
-		{type:"field",title: "Personnummer",id:"personal_identity_number", render:renderPNum,nodeId:"personnummer",
+		{type:"field",title: "Personnummer",dataKey:"personal_identity_number", render:renderPNum,nodeId:"personnummer",
 					input:{type:"text",
 						format:{ blocks: [8, 4], delimiter: "-", numericOnly: true,stripDelimiterOnSave:true},
 						placeholder:"ÅÅÅÅMMDD-XXXX",
 					}},
-		{type:"field",title:"Phone Number",id:"phoneNumber",input:{type:"text",
+		{type:"field",title:"Phone Number",dataKey:"phoneNumber",input:{type:"text",
 			livePattern:/^\+?\d*$/,validation:/^\+?\d+$/}},
 		{type:"field",title:"amount+10",render:({value})=>(Number(value)+10).toFixed(2)
 			, dependsOn:"amount",/* visibleIf:({value})=>false */},
-		{type:"field",title:"num",id:"num", input:{type:"text"},bulkEdit:true},
-	{type:"field",title:"Format field",id:"myFormattedData"
+		{type:"field",title:"num",dataKey:"num", input:{type:"text"},bulkEdit:true},
+	{type:"field",title:"Format field",dataKey:"myFormattedData"
 		,input:{type:"text", format:{ blocks: [8, 4], delimiter: "-", numericOnly: true , 
 		stripDelimiterOnSave:true}}},
 {type:"group",dataPath:"hemadress",title:"Hemadress",bulkEdit:true,entries:[
-	{type:"field",title:"Gata",id:"street",input:{type:"text",
+	{type:"field",title:"Gata",dataKey:"street",input:{type:"text",
 			onChange:payload=>console.log(payload)}},
-	{type:"field",title:"Postnummer",id:"zip",input:{type:"text",
+	{type:"field",title:"Postnummer",dataKey:"zip",input:{type:"text",
 			onChange:payload=>console.log(payload)}},
-	{type:"field",title:"Ort",id:"city",input:{type:"text",
+	{type:"field",title:"Ort",dataKey:"city",input:{type:"text",
 			onChange:payload=>console.log(payload)}}
 ]},
-	{type:"group",id:"innergrejer",title:"Inre grej",onClose:({preventClose})=>preventClose("nope!"),
-		entries:[{type:"field",id:"innerFoo"}]},
-		{type:"field",title:"File",id:"file",input:{type:"file",fileUploadHandler:xhr=>{
+	{type:"group",dataKey:"innergrejer",title:"Inre grej",onClose:({preventClose})=>preventClose("nope!"),
+		entries:[{type:"field",dataKey:"innerFoo"}]},
+		{type:"field",title:"File",dataKey:"file",input:{type:"file",fileUploadHandler:xhr=>{
 				xhr.open("POST", "http://localhost:3000/tests/serve.php", true);
 			},
 			fileMetasToShow:{filename:true},
@@ -104,14 +104,14 @@ document.addEventListener("DOMContentLoaded", ()=>{
 				console.log(args);
 			}
 		}}
-		,{type:"field",title:"Select",id:"sel",input:{type:"select",options:foods,minOptsFilter:100
+		,{type:"field",title:"Select",dataKey:"sel",input:{type:"select",options:foods,minOptsFilter:100
 							,allowCreateNew:true,allowSelectEmpty:true,selectInputPlaceholder:"Sök/Skapa"}},
 		
-			{type:"repeated",id:"addresses",sortCompare:(a,b)=>a.zip>b.zip?1:-1,entry:{type:"group",title:"Adress"
+			{type:"repeated",dataKey:"addresses",sortCompare:(a,b)=>a.zip>b.zip?1:-1,entry:{type:"group",title:"Adress"
 			,entries:
-			[{type:"field",title:"Gata",id:"street"},
-			{type:"field",title:"Postnummer",id:"zip"},
-				{type:"field",title:"Ort",id:"city",nodeId:"addrCity",input:{type:"text", onChange:args=>console.log(args.closestMeta("foo"))}},
+			[{type:"field",title:"Gata",dataKey:"street"},
+			{type:"field",title:"Postnummer",dataKey:"zip"},
+				{type:"field",title:"Ort",dataKey:"city",nodeId:"addrCity",input:{type:"text", onChange:args=>console.log(args.closestMeta("foo"))}},
 				{type:"field",title:"Ort i versaler"
 					,render:({value})=>value.toUpperCase()
 					,dependsOn:"addrCity"},
@@ -119,13 +119,13 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			]}},
 		
 		
-		{type:"field",title:"Date",id:"date",input:{type:"date",onChange:payload=>console.log(payload)}},
-		{type:"repeated",id:"repeatedField",sortCompare:(a,b)=>a.bar>b.bar?1:-1,entry:
-			{type:"field",title:"repeated row",id:"foo"}
+		{type:"field",title:"Date",dataKey:"date",input:{type:"date",onChange:payload=>console.log(payload)}},
+		{type:"repeated",dataKey:"repeatedField",sortCompare:(a,b)=>a.bar>b.bar?1:-1,entry:
+			{type:"field",title:"repeated row",dataKey:"foo"}
 		},
 		{type:"field",input:{type:"button",btnText:"Cool button",clickHandler:btnClickHandler}},
 		 {type:"group",title:"förordnande1",bulkEdit:true,entries:[
-			{type:"repeated",id:"custodianshipChanges",bulkEdit:true,create:true,nodeId:"förordnande1",
+			{type:"repeated",dataKey:"custodianshipChanges",bulkEdit:true,create:true,nodeId:"förordnande1",
 			sortCompare:(a,b)=>a.date>b.date?1:-1
 			,onCreate:payload=>console.log(payload)
 			,onDelete:(...args)=>console.log(args)
@@ -134,13 +134,13 @@ document.addEventListener("DOMContentLoaded", ()=>{
 				{type:"group",closedRender:data=>{
 						return `${{trustee:"God Man", administrator:"Förvaltare"}[data.type]} sedan ${data.date??""}`;
 					},entries:[
-						{type:"field",title:"Datum",id:"date",input:{type:"date",bulkEdit:true}},
-						{type:"field",title:"Typ av ställföreträdarskap",id:"type",input:{type:"select",
+						{type:"field",title:"Datum",dataKey:"date",input:{type:"date",bulkEdit:true}},
+						{type:"field",title:"Typ av ställföreträdarskap",dataKey:"type",input:{type:"select",
 							options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"},
 							{text:"Avslut",value:"end"}]
 							,bulkEdit:true
 						}},
-						{type:"field",title:"Förvalta egendom",id:"administrationOfProperty"
+						{type:"field",title:"Förvalta egendom",dataKey:"administrationOfProperty"
 							,input:{type:"select",
 							options:[{text:"Ja",value:true},{text:"Nej",value:false}]
 						},dependsOn:"type",visibleIf:typeVal=>typeVal&&typeVal!="end"}
@@ -154,10 +154,10 @@ document.addEventListener("DOMContentLoaded", ()=>{
 
 
 		{type:"list",title:"förordnande-lista",titlesColWidth:0,entries:[
-			{type:"repeated",id:"custodianshipChanges",create:true,entry:
+			{type:"repeated",dataKey:"custodianshipChanges",create:true,entry:
 				{type:"group",entries:[
-						{type:"field",title:"Datum",id:"date",input:{type:"date"}},
-						{type:"field",title:"Typ av ställföreträdarskap",id:"type",input:{type:"text",}}
+						{type:"field",title:"Datum",dataKey:"date",input:{type:"date"}},
+						{type:"field",title:"Typ av ställföreträdarskap",dataKey:"type",input:{type:"text",}}
 					],
 				}
 			}
@@ -165,7 +165,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 
 
 /* 		{type:"list",title:"förordnande-lista",titlesColWidth:0,entries:[
-			{type:"repeated",id:"custodianshipChanges",create:true,onCreate:payload=>console.log(payload)
+			{type:"repeated",dataKey:"custodianshipChanges",create:true,onCreate:payload=>console.log(payload)
 			,onDelete:(...args)=>console.log(args)
 			,sortCompare:(a,b)=>a.date>b.date?1:-1
 			,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
@@ -173,8 +173,8 @@ document.addEventListener("DOMContentLoaded", ()=>{
 				{type:"group",closedRender:data=>{
 						return `${{trustee:"God Man", administrator:"Förvaltare"}[data.type]} sedan ${data.date??""}`;
 					},entries:[
-						{type:"field",title:"Datum",id:"date",input:{type:"date"}},
-						{type:"field",title:"Typ av ställföreträdarskap",id:"type",input:{type:"select",
+						{type:"field",title:"Datum",dataKey:"date",input:{type:"date"}},
+						{type:"field",title:"Typ av ställföreträdarskap",dataKey:"type",input:{type:"select",
 							options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"}]
 							,allowSelectEmpty:false
 						}}],
@@ -187,33 +187,33 @@ document.addEventListener("DOMContentLoaded", ()=>{
 
 
 		{type:"lineup",title:"Bunch ",entries:[
-			{type:"field",title:"First thing",id:"first"},
-			{type:"field",title:"Second thing",id:"second",/* visibleIf:()=>false */},
-			{type:"field",title:"Third thing",id:"third"},
+			{type:"field",title:"First thing",dataKey:"first"},
+			{type:"field",title:"Second thing",dataKey:"second",/* visibleIf:()=>false */},
+			{type:"field",title:"Third thing",dataKey:"third"},
 			{type:"field",input:{type:"button",btnText:"My button"}},
-			{type:"field",title:"Fourth thing",id:"fourth"},
-			{type:"field",title:"Fifth thing",id:"fifth"},
-			{type:"field",title:"Sixth thing",id:"sixth"},
-			{type:"field",title:"Seventh thing",id:"seventh"},
-			{type:"field",title:"Input thing",id:"inputthing",input:{type:"text"}},
+			{type:"field",title:"Fourth thing",dataKey:"fourth"},
+			{type:"field",title:"Fifth thing",dataKey:"fifth"},
+			{type:"field",title:"Sixth thing",dataKey:"sixth"},
+			{type:"field",title:"Seventh thing",dataKey:"seventh"},
+			{type:"field",title:"Input thing",dataKey:"inputthing",input:{type:"text"}},
 		]},
 		{type:"group",title:"grupp",entries:[
-			{type:"field",title:"Hello",id:"hello",input:{type:"text"}},
-			{type:"field",title:"World",id:"world",input:{type:"text"}},
-			{type:"field",title:"Emptytest",id:"emptykey",input:{type:"text"}}]},
-		{type:"field",title:"Foobar One",id:"foobar1"
+			{type:"field",title:"Hello",dataKey:"hello",input:{type:"text"}},
+			{type:"field",title:"World",dataKey:"world",input:{type:"text"}},
+			{type:"field",title:"Emptytest",dataKey:"emptykey",input:{type:"text"}}]},
+		{type:"field",title:"Foobar One",dataKey:"foobar1"
 			,input:{type:"text",maxLength:5,placeholder:"boo",bulkEdit:true,
 			validation:(newVal,message)=>{
 				message("Must be \"Foo\"");
 				return newVal=="Foo";
 			}}},
-		{type:"field",title:"Foobar Two",id:"foobar2"},
+		{type:"field",title:"Foobar Two",dataKey:"foobar2"},
 		{type:"list",title:"Baz entries",titlesColWidth:"6em",entries:[
-			{type:"field",title:"Baz One",id:"baz1"},
-			{type:"field",title:"Baz Two",id:"baz2"},
-			{type:"field",title:"datum",id:"formatdate",
+			{type:"field",title:"Baz One",dataKey:"baz1"},
+			{type:"field",title:"Baz Two",dataKey:"baz2"},
+			{type:"field",title:"datum",dataKey:"formatdate",
 				input:{format:{date: true},placeholder:"ÅÅÅÅ-MM-DD"}},
-			{type:"field",title:"Anteckningar",id:"notes",maxHeight:150,input:{type:"textarea"}},
+			{type:"field",title:"Anteckningar",dataKey:"notes",maxHeight:150,input:{type:"textarea"}},
 		]},
 	]};
 	const lang={fileName:"Filnamn",fileLastModified:"Senast ändrad", fileSize:"Filstorlek"

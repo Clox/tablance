@@ -37,7 +37,7 @@ REPEATED_INSTANCE_NODE_PROTOTYPE.createNewEntry=function(e,_groupObject) {
 	let repeatData=this.dataObj;
 	if (!repeatData) {
 		const parentDataObj=this.parent?.dataObj;
-		repeatData=parentDataObj?.[this.schemaNode.id]??(parentDataObj?parentDataObj[this.schemaNode.id]=[]:[]);
+		repeatData=parentDataObj?.[this.schemaNode.dataKey]??(parentDataObj?parentDataObj[this.schemaNode.dataKey]=[]:[]);
 		this.dataObj=repeatData;
 	}
 	this.tablance?._repeatInsert(this,true,repeatData[repeatData.length]={});
@@ -264,8 +264,8 @@ class TablanceBase {
 	/**
 	 * @param {HTMLElement} hostEl An element which the table is going to be added to
 	 * @param {{}[]} columns An array of objects where each object has the following structure: {
-	 * 			id String A unique identifier for the column. The value in the data that has this key will be used as
-	 * 				the value in the cell.
+	 * 			dataKey String A unique identifier for the column. The value in the data that has this key will be used
+	 * 				as the value in the cell.
 	 * 			onEnter Function Callback fired when the cell is entered (before edit mode). Receives
 	 * 				{event,value,schemaNode,instanceNode,mainIndex,closestMeta,preventEnter}.
 	 * 			title String The header-string of the column
@@ -276,8 +276,8 @@ class TablanceBase {
 	 * 												details-cells and not directly in a maintable-cell
 	 * 			render Function Function that can be set to render the content of the cell. The return-value is what
 	 * 					will be displayed in the cell. It receives a payload from _makeCallbackPayload plus:
-	 * 					- value: resolved cell value (id wins when present, otherwise dependsOn*)
-	 * 					- idValue: rowData[schemaNode.id] (if id is set)
+	 * 					- value: resolved cell value (dataKey wins when present, otherwise dependsOn*)
+	 * 					- idValue: rowData[schemaNode.dataKey] (if dataKey is set)
 	 * 					- dependedValue: the resolved dependee value when dependsOn* is used
 	 * 			html Bool Default is false. If true then the content of the cell will be rendered as html
 	 * 			type String The default is "data". Possible values are:
@@ -299,12 +299,12 @@ class TablanceBase {
 	 //todo visibleIf should get payload. (I think it already does but is not reflected in the docs here) The payload should also get valueBundle
 	 * 				* visibleIf Function Optional callback that determines whether this entry should be visible.
 	 * 					Receives a payload from _makeCallbackPayload plus:
-	 * 					- value: resolved cell value (id wins when present, select uses option.value when available)
-	 * 					- idValue: rowData[schemaNode.id] (if id is set)
+	 * 					- value: resolved cell value (dataKey wins when present, select uses option.value when available)
+	 * 					- idValue: rowData[schemaNode.dataKey] (if dataKey is set)
 	 * 					- dependedValue: the resolved dependee value when dependsOn* is used
 	 * 					The function is called whenever the entry is rendered or any of its dependencies
 	 * 					(see `dependsOn`) change. It receives the following arguments:
-	 * 						(1: The value from data pointed to by "id"(or if dependsOn is set the value of that cell)
+	 * 						(1: The value from data pointed to by "dataKey"(or if dependsOn is set the value of that cell)
 	 * 						2: data-row, 3: schemaNode, 4: main-index, 5: instanceNode)
 	 * 					Return `true` to make the entry visible, or `false` to hide it.
 	 *
@@ -326,8 +326,8 @@ class TablanceBase {
 	 *
  	 *					Targeting rules:
 	 * 						1. If `nodeId` is set on the schemaNode of a field, that ID is the identifier of that entry.
-	 * 						2. If `id` is set (and `nodeId` is not), the value of `id` becomes the entry’s identifier.
-	 * 						3. `dependsOn` must match the identifier of another entry. If both `id` and `nodeId` exist,
+	 * 						2. If `dataKey` is set (and `nodeId` is not), the value of `dataKey` becomes the entry’s identifier.
+	 * 						3. `dependsOn` must match the identifier of another entry. If both `dataKey` and `nodeId` exist,
 	 * 							`nodeId` takes priority.
 	 * 			Types of entries:
 	 * 			{
@@ -364,14 +364,14 @@ class TablanceBase {
 	 * 							added to the bulk-edit-area. Containers in the bulk-edit-area appear as a normal cell
 	 * 							at first but by entering it a page dedicated to that container is changed to.
 	 *	 		}
-	 *			{
+ *			{
   	 * 				type "field" this is what will display data and which also can be editable by specifying "input"
-  	 * 				id String the key of the property in the data that the row should display
+ 	 * 				dataKey String the key of the property in the data that the row should display
 	 * 				cssClass String Css-classes to be added to the field
 	 * 				render Function Function that can be set to render the content of the cell. The return-value is what
 	 * 					will be displayed in the cell. Similiarly to columns->render it gets passed the following:
-	 * 					1: The value from data pointed to by "id". If id is not set but dependsOn is then this will 
-	 * 						instead get passed the value that the id of the depended cell points to, 
+	 * 					1: The value from data pointed to by "dataKey". If dataKey is not set but dependsOn is then this
+	 * 						will instead get passed the value that the dataKey of the depended cell points to, 
 	 * 					2: data-row, 
 	 * 					3: schemaNode,
 	 * 					4: main-index, 
@@ -424,9 +424,9 @@ class TablanceBase {
 	 * 							to outside. It will get passed arguments 1:instanceNode, 2:mainIndex
 	 * 						enabledIf Function Optional callback that decides if the cell is editable.
 	 * 							Receives a payload from _makeCallbackPayload plus:
-	 * 							- value: resolved cell value (id wins when present, select uses option.value when 
+	 * 							- value: resolved cell value (dataKey wins when present, select uses option.value when 
 	 * 																										available)
-	 * 							- idValue: rowData[schemaNode.id] (if id is set)
+	 * 							- idValue: rowData[schemaNode.dataKey] (if dataKey is set)
 	 * 							- dependedValue: the resolved dependee value when dependsOn* is used
 	 * 							Return false (or {enabled:false, message:String}) to disable the field.
 	 * 					----Properties specific to input "text"----
@@ -505,14 +505,14 @@ class TablanceBase {
 	 * 					multiple field-structures. List-structures can mix repeated(dynamic) and static fields.
 	 * 					The structure could look something like:
 	 * 								list
-	 * 									repeated
+ 	 * 									repeated
 	 * 										field
 	 * 									field1
 	 * 									field2
-  	 * 				id String this should be the key of an array in the data where each object corresponds to each
+ 	 * 				dataKey String this should be the key of an array in the data where each object corresponds to each
 	 * 							element in this repeated rows.
-  	 * 				entry Object Any entry. May be item or list for instance. The data retrieved for these will be 1
-	 * 								level deeper so the path from the base would be idOfRepeatedRows->arrayIndex->*
+ 	 * 				entry Object Any entry. May be item or list for instance. The data retrieved for these will be 1
+	 * 								level deeper so the path from the base would be dataKeyOfRepeatedRows->arrayIndex->*
 	 * 				create: Bool If true then there will be a user-interface for creating and deleting entries
 	 * 				onCreate Function Callback fired when the user has created an entry via the interface available if
 	 * 					"create" is true. It is considered committed when the cell-cursor has left the repeat-row after
@@ -825,7 +825,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 * @param {int|object} dataRow_or_mainIndex Either the actual data-object that should be updated, or its index in
 	 * 											the current view
 	 * @param {string|string[]} dataPath The path to the data-value that should be updated or added to. For a value in
-	 * 			the base which is not nested within repeated-containers it should simply be the id of the property.
+	 * 			the base which is not nested within repeated-containers it should simply be the dataKey of the property.
 	 * 			It can either be a string of keys separated by dots(.) or an array where each element is a key.
 	 * 			For repeated-arrays which data should be added to, "[]" can be used similiar to how it's done in PHP.
 	 * 			For instance the path could be "foo[]" or "foo[].bar". Objects/arrays will be created recursively
@@ -864,9 +864,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			return;//the row to be updated is outside of view. It'll be updated automatically if scrolled into view
 		
 		//is it a column of the main-table?
-		if (dataPath.length==1) //it's possible only if the path is a single id-key. (but still not guaranteed)
+		if (dataPath.length==1) //it's possible only if the path is a single dataKey. (but still not guaranteed)
 			for (let colI=-1,colSchemaNode;colSchemaNode=this._colSchemaNodes[++colI];)
-				if (colSchemaNode.id==dataPath[0]) {//if true then yes, it was a column of main-table
+				if (colSchemaNode.dataKey==dataPath[0]) {//if true then yes, it was a column of main-table
 					const tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndx}"]:not(.details)`);
 					return this._updateMainRowCell(tr.cells[colI],colSchemaNode);//update it and be done with this
 				}
@@ -895,7 +895,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 						this._deleteCell(entry,true);
 
 					//insert all the new data
-					nodeToUpdate.dataObj=nodeToUpdate.parent.dataObj[nodeToUpdate.schemaNode.id];
+					nodeToUpdate.dataObj=nodeToUpdate.parent.dataObj[nodeToUpdate.schemaNode.dataKey];
 					nodeToUpdate.dataObj.forEach(
 									dataEntry=>updatedEls.push(this._repeatInsert(nodeToUpdate,false,dataEntry)));
 					break;
@@ -1113,7 +1113,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_getCellValueBundle(schemaNode,dataObj,mainIndex,instanceNode=null) {
 		if (!schemaNode)
 			return {value: undefined, idValue: undefined, dependedValue: undefined};
-		const idValue=schemaNode.id!=null?dataObj?.[schemaNode.id]:undefined;
+		const idValue=schemaNode.dataKey!=null?dataObj?.[schemaNode.dataKey]:undefined;
 		const dependedValue=(schemaNode.dependsOnDataPath||schemaNode.dependsOnCellPaths)
 			?this._getTargetVal(false,schemaNode,instanceNode,dataObj)
 			:undefined;
@@ -1138,7 +1138,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	_findDescendantInstanceNodeById(searchInObj,idToFind) {
 		for (const child of searchInObj.children)
-			if (child.schemaNode.id==idToFind)//if true then its the repeated-obj we're looking for
+			if (child.schemaNode.dataKey==idToFind)//if true then its the repeated-obj we're looking for
 				return child;
 			else if (child.children) {//if container-obj
 				const result=this._findDescendantInstanceNodeById(child,idToFind);
@@ -1242,7 +1242,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	/**Select a cell by nodeId. Prefers details, falls back to main table if no details match.
 	 * @param {object|number} dataRow_or_mainIndex Row object or its index in the current view.
-	 * @param {string} nodeId Identifier set on schemaNode.nodeId (or column id for main table).
+	 * @param {string} nodeId Identifier set on schemaNode.nodeId (or column dataKey for main table).
 	 * @param {{searchInNode?:object,enterEditMode?:boolean}|null} opts Options:
 	 * 			- searchInNode: details instance-node to scope the search to
 	 * 			- enterEditMode: whether to enter edit mode after selecting (default false) */
@@ -1271,10 +1271,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			}
 		}
 
-		// Main: find matching column by id or nodeId.
+		// Main: find matching column by dataKey or nodeId.
 		let colIndex=-1;
 		for (let i=0,schemaNode; schemaNode=this._colSchemaNodes[i]; i++)
-			if (schemaNode.id===nodeId||schemaNode.nodeId===nodeId) {
+			if (schemaNode.dataKey===nodeId||schemaNode.nodeId===nodeId) {
 				colIndex=i;
 				break;
 			}
@@ -1336,7 +1336,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const ctx = Object.create(null);
 		ctx.autoIdCounter      = 0;
 		ctx.explicitIdToAutoId = Object.create(null);
-		ctx.implicitIdToAutoId = Object.create(null);
+		ctx.implicitDataKeyToAutoId = Object.create(null);
 		ctx.schemaNodeByAutoId = Object.create(null);
 		ctx.seenCellIds        = Object.create(null);
 
@@ -1362,15 +1362,15 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					throw new Error(`Duplicate nodeId "${schemaNode.nodeId}".`);
 				ctx.seenCellIds[schemaNode.nodeId] = true;
 				ctx.explicitIdToAutoId[schemaNode.nodeId] = autoId;
-			} else if (schemaNode.id != null)
-				ctx.implicitIdToAutoId[schemaNode.id] = autoId;
+			} else if (schemaNode.dataKey != null)
+				ctx.implicitDataKeyToAutoId[schemaNode.dataKey] = autoId;
 
 			stack.push(...this._dep_children(schemaNode));
 		}
 
 		ctx.autoIdByName = Object.assign(
 			Object.create(null),
-			ctx.implicitIdToAutoId,
+			ctx.implicitDataKeyToAutoId,
 			ctx.explicitIdToAutoId
 		);
 
@@ -1402,8 +1402,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 		schemaNode._dataContextPath = myCtx;
 
-		if (schemaNode.id != null)
-			schemaNode._dataPath = [...myCtx, String(schemaNode.id)];
+		if (schemaNode.dataKey != null)
+			schemaNode._dataPath = [...myCtx, String(schemaNode.dataKey)];
 
 		const kids = this._dep_children(schemaNode);
 
@@ -1449,7 +1449,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					} else {
 						if (dependee._dataPath)
 							dataPaths.push(dependee._dataPath);
-						else if (dependee.id != null || dependee.nodeId != null)
+						else if (dependee.dataKey != null || dependee.nodeId != null)
 							console.warn("Dependee has no dataPath:", dependee);
 					}
 				}
@@ -2103,9 +2103,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 	}
 
-	_unsortCol(id,type) {
+	_unsortCol(dataKey,type) {
 		for (let sortCol,i=-1;sortCol=this._sortingCols[++i];)
-			if (id&&id==sortCol.id||type&&type==sortCol.type) {
+			if (dataKey&&dataKey==sortCol.dataKey||type&&type==sortCol.type) {
 				this._sortingCols.splice(i,1);
 				this._updateHeaderSortHtml();
 				return;
@@ -2228,7 +2228,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			entrySchemaNode: entryNode.schemaNode,
 			deletedInstanceNode: entryNode,
 			dataArray: repeatedContainer?.dataObj,
-			dataKey: repeatedContainer?.schemaNode?.id
+			dataKey: repeatedContainer?.schemaNode?.dataKey
 		},{
 			mainIndex: entryNode.rowIndex,
 			rowData: repeatedContainer?.parent?.dataObj
@@ -2241,7 +2241,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const fileCell=payload.instanceNode.parent.parent;
 		const inputSchemaNode=fileCell.fileInputSchemaNode;
 		const dataRow=fileCell.parent.dataObj;
-		delete dataRow[inputSchemaNode.id];
+		delete dataRow[inputSchemaNode.dataKey];
 		const fileTd=fileCell.el.parentElement;
 		fileTd.innerHTML="";
 		fileTd.classList.remove("group-cell");
@@ -2270,7 +2270,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 */
 	_generateDetailsRepeated(repeatedSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
 		instanceNode.children=[];
-		let repeatData=instanceNode.dataObj=rowData[repeatedSchemaNode.id]??(rowData[repeatedSchemaNode.id]=[]);
+		let repeatData=instanceNode.dataObj=rowData[repeatedSchemaNode.dataKey]
+			??(rowData[repeatedSchemaNode.dataKey]=[]);
 		instanceNode.insertionPoint=parentEl.appendChild(document.createComment("repeated-insert"));
 		repeatedSchemaNode.create&&this._generateRepeatedCreator(instanceNode);
 		repeatData?.forEach(repeatData=>this._repeatInsert(instanceNode,false,repeatData));
@@ -2467,7 +2468,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		collectionObj.children=[];
 		for (let entryI=-1,childSchemaNode; childSchemaNode=containerSchemaNode.entries[++entryI];) {
 			if (childSchemaNode.type==="repeated") {
-				const repeatData=rowData[childSchemaNode.id]??(rowData[childSchemaNode.id]=[]);
+				const repeatData=rowData[childSchemaNode.dataKey]??(rowData[childSchemaNode.dataKey]=[]);
 				const rptCelObj=collectionObj.children[entryI]=Object.assign(
 					this._createInstanceNode(collectionObj,entryI,REPEATED_INSTANCE_NODE_PROTOTYPE),
 					{children:[],schemaNode:childSchemaNode,dataObj:repeatData,path:[...path,entryI]}
@@ -2924,7 +2925,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_getCommitChangeKey(schemaNode) {
 		if (!schemaNode)
 			return;
-		return schemaNode._dataPath?.join(".")??schemaNode.id
+		return schemaNode._dataPath?.join(".")??schemaNode.dataKey
 			??(schemaNode._autoId!=null?String(schemaNode._autoId):undefined);
 	}
 
@@ -2942,7 +2943,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			const key=this._getCommitChangeKey(node.schemaNode);
 			if (key==null)
 				continue;
-			const rawVal=node.dataObj?.[node.schemaNode.id];
+			const rawVal=node.dataObj?.[node.schemaNode.dataKey];
 			changes[key]=this._normalizeCommitValue(node.schemaNode,rawVal);
 		}
 		return {changed:true,changes};
@@ -3016,7 +3017,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			payload.mode="update";
 		// Creation-only context should only be present for create commits.
 		const intentDataKey=payload.mode==="create"
-			?instanceNode?.schemaNode?.id??schema?.id
+			?instanceNode?.schemaNode?.dataKey??schema?.dataKey
 			:undefined;
 		const intentDataArray=payload.mode==="create"
 			?instanceNode?.dataArray
@@ -3716,7 +3717,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		 */
 		_openSelectEdit() {
 			const strctInp=this._activeSchemaNode.input;
-			this._inputVal=this._cellCursorDataObj[this._activeSchemaNode.id];
+			this._inputVal=this._cellCursorDataObj[this._activeSchemaNode.dataKey];
 			const ctx=this._createSelectDropdownContext(strctInp);
 			this._cellCursor.style.backgroundColor="transparent";
 			const allowCreateNew=strctInp.allowCreateNew;
@@ -4044,7 +4045,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				newInstanceNode: repeatEntry,
 				cancelCreate: ()=>doCreate=false,
 				dataArray: repeatedContainer?.dataObj,
-				dataKey: repeatedContainer?.schemaNode?.id
+				dataKey: repeatedContainer?.schemaNode?.dataKey
 			},{
 				mainIndex: root.rowIndex,
 				rowData: parentDataContext,
@@ -4153,7 +4154,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._cellCursor.style.pointerEvents=noPtrEvent?"none":"auto";
 		this._cellCursor.style.removeProperty("background-color");//select-input sets it to transparent, revert here
 		this._cellCursorDataObj=dataObj;
-		this._selectedCellVal=dataObj?.[schemaNode.id];
+		this._selectedCellVal=dataObj?.[schemaNode.dataKey];
 	}
 
 	_getElPos(el,container) {
@@ -4222,8 +4223,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			}
 		}
 		if (sortingColIndex==this._sortingCols.length) {//if the clicked header wasn't sorted upon at all
-			const {id,type}=this._colSchemaNodes[clickedIndex];
-			const sortCol={id,type,order:"asc",index:clickedIndex};
+			const {dataKey,type}=this._colSchemaNodes[clickedIndex];
+			const sortCol={dataKey,type,order:"asc",index:clickedIndex};
 			if (!e.shiftKey)
 				this._sortingCols=[];
 			this._sortingCols.push(sortCol);
@@ -4450,7 +4451,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			let mixed=false;
 			let val,lastVal;
 			for (let rowI=-1,row; row=this._selectedRows[++rowI];) {
-				val=row[multiCellSchemaNode.id];
+				val=row[multiCellSchemaNode.dataKey];
 				const normalizedVal=multiCellSchemaNode.input?.type==="select"
 					?this._getSelectValue(val):val;
 				const normalizedLast=multiCellSchemaNode.input?.type==="select"
@@ -4464,10 +4465,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 
 			//update both the data and the dom
-			this._bulkEditTable.updateData(0,multiCellSchemaNode.id,mixed?mixedText:val?.text??val??"");
+			this._bulkEditTable.updateData(0,multiCellSchemaNode.dataKey,mixed?mixedText:val?.text??val??"");
 			const el=this._bulkEditTable._openDetailsPanes[0].children[multiCellI].el;
 			el.innerText=mixed?mixedText:val?.text??val??"";
-			this._bulkEditTable._data[0][multiCellSchemaNode.id]=mixed?"":val;
+			this._bulkEditTable._data[0][multiCellSchemaNode.dataKey]=mixed?"":val;
 		}
 	}
 
@@ -4606,7 +4607,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (!schemaNode||shouldSkipField(schemaNode)||dataObj==null)
 				return false;
 			if (schemaNode.input?.type=="select"&&!schemaNode.render) {
-				const cellVal=dataObj?.[schemaNode.id];
+				const cellVal=dataObj?.[schemaNode.dataKey];
 				const text=selectOptsCache.get(schemaNode.input.options)[cellVal];
 				if (!text)
 					return false;
@@ -4637,7 +4638,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				case "field":
 					return matchesFieldValue(schemaNode,scopedData,mainIndex);
 				case "repeated": {
-					const repeatArr=scopedData?.[schemaNode.id];
+					const repeatArr=scopedData?.[schemaNode.dataKey];
 					if (!Array.isArray(repeatArr))
 						return false;
 					for (const item of repeatArr)//fan out over each repeated entry
@@ -4971,11 +4972,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 		//define all the file-meta-props
 		const lang=this.lang;
-			let metaEntries=[{type:"field",title:lang.fileName,id:"name"},
-				{type:"field",title:lang.fileLastModified,id:"lastModified",render:({value})=>
+			let metaEntries=[{type:"field",title:lang.fileName,dataKey:"name"},
+				{type:"field",title:lang.fileLastModified,dataKey:"lastModified",render:({value})=>
 				new Date(value).toISOString().slice(0, 16).replace('T', ' ')},
-				{type:"field",title:lang.fileSize,id:"size",render:({value})=>this._humanFileSize(value)},
-				{type:"field",title:lang.fileType,id:"type"}];
+				{type:"field",title:lang.fileSize,dataKey:"size",render:({value})=>this._humanFileSize(value)},
+				{type:"field",title:lang.fileType,dataKey:"type"}];
 		for (let metaI=-1,metaName; metaName=["filename","lastModified","size","type"][++metaI];)
 			if(!(fileSchemaNode.input.fileMetasToShow?.[metaName]??this._opts.defaultFileMetasToShow?.[metaName]??true))
 				metaEntries.splice(metaI,1);//potentially remove (some of) them
@@ -4991,7 +4992,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		fileGroup.entries.push({type:"lineup",entries:metaEntries});
 		const wrappedFileGroup=this._buildSchemaFacade(fileGroup);//WRAPPED
 		
-		const fileData=rowData[fileInstanceNode.schemaNode.id];
+		const fileData=rowData[fileInstanceNode.schemaNode.dataKey];
 		//call _buildSchemaTreeFacade on fileGroup here?
 		this._generateDetailsContent(wrappedFileGroup,dataIndex,fileInstanceNode,cellEl,fileInstanceNode.path,fileData);
 		const fileMeta=this._fileMeta.get(fileData);
@@ -5023,7 +5024,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 		for (var rootCell=instanceNode;rootCell.parent;rootCell=rootCell.parent);
 		const oldCellContent=cellEl.innerText;
-		if (instanceNode.schemaNode.input?.type=="file"&&rowData[instanceNode.schemaNode.id]) {
+		if (instanceNode.schemaNode.input?.type=="file"&&rowData[instanceNode.schemaNode.dataKey]) {
 			this._generateFileCell(instanceNode,cellEl,rowData,rootCell.rowIndex);
 		} else {
 			if (instanceNode.schemaNode.visibleIf)
@@ -5080,8 +5081,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 * @returns 
 	 */
 	_getTargetVal(idOverDependee,schemaNode, instanceNode, rowData=instanceNode.dataObj) {
-		if (idOverDependee&&schemaNode.id)
-			return rowData[schemaNode.id];
+		if (idOverDependee&&schemaNode.dataKey)
+			return rowData[schemaNode.dataKey];
 		if (schemaNode.dependsOnDataPath) {
 			if (instanceNode)
 				for (var root=instanceNode; root.parent; root=root.parent,rowData=root.dataObj);
@@ -5089,9 +5090,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 		if (schemaNode.dependsOnCellPaths) {
 			const dependee=this._resolveCellPaths(instanceNode,schemaNode.dependsOnCellPaths[0]);
-			return dependee?.dataObj?.[dependee.schemaNode.id];
+			return dependee?.dataObj?.[dependee.schemaNode.dataKey];
 		}
-		return rowData[schemaNode.id];
+		return rowData[schemaNode.dataKey];
 	}
 	
 
@@ -5114,7 +5115,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				} else
 					newCellContent=valueBundle.value;
 			} else { //if (schemaNode.input?.type==="select") {
-				const rawVal=rowData[schemaNode.id];
+				const rawVal=rowData[schemaNode.dataKey];
 				const selOptObj=this._isObject(rawVal)?rawVal:this._getSelectOptions(schemaNode.input)
 					.find(opt=>this._getSelectValue(opt)==this._getSelectValue(rawVal));
 				newCellContent=rawVal==null?"":(selOptObj?.text??rawVal??"");
@@ -5265,9 +5266,9 @@ class TablanceBulk extends TablanceBase {
 		const inputVal=this._activeSchemaNode.input.type==="select"?this._getSelectValue(this._inputVal):this._inputVal;
 		const commitKey=this.mainInstance._getCommitChangeKey(this._activeSchemaNode);
 		const commitVal=this.mainInstance._normalizeCommitValue(this._activeSchemaNode,inputVal);
-		this._cellCursorDataObj[this._activeSchemaNode.id]=inputVal;
+		this._cellCursorDataObj[this._activeSchemaNode.dataKey]=inputVal;
 		for (const selectedRow of this.mainInstance._selectedRows) {
-			selectedRow[this._activeSchemaNode.id]=inputVal;
+			selectedRow[this._activeSchemaNode.dataKey]=inputVal;
 			const mainIndex=this.mainInstance._data.indexOf(selectedRow);
 			if (mainIndex!==-1) {
 				const changes=commitKey?{[commitKey]:commitVal}:{};
@@ -5288,7 +5289,7 @@ class TablanceBulk extends TablanceBase {
 			}
 		}
 		for (const selectedTr of this.mainInstance._mainTbody.querySelectorAll("tr.selected"))
-			this.mainInstance.updateData(selectedTr.dataset.dataRowIndex,this._activeSchemaNode.id,inputVal,false,true);
+			this.mainInstance.updateData(selectedTr.dataset.dataRowIndex,this._activeSchemaNode.dataKey,inputVal,false,true);
 		this._updateDetailsCell(this._activeDetailsCell,this._cellCursorDataObj);
 		this._selectedCellVal=inputVal;
 	}
@@ -5316,10 +5317,10 @@ export default class Tablance extends TablanceBase {
 		const mainIndex=this._mainRowIndex;
 		const rowData=Number.isInteger(mainIndex)?this._filteredData?.[mainIndex]:null;
 		const mainRow=!openGroup?rowData:null;
-		const prevVal=this._cellCursorDataObj[this._activeSchemaNode.id];
-		this._cellCursorDataObj[this._activeSchemaNode.id]=inputVal;
+		const prevVal=this._cellCursorDataObj[this._activeSchemaNode.dataKey];
+		this._cellCursorDataObj[this._activeSchemaNode.dataKey]=inputVal;
 		const commitKey=this._getCommitChangeKey(this._activeSchemaNode);
-		const commitVal=this._normalizeCommitValue(this._activeSchemaNode,this._cellCursorDataObj[this._activeSchemaNode.id]);
+		const commitVal=this._normalizeCommitValue(this._activeSchemaNode,this._cellCursorDataObj[this._activeSchemaNode.dataKey]);
 		const commitChanges=commitKey?{[commitKey]:commitVal}:{};
 		const rowIsNew=mainRow?this._rowMeta.get(mainRow)?.isNew:false;
 		const mode=rowIsNew?"create":"update";
@@ -5343,7 +5344,7 @@ export default class Tablance extends TablanceBase {
 						cell.updateRenderOnClose=true;//update closed-group-render
 			} else {
 				this._updateMainRowCell(this._selectedCell,this._activeSchemaNode);
-				this._unsortCol(this._activeSchemaNode.id);
+				this._unsortCol(this._activeSchemaNode.dataKey);
 			}
 			if (this._selectedRows.indexOf(this._cellCursorDataObj)!=-1)//if edited row is checked/selected
 			this._updateBulkEditAreaCells([this._activeSchemaNode]);
@@ -5365,7 +5366,7 @@ export default class Tablance extends TablanceBase {
 			}
 		} else {
 			// Revert data if change was cancelled.
-			this._cellCursorDataObj[this._activeSchemaNode.id]=prevVal;
+			this._cellCursorDataObj[this._activeSchemaNode.dataKey]=prevVal;
 			this._inputVal=this._selectedCellVal;
 		}
 	}
@@ -5472,7 +5473,7 @@ export default class Tablance extends TablanceBase {
 		let val=this._getTargetVal(false,schemaNode,instanceNode);
 		if (schemaNode.input?.type==="select"&&val?.value)
 			val=val.value;
-		const idValue=schemaNode.id!=null?instanceNode.dataObj?.[schemaNode.id]:undefined;
+		const idValue=schemaNode.dataKey!=null?instanceNode.dataObj?.[schemaNode.dataKey]:undefined;
 		const dependedValue=(schemaNode.dependsOnDataPath||schemaNode.dependsOnCellPaths)?val:undefined;
 		const payload=this._makeCallbackPayload(instanceNode,{value: val,idValue,dependedValue},{
 			schemaNode,
