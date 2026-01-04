@@ -38,7 +38,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 				{text:"another set of grapes",value:13},{text:"another melon",value:14},
 				{text:"another pineapple",value:15},{text:"another carrot",value:13}];
 	const myTablanceCols=[{type:"select", width:45},{type:"expand", width:45}
-		,{id:"desc",title:"Description",cellId:"description", width:"150px",html:true,input:{bulkEdit:false,
+		,{id:"desc",title:"Description",nodeId:"description", width:"150px",html:true,input:{bulkEdit:false,
 			/** @type {TablanceOnChangeCallback} */
 			onChange:handleDescriptionChange,type:"text",maxLength:5,placeholder:"placeholder"
 			,enabledIf:()=>Math.random()>.5},render:descFunc, cssClass:()=>"fooclass"}
@@ -73,7 +73,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		{type:"field",title:"OnEnter demo",id:"enter_demo",onEnter:({mainIndex})=>{
 			myTablance.selectCell(mainIndex,"personnummer",{enterEditMode:true})
 		}},
-		{type:"field",title: "Personnummer",id:"personal_identity_number", render:renderPNum,cellId:"personnummer",
+		{type:"field",title: "Personnummer",id:"personal_identity_number", render:renderPNum,nodeId:"personnummer",
 					input:{type:"text",
 						format:{ blocks: [8, 4], delimiter: "-", numericOnly: true,stripDelimiterOnSave:true},
 						placeholder:"ÅÅÅÅMMDD-XXXX",
@@ -111,7 +111,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			,entries:
 			[{type:"field",title:"Gata",id:"street"},
 			{type:"field",title:"Postnummer",id:"zip"},
-				{type:"field",title:"Ort",id:"city",cellId:"addrCity",input:{type:"text", onChange:args=>console.log(args.closestMeta("foo"))}},
+				{type:"field",title:"Ort",id:"city",nodeId:"addrCity",input:{type:"text", onChange:args=>console.log(args.closestMeta("foo"))}},
 				{type:"field",title:"Ort i versaler"
 					,render:({value})=>value.toUpperCase()
 					,dependsOn:"addrCity"},
@@ -125,7 +125,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		},
 		{type:"field",input:{type:"button",btnText:"Cool button",clickHandler:btnClickHandler}},
 		 {type:"group",title:"förordnande1",bulkEdit:true,entries:[
-			{type:"repeated",id:"custodianshipChanges",bulkEdit:true,create:true,cellId:"förordnande1",
+			{type:"repeated",id:"custodianshipChanges",bulkEdit:true,create:true,nodeId:"förordnande1",
 			sortCompare:(a,b)=>a.date>b.date?1:-1
 			,onCreate:payload=>console.log(payload)
 			,onDelete:(...args)=>console.log(args)

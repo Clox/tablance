@@ -325,10 +325,10 @@ class TablanceBase {
 	 *						- Re-rendering this entry (unless it is hidden).
 	 *
  	 *					Targeting rules:
-	 * 						1. If `cellId` is set on the schemaNode of a field, that ID is the identifier of that entry.
-	 * 						2. If `id` is set (and `cellId` is not), the value of `id` becomes the entry’s identifier.
-	 * 						3. `dependsOn` must match the identifier of another entry. If both `id` and `cellId` exist,
-	 * 							`cellId` takes priority.
+	 * 						1. If `nodeId` is set on the schemaNode of a field, that ID is the identifier of that entry.
+	 * 						2. If `id` is set (and `nodeId` is not), the value of `id` becomes the entry’s identifier.
+	 * 						3. `dependsOn` must match the identifier of another entry. If both `id` and `nodeId` exist,
+	 * 							`nodeId` takes priority.
 	 * 			Types of entries:
 	 * 			{
   	 *				type "list" this is an entry that holds multiple rows laid out vertically, each item in the list 
@@ -1147,13 +1147,13 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			}
 	}
 
-	_findInstanceNodeByCellId(searchInNode,cellId) {
+	_findInstanceNodeByCellId(searchInNode,nodeId) {
 		if (!searchInNode)
 			return;
 		const stack=[searchInNode];
 		while (stack.length) {
 			const node=stack.pop();
-			if (node.schemaNode?.cellId===cellId)
+			if (node.schemaNode?.nodeId===nodeId)
 				return node;
 			const children=node.children;
 			if (!children?.length)
@@ -1223,8 +1223,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._selectFirstSelectableDetailsCell(this._openDetailsPanes[0],top);
 	}
 
-	/**Return the first details instance-node matching cellId for a row (expands row if needed). */
-	getDetailCell(dataRow_or_mainIndex,cellId,searchInNode=null) {
+	/**Return the first details instance-node matching nodeId for a row (expands row if needed). */
+	getDetailCell(dataRow_or_mainIndex,nodeId,searchInNode=null) {
 		let dataRow,mainIndex;
 		if (!isNaN(dataRow_or_mainIndex))
 			dataRow=this._filteredData[mainIndex=dataRow_or_mainIndex];
@@ -1237,16 +1237,16 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const root=searchInNode??this.expandRow(mainIndex);
 		if (!root)
 			return;
-		return this._findInstanceNodeByCellId(root,cellId);
+		return this._findInstanceNodeByCellId(root,nodeId);
 	}
 
-	/**Select a cell by cellId. Prefers details, falls back to main table if no details match.
+	/**Select a cell by nodeId. Prefers details, falls back to main table if no details match.
 	 * @param {object|number} dataRow_or_mainIndex Row object or its index in the current view.
-	 * @param {string} cellId Identifier set on schemaNode.cellId (or column id for main table).
+	 * @param {string} nodeId Identifier set on schemaNode.nodeId (or column id for main table).
 	 * @param {{searchInNode?:object,enterEditMode?:boolean}|null} opts Options:
 	 * 			- searchInNode: details instance-node to scope the search to
 	 * 			- enterEditMode: whether to enter edit mode after selecting (default false) */
-	selectCell(dataRow_or_mainIndex,cellId,opts=null) {
+	selectCell(dataRow_or_mainIndex,nodeId,opts=null) {
 		const searchInNode=opts?.searchInNode??null;
 		const enterEditMode=!!opts?.enterEditMode;
 		let dataRow,mainIndex;
@@ -1262,7 +1262,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		// Details: ensure details are rendered, then search live instance tree.
 		const root=searchInNode??this.expandRow(mainIndex);
 		if (root) {
-			const targetNode=this._findInstanceNodeByCellId(root,cellId);
+			const targetNode=this._findInstanceNodeByCellId(root,nodeId);
 			if (targetNode) {
 				this._selectDetailsCell(targetNode);
 				if (enterEditMode&&this._activeSchemaNode?.input)
@@ -1271,10 +1271,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			}
 		}
 
-		// Main: find matching column by id or cellId.
+		// Main: find matching column by id or nodeId.
 		let colIndex=-1;
 		for (let i=0,schemaNode; schemaNode=this._colSchemaNodes[i]; i++)
-			if (schemaNode.id===cellId||schemaNode.cellId===cellId) {
+			if (schemaNode.id===nodeId||schemaNode.nodeId===nodeId) {
 				colIndex=i;
 				break;
 			}
@@ -1357,11 +1357,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			schemaNode._autoId = autoId;
 			ctx.schemaNodeByAutoId[autoId] = schemaNode;
 
-			if (schemaNode.cellId != null) {
-				if (ctx.seenCellIds[schemaNode.cellId])
-					throw new Error(`Duplicate cellId "${schemaNode.cellId}".`);
-				ctx.seenCellIds[schemaNode.cellId] = true;
-				ctx.explicitIdToAutoId[schemaNode.cellId] = autoId;
+			if (schemaNode.nodeId != null) {
+				if (ctx.seenCellIds[schemaNode.nodeId])
+					throw new Error(`Duplicate nodeId "${schemaNode.nodeId}".`);
+				ctx.seenCellIds[schemaNode.nodeId] = true;
+				ctx.explicitIdToAutoId[schemaNode.nodeId] = autoId;
 			} else if (schemaNode.id != null)
 				ctx.implicitIdToAutoId[schemaNode.id] = autoId;
 
@@ -1449,7 +1449,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					} else {
 						if (dependee._dataPath)
 							dataPaths.push(dependee._dataPath);
-						else if (dependee.id != null || dependee.cellId != null)
+						else if (dependee.id != null || dependee.nodeId != null)
 							console.warn("Dependee has no dataPath:", dependee);
 					}
 				}
