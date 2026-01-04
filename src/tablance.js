@@ -4434,8 +4434,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 * @returns */
 	_buildBulkEditSchemaNodes(schema) {
 		const result=[];
-		if ((!schema.type||schema.type=="field")&&schema.bulkEdit) {
-			//schema-nodes of main-columns don't need to specify this, but it's needed in details
+		if (schema.type=="field"&&schema.bulkEdit) {
 			result.push(Object.assign(Object.create(null), schema, {type:"field"}));
 		} else if ((schema.entries?.length&&schema.bulkEdit)||schema===this._schema.details) {
 			for (const schemaNode of schema.entries)
