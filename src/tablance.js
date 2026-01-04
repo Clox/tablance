@@ -5093,39 +5093,58 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	
 
 	_updateCell(schemaNode,el,selEl,rowData,mainIndex,instanceNode=null) {
-				if (schemaNode.input?.type==="button") {
-					this._generateButton(schemaNode,mainIndex,el,rowData,instanceNode);
-				} else {
-					let newCellContent;
-					if (schemaNode.render||schemaNode.input?.type!="select") {
-						const {value,idValue,dependedValue}=this._getCellValueBundle(schemaNode,rowData,mainIndex,instanceNode);
-						if (schemaNode.render) {
-							const payload=this._makeCallbackPayload(instanceNode,{value,idValue,dependedValue,rowData},{
-								schemaNode,mainIndex,rowData});
-							newCellContent=schemaNode.render(payload);
-						} else
-							newCellContent=value;
-					} else { //if (schemaNode.input?.type==="select") {
-						const rawVal=rowData[schemaNode.id];
-						const selOptObj=this._isObject(rawVal)?rawVal:this._getSelectOptions(schemaNode.input)
-							.find(opt=>this._getSelectValue(opt)==this._getSelectValue(rawVal));
-						newCellContent=rawVal==null?"":(selOptObj?.text??rawVal??"");
-					}
-					let isDisabled=false;
-					if (this._spreadsheet&&schemaNode.type!=="expand") {
-						const enabledFuncResult=schemaNode.input?.enabled?.(schemaNode,rowData,mainIndex,instanceNode);
-						const hasOnEnter=!!schemaNode.onEnter;
-						if (enabledFuncResult==false||enabledFuncResult?.enabled==false)
-							isDisabled=true;
-						else if (!schemaNode.input&&!hasOnEnter)
-							isDisabled=true;
-					}
-					(selEl??el).classList.toggle("disabled",isDisabled);
-					if (schemaNode.html)
-						el.innerHTML=newCellContent??"";
-					else
-						el.innerText=newCellContent??"";
-				}
+		let valueBundle;
+		if (!instanceNode)
+			selEl.className="";
+		else if (instanceNode.baseCss)
+			(selEl??el).className=instanceNode.baseCss;
+		if (schemaNode.input?.type==="button") {
+			this._generateButton(schemaNode,mainIndex,el,rowData,instanceNode);
+		} else {
+			let newCellContent;
+			if (schemaNode.render||schemaNode.input?.type!="select") {
+				valueBundle=this._getCellValueBundle(schemaNode,rowData,mainIndex,instanceNode);
+				if (schemaNode.render) {
+					const payload=this._makeCallbackPayload(instanceNode,{...valueBundle,rowData},{
+						schemaNode,mainIndex,rowData});
+					newCellContent=schemaNode.render(payload);
+				} else
+					newCellContent=valueBundle.value;
+			} else { //if (schemaNode.input?.type==="select") {
+				const rawVal=rowData[schemaNode.id];
+				const selOptObj=this._isObject(rawVal)?rawVal:this._getSelectOptions(schemaNode.input)
+					.find(opt=>this._getSelectValue(opt)==this._getSelectValue(rawVal));
+				newCellContent=rawVal==null?"":(selOptObj?.text??rawVal??"");
+			}
+			let isDisabled=false;
+			if (this._spreadsheet&&schemaNode.type!=="expand") {
+				const enabledFuncResult=schemaNode.input?.enabled?.(schemaNode,rowData,mainIndex,instanceNode);
+				const hasOnEnter=!!schemaNode.onEnter;
+				if (enabledFuncResult==false||enabledFuncResult?.enabled==false)
+					isDisabled=true;
+				else if (!schemaNode.input&&!hasOnEnter)
+					isDisabled=true;
+			}
+			(selEl??el).classList.toggle("disabled",isDisabled);
+			if (schemaNode.html)
+				el.innerHTML=newCellContent??"";
+			else
+				el.innerText=newCellContent??"";
+		}
+		if (instanceNode&&!instanceNode.schemaNode.baseCss)
+			instanceNode.baseCss=(selEl??el).className;
+		if (schemaNode.cssClass) {
+			let cssAddition;
+			if (typeof schemaNode.cssClass==="function") {
+				cssAddition=schemaNode.cssClass(
+					this._makeCallbackPayload(instanceNode,valueBundle
+						??this._getCellValueBundle(schemaNode,rowData,mainIndex,instanceNode),
+						{schemaNode:schemaNode,rowData,mainIndex}));
+			} else 
+				cssAddition=schemaNode.cssClass;
+			if (cssAddition)//guard against undefined/null in case function returns that
+				(selEl??el).classList.add(...(Array.isArray(cssAddition)?cssAddition:cssAddition.split(" ")));
+		}
 	}
 
 	/**Updates the html-element of a main-table-cell

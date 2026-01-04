@@ -41,7 +41,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		,{id:"desc",title:"Description",cellId:"description", width:"150px",html:true,input:{bulkEdit:false,
 			/** @type {TablanceOnChangeCallback} */
 			onChange:handleDescriptionChange,type:"text",maxLength:5,placeholder:"placeholder"
-			,enabled:()=>Math.random()>.5},render:descFunc}
+			,enabled:()=>Math.random()>.5},render:descFunc, cssClass:()=>"fooclass"}
 		,{id:"amount",title:"Amount",width:"85px",input:{bulkEdit:true},bulkEdit:true},{id:"balance",title:"Balance",width:"85px"}
 		,{id:"food",title:"Food",width:"120px",input:{multiCellWidth:100,type:"select"
 			,options:foods,minOptsFilter:100,allowCreateNew:true,allowSelectEmpty:true
