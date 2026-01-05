@@ -3639,7 +3639,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			const noResults=selectContainer.appendChild(document.createElement("div"));
 			noResults.innerHTML=strctInp.noResultsText??this.lang.selectNoResultsFound;
 			noResults.className="no-results";
-			const allOpts=this._getSelectOptions(strctInp);
+			const allOpts=this._getSelectOptions(strctInp,this._activeSchemaNode,this._cellCursorDataObj,
+				this._mainRowIndex,this._activeDetailsCell);
 			for (const opt of allOpts) {
 				const visible=!opt.visibleIf || opt.visibleIf({dataContext:this._cellCursorDataObj,
 					schemaNode:this._activeSchemaNode, rowIndex:this._mainRowIndex, 
@@ -3717,7 +3718,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		 * Open edit mode for a cell that uses a select-input: creates the dropdown UI,
 		 * wires up filtering, keyboard navigation and mouse interaction, and focuses the input.
 		 */
-		_openSelectEdit() {
+	_openSelectEdit() {
 			const strctInp=this._activeSchemaNode.input;
 			this._inputVal=this._cellCursorDataObj[this._activeSchemaNode.dataKey];
 			const ctx=this._createSelectDropdownContext(strctInp);
@@ -4378,11 +4379,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return this._isObject(val)?val.value:val;
 	}
 
-	_getSelectOptions(strctInp) {
-		const opts=[...(strctInp.options??[])];
-		if (strctInp.allowSelectEmpty) {
+	_getSelectOptions(inputOpts,schemaNode=null,rowData=null,mainIndex=null,instanceNode=null) {
+		const resolvedOptions=typeof inputOpts.options==="function"
+			?inputOpts.options(this._makeCallbackPayload(instanceNode??null,{rowData},{schemaNode,mainIndex,rowData}))
+			:inputOpts.options;
+		const opts=[...(resolvedOptions??[])];
+		if (inputOpts.allowSelectEmpty) {
 			const emptyVal=opts.find(opt=>this._getSelectValue(opt)==null);
-			const emptyText=strctInp.emptyText??this.lang.selectEmpty;
+			const emptyText=inputOpts.emptyText??this.lang.selectEmpty;
 			if (!emptyVal)
 				opts.unshift({text:emptyText,value:null,isEmpty:true,cssClass:"empty-option"});
 			else {
@@ -4523,11 +4527,13 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const cache=new WeakMap();
 		for (const input of this._selectInputs) {
 			const opts=input?.options;
+			if (typeof opts==="function"||!opts)
+				continue;
 			if (cache.has(opts))
 				continue;
 			const optionsByVal=Object.create(null);
 			for (const opt of opts)
-				optionsByVal[opt.value]=opt.text;
+				optionsByVal[this._getSelectValue(opt)]=opt.text;
 			cache.set(opts,optionsByVal);
 		}
 		return cache;
@@ -4609,7 +4615,22 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				return false;
 			if (schemaNode.input?.type=="select"&&!schemaNode.render) {
 				const cellVal=dataObj?.[schemaNode.dataKey];
-				const text=selectOptsCache.get(schemaNode.input.options)[cellVal];
+				let text;
+				const optionsSrc=schemaNode.input.options;
+				if (typeof optionsSrc==="function") {
+					const opts=this._getSelectOptions(schemaNode.input,schemaNode,dataObj,mainIndex,null);
+					const match=opts.find(opt=>this._getSelectValue(opt)==this._getSelectValue(cellVal));
+					text=match?.text;
+				} else {
+					const cacheEntry=selectOptsCache.get(optionsSrc);
+					const valKey=this._getSelectValue(cellVal);
+					text=cacheEntry?.[valKey];
+					if (text==null) {
+						const opts=this._getSelectOptions(schemaNode.input,schemaNode,dataObj,mainIndex,null);
+						const match=opts.find(opt=>this._getSelectValue(opt)==valKey);
+						text=match?.text;
+					}
+				}
 				if (!text)
 					return false;
 				return matchesFilter(text);
@@ -5117,7 +5138,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					newCellContent=valueBundle.value;
 			} else { //if (schemaNode.input?.type==="select") {
 				const rawVal=rowData[schemaNode.dataKey];
-				const selOptObj=this._isObject(rawVal)?rawVal:this._getSelectOptions(schemaNode.input)
+				const selOptObj=this._isObject(rawVal)?rawVal:this._getSelectOptions(
+					schemaNode.input,schemaNode,rowData,mainIndex,instanceNode)
 					.find(opt=>this._getSelectValue(opt)==this._getSelectValue(rawVal));
 				newCellContent=rawVal==null?"":(selOptObj?.text??rawVal??"");
 			}

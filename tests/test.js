@@ -69,7 +69,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 				],
 			},
 		},
-
+		{title:"dynamic food", input:{type:"select", options:()=>[{text:"cheese", value:1},{text:"bread", value:2}]}},
 		{type:"field",title:"OnEnter demo",dataKey:"enter_demo",onEnter:({mainIndex})=>{
 			myTablance.selectCell(mainIndex,"personnummer",{enterEditMode:true})
 		}},
