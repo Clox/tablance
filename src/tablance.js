@@ -3706,7 +3706,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				ctx.strctInp.createNewOptionHandler?.(this._inputVal,e,this._cellCursorDataObj,this._mainRowIndex
 																,this._activeSchemaNode,this._activeDetailsCell);
 			} else
-				this._inputVal=(ctx.highlightUlIndex?ctx.looseOpts:ctx.pinnedOpts)[ctx.highlightLiIndex];
+				this._inputVal=(ctx.highlightUlIndex?ctx.looseOpts:ctx.pinnedOpts)[ctx.highlightLiIndex].value;
 			ctx.selectContainer.remove();
 			if (ctx.windowMouseDown)
 				window.removeEventListener("mousedown",ctx.windowMouseDown);
@@ -4381,7 +4381,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	_getSelectOptions(inputOpts,schemaNode=null,rowData=null,mainIndex=null,instanceNode=null) {
 		const resolvedOptions=typeof inputOpts.options==="function"
-			?inputOpts.options(this._makeCallbackPayload(instanceNode??null,{rowData},{schemaNode,mainIndex,rowData}))
+			?inputOpts.options(this._makeCallbackPayload(instanceNode??null,{rowData,value: rowData?.[schemaNode?.dataKey]},{
+				schemaNode,
+				mainIndex,
+				rowData
+			}))
 			:inputOpts.options;
 		const opts=[...(resolvedOptions??[])];
 		if (inputOpts.allowSelectEmpty) {
@@ -4615,22 +4619,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				return false;
 			if (schemaNode.input?.type=="select"&&!schemaNode.render) {
 				const cellVal=dataObj?.[schemaNode.dataKey];
-				let text;
 				const optionsSrc=schemaNode.input.options;
-				if (typeof optionsSrc==="function") {
-					const opts=this._getSelectOptions(schemaNode.input,schemaNode,dataObj,mainIndex,null);
-					const match=opts.find(opt=>this._getSelectValue(opt)==this._getSelectValue(cellVal));
-					text=match?.text;
-				} else {
-					const cacheEntry=selectOptsCache.get(optionsSrc);
-					const valKey=this._getSelectValue(cellVal);
-					text=cacheEntry?.[valKey];
-					if (text==null) {
-						const opts=this._getSelectOptions(schemaNode.input,schemaNode,dataObj,mainIndex,null);
-						const match=opts.find(opt=>this._getSelectValue(opt)==valKey);
-						text=match?.text;
-					}
-				}
+				if (typeof optionsSrc==="function")
+					return false;
+				const cacheEntry=selectOptsCache.get(optionsSrc);
+				const valKey=this._getSelectValue(cellVal);
+				const text=cacheEntry?.[valKey];
 				if (!text)
 					return false;
 				return matchesFilter(text);
@@ -5138,10 +5132,21 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					newCellContent=valueBundle.value;
 			} else { //if (schemaNode.input?.type==="select") {
 				const rawVal=rowData[schemaNode.dataKey];
-				const selOptObj=this._isObject(rawVal)?rawVal:this._getSelectOptions(
-					schemaNode.input,schemaNode,rowData,mainIndex,instanceNode)
-					.find(opt=>this._getSelectValue(opt)==this._getSelectValue(rawVal));
-				newCellContent=rawVal==null?"":(selOptObj?.text??rawVal??"");
+				if (typeof schemaNode.input?.options==="function") {
+					console.warn("Performance notice:\n" +
+						"This select field uses dynamic options but does not define render().\n\n" +
+						"As a result, closed-cell rendering may regenerate the full options list, " +
+						"which can be expensive in large tables.\n\n" +
+						"Adding render() is recommended.\n" +
+						"This warning can be suppressed by setting " +
+						"`allowDynamicOptionsWithoutRender: true` on the input configuration.");
+						console.log(schemaNode);
+					newCellContent="";
+				} else {
+					const selOptObj=this._getSelectOptions(schemaNode.input,schemaNode,rowData,mainIndex,instanceNode)
+						.find(opt=>this._getSelectValue(opt)==this._getSelectValue(rawVal));
+					newCellContent=rawVal==null?"":(selOptObj?.text??rawVal??"");
+				}
 			}
 			let isDisabled=false;
 			if (this._spreadsheet&&schemaNode.type!=="expand") {

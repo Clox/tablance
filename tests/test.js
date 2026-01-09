@@ -59,17 +59,9 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			},
 		];
 	const myExpansion={meta:{"foo":"details", "baz":42},type:"list",titlesColWidth:"8em",entries:[
-		{type:"repeated",dataKey:"bar1",create:true,entry:
-			{type:"group",title:"repeated group with nested repeated group",onCommit:()=>console.log("outer group"),entries:[
-					{type:"repeated",dataKey:"bar2",title:"inner repeated group",create:true,entry:
-						{type:"group",onCommit:()=>console.log("inner group"),entries:[
-							{type:"field", title:"inner field",dataKey:"foooo",input:"text"}
-						]}
-					},
-				],
-			},
-		},
-		{title:"dynamic food", input:{type:"select", options:()=>[{text:"cheese", value:1},{text:"bread", value:2}]}},
+		{title:"dynamic food", input:{type:"select", options:()=>{
+			return [{text:"cheese", value:1},{text:"bread", value:2},{text:"butter", value:3}]
+		}}, render:({value})=>["cheese","bread","butter"][value-1]},
 		{type:"field",title:"OnEnter demo",dataKey:"enter_demo",onEnter:({mainIndex})=>{
 			myTablance.selectCell(mainIndex,"personnummer",{enterEditMode:true})
 		}},
