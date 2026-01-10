@@ -78,14 +78,18 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	{type:"field",title:"Format field",dataKey:"myFormattedData"
 		,input:{type:"text", format:{ blocks: [8, 4], delimiter: "-", numericOnly: true , 
 		stripDelimiterOnSave:true}}},
-{type:"group",dataPath:"hemadress",title:"Hemadress",bulkEdit:true,entries:[
-	{type:"field",title:"Gata",dataKey:"street",input:{type:"text",
-			onChange:payload=>console.log(payload)}},
-	{type:"field",title:"Postnummer",dataKey:"zip",input:{type:"text",
-			onChange:payload=>console.log(payload)}},
-	{type:"field",title:"Ort",dataKey:"city",input:{type:"text",
-			onChange:payload=>console.log(payload)}}
-]},
+	{type:"group",dataPath:"hemadress",title:"Hemadress",bulkEdit:true,entries:[
+		{type:"field",title:"Gata",dataKey:"street",input:{type:"text",
+				onChange:payload=>console.log(payload)}},
+		{type:"field",title:"Postnummer",dataKey:"zip",input:{type:"text",
+				onChange:payload=>console.log(payload)}},
+		{type:"field",title:"Ort",dataKey:"city",input:{type:"text",
+				onChange:payload=>console.log(payload)}}
+	]},
+	{title:"Stuff",type:"group",entries:[{type:"repeated",dataKey:"stuff69",create:true,entry:
+			{type:"field",title:"File",dataKey:"file",input:{type:"text",}}}
+	]},
+
 	{type:"group",dataKey:"innergrejer",title:"Inre grej",onClose:({preventClose})=>preventClose("nope!"),
 		entries:[{type:"field",dataKey:"innerFoo"}]},
 		{type:"field",title:"File",dataKey:"file",input:{type:"file",fileUploadHandler:xhr=>{
@@ -243,7 +247,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		data=[];
 		for (let ii=0; ii<1000; ii++) {
 			data.push({index:1000*i+ii,janej:0,num:55,myFormattedData:123456789123,desc:"dummy",foobar1:i+ii,foobar2:i*2+ii*2,
-				descLetter:String.fromCharCode(ii+33)
+				descLetter:String.fromCharCode(ii+33),stuff:[{foo_1:99999}]
 				,amount:(Math.random()*100).toFixed(2),balance:(Math.random()*100).toFixed(2),baz1:69,baz2:70
 				,hello:"Hallå",world:"Världen",innerFoo:1337,hemadress:{street:"Inre Kaplan",zip:"060606",city:"Inre Skara"}
 				,addresses:[{street:"kaplan",zip:9999,city:"skara"},{street:"kaplan",zip:8999,city:"skara"}]

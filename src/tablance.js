@@ -2030,6 +2030,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		if (!onlyGetChild&&instanceNode.el)
 			return instanceNode;
 		const children=instanceNode.children;
+		if (!children?.length)//check needed if a repeated-container hs a single field instead of a group
+			return onlyGetChild?instanceNode:undefined;
 		let startI=isGoingDown?0:children.length-1;
 		if (instanceNode.schemaNode.type==="lineup"&&!isGoingDown) {
 			let chosenCell;
