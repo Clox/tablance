@@ -3533,11 +3533,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			updateProgressBars(totalBytes,totalBytes);
 			finalizeUpload();
 		});
-	
-		this._activeSchemaNode.input.fileUploadHandler?.(xhr,file,this._activeSchemaNode,this._cellCursorDataObj,
-			this._mainRowIndex,this._activeDetailsCell);
-	
 		const formData = new FormData();
+		this._activeSchemaNode.input.fileUploadHandler?.(xhr,formData,file,this._activeSchemaNode,
+			this._cellCursorDataObj,this._mainRowIndex,this._activeDetailsCell);
+	
+		
 		formData.append("file", file);
 		xhr.send(formData);
 	
