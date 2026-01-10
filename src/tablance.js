@@ -796,6 +796,71 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 	}
 
+	/**Replace the full dataset with a new set of rows (pass an empty array to clear).
+	 * @param {object[]} data New rows to render.
+	 * @param {{highlight?:boolean,resetFilter?:boolean}|null} options
+	 *        highlight: clear filter, highlight, and scroll to the first row.
+	 *        resetFilter: clear the active filter/search before rendering. */
+	setData(data=[], options=null) {
+		const {highlight=false,resetFilter=false}=options??{};
+		const clearFilter=highlight||resetFilter;
+		const nextData=Array.isArray(data)?data:(data==null?[]:[data]);
+
+		this._rowMeta=new WeakMap();
+		this._rowFilterCache=new WeakMap();
+		this._openDetailsPanes={};
+		this._selectedRows.length=0;
+		this._numRowsSelected=this._numRowsInViewSelected=0;
+		this._highlightRowsOnView={};
+		this._lastCheckedIndex=null;
+		this._mainRowIndex=null;
+		this._mainColIndex=null;
+		this._activeDetailsCell=null;
+		this._cellCursorDataObj=null;
+		this._selectedCell=null;
+		this._scrollRowIndex=this._scrollY=0;
+
+		if (this._bulkEditArea) {
+			this._bulkEditAreaOpen=false;
+			this._bulkEditArea.style.height=0;
+			if (this._numberOfRowsSelectedSpan)
+				this._numberOfRowsSelectedSpan.innerText="0";
+		}
+
+		if (clearFilter) {
+			this._filter="";
+			if (this._searchInput)
+				this._searchInput.value="";
+		}
+
+		if (this._onlyDetails) {
+			this._setDataForOnlyDetails(nextData);
+			return this;
+		}
+
+		if (this._scrollBody)
+			this._scrollBody.scrollTop=0;
+		this._mainTbody.replaceChildren();
+		this._numRenderedRows=0;
+		this._tableSizer.style.top="0px";
+		this._tableSizer.style.height="0px";
+		const headerCheckbox=this._headerTr?.querySelector(".select-col input");
+		if (headerCheckbox) {
+			headerCheckbox.checked=false;
+			headerCheckbox.indeterminate=false;
+		}
+
+		this._sourceData=nextData;
+		this._rebuildViewData();
+		this._applyFilters(this._filter??"");
+
+		if (highlight&&this._filteredData.length) {
+			this._highlightRowIndex(0);
+			this.scrollToDataRow(this._filteredData[0],false);
+		}
+		return this;
+	}
+
 	setViewMode(viewModeKey) {
 		if (viewModeKey===this._currentViewModeKey)
 			return;
@@ -4379,6 +4444,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return this._isObject(val)?val.value:val;
 	}
 
+	//TODO why optionS (plural)? shouldn't always be singular?
 	_getSelectOptions(inputOpts,schemaNode=null,rowData=null,mainIndex=null,instanceNode=null) {
 		const resolvedOptions=typeof inputOpts.options==="function"
 			?inputOpts.options(this._makeCallbackPayload(instanceNode??null,{rowData,value: rowData?.[schemaNode?.dataKey]},{
@@ -4697,13 +4763,18 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	_setDataForOnlyDetails(data) {
-		this._sourceData=[data[data.length-1]];
+		this._openDetailsPanes={};
+		const lastRow=data?.[data.length-1];
+		this._sourceData=lastRow?[lastRow]:[];
 		this._viewData=this._sourceData;
 		this._filteredData=this._viewData;
 		this.rootEl.innerHTML="";
+		if (!lastRow)
+			return;
 		const detailsDiv=this.rootEl.appendChild(document.createElement("div"));
 		detailsDiv.classList.add("details");
-		this._generateDetailsContent(this._schema.details,0,this._openDetailsPanes[0]=this._createInstanceNode(),detailsDiv,[],this._filteredData[0]);
+		const rootInstance=this._openDetailsPanes[0]=this._createInstanceNode();
+		this._generateDetailsContent(this._schema.details,0,rootInstance,detailsDiv,[],lastRow);
 	}
 
 	/**Refreshes the table-rows. Should be used after sorting or filtering or such.*/
