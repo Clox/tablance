@@ -82,9 +82,9 @@ class TablanceBase {
 	_cols=[];//array of col-elements for each column
 	_headerTr;//the tr for the top header-row
 	_headerTable;//the tabe for the #headerTr. This table only contains that one row.
-	_sourceData=[];//complete dataset provided to the table; table never mutates this array and it reflects all rows provided
-	_viewData=[];//rows belonging to the active viewMode, derived from _sourceData before any filtering/search
-	_filteredData=[];//rows after applying search/filter pipeline to _viewData; rendering consumes this dataset
+	_sourceData;//complete dataset provided to the table; table never mutates this array and it reflects all rows provided
+	_viewData;//rows belonging to the active viewMode, derived from _sourceData before any filtering/search
+	_filteredData;//rows after applying search/filter pipeline to _viewData; rendering consumes this dataset
 	_currentViewModeKey="default";//active viewMode key
 	_viewDefinitions=Object.create(null);//lookup table of viewMode predicates keyed by view name
 	_scrollRowIndex=0;//the index in the #data of the top row in the view
@@ -156,11 +156,11 @@ class TablanceBase {
 	_scrollMethod;//this will be set to a reference of the scroll-method that will be used. This depends on settings for
 				//staticRowHeight and details
 	_fileMeta=new WeakMap();//Tracks upload progress per File object (uploadedBytes, progress bars, etc.)
-	_rowFilterCache=new WeakMap();//per-row filter text cache keyed by row data objects
-	_selectedRows=[];//array of the actual data-objects of rows that are currently selected/checked using the select-col
+	_rowFilterCache;//per-row filter text cache keyed by row data objects
+	_selectedRows;//array of the actual data-objects of rows that are currently selected/checked using the select-col
 	_scrollY=0;//this keeps track of the "old" scrollTop of the table when a scroll occurs to know 
 	_numRenderedRows=0;//number of tr-elements in the table excluding tr's that are details (details too are tr's)
-	_openDetailsPanes={};//for any row that is expanded and also in view this will hold navigational data which
+	_openDetailsPanes;//for any row that is expanded and also in view this will hold navigational data which
 						//is read from when clicking or navigating using keyboard to know which cell is next, and
 						//which elements even are selectable and so on. Keys are data-row-index. As soon as a row
 						//is either contracted or scrolled out of view it is removed from here and then re-added
@@ -189,7 +189,7 @@ class TablanceBase {
 		//get shifted up and the second click hits something else. By setting this var to current time plus 500 ms
 		//when a group closes and checking if current time is past this one in mouseDown handler we'll ignore the second
 		//click which is better user-experience
-	_highlightRowsOnView={};//Rows can be added to this object with rowindex in #data as key, value needs to be truthy.
+	_highlightRowsOnView;//Rows can be added to this object with rowindex in #data as key, value needs to be truthy.
 		//Rows that are outside of view can be added and when scrolled into view they will be highlighted. 
 	_lastCheckedIndex;//This is the index of the row that was last (un)checked/selected, meaning the checkbox in the
 					//select-column was interacted with. This is used if the user interacts with another checkbox while
@@ -205,7 +205,7 @@ class TablanceBase {
 	_tooltip;//reference to html-element used as tooltip
 	_dropdownAlignmentContainer;
 	lang;//object holding strings used in the table for various purposes. See DEFAULT_LANG for default values					
-	_rowMeta=new WeakMap();//tracks row metadata (isNew flags, expanded heights, etc.) keyed by row data objects
+	_rowMeta;//tracks row metadata (isNew flags, expanded heights, etc.) keyed by row data objects
 
 
 	/**
@@ -670,6 +670,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._schema=this._buildSchemaFacade(schema);
 		this._viewDefinitions=this._buildViewDefinitions(schema?.views);
 		this._currentViewModeKey="default";
+		this._resetDataState();
 		this._rebuildViewData();
 		this._filteredData=this._viewData;
 		if (!schema.main?.columns) {
@@ -741,11 +742,40 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._viewData=nextView;
 	}
 
+	/**Reset all per-dataset state to an empty baseline. */
+	_resetDataState({clearFilter=true}={}) {
+		this._sourceData=[];
+		this._viewData=[];
+		this._filteredData=[];
+		this._rowMeta=new WeakMap();
+		this._rowFilterCache=new WeakMap();
+		this._openDetailsPanes=Object.create(null);
+		this._selectedRows=[];
+		this._highlightRowsOnView=Object.create(null);
+		this._lastCheckedIndex=null;
+		this._numRowsSelected=0;
+		this._numRowsInViewSelected=0;
+		this._mainRowIndex=null;
+		this._mainColIndex=null;
+		this._activeDetailsCell=null;
+		this._cellCursorDataObj=null;
+		this._selectedCell=null;
+		this._scrollRowIndex=0;
+		this._scrollY=0;
+		if (clearFilter) {
+			this._filter="";
+			if (this._searchInput)
+				this._searchInput.value="";
+		}
+	}
+
 	/**Add data-rows to the main table.
 	 * @param {object[]} data Rows to insert.
 	 * @param {boolean} highlight If true, clear filter, highlight, and scroll to the first new row.
 	 * @param {boolean} prepend If true, insert rows at the start of the dataset instead of the end. */
 	addData(data, highlight=false, prepend=false) {
+		if (!this._sourceData?.length)
+			this._resetDataState({clearFilter:false});
 		if (this._onlyDetails)
 			return this._setDataForOnlyDetails(data)
 		const oldLen=this._filteredData.length;
@@ -806,31 +836,13 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const clearFilter=highlight||resetFilter;
 		const nextData=Array.isArray(data)?data:(data==null?[]:[data]);
 
-		this._rowMeta=new WeakMap();
-		this._rowFilterCache=new WeakMap();
-		this._openDetailsPanes={};
-		this._selectedRows.length=0;
-		this._numRowsSelected=this._numRowsInViewSelected=0;
-		this._highlightRowsOnView={};
-		this._lastCheckedIndex=null;
-		this._mainRowIndex=null;
-		this._mainColIndex=null;
-		this._activeDetailsCell=null;
-		this._cellCursorDataObj=null;
-		this._selectedCell=null;
-		this._scrollRowIndex=this._scrollY=0;
+		this._resetDataState({clearFilter});
 
 		if (this._bulkEditArea) {
 			this._bulkEditAreaOpen=false;
 			this._bulkEditArea.style.height=0;
 			if (this._numberOfRowsSelectedSpan)
 				this._numberOfRowsSelectedSpan.innerText="0";
-		}
-
-		if (clearFilter) {
-			this._filter="";
-			if (this._searchInput)
-				this._searchInput.value="";
 		}
 
 		if (this._onlyDetails) {
@@ -4763,7 +4775,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	_setDataForOnlyDetails(data) {
-		this._openDetailsPanes={};
+		this._openDetailsPanes=Object.create(null);
 		const lastRow=data?.[data.length-1];
 		this._sourceData=lastRow?[lastRow]:[];
 		this._viewData=this._sourceData;
@@ -5357,6 +5369,7 @@ class TablanceBulk extends TablanceBase {
 	_dropdownAlignmentContainer=this.rootEl;
 	constructor() {
 		super(...arguments);
+		this._resetDataState();
 	}
 
 	
