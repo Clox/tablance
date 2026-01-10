@@ -31,12 +31,10 @@ const REPEATED_INSTANCE_NODE_PROTOTYPE=Object.create(INSTANCE_NODE_PROTOTYPE);
 REPEATED_INSTANCE_NODE_PROTOTYPE.createNewEntry=function(e,_groupObject) {
 	e?.preventDefault?.();
 	let repeatData=this.dataObj;
-	if (!repeatData) {
-		const parentDataObj=this.parent?.dataObj;
-		repeatData=parentDataObj?.[this.schemaNode.dataKey]??(parentDataObj?parentDataObj[this.schemaNode.dataKey]=[]:[]);
-		this.dataObj=repeatData;
-	}
-	this.tablance?._repeatInsert(this,true,repeatData[repeatData.length]={});
+	if (!Array.isArray(repeatData))
+		this.dataObj=repeatData=[];
+	const pendingData={};
+	this.tablance?._repeatInsert(this,true,pendingData);
 };
 
 const DEFAULT_LANG=Object.freeze({
@@ -2351,8 +2349,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 */
 	_generateDetailsRepeated(repeatedSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
 		instanceNode.children=[];
-		let repeatData=instanceNode.dataObj=rowData[repeatedSchemaNode.dataKey]
-			??(rowData[repeatedSchemaNode.dataKey]=[]);
+		let repeatData=rowData?.[repeatedSchemaNode.dataKey];
+		if (!Array.isArray(repeatData))
+			repeatData=[];
+		instanceNode.dataObj=repeatData;
 		instanceNode.insertionPoint=parentEl.appendChild(document.createComment("repeated-insert"));
 		repeatedSchemaNode.create&&this._generateRepeatedCreator(instanceNode);
 		repeatData?.forEach(repeatData=>this._repeatInsert(instanceNode,false,repeatData));
@@ -2549,10 +2549,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		collectionObj.children=[];
 		for (let entryI=-1,childSchemaNode; childSchemaNode=containerSchemaNode.entries[++entryI];) {
 			if (childSchemaNode.type==="repeated") {
-				const repeatData=rowData[childSchemaNode.dataKey]??(rowData[childSchemaNode.dataKey]=[]);
+				const repeatData=rowData?.[childSchemaNode.dataKey];
 				const rptCelObj=collectionObj.children[entryI]=Object.assign(
 					this._createInstanceNode(collectionObj,entryI,REPEATED_INSTANCE_NODE_PROTOTYPE),
-					{children:[],schemaNode:childSchemaNode,dataObj:repeatData,path:[...path,entryI]}
+					{children:[],schemaNode:childSchemaNode,dataObj:Array.isArray(repeatData)?repeatData:[],path:[...path,entryI]}
 				);
 				// Capture parentData at creation time so persistence never walks ancestors later.
 				const ownerData=collectionObj.dataObj;
@@ -3312,6 +3312,38 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return newObj.el;
 	}
 
+	/**
+	 * Ensure a creating repeated entry is actually inserted into its backing data array.
+	 * This is invoked when a pending entry first commits, so the array isn't mutated
+	 * until there is user data to keep.
+	 */
+	_ensureRepeatedEntryInsertion(instanceNode) {
+		const repeated=instanceNode?.parent;
+		if (!repeated||repeated.schemaNode?.type!=="repeated"||instanceNode.schemaNode?.creator)
+			return;
+		const dataKey=repeated.schemaNode?.dataKey;
+		const parentData=repeated.parent?.dataObj;
+		let dataArray=Array.isArray(repeated.dataObj)?repeated.dataObj:null;
+		const dataObj=instanceNode.dataObj??(instanceNode.dataObj={});
+		// Create backing array lazily.
+		if (!dataArray) {
+			dataArray=[];
+			repeated.dataObj=dataArray;
+		}
+		// Attach array to parent data on first real commit.
+		if (parentData&&dataKey!=null&&parentData[dataKey]!==dataArray) {
+			if (Array.isArray(parentData[dataKey]))
+				dataArray=repeated.dataObj=parentData[dataKey];
+			else
+				parentData[dataKey]=dataArray;
+		}
+		if (!dataObj||dataArray.includes(dataObj))
+			return;
+		const insertAt=Math.min(Number.isInteger(instanceNode.index)?instanceNode.index:dataArray.length,dataArray.length);
+		dataArray.splice(insertAt,0,dataObj);
+		instanceNode.dataArray=dataArray;
+	}
+
 	_changeInstanceNodeIndex(instanceNode,newIndex) {
 		instanceNode.index=newIndex;
 		const level=instanceNode.path.length-1;
@@ -3337,8 +3369,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		else if (instanceNode.parent.children.length>1)
 			newSelectedCell=instanceNode.parent.children[instanceNode.index-1];
 		instanceNode.parent.children.splice(instanceNode.index,1);
-		if (!programatically)
-			instanceNode.parent.dataObj.splice(instanceNode.index,1);
+		if (!programatically&&instanceNode.parent?.schemaNode?.type==="repeated") {
+			const arr=instanceNode.parent.dataObj;
+			const idx=Array.isArray(arr)?arr.indexOf(instanceNode.dataObj):-1;
+			if (idx>-1)
+				arr.splice(idx,1);
+		}
 		if (instanceNode.parent.schemaNode.type==="repeated"&&instanceNode.parent.parent.schemaNode.type==="list")
 			instanceNode.el.parentElement.parentElement.remove();
 		else
@@ -4105,11 +4141,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					newDataItem:repeatEntry.dataObj
 				},{
 					mainIndex: root.rowIndex
-				});
-				const res=repeatEntry.schemaNode.creationValidation(payload);
-				if (typeof res==="boolean")
-					doCreate=res;
-				else {
+					});
+					const res=repeatEntry.schemaNode.creationValidation(payload);
+					if (typeof res==="boolean")
+						doCreate=res;
+					else {
 					doCreate=!!res.valid;
 					message=res.message??message;
 				}
@@ -4119,25 +4155,26 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				this._showTooltip(message,repeatEntry.el);
 				return false;//prevent commiting/closing the group
 			}
-			const payload=this._makeCallbackPayload(repeatEntry,{
-				newDataItem: repeatEntry.dataObj,
-				itemIndex: repeatEntry.index,
-				repeatedSchemaNode: repeatedContainer?.schemaNode,
-				entrySchemaNode: creationContainer.schemaNode,
-				newInstanceNode: repeatEntry,
-				cancelCreate: ()=>doCreate=false,
-				dataArray: repeatedContainer?.dataObj,
-				dataKey: repeatedContainer?.schemaNode?.dataKey
-			},{
-				mainIndex: root.rowIndex,
-				rowData: parentDataContext,
-				bulkEdit: false
-			});
-			repeatEntry.creating=false;
-			creationContainer.schemaNode.onCreate?.(payload);
-			if (!doCreate) {
-				this._deleteCell(repeatEntry);
-				return false;
+				const payload=this._makeCallbackPayload(repeatEntry,{
+					newDataItem: repeatEntry.dataObj,
+					itemIndex: repeatEntry.index,
+					repeatedSchemaNode: repeatedContainer?.schemaNode,
+					entrySchemaNode: creationContainer.schemaNode,
+					newInstanceNode: repeatEntry,
+					cancelCreate: ()=>doCreate=false,
+					dataArray: repeatedContainer?.dataObj,
+					dataKey: repeatedContainer?.schemaNode?.dataKey
+				},{
+					mainIndex: root.rowIndex,
+					rowData: parentDataContext,
+					bulkEdit: false
+				});
+				this._ensureRepeatedEntryInsertion(repeatEntry);
+				repeatEntry.creating=false;
+				creationContainer.schemaNode.onCreate?.(payload);
+				if (!doCreate) {
+					this._deleteCell(repeatEntry);
+					return false;
 			}
 		} else {
 			this._deleteCell(repeatEntry);
@@ -5423,32 +5460,36 @@ export default class Tablance extends TablanceBase {
 		this._collectFilterSchemaCaches(this._schema);
 	}
 	
-	_doEditSave() {
-		let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
-		const inputVal=this._activeSchemaNode.input.type==="select"
-			?this._getSelectValue(this._inputVal):this._inputVal;
-		const openGroup=this._getOpenGroupAncestor(this._activeDetailsCell);
-		const mainIndex=this._mainRowIndex;
-		const rowData=Number.isInteger(mainIndex)?this._filteredData?.[mainIndex]:null;
-		const mainRow=!openGroup?rowData:null;
-		const prevVal=this._cellCursorDataObj[this._activeSchemaNode.dataKey];
-		this._cellCursorDataObj[this._activeSchemaNode.dataKey]=inputVal;
-		const commitKey=this._getCommitChangeKey(this._activeSchemaNode);
-		const commitVal=this._normalizeCommitValue(this._activeSchemaNode,this._cellCursorDataObj[this._activeSchemaNode.dataKey]);
-		const commitChanges=commitKey?{[commitKey]:commitVal}:{};
-		const rowIsNew=mainRow?this._rowMeta.get(mainRow)?.isNew:false;
-		const mode=rowIsNew?"create":"update";
+		_doEditSave() {
+			let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
+			const inputVal=this._activeSchemaNode.input.type==="select"
+				?this._getSelectValue(this._inputVal):this._inputVal;
+			const openGroup=this._getOpenGroupAncestor(this._activeDetailsCell);
+			const isRepeatedCreate=this._activeDetailsCell?.creating
+				&&this._activeDetailsCell.parent?.schemaNode?.type==="repeated";
+			const mainIndex=this._mainRowIndex;
+			const rowData=Number.isInteger(mainIndex)?this._filteredData?.[mainIndex]:null;
+			const mainRow=!openGroup?rowData:null;
+			const prevVal=this._cellCursorDataObj[this._activeSchemaNode.dataKey];
+			this._cellCursorDataObj[this._activeSchemaNode.dataKey]=inputVal;
+			const commitKey=this._getCommitChangeKey(this._activeSchemaNode);
+			const commitVal=this._normalizeCommitValue(this._activeSchemaNode,this._cellCursorDataObj[this._activeSchemaNode.dataKey]);
+			const commitChanges=commitKey?{[commitKey]:commitVal}:{};
+			const rowIsNew=mainRow?this._rowMeta.get(mainRow)?.isNew:false;
+			if (isRepeatedCreate)
+				this._ensureRepeatedEntryInsertion(this._activeDetailsCell);
+			const mode=rowIsNew||isRepeatedCreate?"create":"update";
 
-		this._activeSchemaNode.input.onChange?.(this._makeCallbackPayload(this._activeDetailsCell,{
-			newValue: inputVal,oldValue: this._selectedCellVal,cancelUpdate: () => doUpdate=false
-		},{schemaNode: this._activeSchemaNode,mainIndex,rowData}));
+			this._activeSchemaNode.input.onChange?.(this._makeCallbackPayload(this._activeDetailsCell,{
+				newValue: inputVal,oldValue: this._selectedCellVal,cancelUpdate: () => doUpdate=false
+			},{schemaNode: this._activeSchemaNode,mainIndex,rowData}));
 
 		if (doUpdate) {
-			if (this._activeDetailsCell){
-				
-				//so if discarding group-changes (ctrl+esc) only repaints touched nodes
-				if (openGroup)
-					this._markDirtyField(this._activeDetailsCell);
+				if (this._activeDetailsCell){
+					
+					//so if discarding group-changes (ctrl+esc) only repaints touched nodes
+					if (openGroup)
+						this._markDirtyField(this._activeDetailsCell);
 
 				const doHeightUpdate=this._updateDetailsCell(this._activeDetailsCell,this._cellCursorDataObj);
 				if (doHeightUpdate&&!this._onlyDetails)
@@ -5464,24 +5505,26 @@ export default class Tablance extends TablanceBase {
 			this._updateBulkEditAreaCells([this._activeSchemaNode]);
 			this._updateDependentCells(this._activeSchemaNode,this._activeDetailsCell);
 			this._selectedCellVal=inputVal;
-			if (!openGroup) {
-				const normalizedChanges=mode==="create"?null:commitChanges;
-				const payload=this._makeCallbackPayload(this._activeDetailsCell,{
-					data: this._cellCursorDataObj,
-					changes: normalizedChanges,
-					mode
-				},{
-					schemaNode: this._activeSchemaNode,
-					rowData,
-					mainIndex,
-					instanceNode: this._activeDetailsCell
-				});
-				this._queueDataCommit(payload,this._activeDetailsCell);
-			}
-		} else {
-			// Revert data if change was cancelled.
-			this._cellCursorDataObj[this._activeSchemaNode.dataKey]=prevVal;
-			this._inputVal=this._selectedCellVal;
+				if (!openGroup) {
+					const normalizedChanges=mode==="create"?null:commitChanges;
+					const payload=this._makeCallbackPayload(this._activeDetailsCell,{
+						data: this._cellCursorDataObj,
+						changes: normalizedChanges,
+						mode
+					},{
+						schemaNode: this._activeSchemaNode,
+						rowData,
+						mainIndex,
+						instanceNode: this._activeDetailsCell
+					});
+					this._queueDataCommit(payload,this._activeDetailsCell);
+				}
+				if (isRepeatedCreate)
+					this._activeDetailsCell.creating=false;
+			} else {
+				// Revert data if change was cancelled.
+				this._cellCursorDataObj[this._activeSchemaNode.dataKey]=prevVal;
+				this._inputVal=this._selectedCellVal;
 		}
 	}
 

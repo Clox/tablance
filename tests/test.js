@@ -86,8 +86,11 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		{type:"field",title:"Ort",dataKey:"city",input:{type:"text",
 				onChange:payload=>console.log(payload)}}
 	]},
-	{title:"Stuff",type:"group",entries:[{type:"repeated",dataKey:"stuff69",create:true,entry:
+	{title:"Stuff",type:"group",entries:[
+		{type:"group", entries:[
+		{type:"repeated",dataKey:"stuff69",create:true,entry:
 			{type:"field",title:"File",dataKey:"file",input:{type:"text",}}}
+		]}
 	]},
 
 	{type:"group",dataKey:"innergrejer",title:"Inre grej",onClose:({preventClose})=>preventClose("nope!"),
