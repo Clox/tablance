@@ -3361,28 +3361,55 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	_deleteCell(instanceNode,programatically=false) {
-		let newSelectedCell;
-		for (let i=instanceNode.index,otherCell; otherCell=instanceNode.parent.children[++i];)
-			this._changeInstanceNodeIndex(otherCell,i-1)
-		if (instanceNode.parent.children.length>=instanceNode.index+1)
-			newSelectedCell=instanceNode.parent.children[instanceNode.index+1];
-		else if (instanceNode.parent.children.length>1)
-			newSelectedCell=instanceNode.parent.children[instanceNode.index-1];
-		instanceNode.parent.children.splice(instanceNode.index,1);
-		if (!programatically&&instanceNode.parent?.schemaNode?.type==="repeated") {
-			const arr=instanceNode.parent.dataObj;
-			const idx=Array.isArray(arr)?arr.indexOf(instanceNode.dataObj):-1;
-			if (idx>-1)
-				arr.splice(idx,1);
-		}
-		if (instanceNode.parent.schemaNode.type==="repeated"&&instanceNode.parent.parent.schemaNode.type==="list")
+		const parent=instanceNode.parent;
+		const deletedIndex=instanceNode.index;
+		const dataArray=parent?.dataObj;
+		const deletedData=Array.isArray(dataArray)?dataArray[deletedIndex]:undefined;
+		let mainIndex;
+		for (let root=instanceNode; root.parent; root=root.parent)
+			if (root.rowIndex!=null)
+				mainIndex=root.rowIndex;
+		const rowData=Number.isInteger(mainIndex)?this._filteredData?.[mainIndex]:undefined;
+		const parentData=instanceNode.parentData??null;
+
+		// Mutate data array
+		if (!programatically&&parent?.schemaNode?.type==="repeated"&&Array.isArray(dataArray)&&deletedIndex>-1)
+			dataArray.splice(deletedIndex,1);
+
+		// Remove instance and reindex siblings
+		parent.children.splice(deletedIndex,1);
+		for (let i=deletedIndex,otherCell; otherCell=parent.children[i]; i++)
+			this._changeInstanceNodeIndex(otherCell,i);
+
+		// DOM removal
+		if (parent.schemaNode.type==="repeated"&&parent.parent.schemaNode.type==="list")
 			instanceNode.el.parentElement.parentElement.remove();
 		else
 			instanceNode.el.parentElement.remove();
 		this._activeDetailsCell=null;//causes problem otherwise when #selectDetailsCell checks old cell
+
+		// Commit deletion after mutation/reindex
+		if (!programatically&&parent?.schemaNode?.type==="repeated") {
+			const payload=this._makeCallbackPayload(instanceNode,{
+				data: deletedData,
+				dataArray,
+				deletedIndex
+			},{
+				schemaNode: instanceNode.schemaNode,
+				mainIndex,
+				rowData,
+				instanceNode
+			});
+			payload.mode="delete";
+			payload.parentData=parentData;
+			this._queueDataCommit(payload,instanceNode);
+		}
+
+		// Select next cell
+		let newSelectedCell=parent.children[deletedIndex]??parent.children[deletedIndex-1];
 		if (!programatically)
-			this._selectDetailsCell(newSelectedCell??instanceNode.parent.parent);
-		instanceNode.creating&&instanceNode.parent.schemaNode.onCreateCancel?.(instanceNode.parent);
+			this._selectDetailsCell(newSelectedCell??parent.parent);
+		instanceNode.creating&&parent.schemaNode.onCreateCancel?.(parent);
 	}
 
 	_openTextEdit() {
