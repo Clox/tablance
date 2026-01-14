@@ -3699,7 +3699,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					this._moveCellCursor(e.shiftKey?-1:1,0,e);
 					e.stopPropagation();
 				} else if (e.key==="Escape")
-					this._closeSelectDropdown(ctx,e);
+					this._closeSelectDropdown(ctx,e,true);
 			}
 	
 		/**
@@ -3810,7 +3810,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		 * @param {Object} ctx
 		 * @param {Event} e the event that triggered the close (click, keydown, etc.)
 		 */
-		_closeSelectDropdown(ctx,e) {
+		_closeSelectDropdown(ctx,e,cancel=false) {
 			if (!ctx.selectContainer.parentElement)
 				return;
 			if (!ctx.highlightUlIndex&&ctx.pinnedUl.children[ctx.highlightLiIndex]?.dataset.type=="create") {
@@ -3820,7 +3820,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				ctx.allOpts.push(this._inputVal);
 				ctx.strctInp.createNewOptionHandler?.(this._inputVal,e,this._cellCursorDataObj,this._mainRowIndex
 																,this._activeSchemaNode,this._activeDetailsCell);
-			} else
+			} else if (!cancel)
 				this._inputVal=(ctx.highlightUlIndex?ctx.looseOpts:ctx.pinnedOpts)[ctx.highlightLiIndex].value;
 			ctx.selectContainer.remove();
 			if (ctx.windowMouseDown)
