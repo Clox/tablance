@@ -2329,6 +2329,22 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._selectDetailsCell(fileCell);
 	}
 
+	/** Build the delete controls schema snippet for repeated/file entries. */
+	_buildDeleteControls(schemaNode) {
+		return {type:"lineup",cssClass:"delete-controls"
+			,onBlur:cel=>cel.selEl.querySelector(".lineup").classList.remove("delete-confirming")
+			,entries:[{type:"field",input:{type:"button",
+				text:schemaNode.deleteText??this.lang.delete
+				,onClick:this._beginDeleteRepeated.bind(this)},cssClass:"delete"},
+			{type:"field",input:{type:"button"
+				,text:schemaNode.areYouSureNoText??this.lang.deleteAreYouSureNo
+				,onClick:this._cancelDelete.bind(this)},cssClass:"no"
+				,title:schemaNode.deleteAreYouSureText??this.lang.deleteAreYouSure},
+			{type:"field",input:{type:"button"
+				,text:schemaNode.areYouSureYesText??this.lang.deleteAreYouSureYes
+				,onClick:this._fileOnDelete},cssClass:"yes"}]};
+	}
+
 	/**
 	 * This is "supposed" to get called when a repeated-schemaNode is found however in #generateDetailsList,
 	 * repeated schema-nodes are looked for and handled by that method instead so that titles can be added to the list
@@ -2394,18 +2410,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	_schemaCopyWithDeleteButton(schemaNode,deleteHandler) {
-		const deleteControls={type:"lineup",cssClass:"delete-controls"
-			,onBlur:cel=>cel.selEl.querySelector(".lineup").classList.remove("delete-confirming")
-			,entries:[{type:"field",input:{type:"button",
-				text:schemaNode.deleteText??this.lang.delete
-				,onClick:this._beginDeleteRepeated.bind(this)},cssClass:"delete"},
-			{type:"field",input:{type:"button"
-				,text:schemaNode.areYouSureNoText??this.lang.deleteAreYouSureNo
-				,onClick:this._cancelDelete.bind(this)},cssClass:"no"
-				,title:schemaNode.deleteAreYouSureText??this.lang.deleteAreYouSure},
-			{type:"field",input:{type:"button"
-				,text:schemaNode.areYouSureYesText??this.lang.deleteAreYouSureYes
-				,onClick:deleteHandler},cssClass:"yes"}]};
+		const deleteControls=this._buildDeleteControls(schemaNode);
+		deleteControls.entries[2].input.onClick=deleteHandler;
 		const rawNode=schemaNode?.[SCHEMA_WRAPPER_MARKER]?schemaNode.raw:schemaNode;
 		const parentWrapped=schemaNode?.[SCHEMA_WRAPPER_MARKER]?schemaNode.parent:null;
 		if (!rawNode)
