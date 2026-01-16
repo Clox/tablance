@@ -87,15 +87,13 @@ document.addEventListener("DOMContentLoaded", ()=>{
 				onChange:payload=>console.log(payload)}}
 	]},
 	{title:"Stuff",type:"group",entries:[
-		{type:"group", entries:[
 		{type:"repeated",dataKey:"stuff69",create:true,entry:
-			{type:"field",title:"File",dataKey:"file",input:{type:"text",}}}
-		]}
+			{type:"field",title:"File3",dataKey:"file",input:{type:"file"}}}
 	]},
 
 	{type:"group",dataKey:"innergrejer",title:"Inre grej",onClose:({preventClose})=>preventClose("nope!"),
 		entries:[{type:"field",dataKey:"innerFoo"}]},
-		{type:"field",title:"File",dataKey:"file",input:{type:"file",fileUploadHandler:xhr=>{
+		{type:"field",title:"File4",dataKey:"file",input:{type:"file",fileUploadHandler:xhr=>{
 				xhr.open("POST", "http://localhost:3000/tests/serve.php", true);
 			},
 			fileMetasToShow:{filename:true},

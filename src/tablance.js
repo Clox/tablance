@@ -2409,6 +2409,22 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			this._selectDetailsCell(instanceNode.parent.children[0]);
 	}
 
+	_wrapRepeatedEntryForDeletion(entrySchemaNode) {
+		if (entrySchemaNode?.creator)
+			return entrySchemaNode;
+		if (entrySchemaNode?.type==="group")
+			return this._schemaCopyWithDeleteButton(entrySchemaNode,this._repeatedOnDelete);
+		const rawEntry=entrySchemaNode?.[SCHEMA_WRAPPER_MARKER]?entrySchemaNode.raw:entrySchemaNode;
+		const rawGroup={type:"group",entries:[rawEntry],origin:"internal",isImplicit:true,entryAutoGroup:true};
+		const wrappedGroup=this._schemaCopyWithDeleteButton(rawGroup,this._repeatedOnDelete);
+		wrappedGroup.isImplicit=true;
+		if (!wrappedGroup.origin)
+			wrappedGroup.origin="internal";
+		if (entrySchemaNode?.[SCHEMA_WRAPPER_MARKER])
+			this._cloneDependencyMetadata(entrySchemaNode,wrappedGroup.entries?.[0]);
+		return wrappedGroup;
+	}
+
 	_schemaCopyWithDeleteButton(schemaNode,deleteHandler) {
 		const deleteControls=this._buildDeleteControls(schemaNode);
 		deleteControls.entries[2].input.onClick=deleteHandler;
@@ -3306,9 +3322,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			indexOfNew=repeated.children.length-(repeated.schemaNode.create&&!entrySchemaNode.creator)//pos be4 creator
 		for (let root=repeated.parent; root.parent; root=root.parent,rowIndex=root.rowIndex);//get main-index
 		let entryNode=entrySchemaNode;
-		if (repeated.schemaNode.create&&entrySchemaNode.type==="group")
-			entryNode=this._schemaCopyWithDeleteButton(entrySchemaNode,this._repeatedOnDelete);
-			//make a wrapped copy of the entry so delete-controls can be appended without touching the original
+		if (repeated.schemaNode.create&&!entrySchemaNode.creator)
+			entryNode=this._wrapRepeatedEntryForDeletion(entrySchemaNode);
 		const newObj=this._generateCollectionItem(entryNode,rowIndex,repeated,repeated.path,data,indexOfNew,creating);
 		if (creating) {
 			newObj.creating=true;//creating means it hasn't been commited yet.
@@ -5152,14 +5167,22 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if(!(fileSchemaNode.input.fileMetasToShow?.[metaName]??this._opts.defaultFileMetasToShow?.[metaName]??true))
 				metaEntries.splice(metaI,1);//potentially remove (some of) them
 		//define the group-structure for the file
-		
-		const fileGroup=this._schemaCopyWithDeleteButton({type:"group",entries:[]},this._fileOnDelete);
-		fileGroup.entries[0].entries.unshift({type:"field",input:{type:"button",text:"Open"
-				,onClick:(e,file,mainIndex,schemaNode,btnObj)=>{
-					rowData??=this._filteredData[mainIndex];
-					fileSchemaNode.input.openHandler?.(e,file,fileSchemaNode,fileInstanceNode.dataObj,mainIndex,btnObj);
-			}},
-		});
+		const parentSchema=fileInstanceNode.parent?.schemaNode;
+		const parentRepeated=fileInstanceNode.parent?.parent?.schemaNode;
+		const suppressFileDelete=!!(parentSchema?.isImplicit&&parentRepeated?.type==="repeated"&&parentRepeated?.create);
+		const baseOpenControl={type:"field",input:{type:"button",text:"Open"
+			,onClick:(e,file,mainIndex,schemaNode,btnObj)=>{
+				rowData??=this._filteredData[mainIndex];
+				fileSchemaNode.input.openHandler?.(e,file,fileSchemaNode,fileInstanceNode.dataObj,mainIndex,btnObj);
+		}}};
+
+		let fileGroup;
+		if (suppressFileDelete) {
+			fileGroup={type:"group",entries:[{type:"lineup",entries:[baseOpenControl]}],origin:"internal"};
+		} else {
+			fileGroup=this._schemaCopyWithDeleteButton({type:"group",entries:[]},this._fileOnDelete);
+			fileGroup.entries[0].entries.unshift(baseOpenControl);
+		}
 		fileGroup.entries.push({type:"lineup",entries:metaEntries});
 		const wrappedFileGroup=this._buildSchemaFacade(fileGroup);//WRAPPED
 		
