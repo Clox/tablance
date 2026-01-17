@@ -1163,6 +1163,45 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				return node.meta[metaKey];
 	}
 
+	/**
+	 * Resolve the actual commit target for a schema/data pair.
+	 *
+	 * @param {Object} schemaNode The schema node originating the commit.
+	 * @param {Object} data The data object associated with that node.
+	 * @returns {Object} The object that should receive the commit.
+	 */
+	_resolveCommitTarget(schemaNode,data) {
+		if (!schemaNode)
+			return data;
+		let targetKey=null;
+		if (schemaNode.type==="field")
+			targetKey=schemaNode.commitDataTarget;
+		// For implicit auto-groups that wrap a single field (e.g. repeated entry wrapper),
+		// honor the child's commitDataTarget without making the container own the target.
+		else if (schemaNode.entryAutoGroup&&schemaNode.entries?.length)
+			targetKey=schemaNode.entries[0]?.commitDataTarget;
+		return targetKey?data?.[targetKey]:data;
+	}
+
+	/**
+	 * Apply commit target redirection: move payload.data to the resolved target and keep the original.
+	 * @param {Object} payload Commit payload about to be emitted.
+	 * @param {Object} schemaNode Schema node originating the commit.
+	 * @returns {Object} New payload with data redirected and sourceData preserved.
+	 */
+	_applyCommitTargetToPayload(payload,schemaNode) {
+		if (!payload)
+			return payload;
+		const sourceData=payload.data;
+		const target=this._resolveCommitTarget(schemaNode??payload?.schemaNode,sourceData);
+		if (target===sourceData) {
+			if (payload.sourceData===undefined&&sourceData!==undefined)
+				return {...payload,sourceData};
+			return payload;
+		}
+		return {...payload,data:target,sourceData};
+	}
+
 	// Build a callback payload with sensible defaults derived from an instance-node.
 	_makeCallbackPayload(instanceNode, extra={}, overrides={}) {
 		const schemaNode=overrides.schemaNode??instanceNode?.schemaNode;
@@ -3210,14 +3249,16 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			return;
 		}
 		const onDataCommit=this._schema?.onDataCommit;
-		const emitDataCommit=(payload,dataKey,dataArray)=>{
+		const emitDataCommit=(payload,dataKey,dataArray,schemaNode)=>{
 			if (!onDataCommit)
 				return;
+			const targetedPayload=this._applyCommitTargetToPayload(payload,schemaNode);
 			const creationContext=payload.mode==="create"?{
 				...(dataKey!==undefined?{dataKey}:{}),
 				...(dataArray!==undefined?{dataArray}:{}),
 			}:{};
-			onDataCommit({...payload,changes: payload?.changes==null?null:{...(payload?.changes??{})},
+			onDataCommit({...targetedPayload,
+				changes: targetedPayload?.changes==null?null:{...(targetedPayload?.changes??{})},
 				...creationContext});
 		};
 		for (const intent of commits) {
@@ -3244,7 +3285,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					rowData,
 					bulkEdit: payload.bulkEdit
 				});
-				emitDataCommit(rowPayload);
+				emitDataCommit(rowPayload,undefined,undefined,this._schema);
 				if (rowData)
 					this._rowFilterCache?.delete(rowData);
 				rowMeta.isNew=false;
@@ -3252,7 +3293,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				if (payload.data===rowData)
 					continue;
 			}
-			emitDataCommit(payload,dataKey,dataArray);
+			emitDataCommit(payload,dataKey,dataArray,intent.schemaNode);
 			if (rowData)
 				this._rowFilterCache?.delete(rowData);
 		}

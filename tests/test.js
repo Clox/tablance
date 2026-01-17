@@ -88,7 +88,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	]},
 	{title:"Stuff",type:"group",entries:[
 		{type:"repeated",dataKey:"files",create:true,entry:
-			{type:"field",title:"File3",dataKey:"file",input:{type:"file"}}}
+			{type:"field",title:"File3",dataKey:"file",input:{type:"file"},commitDataTarget:"file"}}
 	]},
 
 	{type:"group",dataKey:"innergrejer",title:"Inre grej",onClose:({preventClose})=>preventClose("nope!"),
