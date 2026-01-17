@@ -5266,8 +5266,6 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		if (instanceNode.schemaNode.input?.type=="file"&&rowData[instanceNode.schemaNode.dataKey]) {
 			this._generateFileCell(instanceNode,cellEl,rowData,rootCell.rowIndex);
 		} else {
-			if (instanceNode.schemaNode.visibleIf)
-				this._applyVisibleIf(instanceNode);
 			this._updateCell(instanceNode.schemaNode,cellEl,instanceNode.selEl,rowData,rootCell.rowIndex,instanceNode);
 			if (instanceNode.schemaNode.input?.type!=="button") {
 				const newCellContent=cellEl.innerText;
