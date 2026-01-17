@@ -2418,6 +2418,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const rawGroup={type:"group",entries:[rawEntry],origin:"internal",isImplicit:true,entryAutoGroup:true};
 		const wrappedGroup=this._schemaCopyWithDeleteButton(rawGroup,this._repeatedOnDelete);
 		wrappedGroup.isImplicit=true;
+		if (!wrappedGroup.parent&&entrySchemaNode?.parent)
+			wrappedGroup.parent=entrySchemaNode.parent;
 		if (!wrappedGroup.origin)
 			wrappedGroup.origin="internal";
 		if (entrySchemaNode?.[SCHEMA_WRAPPER_MARKER])
@@ -5155,6 +5157,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 		//saving this ref here which is used to revert with if user deletes file
 		fileInstanceNode.fileInputSchemaNode=fileSchemaNode;
+		const fileData=rowData[fileSchemaNode.dataKey];
 
 		//define all the file-meta-props
 		const lang=this.lang;
@@ -5169,7 +5172,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		//define the group-structure for the file
 		const parentSchema=fileInstanceNode.parent?.schemaNode;
 		const parentRepeated=fileInstanceNode.parent?.parent?.schemaNode;
-		const suppressFileDelete=!!(parentSchema?.isImplicit&&parentRepeated?.type==="repeated"&&parentRepeated?.create);
+		const suppressFileDelete=!!(parentSchema?.entryAutoGroup&&parentSchema?.isImplicit
+			&&parentRepeated?.type==="repeated"&&parentRepeated?.create);
 		const baseOpenControl={type:"field",input:{type:"button",text:"Open"
 			,onClick:(e,file,mainIndex,schemaNode,btnObj)=>{
 				rowData??=this._filteredData[mainIndex];
@@ -5184,9 +5188,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			fileGroup.entries[0].entries.unshift(baseOpenControl);
 		}
 		fileGroup.entries.push({type:"lineup",entries:metaEntries});
-		const wrappedFileGroup=this._buildSchemaFacade(fileGroup);//WRAPPED
+		// Anchor synthetic schema to the parent so closestMeta can traverse implicit groups.
+		const wrappedFileGroup=this._buildSchemaFacade(fileGroup,fileSchemaNode.parent??parentSchema);//WRAPPED
 		
-		const fileData=rowData[fileInstanceNode.schemaNode.dataKey];
 		//call _buildSchemaTreeFacade on fileGroup here?
 		this._generateDetailsContent(wrappedFileGroup,dataIndex,fileInstanceNode,cellEl,fileInstanceNode.path,fileData);
 		const fileMeta=this._fileMeta.get(fileData);

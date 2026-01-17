@@ -87,7 +87,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 				onChange:payload=>console.log(payload)}}
 	]},
 	{title:"Stuff",type:"group",entries:[
-		{type:"repeated",dataKey:"stuff69",create:true,entry:
+		{type:"repeated",dataKey:"files",create:true,entry:
 			{type:"field",title:"File3",dataKey:"file",input:{type:"file"}}}
 	]},
 
@@ -265,7 +265,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		}
 		myTablance.addData(data);
 	}
-	myTablance._sourceData[0].file={lastModified:1669981639918,name:"foo.txt",size:1337,type: "text"};
+	myTablance._sourceData[0].files=[{file:{lastModified:1669981639918,name:"foo.txt",size:1337,type: "text"}}];
 
 
 	const tablanceContainer2=document.getElementById("tablanceContainer2");
