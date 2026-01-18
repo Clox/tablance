@@ -703,8 +703,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 										+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
 				this._updateHeaderSortHtml();
 				this._buildDependencyGraph(this._schema);
-				// Bulk-edit clones raw schema nodes, so it must receive the original (non-wrapped) schema.
-				this._createBulkEditArea(schema);
+				// Bulk-edit clones raw nodes but needs wrapper metadata (parents/meta), so pass the wrapped schema.
+				this._createBulkEditArea(this._schema);
 				this._updateSizesOfViewportAndCols();
 			}
 		}
@@ -4667,13 +4667,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 * @returns */
 	_buildBulkEditSchemaNodes(schemaNode) {
 		const result=[];
-			// Bulk-edit walks the raw schema (not the wrapped facade), so implicit fields lack a type.
-			// Treat missing type as "field" here to include those nodes.
-			if ((schemaNode.type=="field"||!schemaNode.type)&&schemaNode.bulkEdit) {
-			result.push(Object.assign(Object.create(null), schemaNode, {type:"field"}));
+		if (schemaNode.type=="field"&&schemaNode.bulkEdit) {
+			//Clone the raw node for the bulk schema, but keep reference to the wrapped original for closestMeta.
+			result.push(Object.assign(Object.create(null),schemaNode.raw,{type:"field",originalSchemaNode:schemaNode}));
 		} else if ((schemaNode.entries?.length&&schemaNode.bulkEdit)||schemaNode===this._schema.details) {
-			for (const schemaNode of schemaNode.entries)
-				result.push(...this._buildBulkEditSchemaNodes(schemaNode));//TODO this has to be fixed to deal with wrapped...
+			for (const childNode of schemaNode.entries)
+				result.push(...this._buildBulkEditSchemaNodes(childNode));
 		}
 		return result;
 	}
@@ -5532,9 +5531,10 @@ class TablanceBulk extends TablanceBase {
 	
 
 	_doEditSave() {
+		const sourceSchemaNode=this._activeSchemaNode.originalSchemaNode??this._activeSchemaNode;
 		const inputVal=this._activeSchemaNode.input.type==="select"?this._getSelectValue(this._inputVal):this._inputVal;
-		const commitKey=this.mainInstance._getCommitChangeKey(this._activeSchemaNode);
-		const commitVal=this.mainInstance._normalizeCommitValue(this._activeSchemaNode,inputVal);
+		const commitKey=this.mainInstance._getCommitChangeKey(sourceSchemaNode);
+		const commitVal=this.mainInstance._normalizeCommitValue(sourceSchemaNode,inputVal);
 		this._cellCursorDataObj[this._activeSchemaNode.dataKey]=inputVal;
 		for (const selectedRow of this.mainInstance._selectedRows) {
 			selectedRow[this._activeSchemaNode.dataKey]=inputVal;
@@ -5549,7 +5549,7 @@ class TablanceBulk extends TablanceBase {
 					changes: normalizedChanges,
 					mode
 				},{
-					schemaNode: this._activeSchemaNode,
+					schemaNode: sourceSchemaNode,
 					rowData: selectedRow,
 					mainIndex,
 					bulkEdit: true
