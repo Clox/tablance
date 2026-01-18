@@ -1253,6 +1253,15 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return displayVal;
 	}
 
+	_getSortValue(schemaNode,dataObj,mainIndex) {
+		const {value,idValue,dependedValue}=this._getCellValueBundle(schemaNode,dataObj,mainIndex,null);
+		const payload=this._makeCallbackPayload(null,{value,idValue,dependedValue,rowData: dataObj},
+			{schemaNode,mainIndex,rowData: dataObj});
+		if (schemaNode.sortValue)
+			return schemaNode.sortValue(payload);
+		return value;
+	}
+
 	_findDescendantInstanceNodeById(searchInObj,idToFind) {
 		for (const child of searchInObj.children)
 			if (child.schemaNode.dataKey==idToFind)//if true then its the repeated-obj we're looking for
@@ -4509,8 +4518,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 						return (aSel?-1:1)*(sortCol.order=="asc"?1:-1);
 				} else {
 					const schemaNode=this._colSchemaNodes[sortCol.index];
-					const aVal=normalizeVal(this._getDisplayValue(schemaNode,a,mainIndexMap.get(a),true));
-					const bVal=normalizeVal(this._getDisplayValue(schemaNode,b,mainIndexMap.get(b),true));
+					const aVal=normalizeVal(this._getSortValue(schemaNode,a,mainIndexMap.get(a)));
+					const bVal=normalizeVal(this._getSortValue(schemaNode,b,mainIndexMap.get(b)));
 					if (aVal==bVal)
 						continue;
 					return (aVal>bVal?1:-1)*(sortCol.order=="asc"?1:-1);
