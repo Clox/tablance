@@ -4704,7 +4704,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			this._bulkEditTable.updateData(0,multiCellSchemaNode.dataKey,mixed?mixedText:val?.text??val??"");
 			const el=this._bulkEditTable._openDetailsPanes[0].children[multiCellI].el;
 			el.innerText=mixed?mixedText:val?.text??val??"";
-			this._bulkEditTable._data[0][multiCellSchemaNode.dataKey]=mixed?"":val;
+			this._bulkEditTable._filteredData[0][multiCellSchemaNode.dataKey]=mixed?"":val;
 		}
 	}
 
@@ -5538,7 +5538,7 @@ class TablanceBulk extends TablanceBase {
 		this._cellCursorDataObj[this._activeSchemaNode.dataKey]=inputVal;
 		for (const selectedRow of this.mainInstance._selectedRows) {
 			selectedRow[this._activeSchemaNode.dataKey]=inputVal;
-			const mainIndex=this.mainInstance._data.indexOf(selectedRow);
+			const mainIndex=this.mainInstance._filteredData.indexOf(selectedRow);
 			if (mainIndex!==-1) {
 				const changes=commitKey?{[commitKey]:commitVal}:{};
 				const rowIsNew=this.mainInstance._rowMeta.get(selectedRow)?.isNew??false;
