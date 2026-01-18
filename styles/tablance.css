@@ -365,6 +365,7 @@
   text-align: center;
   display: block;
   position: relative;
+  padding-top: 5px;
 }
 .tablance .tooltip.below {
   margin-top: 5px;

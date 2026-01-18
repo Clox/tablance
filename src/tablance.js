@@ -54,6 +54,7 @@ const DEFAULT_LANG=Object.freeze({
 	selectNoResultsFound:"No results found",
 	selectEmpty:"<None>",
 	selectCreateOption:"Create [{text}]",
+	copiedToClipboard:"Copied to clipboard!",
 	insertEntry:"Insert new",
 	insertRow:"Insert new",
 	creationValidationFailed:"Invalid entry. Please check the fields and try again.",
@@ -2192,6 +2193,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				this. _expandRow(this._selectedCell.closest(".main-table>tbody>tr"));
 			break; case "NumpadSubtract":
 				this._contractRow(this._selectedCell.closest(".main-table>tbody>tr"));
+			break; case "KeyC":
+				if (e.ctrlKey&&!e.metaKey&&!e.shiftKey) {
+					e.preventDefault();
+					this._copySelectedCellText();
+				}
 			break; case "Enter": case "NumpadEnter": case "Space":
 				if (e.code=="Space")
 					e.preventDefault();//prevent scrolling when pressing space
@@ -2212,6 +2218,34 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		for (let instanceNode=this._activeDetailsCell; instanceNode=instanceNode?.parent;)
 			if (instanceNode.schemaNode.type==="group")
 				return this._selectDetailsCell(instanceNode);
+	}
+
+	_copySelectedCellText() {
+		// Copy displayed text of the selected field when not in edit mode.
+		if (this._inEditMode||this._activeSchemaNode?.type!=="field"||!this._selectedCell)
+			return;
+		const text=(this._selectedCell.innerText??"").trim();
+		if (!text)
+			return;
+		const fallback=()=>this._copySelectedCellText_fallback(text);
+		if (navigator?.clipboard?.writeText)
+			navigator.clipboard.writeText(text).then(()=>this._showTooltip?.(this.lang.copiedToClipboard),fallback);
+		else
+			fallback();
+	}
+
+	_copySelectedCellText_fallback(text) {
+		// Fallback using a hidden textarea; refocus table afterward so the cursor stays visible.
+		const ta=document.createElement("textarea");
+		ta.value=text;
+		ta.style.position="fixed";
+		ta.style.left="-9999px";
+		document.body.appendChild(ta);
+		ta.select();
+		try { document.execCommand("copy"); } catch(_e) {}
+		ta.remove();
+		this.rootEl?.focus({preventScroll:true});
+		this._showTooltip?.(this.lang.copiedToClipboard);
 	}
 
 	_insertAtCursor(myField, myValue) {
