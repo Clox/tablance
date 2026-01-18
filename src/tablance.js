@@ -3719,16 +3719,19 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		 */
 		_handleSelectInputChange(ctx) {
 			const value=ctx.input.value;
+			const filter=value.toLowerCase();
 			const hadFilter=!!ctx.filterText;
-			const filterChangedAtEdges=!value.includes(ctx.filterText)||!hadFilter;
+			const filterChangedAtEdges=!filter.includes((ctx.filterText??"").toLowerCase())||!hadFilter;
 			ctx.canCreate=!!value;
 			if (filterChangedAtEdges)
 				ctx.looseOpts.splice(0,Infinity,...ctx.allOpts);
-			for (let i=-1,opt; opt=ctx.looseOpts[++i];)
-				if ((!opt.text.includes(value)||opt.pinned)&&!opt.isEmpty)
+			for (let i=-1,opt; opt=ctx.looseOpts[++i];) {
+				const optText=typeof opt.text==="string"?opt.text.toLowerCase():String(opt.text??"");
+				if ((opt.pinned||!optText.includes(filter))&&!opt.isEmpty)
 					ctx.looseOpts.splice(i--,1);
-				else if (opt.text.toLowerCase()==value.toLowerCase())
+				else if (optText===filter)
 					ctx.canCreate=false;
+			}
 			this._updateCreateOptionVisibility(ctx);
 			const foundSelected=this._renderSelectOptions(ctx.mainUl,ctx.looseOpts,this._inputVal,ctx);
 			if (foundSelected)
