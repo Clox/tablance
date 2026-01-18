@@ -485,7 +485,8 @@ class TablanceBase {
 	 * 					}
 	 * 					----Properties specific to input "button"----
 	 * 						text String If type is "button" then this will be the text on it
-	 * 						onClick Function A callback-function that will get called  when the button is pressed. 
+	 * 						onClick Function A callback-function that will get called when the button is pressed.
+	 * 							Receives payload from _makeCallbackPayload with {event,rowData,mainIndex,...}.
 	 * 							It will get passed arguments 1:event, 2:dataObject
 	 * 							,3:mainDataIndex,4:schemaNode,5:instanceNode(if inside details)
   	 * 				}
@@ -2336,12 +2337,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 */
 	_generateDetailsContent(schemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
 		let notYetCreated=_notYetCreated;
-		let scopedRowData=rowData;
+		let scopedData=rowData;
 		if (schemaNode.dataPath) {
 			const ctx=Array.isArray(schemaNode.dataPath)
 				? schemaNode.dataPath
 				: String(schemaNode.dataPath).split(".").filter(Boolean);
-			let target=scopedRowData;
+			let target=scopedData;
 			for (const key of ctx) {
 				if (!target[key]||typeof target[key]!="object") {
 					target[key]={};
@@ -2349,12 +2350,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				}
 				target=target[key];
 			}
-			scopedRowData=target;
+			scopedData=target;
 		}
 		if (!path.length)
 		instanceNode.rowIndex=mainIndex;
 		instanceNode.path=[...path];
-		instanceNode.dataObj=scopedRowData;
+		instanceNode.dataObj=scopedData;
 		instanceNode.schemaNode=schemaNode;
 		if (instanceNode.parentData===undefined) {
 			const owner=instanceNode.parent?.schemaNode?.type==="repeated"
@@ -2370,11 +2371,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		if (schemaNode.visibleIf)
 			this._applyVisibleIf(instanceNode);
 		switch (schemaNode.type) {
-			case "list": return this._generateDetailsList(schemaNode,mainIndex,instanceNode,parentEl,path,scopedRowData,notYetCreated);
-			case "field": return this._generateField(schemaNode,mainIndex,instanceNode,parentEl,path,scopedRowData);
-			case "group": return this._generateDetailsGroup(schemaNode,mainIndex,instanceNode,parentEl,path,scopedRowData,notYetCreated);
-			case "repeated": return this._generateDetailsRepeated(schemaNode,mainIndex,instanceNode,parentEl,path,scopedRowData,notYetCreated);
-			case "lineup": return this._generateDetailsLineup(schemaNode,mainIndex,instanceNode,parentEl,path,scopedRowData,notYetCreated);
+			case "list": return this._generateDetailsList(schemaNode,mainIndex,instanceNode,parentEl,path,scopedData,notYetCreated);
+			case "field": return this._generateField(schemaNode,mainIndex,instanceNode,parentEl,path,scopedData);
+			case "group": return this._generateDetailsGroup(schemaNode,mainIndex,instanceNode,parentEl,path,scopedData,notYetCreated);
+			case "repeated": return this._generateDetailsRepeated(schemaNode,mainIndex,instanceNode,parentEl,path,scopedData,notYetCreated);
+			case "lineup": return this._generateDetailsLineup(schemaNode,mainIndex,instanceNode,parentEl,path,scopedData,notYetCreated);
 		}
 	}
 
@@ -2543,14 +2544,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			this._cloneDependencyMetadata(sourceChildren[i],targetChildren[i]);
 	}
 
-		_generateButton(schemaNode,mainIndex,parentEl,rowData,instanceNode=null) {
+		_generateButton(schemaNode,mainIndex,parentEl,scopedData,instanceNode=null) {
 			const btn=parentEl.appendChild(document.createElement("button"));
 			btn.tabIndex="-1";//so it can't be tabbed to
 			btn.innerHTML=schemaNode.input.text;
 			btn.addEventListener("click",e=>{
-				const payload=this._makeCallbackPayload(instanceNode,{event:e},{
+				const payload=this._makeCallbackPayload(instanceNode,{event:e,file:scopedData},{
 					schemaNode,
-					mainIndex
+					mainIndex,
 				});
 				schemaNode.input.onClick?.(payload);
 			});
@@ -2818,9 +2819,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		return itemObj;
 	}
 
-	_generateField(fieldSchemaNode,mainIndex,instanceNode,parentEl,path,rowData) {
+	_generateField(fieldSchemaNode,mainIndex,instanceNode,parentEl,path,scopedData) {
 		instanceNode.el=parentEl;
-		this._updateDetailsCell(instanceNode,rowData);
+		this._updateDetailsCell(instanceNode,scopedData);
 		instanceNode[instanceNode.selEl?"selEl":"el"].dataset.path=path.join("-");
 		return true;
 	}
@@ -5324,18 +5325,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const suppressFileDelete=!!(parentSchema?.entryAutoGroup&&parentSchema?.isImplicit
 			&&parentRepeated?.type==="repeated"&&parentRepeated?.create);
 		const baseOpenControl={type:"field",input:{type:"button",text:"Open"
-			,onClick:(e,file,mainIndex,schemaNode,btnObj)=>{
+			,onClick:(payload)=>{
 				rowData??=this._filteredData[mainIndex];
-				const payload=this._makeCallbackPayload(fileInstanceNode,{
-					event:e,
-					file,
-					btnObj,
-					fileData:fileInstanceNode.dataObj
-				},{
-					schemaNode:fileSchemaNode,
-					rowData,
-					mainIndex
-				});
 				fileSchemaNode.input.onOpenFile?.(payload);
 		}}};
 
@@ -5370,7 +5361,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	/**Updates the html-element of a cell inside an details. Also updates nonEmptyDescentants of the instanceNode of 
 	 * 	group-rows as well as toggling the empty-class of them. Reports back whether visibility has been changed.
 	 * @param {*} instanceNode */
-	_updateDetailsCell(instanceNode,rowData=null) {
+	_updateDetailsCell(instanceNode,scopedData=null) {
 		let cellEl=instanceNode.el;
 		if (instanceNode.schemaNode.maxHeight) {//if there's a maxHeight stated, which is used for textareas
 			cellEl.innerHTML="";//empty the cell, otherwise multiple calls to this would add more and more content to it
@@ -5381,10 +5372,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		}
 		for (var rootCell=instanceNode;rootCell.parent;rootCell=rootCell.parent);
 		const oldCellContent=cellEl.innerText;
-		if (instanceNode.schemaNode.input?.type=="file"&&rowData[instanceNode.schemaNode.dataKey]) {
-			this._generateFileCell(instanceNode,cellEl,rowData,rootCell.rowIndex);
+		if (instanceNode.schemaNode.input?.type=="file"&&scopedData[instanceNode.schemaNode.dataKey]) {
+			this._generateFileCell(instanceNode,cellEl,scopedData,rootCell.rowIndex);
 		} else {
-			this._updateCell(instanceNode.schemaNode,cellEl,instanceNode.selEl,rowData,rootCell.rowIndex,instanceNode);
+			this._updateCell(instanceNode.schemaNode,cellEl,instanceNode.selEl,scopedData,rootCell.rowIndex,
+				instanceNode);
 			if (instanceNode.schemaNode.input?.type!=="button") {
 				const newCellContent=cellEl.innerText;
 				if (!newCellContent!=!oldCellContent) {
@@ -5451,26 +5443,26 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 	
 
-	_updateCell(schemaNode,el,selEl,rowData,mainIndex,instanceNode=null) {
+	_updateCell(schemaNode,el,selEl,scopedData,mainIndex,instanceNode=null) {
 		let valueBundle;
 		if (!instanceNode)
 			selEl.className="";
 		else if (instanceNode.baseCss)
 			(selEl??el).className=instanceNode.baseCss;
 		if (schemaNode.input?.type==="button") {
-			this._generateButton(schemaNode,mainIndex,el,rowData,instanceNode);
+			this._generateButton(schemaNode,mainIndex,el,scopedData,instanceNode);
 		} else {
 			let newCellContent;
 			if (schemaNode.render||schemaNode.input?.type!="select") {
-				valueBundle=this._getCellValueBundle(schemaNode,rowData,mainIndex,instanceNode);
+				valueBundle=this._getCellValueBundle(schemaNode,scopedData,mainIndex,instanceNode);
 				if (schemaNode.render) {
-					const payload=this._makeCallbackPayload(instanceNode,{...valueBundle,rowData},{
-						schemaNode,mainIndex,rowData});
+					const payload=this._makeCallbackPayload(instanceNode,{...valueBundle,rowData: scopedData},{
+						schemaNode,mainIndex,rowData: scopedData});
 					newCellContent=schemaNode.render(payload);
 				} else
 					newCellContent=valueBundle.value;
 			} else { //if (schemaNode.input?.type==="select") {
-				const rawVal=rowData[schemaNode.dataKey];
+				const rawVal=scopedData[schemaNode.dataKey];
 				if (typeof schemaNode.input?.options==="function") {
 					console.warn("Performance notice:\n" +
 						"This select field uses dynamic options but does not define render().\n\n" +
@@ -5482,7 +5474,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 						console.log(schemaNode);
 					newCellContent="";
 				} else {
-					const selOptObj=this._getSelectOptions(schemaNode.input,schemaNode,rowData,mainIndex,instanceNode)
+					const selOptObj=this._getSelectOptions(schemaNode.input,schemaNode,scopedData,mainIndex,instanceNode)
 						.find(opt=>this._getSelectValue(opt)==this._getSelectValue(rawVal));
 					newCellContent=rawVal==null?"":(selOptObj?.text??rawVal??"");
 				}
@@ -5492,9 +5484,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				const hasOnEnter=!!schemaNode.onEnter;
 				let enabledFuncResult;
 				if (schemaNode.input?.enabledIf) {
-					const valuePayload=valueBundle??this._getCellValueBundle(schemaNode,rowData,mainIndex,instanceNode);
+					const valuePayload=valueBundle??this._getCellValueBundle(schemaNode,scopedData,mainIndex,instanceNode);
 					const enabledPayload=this._makeCallbackPayload(instanceNode,valuePayload,
-						{schemaNode,mainIndex,rowData});
+						{schemaNode,mainIndex,rowData: scopedData});
 					enabledFuncResult=schemaNode.input.enabledIf(enabledPayload);
 				}
 				if (enabledFuncResult==false||enabledFuncResult?.enabled==false)
@@ -5515,8 +5507,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (typeof schemaNode.cssClass==="function") {
 				cssAddition=schemaNode.cssClass(
 					this._makeCallbackPayload(instanceNode,valueBundle
-						??this._getCellValueBundle(schemaNode,rowData,mainIndex,instanceNode),
-						{schemaNode:schemaNode,rowData,mainIndex}));
+						??this._getCellValueBundle(schemaNode,scopedData,mainIndex,instanceNode),
+						{schemaNode:schemaNode,rowData: scopedData,mainIndex}));
 			} else 
 				cssAddition=schemaNode.cssClass;
 			if (cssAddition)//guard against undefined/null in case function returns that
