@@ -31,7 +31,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	}
 	const foods=[{text:"banana",value:1,visibleIf:({rowIndex})=>rowIndex%2},
 			{text:"apple",value:2},
-			{text:"cucumber",value:3},{text:"orange",value:4},{text:"grapes",value:5},
+			{text:"cucumber",value:3},{text:"orange",value:4,pinned:true},{text:"grapes",value:5},
 			{text:"melon",value:6},{text:"pineapple",value:7},{text:"carrot",value:8},
 			{text:"another banana",value:9},{text:"another apple",value:10},
 			{text:"another cucumber",value:11},{text:"another orange",value:12},
@@ -88,7 +88,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	]},
 	{title:"Stuff",type:"group",entries:[
 		{type:"repeated",dataKey:"files",create:true,entry:
-			{type:"field",title:"File3",dataKey:"file",input:{type:"file"},commitDataTarget:"file"}}
+			{type:"field",title:"File3",dataKey:"file",input:{type:"file", onOpenFile:payload=>console.log(payload)},commitDataTarget:"file"}}
 	]},
 
 	{type:"group",dataKey:"innergrejer",title:"Inre grej",onClose:({preventClose})=>preventClose("nope!"),

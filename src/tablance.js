@@ -456,10 +456,8 @@ class TablanceBase {
 	 * 						fileMetasToShow Object An object specifying which meta-bits to show. Default of all are true
 	 * 							{filename Bool, lastModified Bool, size Bool, type Bool}
 	 * 							May also be set via opts->defaultFileMetasToShow
-	 * 						openHandler Function callback-function for when the open-button is pressed. It gets the
-	 * 							following arguments passed to it: 
-	 * 							1: Event, 2: File-object, 3:schemaNode,4:rowData,5:mainIndex,
-	 * 							6:instanceNode(if in details)
+	 * 						onOpenFile Function callback fired when the open-button is pressed. Receives a payload from
+	 * 							_makeCallbackPayload plus {event,file,fileData:dataObj,btnObj}.
 	 * 						deleteHandler Function callback-function for when the user deletes a file. It gets the 
 	 * 							following arguments passed to it:
 	 * 							1: Event, 2: File-object, 3:schemaNode,4:rowData,5:mainIndex,
@@ -5328,7 +5326,17 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const baseOpenControl={type:"field",input:{type:"button",text:"Open"
 			,onClick:(e,file,mainIndex,schemaNode,btnObj)=>{
 				rowData??=this._filteredData[mainIndex];
-				fileSchemaNode.input.openHandler?.(e,file,fileSchemaNode,fileInstanceNode.dataObj,mainIndex,btnObj);
+				const payload=this._makeCallbackPayload(fileInstanceNode,{
+					event:e,
+					file,
+					btnObj,
+					fileData:fileInstanceNode.dataObj
+				},{
+					schemaNode:fileSchemaNode,
+					rowData,
+					mainIndex
+				});
+				fileSchemaNode.input.onOpenFile?.(payload);
 		}}};
 
 		let fileGroup;
