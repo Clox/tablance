@@ -4678,34 +4678,39 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	/**Updates the displayed values in the bulk-edit-area */
-	_updateBulkEditAreaCells(schemaNodesToUpdateCellsFor=this._bulkEditTable._schema.details.entries) {
-		const mixedText="(Mixed)";
-		for (let multiCellI=-1, multiCellSchemaNode; multiCellSchemaNode=schemaNodesToUpdateCellsFor[++multiCellI];) {
+		_updateBulkEditAreaCells(schemaNodesToUpdateCellsFor=this._bulkEditTable._schema.details.entries) {
+			const mixedText="(Mixed)";
+			for (let multiCellI=-1, multiCellSchemaNode; multiCellSchemaNode=schemaNodesToUpdateCellsFor[++multiCellI];) {
 
-			//work out if there are mixed values for this cell among the selected rows, or if all are same
-			let mixed=false;
-			let val,lastVal;
-			for (let rowI=-1,row; row=this._selectedRows[++rowI];) {
-				val=row[multiCellSchemaNode.dataKey];
-				const normalizedVal=multiCellSchemaNode.input?.type==="select"
-					?this._getSelectValue(val):val;
-				const normalizedLast=multiCellSchemaNode.input?.type==="select"
-					?this._getSelectValue(lastVal):lastVal;
+				//work out if there are mixed values for this cell among the selected rows, or if all are same
+				let mixed=false;
+				let val,lastVal,firstRow=null;
+				for (let rowI=-1,row; row=this._selectedRows[++rowI];) {
+					firstRow??=row;
+					val=row[multiCellSchemaNode.dataKey];
+					const normalizedVal=multiCellSchemaNode.input?.type==="select"
+						?this._getSelectValue(val):val;
+					const normalizedLast=multiCellSchemaNode.input?.type==="select"
+						?this._getSelectValue(lastVal):lastVal;
 				if (rowI&&normalizedVal!=normalizedLast) {
 					mixed=true;
 					break;
 				}
 				lastVal=val;
+				}
+
+
+				// Update the bulk-edit table's backing row and let its own rendering resolve display text.
+				const bulkRow=this._bulkEditTable._filteredData[0];
+				const bulkCell=this._bulkEditTable._openDetailsPanes[0].children[multiCellI];
+				if (mixed) {
+					bulkCell.el.innerText=mixedText;
+				} else {
+					bulkRow[multiCellSchemaNode.dataKey]=val;
+					this._bulkEditTable._updateDetailsCell(bulkCell,bulkRow);
+				}
 			}
-
-
-			//update both the data and the dom
-			this._bulkEditTable.updateData(0,multiCellSchemaNode.dataKey,mixed?mixedText:val?.text??val??"");
-			const el=this._bulkEditTable._openDetailsPanes[0].children[multiCellI].el;
-			el.innerText=mixed?mixedText:val?.text??val??"";
-			this._bulkEditTable._filteredData[0][multiCellSchemaNode.dataKey]=mixed?"":val;
 		}
-	}
 
 	_updateSizesOfViewportAndCols() {
 		if (this.hostEl.offsetHeight != this._containerHeight) {
