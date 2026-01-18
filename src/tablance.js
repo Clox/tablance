@@ -698,15 +698,16 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (this._opts.sortDescHtml==null)
 				this._opts.sortDescHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#000" '
 									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
-			if (this._opts.sortNoneHtml==null)
-				this._opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
-									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
-			this._updateHeaderSortHtml();
-			this._buildDependencyGraph(this._schema);
-			this._createBulkEditArea(schema);//send in the raw schema for this one
-			this._updateSizesOfViewportAndCols();
+				if (this._opts.sortNoneHtml==null)
+					this._opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
+										+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
+				this._updateHeaderSortHtml();
+				this._buildDependencyGraph(this._schema);
+				// Bulk-edit clones raw schema nodes, so it must receive the original (non-wrapped) schema.
+				this._createBulkEditArea(schema);
+				this._updateSizesOfViewportAndCols();
+			}
 		}
-	}
 
 	_createInstanceNode(parent=null,index=null,proto=INSTANCE_NODE_PROTOTYPE) {
 		const instanceNode=Object.create(proto);
@@ -4645,15 +4646,17 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	/**Given a schemaNode like details or column, will add inputs to this._bulkEditSchemaNodes which later is iterated
 	 * and the contents added to the bulk-edit-area. 
-	 * @param {*} schema Should be details or column when called from outside, but it calls itself recursively
+	 * @param {*} schemaNode Should be details or column when called from outside, but it calls itself recursively
 	 * 						when hitting upon containers which then are passed to this param
 	 * @returns */
-	_buildBulkEditSchemaNodes(schema) {
+	_buildBulkEditSchemaNodes(schemaNode) {
 		const result=[];
-		if (schema.type=="field"&&schema.bulkEdit) {
-			result.push(Object.assign(Object.create(null), schema, {type:"field"}));
-		} else if ((schema.entries?.length&&schema.bulkEdit)||schema===this._schema.details) {
-			for (const schemaNode of schema.entries)
+			// Bulk-edit walks the raw schema (not the wrapped facade), so implicit fields lack a type.
+			// Treat missing type as "field" here to include those nodes.
+			if ((schemaNode.type=="field"||!schemaNode.type)&&schemaNode.bulkEdit) {
+			result.push(Object.assign(Object.create(null), schemaNode, {type:"field"}));
+		} else if ((schemaNode.entries?.length&&schemaNode.bulkEdit)||schemaNode===this._schema.details) {
+			for (const schemaNode of schemaNode.entries)
 				result.push(...this._buildBulkEditSchemaNodes(schemaNode));//TODO this has to be fixed to deal with wrapped...
 		}
 		return result;

@@ -38,7 +38,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 				{text:"another set of grapes",value:13},{text:"another melon",value:14},
 				{text:"another pineapple",value:15},{text:"another carrot",value:13}];
 	const myTablanceCols=[{type:"select", width:45},{type:"expand", width:45}
-		,{dataKey:"desc",title:"Description",nodeId:"description", width:"150px",html:true,input:{bulkEdit:false,
+		,{dataKey:"desc",title:"Description",nodeId:"description", width:"150px",html:true,bulkEdit:true,input:{
 			/** @type {TablanceOnChangeCallback} */
 			onChange:handleDescriptionChange,type:"text",maxLength:5,placeholder:"placeholder"
 			,enabledIf:()=>Math.random()>.5},render:descFunc, cssClass:()=>"fooclass"}
