@@ -3721,11 +3721,13 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			const value=ctx.input.value;
 			const filter=value.toLowerCase();
 			const hadFilter=!!ctx.filterText;
+			// Detect when the filter text diverges so we can rebuild the option list.
 			const filterChangedAtEdges=!filter.includes((ctx.filterText??"").toLowerCase())||!hadFilter;
 			ctx.canCreate=!!value;
 			if (filterChangedAtEdges)
 				ctx.looseOpts.splice(0,Infinity,...ctx.allOpts);
 			for (let i=-1,opt; opt=ctx.looseOpts[++i];) {
+				// Normalize option text for case-insensitive matching.
 				const optText=typeof opt.text==="string"?opt.text.toLowerCase():String(opt.text??"");
 				if ((opt.pinned||!optText.includes(filter))&&!opt.isEmpty)
 					ctx.looseOpts.splice(i--,1);
@@ -3734,9 +3736,20 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			}
 			this._updateCreateOptionVisibility(ctx);
 			const foundSelected=this._renderSelectOptions(ctx.mainUl,ctx.looseOpts,this._inputVal,ctx);
-			if (foundSelected)
+			if (value.length) {// User is typing: drop any previous highlight and move focus to the first search result.
+				if (ctx.looseOpts.length)//select first result. check allowSelectEmpty to skip empty-option
+					this._highlightSelectOption(ctx,1,ctx.strctInp.allowSelectEmpty?1:0,true);
+				else if (ctx.pinnedUl.children.length)
+					// No main results; fall back to the first pinned option (e.g. create/new or pinned entries).
+					this._highlightSelectOption(ctx,0,0,true);
+				else {
+					// Nothing to highlight, so clear highlight state entirely.
+					ctx.ulDiv.getElementsByClassName("highlighted")[0]?.classList.remove("highlighted");
+					ctx.highlightUlIndex=ctx.highlightLiIndex=null;
+				}
+			} else if (foundSelected) {
 				ctx.pinnedUl.querySelector(".highlighted")?.classList.remove("highlighted");
-			else if (ctx.highlightUlIndex) {
+			} else if (ctx.highlightUlIndex!=null) {
 				if (ctx.looseOpts.length)
 					this._highlightSelectOption(ctx,1,0,true);
 				else if (ctx.pinnedUl.children.length)
