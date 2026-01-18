@@ -3727,22 +3727,65 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		 * @param {Object} ctx
 		 */
 		_handleSelectInputChange(ctx) {
+				const scoreOptionMatch=(optionText,inputText)=>{
+					if (!inputText)
+						return 0;
+					const option=optionText.toLowerCase().trim();
+					const input=inputText.toLowerCase().trim();
+					if (!option)
+						return 0;
+					// absolute winner
+					if (option===input)
+						return 2000;
+					let score=0;
+					if (option.startsWith(input))
+						score+=700;
+					else if (option.includes(input))
+						score+=300;
+					const words=option.split(/\s+/);
+					for (let i=0;i<words.length;i++) {
+						const word=words[i];
+						if (word===input) {
+							score+=600;
+							score+=Math.max(0,100-i*20);
+						} else if (word.startsWith(input)) {
+							score+=350;
+							score+=Math.max(0,70-i*15);
+						} else if (word.includes(input)) {
+							score+=150;
+							score+=Math.max(0,40-i*10);
+						}
+					}
+					// penalize length, but gently
+					score-=option.length*0.3;
+					return score;
+				};
+
 			const value=ctx.input.value;
 			const filter=value.toLowerCase();
 			const hadFilter=!!ctx.filterText;
 			// Detect when the filter text diverges so we can rebuild the option list.
 			const filterChangedAtEdges=!filter.includes((ctx.filterText??"").toLowerCase())||!hadFilter;
 			ctx.canCreate=!!value;
+			// If the user broadened the search (backspaced), restore all options before filtering again.
 			if (filterChangedAtEdges)
 				ctx.looseOpts.splice(0,Infinity,...ctx.allOpts);
 			for (let i=-1,opt; opt=ctx.looseOpts[++i];) {
 				// Normalize option text for case-insensitive matching.
 				const optText=typeof opt.text==="string"?opt.text.toLowerCase():String(opt.text??"");
+				// Narrowing search: remove non-matching, non-empty, non-pinned options in place for efficiency.
 				if ((opt.pinned||!optText.includes(filter))&&!opt.isEmpty)
 					ctx.looseOpts.splice(i--,1);
 				else if (optText===filter)
 					ctx.canCreate=false;
-			}
+				ctx.matchScores?.set(opt,scoreOptionMatch(optText,value));
+				}
+				// Reorder by match score so the best matches appear first.
+				ctx.looseOpts.sort((a,b)=>{
+					if (a.isEmpty) return -1;
+					if (b.isEmpty) return 1;
+					return (ctx.matchScores.get(b)??0)-(ctx.matchScores.get(a)??0);
+				});
 			this._updateCreateOptionVisibility(ctx);
 			const foundSelected=this._renderSelectOptions(ctx.mainUl,ctx.looseOpts,this._inputVal,ctx);
 			if (value.length) {// User is typing: drop any previous highlight and move focus to the first search result.
@@ -3891,6 +3934,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				noResults,
 				pinnedOpts,
 				looseOpts,
+				matchScores:new Map(),
 				allOpts,
 				creationLi:null,
 				canCreate:false,
