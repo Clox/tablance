@@ -59,7 +59,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			},
 		];
 	const myExpansion={meta:{"foo":"details", "baz":42},type:"list",titlesColWidth:"8em",entries:[
-		{title:"dynamic food", input:{type:"select", options:()=>{
+		{title:"dynamic food", dataKey:"dynamicFood",input:{type:"select", options:()=>{
 			return [{text:"cheese", value:1},{text:"bread", value:2},{text:"butter", value:3}]
 		}}, render:({value})=>["cheese","bread","butter"][value-1]},
 		{type:"field",title:"OnEnter demo",dataKey:"enter_demo",onEnter:({mainIndex})=>{
@@ -128,7 +128,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			,onDelete:(...args)=>console.log(args)
 			,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
 			,areYouSureYesText:"Ja",areYouSureNoText:"Nej",entry:
-				{type:"group",closedRender:data=>{
+				{type:"group"/* ,onClose:({preventClose})=>preventClose("nope!") */,closedRender:data=>{
 						return `${{trustee:"God Man", administrator:"Förvaltare"}[data.type]} sedan ${data.date??""}`;
 					},entries:[
 						{type:"field",title:"Datum",dataKey:"date",input:{type:"date",bulkEdit:true}},

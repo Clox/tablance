@@ -831,6 +831,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 *        highlight: clear filter, highlight, and scroll to the first row.
 	 *        resetFilter: clear the active filter/search before rendering. */
 	setData(data=[], options=null) {
+		if (!this._flushValidatedEdits())
+			this._editTransaction=null;
 		const {highlight=false,resetFilter=false}=options??{};
 		const clearFilter=highlight||resetFilter;
 		const nextData=Array.isArray(data)?data:(data==null?[]:[data]);
@@ -3346,14 +3348,17 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._editTransaction=null;
 	}
 
-	_closeGroup(groupObject,targetCell=null) {
+	_closeGroup(groupObject,targetCell=null,suppressTooltip=false) {
 		this._enterEditTransaction(groupObject);
 		const {payload,closePayload,closeState}=this._buildGroupPayload(groupObject);
 		const commitPayload={...payload};
 		groupObject.schemaNode.onClose?.(closePayload);
 		if (!closeState.doClose) {
-			const tooltipMessage=[closeState.preventMessage,this.lang.groupValidationFailedHint].filter(Boolean).join("\n");
-			this._showTooltip(tooltipMessage,groupObject.el,this._determinePreventPlacement(groupObject.el,targetCell));
+			if (!suppressTooltip) {
+				const tooltipMessage=[closeState.preventMessage,this.lang.groupValidationFailedHint]
+					.filter(Boolean).join("\n");
+				this._showTooltip(tooltipMessage,groupObject.el,this._determinePreventPlacement(groupObject.el,targetCell));
+			}
 			return false;
 		}
 		if (groupObject.creating&&!this._closeRepeatedInsertion(groupObject))
@@ -3364,6 +3369,39 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._removeGroupFromTransaction(groupObject);
 		if (!this._editTransaction?.stack.length)
 			this._flushBufferedGroupCommits();
+		return true;
+	}
+
+	/**
+	 * Attempt to close all open groups (inner -> outer) so buffered commits can flush when safe.
+	 * If a group refuses to close (validation failure), its edits are discarded/reverted so data does not linger
+	 * unpersisted, and traversal continues to higher groups.
+	 */
+	_flushValidatedEdits() {
+		// If currently editing a cell, try to save/exit first.
+		if (this._inEditMode&&!this._exitEditMode(true))
+			return false;
+		const stack=this._editTransaction?.stack;
+		if (!stack?.length)
+			return true;
+		// Close from deepest to outermost so parent validations still have the latest child data.
+		for (let i=stack.length-1;i>=0;i--) {
+			const grp=stack[i];
+			if (grp?.schemaNode?.type==="group") {
+				if (!this._closeGroup(grp,null,true)) {
+					// Validation failed: discard edits for this group and keep closing parents.
+					if (grp===this._getOpenGroupAncestor(this._activeDetailsCell))
+						this._discardActiveGroupEdits();
+					else {
+						// Temporarily select this group to reuse discard logic.
+						const prevActive=this._activeDetailsCell;
+						this._activeDetailsCell=grp;
+						this._discardActiveGroupEdits();
+						this._activeDetailsCell=prevActive;
+					}
+				}
+			}
+		}
 		return true;
 	}
 
@@ -4285,10 +4323,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		if (!group)
 			return;
 		this._removeGroupFromTransaction(group,true);
-		const {payload}=this._buildGroupPayload(group);
-		payload.reason="discard";
+		const {payload,closePayload}=this._buildGroupPayload(group);
+		closePayload.reason=payload.reason="discard";
 		if (group.creating) {
-			group.schemaNode.onClose?.(payload);
+			group.schemaNode.onClose?.(closePayload);
 			return this._deleteCell(group);
 		}
 
@@ -4298,7 +4336,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			this._restoreGroupSnapshot(group.dataObj,group._openSnapshot);
 		
 		this._rerenderDirtyFields(group);
-		group.schemaNode.onClose?.(payload);
+		group.schemaNode.onClose?.(closePayload);
 		this._finalizeGroupClose(group);
 		this._selectCell(group.el,group.schemaNode,group.dataObj);
 		this._activeDetailsCell=group;
@@ -4868,6 +4906,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	 * @param {boolean} caseSensitive Whether text matching should be case sensitive.
 	 */
 	_applyFilters(filterString, includeDetails=true,caseSensitive=false) {
+		if (!this._flushValidatedEdits())
+			this._editTransaction=null;
 
 		//currently all of the rows will have to be closed. This is because Tablance doesn't have the logic needed now
 		//to recalculate the virtualization based on artibrary rows that are expanded with variable heights. It only
