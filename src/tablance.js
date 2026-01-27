@@ -1145,7 +1145,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				else if (node.entries)
 					stack.push(...node.entries);
 		};
-		for (const col of schemaRoot.main.columns)
+		for (const col of (schemaRoot.main?.columns ?? []))
 			processNode(col,false);
 		while (stack.length)
 			processNode(stack.pop(),true);
