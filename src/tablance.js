@@ -4164,8 +4164,16 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 					for (let cellI=0; cellI<cells.length; cellI++)//iterate the cell(s)
 						cells[cellI]=cells[cellI].children[depPath[step]];//and do the step
 				}
-				for (const cell of cells)//iterate the cell(s) again
+				for (const cell of cells) {
+					// Re-evaluate visibility before updating so hidden dependents collapse immediately.
+					if (cell.schemaNode.visibleIf) {
+						const isVisible=this._applyVisibleIf(cell, cell.rowIndex ?? this._mainRowIndex);
+						if (!isVisible)//no need to update content for hidden nodes
+							continue;
+						// If it just became visible, fall through to refresh its contents.
+					}
 					this._updateDetailsCell(cell,cell.dataObj);//and do the actual update
+				}
 			}
 	}
 
