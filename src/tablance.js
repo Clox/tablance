@@ -1342,7 +1342,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		for (let i=-1,tablance;tablance=tablances[++i];)
 			tablance.neighbourTables={up:tablances[i-1],down:tablances[i+1]};
 		function sort(a,b) {
-			let elA=a.container, elB=b.container;
+			let elA=a.rootEl, elB=b.rootEl;
 			//set elA to its (grand)parent which is the closest element where the parent also holds elB in its hiearchy
 			for (;!elA.parentElement.contains(elB);elA=elA.parentElement);
 			const commonCont=elA.parentElement;//the closest element that holds both elA and elB
@@ -2052,7 +2052,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			const nextTable=this.neighbourTables?.[isGoingDown?"down":"up"];
 			if (nextTable) {
 				this._mainColIndex=this._mainRowIndex=this._activeDetailsCell=null;
-				nextTable.container.style.outline=this._cellCursor.style.display="none";
+				nextTable.rootEl.style.outline=this._cellCursor.style.display="none";
 				nextTable.selectTopBottomCellOnlyDetails(isGoingDown);
 			}
 		}
