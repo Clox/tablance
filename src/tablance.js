@@ -88,6 +88,7 @@ class TablanceBase {
 	_viewDefinitions=Object.create(null);//lookup table of viewMode predicates keyed by view name
 	_scrollRowIndex=0;//the index in the #data of the top row in the view
 	_scrollBody;//resides directly inside #container and is the element with the scrollbar. It contains #scrollingDiv
+	_toolbar;
 	_scrollingContent;//a div that is inside #scrollbody and holds #tablesizer and #cellCursor if spreadsheet
 					//this is needed because putting #cellCursor directly inside #scrollBody will not make it scroll
 					//because it has position absolute and needs that. And putting it inside #tableSizer will cause it
@@ -626,6 +627,10 @@ class TablanceBase {
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							searchbar Bool that defaults to true. If true then there will be a searchbar that
 	 * 								can be used to filter the data.
+	 * 							ordering Bool that defaults to true. If false then column-header sorting and its
+	 * 								sort symbols are disabled.
+	 * 							autoHeight Bool that defaults to false. If true then the table grows to fit all
+	 * 								rows instead of using its own vertical scrollbar.
 	 * 							sortAscHtml String - html to be added to the end of the th-element when the column
 	 * 													is sorted in ascending order
 	 * 							sortDescHtml String - html to be added to the end of the th-element when the column
@@ -813,6 +818,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				this._maybeAddTrs();
 			const numNewInData=this._filteredData.length-oldLen;
 			this._tableSizer.style.height=parseInt(this._tableSizer.style.height||0)+numNewInData*this._rowHeight+"px";
+			this._updateAutoHeight();
 		}
 		if (highlight) {
 			for (let dataRow of data) {
@@ -1716,6 +1722,17 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		- (this._searchInput?.offsetHeight ?? 0) - this._bulkEditArea.offsetHeight + "px";
 	}
 
+	_updateAutoHeight() {
+		if (!this._opts.autoHeight||this._onlyDetails)
+			return;
+		const contentHeight=Math.max(parseInt(this._tableSizer.style.height)||0,0);
+		this._scrollBody.style.height=contentHeight+"px";
+		this._scrollBody.style.overflowY="hidden";
+		this.hostEl.style.height=contentHeight+this._headerTable.offsetHeight
+			+(this._toolbar?.offsetHeight??0)+this._bulkEditArea.offsetHeight+"px";
+		this._maybeAddTrs();
+	}
+
 	_attachInputFormatter(el, format, livePattern) {
 		format = this._normalizeInputFormat(format);
 		if (Array.isArray(format.blocks) && format._maxBlockLen === undefined)
@@ -1879,7 +1896,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		if (!toolbarItems.length&&this._opts.searchbar==false)
 			return;
 
-		const bar=this.rootEl.appendChild(document.createElement("div"));
+		const bar=this._toolbar=this.rootEl.appendChild(document.createElement("div"));
 		bar.className="toolbar";
 
 		const btnWrap=bar.appendChild(document.createElement("div"));
@@ -2318,6 +2335,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			detailsTr.remove();
 			if (rowMeta){delete rowMeta.h; if (!Object.keys(rowMeta).length) this._rowMeta.delete(rowData);}
 			delete this._openDetailsPanes[dataRowIndex];
+			this._updateAutoHeight();
 		}
 	}
 
@@ -2965,6 +2983,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		rowMeta.h=newRowHeight;
 		this._tableSizer.style.height=parseInt(this._tableSizer.style.height)//adjust scroll-height reflect change...
 			+newRowHeight-prevRowHeight+"px";//...in height of the table
+		this._updateAutoHeight();
 	}
 
 	_openDateEdit(e) {
@@ -4557,9 +4576,12 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				th.innerText=col.title??"\xa0";//non breaking space if nothing else or else
 																	//sorting arrows wont be positioned correctly
 
-			//create the divs used for showing html for sorting-up/down-arrow or whatever has been configured
-			col.sortDiv=th.appendChild(document.createElement("DIV"));
-			col.sortDiv.className="sortSymbol";
+			if (this._opts.ordering!==false) {
+				//create the divs used for showing html for sorting-up/down-arrow or whatever has been configured
+				col.sortDiv=th.appendChild(document.createElement("DIV"));
+				col.sortDiv.className="sortSymbol";
+			} else
+				th.style.cursor="default";
 		}
 		this._headerTr.appendChild(document.createElement("th"));
 	}
@@ -4568,6 +4590,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const clickedIndex=e.currentTarget.cellIndex;
 		if (this._colSchemaNodes[clickedIndex].type=="select"&&e.target.tagName.toLowerCase()=="input")
 			return this._toggleRowsSelected(e.target.checked,0,this._filteredData.length-1);
+		if (this._opts.ordering===false)
+			return;
 		let sortingColIndex=-1,sortingCol;
 		while (sortingCol=this._sortingCols[++sortingColIndex]) {
 			if (sortingCol.index===clickedIndex) {
@@ -4595,6 +4619,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	_updateHeaderSortHtml() {
+		if (this._opts.ordering===false)
+			return;
 		for (let [thIndex,th] of Object.entries(this._headerTr.cells)) {
 			if (thIndex==this._headerTr.cells.length-1)
 				break;
@@ -4856,6 +4882,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._updateColsWidths();
 		this._headerTable.style.width = this._scrollBody.offsetWidth + "px";
 		this._adjustCursorPosSize(this._selectedCell);
+		this._updateAutoHeight();
 	}
 
 	_updateColsWidths() {
@@ -5217,9 +5244,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			//this._adjustCursorPosSize(this._selectedCell);
 	}
 
-	_refreshTableSizerNoDetails() {	
+	_refreshTableSizerNoDetails() {
 		this._tableSizer.style.top=this._scrollRowIndex*this._rowHeight+"px";
 		this._tableSizer.style.height=(this._filteredData.length-this._scrollRowIndex)*this._rowHeight+"px";
+		this._updateAutoHeight();
 	}
 
 	_createExpandContractButton() {
@@ -5828,6 +5856,7 @@ export default class Tablance extends TablanceBase {
 			this._detailsBordersHeight=expHeight-contentDiv.offsetHeight;
 		this._tableSizer.style.height=parseInt(this._tableSizer.style.height)//adjust scroll-height reflect change...
 			+expHeight-this._rowHeight+"px";//...in height of the table
+		this._updateAutoHeight();
 		if (animate) {
 			this._unsortCol(null,"expand");
 			contentDiv.style.transition="";
