@@ -290,6 +290,7 @@ class TablanceBase {
 	 * 			is expected and some of them can hold other entry-objects so that they can be nested.
 	 * 			Properties that are valid for all types of entries:
 	 * 				* title String displayed title if placed in a container which displays the title
+	 * 				* titleHtml Bool Defaults to false. If true, title is rendered as HTML instead of text.
 	 *
 	 
 	 //todo visibleIf should get payload. (I think it already does but is not reflected in the docs here) The payload should also get valueBundle
@@ -2710,7 +2711,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			if (collection.schemaNode.titlesColWidth!=false) {
 				const td=outerContainerEl.insertCell();
 				td.className="title";
-				td.innerText=schemaNode.title??"";
+				if (schemaNode.titleHtml)
+					td.innerHTML=schemaNode.title??"";
+				else
+					td.innerText=schemaNode.title??"";
 			}
 			containerEl=outerContainerEl.insertCell();
 		} else if (type=="lineup") {// LINEUP: Items rendered inline, outerContainerEl wraps title + inner content
