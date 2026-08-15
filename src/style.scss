@@ -104,6 +104,10 @@
 	th {
 		border-bottom: 1px solid #111;
 		border-top: 1px solid #111;
+		&.scrollbar-spacer {
+			padding-left: 0;
+			padding-right: 0;
+		}
 		>.sortSymbol {
 			display: inline-block;
 			width: 10px;
@@ -431,10 +435,15 @@
 	}
 	.tablance-select-container {
 		position: absolute;
+		z-index: 10000;
 		box-shadow: 0 5px 15px -5px rgba(0,0,0,.5);
 		border: 1px solid #ccc;
 		background-color: white;
 		min-width: 15em;
+		&:popover-open {
+			inset: auto;
+			margin: 0;
+		}
 		>.input-wrapper {
 			&:not(.hide) {
 				margin: 6px;

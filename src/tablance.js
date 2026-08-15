@@ -3048,6 +3048,28 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	/**Aligns dropdowns like select and date-picker correctly by the cellcursor or any other target-element specified */
 	_alignDropdown(dropdown,target=this._cellCursor,preferredVertical) {
+		const isOpenPopover=typeof dropdown.showPopover==="function"&&dropdown.matches(":popover-open");
+		if (isOpenPopover) {
+			const targetRect=target.getBoundingClientRect();
+			const viewportWidth=document.documentElement.clientWidth;
+			const viewportHeight=document.documentElement.clientHeight;
+			const spaceAbove=targetRect.top;
+			const spaceBelow=viewportHeight-targetRect.bottom;
+			const placeAbove=preferredVertical==="above"||(preferredVertical!=="below"
+				&&spaceBelow<dropdown.offsetHeight&&spaceAbove>spaceBelow);
+			const spaceLeft=targetRect.left;
+			const spaceRight=viewportWidth-targetRect.right;
+			const alignRight=spaceRight+targetRect.width<dropdown.offsetWidth&&spaceLeft>spaceRight;
+
+			dropdown.classList.remove("above","below","left","right");
+			dropdown.style.position="fixed";
+			const desiredTop=placeAbove?targetRect.top-dropdown.offsetHeight:targetRect.bottom;
+			const desiredLeft=alignRight?targetRect.right-dropdown.offsetWidth:targetRect.left;
+			dropdown.style.top=Math.max(0,Math.min(desiredTop,viewportHeight-dropdown.offsetHeight))+"px";
+			dropdown.style.left=Math.max(0,Math.min(desiredLeft,viewportWidth-dropdown.offsetWidth))+"px";
+			dropdown.classList.add(placeAbove?"above":"below",alignRight?"right":"left");
+			return;
+		}
 
 		const alignmentContainer=this._dropdownAlignmentContainer;//container of the dropdown
 		const alignmentPos=this._getElPos(target);
@@ -4077,6 +4099,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 																,this._activeSchemaNode,this._activeDetailsCell);
 			} else if (!cancel)
 				this._inputVal=(ctx.highlightUlIndex?ctx.looseOpts:ctx.pinnedOpts)[ctx.highlightLiIndex].value;
+			if (typeof ctx.selectContainer.hidePopover==="function") {
+				try { ctx.selectContainer.hidePopover(); } catch(_e) {}
+			}
 			ctx.selectContainer.remove();
 			if (ctx.windowMouseDown)
 				window.removeEventListener("mousedown",ctx.windowMouseDown);
@@ -4114,6 +4139,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			this._renderSelectOptions(ctx.mainUl,ctx.looseOpts,this._inputVal,ctx);
 			this._cellCursor.parentElement.appendChild(ctx.selectContainer);
 			ctx.selectContainer.className="tablance-select-container";
+			if (typeof ctx.selectContainer.showPopover==="function") {
+				ctx.selectContainer.popover="manual";
+				ctx.selectContainer.showPopover();
+			}
 			this._alignDropdown(ctx.selectContainer);
 			this._attachSelectWheelHandler(ctx);
 			const windowMouseDown=e=>{
@@ -4587,7 +4616,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			} else
 				th.style.cursor="default";
 		}
-		this._headerTr.appendChild(document.createElement("th"));
+		this._headerTr.appendChild(document.createElement("th")).className="scrollbar-spacer";
 	}
 
 	_onThClick(e) {
@@ -5556,7 +5585,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 				} else {
 					const selOptObj=this._getSelectOptions(schemaNode.input,schemaNode,scopedData,mainIndex,instanceNode)
 						.find(opt=>this._getSelectValue(opt)==this._getSelectValue(rawVal));
-					newCellContent=rawVal==null?"":(selOptObj?.text??rawVal??"");
+					newCellContent=selOptObj?.text??rawVal??"";
 				}
 			}
 			let isDisabled=false;

@@ -42,15 +42,13 @@
   width: 100%;
   height: 100%;
   border: none;
-}
-.tablance .cell-cursor > input:focus, .tablance .cell-cursor textarea:focus {
-  outline: none;
-}
-.tablance .cell-cursor > input, .tablance .cell-cursor textarea {
   font-family: inherit;
   font-size: inherit;
   line-height: inherit;
   resize: none;
+}
+.tablance .cell-cursor > input:focus, .tablance .cell-cursor textarea:focus {
+  outline: none;
 }
 .tablance .cell-cursor > div.file, .tablance .cell-cursor > div.file > div.drop {
   position: absolute;
@@ -100,6 +98,10 @@
 .tablance th {
   border-bottom: 1px solid #111;
   border-top: 1px solid #111;
+}
+.tablance th.scrollbar-spacer {
+  padding-left: 0;
+  padding-right: 0;
 }
 .tablance th > .sortSymbol {
   display: inline-block;
@@ -281,11 +283,11 @@
   width: 100%;
   padding-right: 2px;
 }
-.tablance .details table.details-list > tbody > tr > td.value:first-child {
-  border-left: 1px solid #ccc;
-}
 .tablance .details table.details-list > tbody > tr > td.value {
   padding: 5px;
+}
+.tablance .details table.details-list > tbody > tr > td.value:first-child {
+  border-left: 1px solid #ccc;
 }
 .tablance .details table.details-list > tbody > tr > td.value > .details-group {
   min-height: 1.4em;
@@ -310,12 +312,12 @@
 .tablance .group-cell {
   padding: 4px;
 }
-.tablance .group-cell > table:not(:last-child) {
-  margin-bottom: 4px;
-}
 .tablance .group-cell > table {
   border: 1px solid #bbb;
   width: 100%;
+}
+.tablance .group-cell > table:not(:last-child) {
+  margin-bottom: 4px;
 }
 .tablance .group-cell > table:not(.open) > tbody > tr.empty, .tablance .group-cell > table:not(.open) > tbody > tr > td > div > .empty {
   display: none;
@@ -388,10 +390,15 @@
 }
 .tablance .tablance-select-container {
   position: absolute;
+  z-index: 10000;
   box-shadow: 0 5px 15px -5px rgba(0, 0, 0, 0.5);
   border: 1px solid #ccc;
   background-color: white;
   min-width: 15em;
+}
+.tablance .tablance-select-container:popover-open {
+  inset: auto;
+  margin: 0;
 }
 .tablance .tablance-select-container > .input-wrapper:not(.hide) {
   margin: 6px;
@@ -484,6 +491,11 @@
 
 .pika-container {
   position: absolute;
+  /*
+  clear child float (pika-lendar), using the famous micro clearfix hack
+  http://nicolasgallagher.com/micro-clearfix-hack/
+  */
+  /* styling for abbr */
 }
 .pika-container .pika-single {
   z-index: 9999;
@@ -494,12 +506,6 @@
   border: 1px solid #ccc;
   border-bottom-color: #bbb;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-}
-.pika-container {
-  /*
-  clear child float (pika-lendar), using the famous micro clearfix hack
-  http://nicolasgallagher.com/micro-clearfix-hack/
-  */
 }
 .pika-container .pika-single:before,
 .pika-container .pika-single:after {
@@ -687,9 +693,6 @@
   background: #ff8000;
   box-shadow: none;
   border-radius: 3px;
-}
-.pika-container {
-  /* styling for abbr */
 }
 .pika-container .pika-table abbr {
   border-bottom: none;
