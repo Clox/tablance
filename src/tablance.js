@@ -628,6 +628,8 @@ class TablanceBase {
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							searchbar Bool that defaults to true. If true then there will be a searchbar that
 	 * 								can be used to filter the data.
+	 * 							showHeader Bool that defaults to true. If false then the main table's header row
+	 * 								is hidden.
 	 * 							ordering Bool that defaults to true. If false then column-header sorting and its
 	 * 								sort symbols are disabled.
 	 * 							autoHeight Bool that defaults to false. If true then the table grows to fit all
@@ -693,6 +695,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			this._colSchemaNodes=this._schema.main.columns;
 			this._setupToolbar();
 			this._createTableHeader();
+			this._headerTable.hidden=this._opts.showHeader===false;
 			this._createTableBody();
 			(new ResizeObserver(this._updateSizesOfViewportAndCols.bind(this))).observe(hostEl);
 			this._setupSpreadsheet(false);
@@ -1997,13 +2000,44 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			} else if (vSign===-1&&this._rowMeta.get(this._filteredData[this._mainRowIndex-1])?.h){//moving up into details
 				this._selectFirstSelectableDetailsCell(this._openDetailsPanes[this._mainRowIndex-1],false);
 			} else {//moving from and to maintable-cells
-				this._selectMainTableCell(
-					this._selectedCell.parentElement[(vSign>0?"next":"previous")+"Sibling"]?.cells[newColIndex]);
+				const adjacentRow=this._selectedCell.parentElement[(vSign>0?"next":"previous")+"Sibling"];
+				if (adjacentRow)
+					this._selectMainTableCell(adjacentRow.cells[newColIndex]);
+				else
+					this._selectAdjacentMainTable(vSign>0,newColIndex);
 			}
 		} else if (!this._activeDetailsCell)
 			this._selectMainTableCell(this._selectedCell[(hSign>0?"next":"previous")+"Sibling"]);
 		if (this._onlyDetails&&this._mainRowIndex!=null)
 			this._scrollToCursor();
+	}
+
+	_selectAdjacentMainTable(isGoingDown,preferredColIndex) {
+		const nextTable=this.neighbourTables?.[isGoingDown?"down":"up"];
+		if (!nextTable||!nextTable._selectTopBottomMainCell(isGoingDown,preferredColIndex))
+			return;
+		this._mainColIndex=this._mainRowIndex=null;
+		this._cellCursor.style.display="none";
+	}
+
+	_selectTopBottomMainCell(isGoingDown,preferredColIndex) {
+		if (this._onlyDetails) {
+			this.selectTopBottomCellOnlyDetails(isGoingDown);
+			return true;
+		}
+		const rows=[...this._mainTbody.querySelectorAll(":scope>tr:not(.details)")];
+		const row=isGoingDown?rows[0]:rows.at(-1);
+		if (!row)
+			return;
+		const selectableCells=[...row.cells].filter(cell=>!cell.classList.contains("disabled"));
+		if (!selectableCells.length)
+			return;
+		const targetCell=selectableCells.reduce((closest,cell)=>
+			Math.abs(cell.cellIndex-preferredColIndex)<Math.abs(closest.cellIndex-preferredColIndex)?cell:closest);
+		this.rootEl.focus({preventScroll:true});
+		this._selectMainTableCell(targetCell);
+		this._scrollToCursor();
+		return true;
 	}
 
 	_moveInsideLineup(numCols,numRows) {
