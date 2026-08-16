@@ -160,7 +160,7 @@
 .tablance td.disabled {
   background-color: #f2f2f2;
 }
-.tablance.static-row-height .main-table {
+.tablance .main-table {
   border-collapse: separate;
   table-layout: fixed;
   width: 100%;

@@ -119,6 +119,7 @@ class TablanceBase {
 					//because it has high content.
 	_staticRowHeight;//This is set in the constructor. If it is true then all rows should be of same height which
 					 //improves performance.
+	_naturalAutoHeight;//true when every row is rendered and allowed to take its natural height in autoHeight mode
 	_spreadsheet;//whether the table is a spreadsheet, which is set in the constructor
 	_opts; //reference to the object passed as opts in the constructor
 	_sortingCols=[];//contains data on how the table currently is sorted. It is an array of 
@@ -282,8 +283,8 @@ class TablanceBase {
 	 * 				"select" - The column will be checkboxes used to (un)select rows	
 	 * 		}
 	 * 			
-	 * 	@param	{Boolean} staticRowHeight Set to true if all rows are of same height. With this option on, scrolling
-	 * 				quickly through large tables will be more performant.
+	 * 	@param	{Boolean} staticRowHeight Legacy row-height setting retained for call compatibility. Prefer
+	 * 				opts.rowHeight; autoHeight now determines the default mode.
 	 * 	@param	{Boolean} spreadsheet If true then the table will work like a spreadsheet. Cells can be selected and the
 	 * 				keyboard can be used for navigating the cell-selection.
 	 * 	@param	{Object} details This allows for having rows that can be expanded to show more data. An "entry"-object
@@ -633,7 +634,10 @@ class TablanceBase {
 	 * 							ordering Bool that defaults to true. If false then column-header sorting and its
 	 * 								sort symbols are disabled.
 	 * 							autoHeight Bool that defaults to false. If true then the table grows to fit all
-	 * 								rows instead of using its own vertical scrollbar.
+	 * 								rows instead of using its own vertical scrollbar. Such tables use natural row
+	 * 								heights by default.
+	 * 							rowHeight String "auto" or "fixed". Defaults to "auto" with autoHeight and
+	 * 								"fixed" otherwise. "auto" currently requires autoHeight.
 	 * 							sortAscHtml String - html to be added to the end of the th-element when the column
 	 * 													is sorted in ascending order
 	 * 							sortDescHtml String - html to be added to the end of the th-element when the column
@@ -664,16 +668,23 @@ class TablanceBase {
 	 * 								insertRow "Insert new" (Used for default toolbar insert button)
 	 * 							}
 	 * */
-constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
+constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this.lang=Object.assign(Object.create(null),DEFAULT_LANG,opts?.lang??{});
 		this.hostEl=hostEl;
 		const rootEl=this.rootEl = document.createElement("div");
 		this.hostEl.appendChild(this.rootEl);
 		this._spreadsheet=spreadsheet;
-		this._staticRowHeight=staticRowHeight;
 		this._opts=opts??{};
+		const rowHeightMode=this._opts.rowHeight??(this._opts.autoHeight?"auto":staticRowHeight?"fixed":"auto");
+		if (rowHeightMode!=="auto"&&rowHeightMode!=="fixed")
+			throw new Error('opts.rowHeight must be either "auto" or "fixed".');
+		if (rowHeightMode==="auto"&&!this._opts.autoHeight&&schema.main?.columns)
+			throw new Error('rowHeight "auto" currently requires autoHeight: true.');
+		this._staticRowHeight=rowHeightMode==="fixed";
+		this._naturalAutoHeight=!!this._opts.autoHeight&&!this._staticRowHeight;
 		rootEl.classList.add("tablance");
 		rootEl.classList.toggle("static-row-height",this._staticRowHeight);
+		rootEl.classList.toggle("natural-row-height",this._naturalAutoHeight);
 		this._schema=this._buildSchemaFacade(schema);
 		this._viewDefinitions=this._buildViewDefinitions(schema?.views);
 		this._currentViewModeKey="default";
@@ -1325,6 +1336,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	scrollToDataRow(dataRow,highlight=true,smooth=true) {
+		if (this._naturalAutoHeight) {
+			const mainIndex=this._filteredData.indexOf(dataRow);
+			const tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndex}"]:not(.details)`);
+			tr?.scrollIntoView({behavior:smooth?"smooth":"auto",block:"center"});
+			if (highlight&&mainIndex!==-1)
+				this._highlightRowIndex(mainIndex);
+			return;
+		}
 		let scrollY=0;
 		for (let i=-1,otherDataRow;otherDataRow=this._filteredData[++i];) {
 			if (otherDataRow==dataRow) {
@@ -1730,12 +1749,16 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_updateAutoHeight() {
 		if (!this._opts.autoHeight||this._onlyDetails)
 			return;
-		const contentHeight=Math.max(parseInt(this._tableSizer.style.height)||0,0);
+		const contentHeight=this._naturalAutoHeight?this._mainTable.offsetHeight
+			:Math.max(parseInt(this._tableSizer.style.height)||0,0);
+		if (this._naturalAutoHeight)
+			this._tableSizer.style.height=contentHeight+"px";
 		this._scrollBody.style.height=contentHeight+"px";
 		this._scrollBody.style.overflowY="hidden";
 		this.hostEl.style.height=contentHeight+this._headerTable.offsetHeight
 			+(this._toolbar?.offsetHeight??0)+this._bulkEditArea.offsetHeight+"px";
-		this._maybeAddTrs();
+		if (!this._naturalAutoHeight)
+			this._maybeAddTrs();
 	}
 
 	_attachInputFormatter(el, format, livePattern) {
@@ -1987,7 +2010,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		e?.preventDefault();//to prevent native scrolling when pressing arrow-keys. Needed if #onlyDetails==true but
 							//not otherwise. Seems the native scrolling is only done on the body and not scrollpane..?
 		//const newColIndex=Math.min(this._cols.length-1,Math.max(0,this._cellCursorColIndex+numCols));
-		if (!this._onlyDetails)
+		if (!this._onlyDetails&&!this._naturalAutoHeight)
 			this._scrollToCursor();//need this first to make sure adjacent cell is even rendered
 
 		if (this._activeDetailsCell?.parent?.schemaNode.type==="lineup")
@@ -2009,7 +2032,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			}
 		} else if (!this._activeDetailsCell)
 			this._selectMainTableCell(this._selectedCell[(hSign>0?"next":"previous")+"Sibling"]);
-		if (this._onlyDetails&&this._mainRowIndex!=null)
+		if ((this._onlyDetails||this._naturalAutoHeight)&&this._mainRowIndex!=null)
 			this._scrollToCursor();
 	}
 
@@ -2365,9 +2388,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			const dataRowIndex=parseInt(mainTr.dataset.dataRowIndex);
 			const rowData=this._filteredData[dataRowIndex];
 			const rowMeta=rowData?this._rowMeta.get(rowData):undefined;
+			const mainRowHeight=this._naturalAutoHeight?mainTr.offsetHeight+this._borderSpacingY:this._rowHeight;
 			mainTr.classList.remove("expanded");
 			this._tableSizer.style.height=parseInt(this._tableSizer.style.height)
-				 -(rowMeta?.h??this._rowHeight)+this._rowHeight+"px";
+					 -(rowMeta?.h??mainRowHeight)+mainRowHeight+"px";
 			detailsTr.remove();
 			if (rowMeta){delete rowMeta.h; if (!Object.keys(rowMeta).length) this._rowMeta.delete(rowData);}
 			delete this._openDetailsPanes[dataRowIndex];
@@ -3017,8 +3041,10 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		if (!rowData) return;
 		const rowMeta=this._rowMeta.get(rowData)??(this._rowMeta.set(rowData,{}),this._rowMeta.get(rowData));
 		contentDiv.style.height="auto";//set to auto in case of in middle of animation, get correct height
-		const prevRowHeight=rowMeta.h??this._rowHeight;
-		const newRowHeight=this._rowHeight+detailsTr.offsetHeight+this._borderSpacingY;
+		const mainRowHeight=this._naturalAutoHeight?detailsTr.previousElementSibling.offsetHeight+this._borderSpacingY
+			:this._rowHeight;
+		const prevRowHeight=rowMeta.h??mainRowHeight;
+		const newRowHeight=mainRowHeight+detailsTr.offsetHeight+this._borderSpacingY;
 		rowMeta.h=newRowHeight;
 		this._tableSizer.style.height=parseInt(this._tableSizer.style.height)//adjust scroll-height reflect change...
 			+newRowHeight-prevRowHeight+"px";//...in height of the table
@@ -4810,7 +4836,9 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	_createTableBody() {
 		this._scrollBody=this.rootEl.appendChild(document.createElement("div"));
 
-		if (this._staticRowHeight&&!this._schema.details)
+		if (this._naturalAutoHeight)
+			this._scrollMethod=this._onScrollNaturalAutoHeight;
+		else if (this._staticRowHeight&&!this._schema.details)
 			this._scrollMethod=this._onScrollStaticRowHeightNoDetails;
 		else if (this._staticRowHeight&&this._schema.details)
 			this._scrollMethod=this._onScrollStaticRowHeightDetails;
@@ -4834,7 +4862,11 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			this._mainTable.appendChild(document.createElement("colgroup")).appendChild(col);
 		}
 		this._borderSpacingY=parseInt(window.getComputedStyle(this._mainTable)['border-spacing'].split(" ")[1]);
+		if (this._naturalAutoHeight)
+			(new ResizeObserver(()=>this._updateAutoHeight())).observe(this._mainTable);
 	}
+
+	_onScrollNaturalAutoHeight() {}
 
 	_createBulkEditArea(schema) {
 		this._bulkEditArea=this.rootEl.appendChild(document.createElement("div"));
@@ -5011,7 +5043,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	_updateColsWidths() {
 		if (this.rootEl.offsetWidth>this._containerWidth) {
-			let areaWidth=this._tableSizer.offsetWidth;
+			let areaWidth=this._scrollBody.clientWidth;
 			const percentageWidthRegex=/\d+%/;
 			let totalFixedWidth=0;
 			let numUndefinedWidths=0;
@@ -5369,6 +5401,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 	}
 
 	_refreshTableSizerNoDetails() {
+		if (this._naturalAutoHeight)
+			return this._updateAutoHeight();
 		this._tableSizer.style.top=this._scrollRowIndex*this._rowHeight+"px";
 		this._tableSizer.style.height=(this._filteredData.length-this._scrollRowIndex)*this._rowHeight+"px";
 		this._updateAutoHeight();
@@ -5400,13 +5434,14 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const scrH=this._scrollBody.offsetHeight+this._scrollMarginPx*2;
 		const dataLen=this._filteredData.length;
 		//if there are fewer trs than datarows, and if there is empty space below bottom tr
-		while ((this._numRenderedRows-1)*this._rowHeight<scrH&&this._scrollRowIndex+this._numRenderedRows<dataLen) {
+		while ((this._naturalAutoHeight||(this._numRenderedRows-1)*this._rowHeight<scrH)
+			&&this._scrollRowIndex+this._numRenderedRows<dataLen) {
 			lastTr=this._mainTable.insertRow();
 			this._numRenderedRows++;
 			for (let i=0; i<this._colSchemaNodes.length; i++) {
 				const cell=lastTr.insertCell();
 				const div=cell.appendChild(document.createElement("div"));//used to set height of cells
-				div.style.height=this._rowInnerHeight||"auto";				
+				div.style.height=this._naturalAutoHeight?"auto":this._rowInnerHeight||"auto";
 				if (this._colSchemaNodes[i].type==="expand") {
 					div.appendChild(this._createExpandContractButton());
 					cell.classList.add("expand-col");
@@ -5436,6 +5471,8 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	/**Should be called if tr-elements might need to be removed which is when table shrinks*/
 	_maybeRemoveTrs() {
+		if (this._naturalAutoHeight)
+			return;
 		const scrH=this._scrollBody.offsetHeight+this._scrollMarginPx*2;
 		while ((this._numRenderedRows-2)*this._rowHeight>scrH) {
 			if (this._rowMeta.get(this._filteredData[this._scrollRowIndex+this._numRenderedRows-1])?.h) {
@@ -5941,6 +5978,8 @@ export default class Tablance extends TablanceBase {
 	_scrollToCursor() {
 		if (this._onlyDetails)
 			return this._cellCursor.scrollIntoView({block: "center"});
+		if (this._naturalAutoHeight)
+			return this._selectedCell?.scrollIntoView({block:"nearest",inline:"nearest"});
 		const distanceRatioDeadzone=.5;//when moving the cellcursor within this distance from center of view no 
 										//scrolling will be done. 0.5 is half of view, 1 is entire height of view
 		const distanceRatioCenteringTollerance=1;//if moving the cellcursor within this ratio, but outside of 
@@ -5973,13 +6012,14 @@ export default class Tablance extends TablanceBase {
 		if (rowMeta.h>0)
 			return;
 		const expRow=this._renderDetails(tr,dataRowIndex);
-		const expHeight=this._rowHeight+expRow.offsetHeight+this._borderSpacingY;
+		const mainRowHeight=this._naturalAutoHeight?tr.offsetHeight+this._borderSpacingY:this._rowHeight;
+		const expHeight=mainRowHeight+expRow.offsetHeight+this._borderSpacingY;
 		rowMeta.h=expHeight;
 		const contentDiv=expRow.querySelector(".content");
 		if (!this._detailsBordersHeight)//see declarataion of _detailsTopBottomBorderWidth
 			this._detailsBordersHeight=expHeight-contentDiv.offsetHeight;
 		this._tableSizer.style.height=parseInt(this._tableSizer.style.height)//adjust scroll-height reflect change...
-			+expHeight-this._rowHeight+"px";//...in height of the table
+			+expHeight-mainRowHeight+"px";//...in height of the table
 		this._updateAutoHeight();
 		if (animate) {
 			this._unsortCol(null,"expand");
@@ -6028,6 +6068,8 @@ export default class Tablance extends TablanceBase {
 	}
 
 	_scrollElementIntoView(element) {
+		if (this._naturalAutoHeight)
+			return element.scrollIntoView({behavior:"smooth",block:"center",inline:"nearest"});
 		if (!this._onlyDetails) {
 			const pos=this._getElPos(element);
 			this._scrollBody.scrollTop=pos.y+element.offsetHeight/2-this._scrollBody.offsetHeight/2;

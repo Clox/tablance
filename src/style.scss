@@ -165,15 +165,15 @@
 			background-color: #f2f2f2;
 		}
 	}
-	&.static-row-height .main-table {
+	.main-table {
 		border-collapse: separate;
 		table-layout: fixed;
 		width: 100%;
-		>tbody>tr:not(.details)>td:not(.expand-col):not(.select-col)>div {
-			overflow: hidden;
-			text-overflow: ellipsis;
-			white-space: nowrap;
-		}
+	}
+	&.static-row-height .main-table>tbody>tr:not(.details)>td:not(.expand-col):not(.select-col)>div {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	th.expand-col>div {
 		display: inline-block;//so that sort arrow doesn't wrap
