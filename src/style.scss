@@ -165,6 +165,7 @@
 		}
 	}
 	&.static-row-height .main-table {
+		border-collapse: separate;
 		table-layout: fixed;
 		width: 100%;
 		>tbody>tr:not(.details)>td:not(.expand-col):not(.select-col)>div {
