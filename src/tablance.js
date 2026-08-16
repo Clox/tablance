@@ -4652,7 +4652,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		preview.style.color=contentStyle.color;
 		preview.style.font=contentStyle.font;
 		preview.style.textAlign=contentStyle.textAlign;
-		preview.style.backgroundColor=window.getComputedStyle(cell).backgroundColor;
+		preview.style.backgroundColor=this._getOpaqueBackgroundColor(cell);
 		this._cellCursor.classList.add("has-static-row-overflow-preview");
 
 		const cellRect=cell.getBoundingClientRect();
@@ -4669,6 +4669,15 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		const roomBelow=viewportRect.bottom-cellRect.top;
 		const roomAbove=cellRect.bottom-viewportRect.top;
 		preview.classList.toggle("align-bottom",preview.offsetHeight>roomBelow&&roomAbove>roomBelow);
+	}
+
+	_getOpaqueBackgroundColor(el) {
+		for (let current=el;current;current=current.parentElement) {
+			const color=window.getComputedStyle(current).backgroundColor;
+			if (color&&color!=="transparent"&&!color.endsWith(", 0)")&&!color.endsWith(" / 0)"))
+				return color;
+		}
+		return "white";
 	}
 
 	_createTableHeader() {

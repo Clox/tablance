@@ -44,6 +44,7 @@
 .tablance .cell-cursor > .static-row-overflow-preview {
   position: absolute;
   z-index: 1;
+  pointer-events: none;
   top: 0;
   left: 0;
   box-sizing: border-box;
