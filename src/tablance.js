@@ -673,6 +673,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._staticRowHeight=staticRowHeight;
 		this._opts=opts??{};
 		rootEl.classList.add("tablance");
+		rootEl.classList.toggle("static-row-height",this._staticRowHeight);
 		this._schema=this._buildSchemaFacade(schema);
 		this._viewDefinitions=this._buildViewDefinitions(schema?.views);
 		this._currentViewModeKey="default";
@@ -3165,6 +3166,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 			e.preventDefault();//prevent text selection upon entering editmode
 			if (this._activeSchemaNode.input.type==="button")
 				return this._activeDetailsCell.el.click();
+			this._clearStaticCellOverflowPreview();
 			this._inputVal=this._selectedCellVal;
 			this._inEditMode=true;
 			this._cellCursor.classList.add("edit-mode");
@@ -4587,6 +4589,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 
 	_selectCell(cellEl,schemaNode,dataObj,adjustCursorPosSize=true) {
 		this.rootEl.focus({preventScroll:true});
+		this._clearStaticCellOverflowPreview();
 		if (adjustCursorPosSize)
 			this._adjustCursorPosSize(cellEl);
 		this._cellCursor.classList.toggle("details",cellEl.closest(".details"));
@@ -4600,6 +4603,7 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		this._cellCursor.style.removeProperty("background-color");//select-input sets it to transparent, revert here
 		this._cellCursorDataObj=dataObj;
 		this._selectedCellVal=dataObj?.[schemaNode.dataKey];
+		this._updateStaticCellOverflowPreview();
 	}
 
 	_getElPos(el,container) {
@@ -4620,7 +4624,51 @@ constructor(hostEl,schema,staticRowHeight=false,spreadsheet=false,opts=null){
 		if (!onlyPos) {
 			this._cellCursor.style.height=el.offsetHeight+"px";
 			this._cellCursor.style.width=el.offsetWidth+"px";
+			if (el===this._selectedCell)
+				this._updateStaticCellOverflowPreview();
 		}
+	}
+
+	_clearStaticCellOverflowPreview() {
+		this._cellCursor?.querySelector(":scope>.static-row-overflow-preview")?.remove();
+		this._cellCursor?.classList.remove("has-static-row-overflow-preview");
+	}
+
+	_updateStaticCellOverflowPreview() {
+		this._clearStaticCellOverflowPreview();
+		const cell=this._selectedCell;
+		if (!this._staticRowHeight||this._inEditMode||!cell||cell.closest("tr.details")
+			||cell.classList.contains("expand-col")||cell.classList.contains("select-col")
+			||this._activeSchemaNode?.input?.type==="button")
+			return;
+		const content=cell.firstElementChild;
+		if (!content||content.scrollWidth<=content.clientWidth+1)
+			return;
+
+		const preview=this._cellCursor.appendChild(document.createElement("div"));
+		preview.className="static-row-overflow-preview";
+		preview.innerText=content.innerText;
+		const contentStyle=window.getComputedStyle(content);
+		preview.style.color=contentStyle.color;
+		preview.style.font=contentStyle.font;
+		preview.style.textAlign=contentStyle.textAlign;
+		preview.style.backgroundColor=window.getComputedStyle(cell).backgroundColor;
+		this._cellCursor.classList.add("has-static-row-overflow-preview");
+
+		const cellRect=cell.getBoundingClientRect();
+		const viewportRect=this._scrollBody.getBoundingClientRect();
+		preview.style.whiteSpace="nowrap";
+		const naturalWidth=preview.offsetWidth;
+		const roomRight=Math.max(cellRect.width,viewportRect.right-cellRect.left);
+		const roomLeft=Math.max(cellRect.width,cellRect.right-viewportRect.left);
+		const alignRight=naturalWidth>roomRight&&roomLeft>roomRight;
+		preview.classList.toggle("align-right",alignRight);
+		preview.style.maxWidth=Math.floor(alignRight?roomLeft:roomRight)+"px";
+		preview.style.removeProperty("white-space");
+
+		const roomBelow=viewportRect.bottom-cellRect.top;
+		const roomAbove=cellRect.bottom-viewportRect.top;
+		preview.classList.toggle("align-bottom",preview.offsetHeight>roomBelow&&roomAbove>roomBelow);
 	}
 
 	_createTableHeader() {

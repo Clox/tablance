@@ -38,17 +38,48 @@
   box-shadow: 1px 1px 7px #222;
   cursor: auto;
 }
+.tablance .cell-cursor.has-static-row-overflow-preview {
+  outline: none;
+}
+.tablance .cell-cursor > .static-row-overflow-preview {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 100%;
+  min-height: 100%;
+  padding: 8px 10px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  outline: 2px solid blue;
+  outline-offset: -2px;
+}
+.tablance .cell-cursor > .static-row-overflow-preview.align-right {
+  left: auto;
+  right: 0;
+}
+.tablance .cell-cursor > .static-row-overflow-preview.align-bottom {
+  top: auto;
+  bottom: 0;
+}
+.tablance .cell-cursor.disabled > .static-row-overflow-preview {
+  outline-color: red;
+}
 .tablance .cell-cursor > input, .tablance .cell-cursor textarea {
   width: 100%;
   height: 100%;
   border: none;
+}
+.tablance .cell-cursor > input:focus, .tablance .cell-cursor textarea:focus {
+  outline: none;
+}
+.tablance .cell-cursor > input, .tablance .cell-cursor textarea {
   font-family: inherit;
   font-size: inherit;
   line-height: inherit;
   resize: none;
-}
-.tablance .cell-cursor > input:focus, .tablance .cell-cursor textarea:focus {
-  outline: none;
 }
 .tablance .cell-cursor > div.file, .tablance .cell-cursor > div.file > div.drop {
   position: absolute;
@@ -127,6 +158,15 @@
 }
 .tablance td.disabled {
   background-color: #f2f2f2;
+}
+.tablance.static-row-height .main-table {
+  table-layout: fixed;
+  width: 100%;
+}
+.tablance.static-row-height .main-table > tbody > tr:not(.details) > td:not(.expand-col):not(.select-col) > div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tablance th.expand-col > div {
   display: inline-block;
@@ -283,11 +323,11 @@
   width: 100%;
   padding-right: 2px;
 }
-.tablance .details table.details-list > tbody > tr > td.value {
-  padding: 5px;
-}
 .tablance .details table.details-list > tbody > tr > td.value:first-child {
   border-left: 1px solid #ccc;
+}
+.tablance .details table.details-list > tbody > tr > td.value {
+  padding: 5px;
 }
 .tablance .details table.details-list > tbody > tr > td.value > .details-group {
   min-height: 1.4em;
@@ -312,12 +352,12 @@
 .tablance .group-cell {
   padding: 4px;
 }
+.tablance .group-cell > table:not(:last-child) {
+  margin-bottom: 4px;
+}
 .tablance .group-cell > table {
   border: 1px solid #bbb;
   width: 100%;
-}
-.tablance .group-cell > table:not(:last-child) {
-  margin-bottom: 4px;
 }
 .tablance .group-cell > table:not(.open) > tbody > tr.empty, .tablance .group-cell > table:not(.open) > tbody > tr > td > div > .empty {
   display: none;
@@ -491,11 +531,6 @@
 
 .pika-container {
   position: absolute;
-  /*
-  clear child float (pika-lendar), using the famous micro clearfix hack
-  http://nicolasgallagher.com/micro-clearfix-hack/
-  */
-  /* styling for abbr */
 }
 .pika-container .pika-single {
   z-index: 9999;
@@ -506,6 +541,12 @@
   border: 1px solid #ccc;
   border-bottom-color: #bbb;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.pika-container {
+  /*
+  clear child float (pika-lendar), using the famous micro clearfix hack
+  http://nicolasgallagher.com/micro-clearfix-hack/
+  */
 }
 .pika-container .pika-single:before,
 .pika-container .pika-single:after {
@@ -693,6 +734,9 @@
   background: #ff8000;
   box-shadow: none;
   border-radius: 3px;
+}
+.pika-container {
+  /* styling for abbr */
 }
 .pika-container .pika-table abbr {
   border-bottom: none;
