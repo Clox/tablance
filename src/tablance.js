@@ -3641,7 +3641,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._activeDetailsCell=null;//causes problem otherwise when #selectDetailsCell checks old cell
 
 		// Commit deletion after mutation/reindex
-		if (!programatically&&parent?.schemaNode?.type==="repeated") {
+		if (!programatically&&parent?.schemaNode?.type==="repeated"&&deletedData!==undefined) {
 			const payload=this._makeCallbackPayload(instanceNode,{
 				data: deletedData,
 				dataArray,
