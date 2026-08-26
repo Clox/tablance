@@ -5027,6 +5027,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 
 	_updateSizesOfViewportAndCols() {
+		if (!this.hostEl.offsetWidth||!this.hostEl.offsetHeight)
+			return;
 		if (this.hostEl.offsetHeight != this._containerHeight) {
 			this._updateViewportHeight();
 			if (this.hostEl.offsetHeight > this._containerHeight)
