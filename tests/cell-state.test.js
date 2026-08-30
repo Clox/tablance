@@ -97,6 +97,43 @@ try {
 	assert(emptyGroup.selEl===emptyGroupValueCell&&emptyGroupTable._selectedCell===emptyGroupValueCell,
 		"a list group uses its full value cell as the hit target even when its inner content is empty");
 
+	let deleteDecision="prevent",beforeDeleteCalls=0,afterDeleteCalls=0,deleteCommits=0;
+	const repeatedRows=[{name:"keep"},{name:"candidate"}];
+	const guardedDeleteTable=new Tablance(host(),{
+		onDataCommit:({mode})=>mode==="delete"&&deleteCommits++,
+		details:{type:"list",entries:[{type:"repeated",dataKey:"items",nodeId:"items",create:true,
+			beforeDelete:({deletedDataItem,remainingData,preventDelete})=>{
+				beforeDeleteCalls++;
+				assert(deletedDataItem===repeatedRows[1]&&remainingData.length===1&&remainingData[0]===repeatedRows[0],
+					"beforeDelete receives the candidate and a non-mutating view of the remaining data");
+				if (deleteDecision==="prevent")
+					preventDelete("Deletion blocked");
+				else if (deleteDecision==="returnFalse")
+					return false;
+			},
+			onDelete:()=>afterDeleteCalls++,entry:{dataKey:"name",input:{type:"text"}},
+		}]},
+	},true,true,{searchbar:false});
+	guardedDeleteTable.setData([{items:repeatedRows}]);
+	await tick();
+	const guardedRepeated=guardedDeleteTable.getDetailCell(0,"items");
+	const guardedEntry=guardedRepeated.children.find(child=>child.dataObj===repeatedRows[1]);
+	guardedEntry.select();
+	const deleteControl={parent:{parent:guardedEntry}};
+	assert(guardedDeleteTable._repeatedOnDelete({instanceNode:deleteControl})===false
+		&&repeatedRows.length===2&&guardedRepeated.children.includes(guardedEntry)
+		&&afterDeleteCalls===0&&deleteCommits===0,
+		"beforeDelete can veto deletion before data, instances, DOM, callbacks, or persistence change");
+	deleteDecision="returnFalse";
+	assert(guardedDeleteTable._repeatedOnDelete({instanceNode:deleteControl})===false
+		&&repeatedRows.length===2&&afterDeleteCalls===0&&deleteCommits===0,
+		"returning false from beforeDelete also vetoes deletion");
+	deleteDecision="allow";
+	assert(guardedDeleteTable._repeatedOnDelete({instanceNode:deleteControl})===true
+		&&beforeDeleteCalls===3&&repeatedRows.length===1&&!guardedRepeated.children.includes(guardedEntry)
+		&&afterDeleteCalls===1&&deleteCommits===1,
+		"an allowed deletion continues through mutation, onDelete, and persistence");
+
 	const resolve=node=>table._resolveCellState(node,{rowData:row});
 	assert(resolve({input:{type:"text"},editableIf:()=>false}).kind==="readOnly","editableIf false resolves readOnly");
 	assert(resolve({input:{type:"text"},editableIf:()=>({editable:false,message:"locked"})}).message==="locked","editableIf object message is retained");

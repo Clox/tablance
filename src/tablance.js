@@ -543,8 +543,12 @@ class TablanceBase {
 	 * 					callback-function will be called when the creation of a new entry is canceled, either by leaving
 	 * 					the group with no data inserted, or by pressing the delete/cancel-button.
 	 * 					It will get passed arguments: 1:instanceNode of the repeated-object
-	 * 				onDelete Function Callback fired when the user has deleted an entry via the interface available if
-	 * 					"create" is true. Receives a payload object:
+	 * 				beforeDelete Function Synchronous callback fired before an entry is deleted. It receives the same
+	 * 					context as onDelete plus remainingData (a shallow copy without the candidate) and
+	 * 					preventDelete(message?).
+	 * 					Call preventDelete or return false to leave the data, instance tree and DOM unchanged.
+	 * 				onDelete Function Callback fired after the user has successfully deleted an entry via the interface
+	 * 					available if "create" is true. Receives a payload object:
 	 * 					- deletedDataItem: the deleted data object
 	 * 					- dataKey: optional key for the repeated array (creation context)
 	 * 					- dataArray: optional repeated array reference
@@ -2530,8 +2534,27 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			mainIndex: entryNode.rowIndex,
 			rowData: repeatedContainer?.parent?.dataObj
 		});
+		let doDelete=true;
+		let preventMessage;
+		const beforeDelete=repeatedContainer?.schemaNode.beforeDelete;
+		if (beforeDelete) {
+			const remainingData=Array.isArray(payload.dataArray)
+				?payload.dataArray.filter((_item,index)=>index!==payload.itemIndex):[];
+			const result=beforeDelete({...payload,remainingData,preventDelete:(message)=>{
+				doDelete=false;
+				preventMessage=message??preventMessage;
+			}});
+			if (result===false)
+				doDelete=false;
+		}
+		if (!doDelete) {
+			if (preventMessage)
+				this._showTooltip(preventMessage,entryNode.selEl??entryNode.el);
+			return false;
+		}
 		this._deleteCell(entryNode);
 		repeatedContainer?.schemaNode.onDelete?.(payload);
+		return true;
 	}
 
 	_fileOnDelete=(payload)=>{
