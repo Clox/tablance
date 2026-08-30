@@ -70,6 +70,20 @@ try {
 		&&getComputedStyle(cells[1]).backgroundColor==="rgb(255, 255, 255)",
 		"ordinary and read-only cells share the default white cell surface");
 
+	const fixedHeightTable=new Tablance(host(),{
+		main:{columns:[{type:"expand",width:45},{dataKey:"value",input:{type:"text"}}]},
+		details:{type:"list",entries:[{title:"Value",dataKey:"value",input:{type:"text"}}]},
+	},true,true,{searchbar:false,ordering:false});
+	fixedHeightTable.setData([{value:"one"},{value:"two"},{value:"three"}]);
+	await tick();
+	const fixedRows=[...fixedHeightTable._mainTbody.querySelectorAll(":scope>tr:not(.details)")];
+	const fixedRowHeights=fixedRows.map(tableRow=>tableRow.getBoundingClientRect().height);
+	assert(fixedRowHeights.every(height=>height===fixedHeightTable._rowHeight)
+		&&fixedHeightTable._rowHeight===41,
+		"fixed-height rows all match the natural measured row height");
+	assert(fixedHeightTable._rowInnerHeights[0]!==fixedHeightTable._rowInnerHeights[1],
+		"each column derives its inner height from its own padding and borders");
+
 	const resolve=node=>table._resolveCellState(node,{rowData:row});
 	assert(resolve({input:{type:"text"},editableIf:()=>false}).kind==="readOnly","editableIf false resolves readOnly");
 	assert(resolve({input:{type:"text"},editableIf:()=>({editable:false,message:"locked"})}).message==="locked","editableIf object message is retained");
@@ -249,10 +263,11 @@ try {
 	const detailsRow=table._mainTbody.querySelector('tr.details[data-data-row-index="0"]');
 	const detailsPanel=detailsRow.querySelector(":scope>td>.content");
 	const detailsPanelStyle=getComputedStyle(detailsPanel);
+	const detailsShadowStyle=getComputedStyle(detailsPanel.querySelector(":scope>.details-shadow"));
 	assert(getComputedStyle(detailsRow.cells[0]).backgroundColor==="rgba(0, 0, 0, 0)"
 		&&detailsPanelStyle.marginLeft==="20px"&&detailsPanelStyle.marginRight==="0px"
 		&&detailsPanelStyle.borderBottomLeftRadius==="6px"&&detailsPanelStyle.borderBottomRightRadius==="0px"
-		&&detailsPanelStyle.backgroundImage.includes("linear-gradient"),
+		&&detailsPanelStyle.backgroundImage.includes("linear-gradient")&&detailsShadowStyle.zIndex==="2",
 		"expanded details use Tablance's native transparent wrapper and layered indented panel");
 	const detail=table.getDetailCell(0,"detail");
 	assert(detail.cellState.kind==="readOnly"&&detail.el.classList.contains("read-only")

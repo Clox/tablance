@@ -410,6 +410,7 @@
 
 			>.details-shadow {
 				position: absolute;
+				z-index: 2;//keep the top shadow above hovered detail cells and their state indicators
 				top: auto;
 				left: 0;
 				right: 0;

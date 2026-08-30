@@ -377,6 +377,7 @@
 }
 .tablance .main-table > tbody > tr.details > td > .content > .details-shadow {
   position: absolute;
+  z-index: 2;
   top: auto;
   left: 0;
   right: 0;

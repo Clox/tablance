@@ -113,10 +113,8 @@ class TablanceBase {
 	_borderSpacingY;//the border-spacing of #mainTable. This needs to be summed with offsetHeight of tr (#rowHeight) to 
 					//get real distance between the top of adjacent rows
 	_rowHeight=0;//the height of (non expanded) rows with #borderSpacingY included. Assume 0 first until first row added
-	_rowInnerHeight=0;//this is the height that the div inside main-tds should be set to. It's calculated from 
-					//#rowHeight minus top&bottom-padding minus #borderSpacingY of td. This is needed to make sure each
-					//row is always of the same height and things don't get messed up because some row is heigher
-					//because it has high content.
+	_rowInnerHeights=[];//inner div height per column, used to keep fixed-height rows equal when cells have different
+					//vertical padding or borders
 	_staticRowHeight;//This is set in the constructor. If it is true then all rows should be of same height which
 					 //improves performance.
 	_naturalAutoHeight;//true when every row is rendered and allowed to take its natural height in autoHeight mode
@@ -5613,7 +5611,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			for (let i=0; i<this._colSchemaNodes.length; i++) {
 				const cell=lastTr.insertCell();
 				const div=cell.appendChild(document.createElement("div"));//used to set height of cells
-				div.style.height=this._naturalAutoHeight?"auto":this._rowInnerHeight||"auto";
+				div.style.height=this._naturalAutoHeight?"auto":this._rowInnerHeights[i]??"auto";
 				if (this._colSchemaNodes[i].type==="expand") {
 					div.appendChild(this._createExpandContractButton());
 					cell.classList.add("expand-col");
@@ -5629,10 +5627,17 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._lookForActiveCellInRow(lastTr);//look for active cell (cellcursor) in the row
 			if (!this._rowHeight) {//if there were no rows prior to this
 				this._rowHeight=lastTr.offsetHeight+this._borderSpacingY;
-				const tdComputedStyle=window.getComputedStyle(lastTr.firstChild);
-				for (let prop of ["paddingTop","paddingBottom","borderBottomWidth","borderTopWidth"])
-					this._rowInnerHeight-=parseInt(tdComputedStyle[prop]);
-				this._rowInnerHeight=this._rowInnerHeight+lastTr.offsetHeight+"px";
+				//The first row establishes the natural row height. Derive each column's inner height from that row
+				//and the cell's own box model; one shared value would make differently padded columns change row height.
+				this._rowInnerHeights=[...lastTr.cells].map(cell=>{
+					const tdComputedStyle=window.getComputedStyle(cell);
+					let innerHeight=lastTr.offsetHeight;
+					for (let prop of ["paddingTop","paddingBottom","borderBottomWidth","borderTopWidth"])
+						innerHeight-=parseFloat(tdComputedStyle[prop])||0;
+					const height=Math.max(0,innerHeight)+"px";
+					cell.firstElementChild.style.height=height;
+					return height;
+				});
 			}
 		}
 	}
