@@ -34,8 +34,8 @@
 		&:not(.details) {
 			outline-offset:-2px;
 		}
-		&.disabled {
-			outline-color: red;
+		&.read-only-mode {
+			cursor: text;
 		}
 		&.edit-mode {
 			background-color: white;
@@ -69,10 +69,8 @@
 				bottom: 0;
 			}
 		}
-		&.disabled>.static-row-overflow-preview {
-			outline-color: red;
-		}
 		>input,textarea {
+			box-sizing: border-box;
 			width:100%;
 			height: 100%;
 			border: none;
@@ -83,6 +81,9 @@
 			font-size: inherit;
 			line-height: inherit;
 			resize: none;//specifically for textarea
+		}
+		>.read-only-presentation {
+			caret-color: currentColor;
 		}
 		>div.file,>div.file>div.drop {
 			//make it expand the whole cell-cursor so all of it is clickable
@@ -161,8 +162,13 @@
 				transform : scale(1.3);
 			}
 		}
+		&.read-only {
+			background-color: #f2f2f2;
+		}
 		&.disabled {
 			background-color: #f2f2f2;
+			cursor: default;
+			opacity: .65;
 		}
 	}
 	.main-table {
@@ -218,7 +224,7 @@
 	}
 	tr.selected>td {
 			background-color: #bab8db;
-		&.disabled {
+		&.read-only {
 			background-color: #918fb5;
 		}
 	}
@@ -265,8 +271,13 @@
 								//will expand rather than wrap
 			}
 		}
+		.read-only {
+			background-color: #f2f2f2;
+		}
 		.disabled {
 			background-color: #f2f2f2;
+			cursor: default;
+			opacity: .65;
 		}
 		.value:empty::after {
 			content: "\00A0";//add non-breaking space to empty cells so they are still rendered at uniform height

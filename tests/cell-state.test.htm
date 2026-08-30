@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles/tablance.css">
+<style>
+  body { margin: 0; }
+  .host { width: 1100px; height: 360px; }
+</style>
+<div id="test-results" data-status="running">running</div>
+<script>
+  const fail = value => {
+    const result = document.getElementById("test-results");
+    result.textContent = value?.error?.stack || value?.reason?.stack || value?.message || String(value);
+    result.dataset.status = "failed";
+  };
+  addEventListener("error", fail);
+  addEventListener("unhandledrejection", fail);
+</script>
+<script src="../dist/tablance.umd.js"></script>
+<script type="module" src="cell-state.test.js"></script>

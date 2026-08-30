@@ -1,6 +1,6 @@
 {
 	"name": "tablance",
-	"version": "1.1.0",
+	"version": "2.0.0",
 	"description": "TABLe advANCE - A fast, virtualized table component with expandable rows, spreadsheet navigation, and inline editing.",
 	"main": "dist/tablance.umd.js",
 	"module": "dist/tablance.esm.js",
@@ -20,8 +20,8 @@
 	"scripts": {
 		"build": "rm -rf dist && npm run build:js && npm run build:css",
 		"build:js": "rollup -c",
-		"build:css": "mkdir -p dist && cp styles/tablance.css styles/tablance.css.map styles/tablance.min.css styles/tablance.min.css.map dist/",
-		"test": "echo \"Error: no test specified\" && exit 1"
+		"build:css": "mkdir -p styles dist && sass --style=expanded --source-map src/style.scss styles/tablance.css && sass --style=compressed --source-map src/style.scss styles/tablance.min.css && cp styles/tablance.css styles/tablance.css.map styles/tablance.min.css styles/tablance.min.css.map dist/",
+		"test": "node tests/run-browser-tests.mjs"
 	},
 	"repository": {
 		"type": "git",
@@ -51,6 +51,7 @@
 		"@rollup/plugin-terser": "^0.4.3",
 		"eslint": "^9.39.1",
 		"rollup": "^4.0.0",
-		"rollup-plugin-import-css": "^3.1.0"
+		"rollup-plugin-import-css": "^3.1.0",
+		"sass": "^1.93.2"
 	}
 }

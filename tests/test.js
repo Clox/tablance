@@ -41,7 +41,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		,{dataKey:"desc",title:"Description",nodeId:"description", width:"150px",html:true,bulkEdit:true,input:{
 			/** @type {TablanceOnChangeCallback} */
 			onChange:handleDescriptionChange,type:"text",maxLength:5,placeholder:"placeholder"
-			,enabledIf:()=>Math.random()>.5},render:descFunc, cssClass:()=>"fooclass"}
+			},editableIf:()=>Math.random()>.5,render:descFunc, cssClass:()=>"fooclass"}
 		,{dataKey:"amount",title:"Amount",width:"85px",input:{bulkEdit:true},bulkEdit:true},{dataKey:"balance",title:"Balance",width:"85px"}
 		,{dataKey:"food",title:"Food",width:"120px",input:{multiCellWidth:100,type:"select"
 			,options:foods,minOptsFilter:100,allowCreateNew:true,allowSelectEmpty:true

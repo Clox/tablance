@@ -139,7 +139,11 @@ class TablanceBase {
 						//repeat-entries this will point to the correct inner object
 	_selectedCellVal;//the value of the cell that the cellCursor is at
 	_selectedCell;//the HTML-element of the cell-cursor. probably TD's most of the time.
+	_cellStates=new WeakMap();//canonical functional state for every currently rendered cell element
+	_selectedCellState;//canonical state for the selected cell; DOM classes are styling hooks only
 	_inEditMode;//whether the user is currently in edit-mode
+	_inReadOnlyMode=false;//whether a read-only presentation textarea is currently open
+	_readOnlyDisplayedText;//immutable displayed text used while read-only presentation mode is open
 	//and values are px as ints. This is used to offset the position and adjust position of #cellCursor in order to
 	//center it around the cell. It is also used in conjunction with cellCursorOutlineWidth to adjust margins of the
 	//main-table in order to reveal the outermost line when an outermost cell is selected
@@ -374,7 +378,8 @@ class TablanceBase {
 	 * 					3: schemaNode,
 	 * 					4: main-index, 
 	 * 					5: instanceNode
-	 * 				input Object field is editable if this object is supplied and its "disabled"-prop is not true
+	 * 				input Object defining the editor used when the field is editable. Cell state is configured on the
+	 * 					schema node through readOnly, editableIf, disabled and disabledIf.
 	 * 					{
 	 * 					type String This is mandatory and specifies the type of input. Se further down for properties 
 	 * 						specific to each type of input. The possible types are:
@@ -420,13 +425,20 @@ class TablanceBase {
 	 * 							- cancelUpdate: function() to prevent the value from being persisted
 	 * 						onBlur Function Callback fired when cellcursor goes from being inside the container
 	 * 							to outside. It will get passed arguments 1:instanceNode, 2:mainIndex
-	 * 						enabledIf Function Optional callback that decides if the cell is editable.
-	 * 							Receives a payload from _makeCallbackPayload plus:
+	 * 				readOnly Bool If true, the field is permanently read-only. Activating it opens a read-only
+	 * 					presentation control for native caret, text selection and copying.
+	 * 				editableIf Function Optional callback deciding whether an input field is editable. It receives a
+	 * 							payload from _makeCallbackPayload plus:
 	 * 							- value: resolved cell value (dataKey wins when present, select uses option.value when 
 	 * 																										available)
 	 * 							- idValue: rowData[schemaNode.dataKey] (if dataKey is set)
 	 * 							- dependedValue: the resolved dependee value when dependsOn* is used
-	 * 							Return false (or {enabled:false, message:String}) to disable the field.
+	 * 					Return false, or {editable:false,message:String}, to make the field read-only.
+	 * 				disabled Bool If true, the cell is unavailable, non-selectable and non-activatable.
+	 * 				disabledIf Function Optional callback with the same payload as editableIf. Return true, or
+	 * 					{disabled:true,message:String}, to make the cell unavailable. Disabled takes precedence.
+	 * 				Fields without input and without onEnter are implicitly read-only. Cells with onEnter but no input,
+	 * 					buttons, expand/select controls and groups are action cells.
 	 * 					----Properties specific to input "text"----
 	 * 						format object When defined, Tablance automatically applies the specified pattern to 
 	 * 							the <input> element as the user types. It can enforce numeric-only input, insert
@@ -1422,10 +1434,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (root) {
 			const targetNode=this._findInstanceNodeByCellId(root,nodeId);
 			if (targetNode) {
-				this._selectDetailsCell(targetNode);
-				if (enterEditMode&&this._activeSchemaNode?.input)
+				const selected=this._selectDetailsCell(targetNode);
+				if (selected&&enterEditMode&&this._activeSchemaNode?.input)
 					this._enterCell(new Event("enter",{cancelable:true}));
-				return;
+				return selected;
 			}
 		}
 
@@ -1446,9 +1458,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndex}"]:not(.details)`);
 		}
 		if (tr) {
-			this._selectMainTableCell(tr.cells[colIndex]);
-			if (enterEditMode&&this._activeSchemaNode?.input)
+			const selected=this._selectMainTableCell(tr.cells[colIndex]);
+			if (selected&&enterEditMode&&this._activeSchemaNode?.input)
 				this._enterCell(new Event("enter",{cancelable:true}));
+			return selected;
 		}
 	}
 
@@ -2024,14 +2037,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			} else if (vSign===-1&&this._rowMeta.get(this._filteredData[this._mainRowIndex-1])?.h){//moving up into details
 				this._selectFirstSelectableDetailsCell(this._openDetailsPanes[this._mainRowIndex-1],false);
 			} else {//moving from and to maintable-cells
-				const adjacentRow=this._selectedCell.parentElement[(vSign>0?"next":"previous")+"Sibling"];
-				if (adjacentRow)
-					this._selectMainTableCell(adjacentRow.cells[newColIndex]);
+				const adjacentCell=this._findSelectableMainCellFromRow(
+					this._selectedCell.parentElement[(vSign>0?"next":"previous")+"ElementSibling"],vSign,newColIndex);
+				if (adjacentCell)
+					this._selectMainTableCell(adjacentCell);
 				else
 					this._selectAdjacentMainTable(vSign>0,newColIndex);
 			}
 		} else if (!this._activeDetailsCell)
-			this._selectMainTableCell(this._selectedCell[(hSign>0?"next":"previous")+"Sibling"]);
+			this._selectMainTableCell(this._getAdjacentSelectableMainCell(this._selectedCell,hSign));
 		if ((this._onlyDetails||this._naturalAutoHeight)&&this._mainRowIndex!=null)
 			this._scrollToCursor();
 	}
@@ -2053,7 +2067,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const row=isGoingDown?rows[0]:rows.at(-1);
 		if (!row)
 			return;
-		const selectableCells=[...row.cells].filter(cell=>!cell.classList.contains("disabled"));
+		const selectableCells=[...row.cells].filter(cell=>this._getCellState(cell)?.selectable!==false);
 		if (!selectableCells.length)
 			return;
 		const targetCell=selectableCells.reduce((closest,cell)=>
@@ -2064,6 +2078,25 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return true;
 	}
 
+	_getAdjacentSelectableMainCell(cell,direction) {
+		for (let candidate=cell?.[direction>0?"nextElementSibling":"previousElementSibling"];
+			candidate;candidate=candidate[direction>0?"nextElementSibling":"previousElementSibling"])
+			if (this._getCellState(candidate)?.selectable!==false)
+				return candidate;
+	}
+
+	_findSelectableMainCellFromRow(row,direction,preferredColIndex) {
+		for (let candidateRow=row;candidateRow;
+			candidateRow=candidateRow[direction>0?"nextElementSibling":"previousElementSibling"]) {
+			if (candidateRow.classList.contains("details"))
+				continue;
+			const selectable=[...candidateRow.cells].filter(cell=>this._getCellState(cell)?.selectable!==false);
+			if (selectable.length)
+				return selectable.reduce((closest,cell)=>Math.abs(cell.cellIndex-preferredColIndex)
+					<Math.abs(closest.cellIndex-preferredColIndex)?cell:closest);
+		}
+	}
+
 	_moveInsideLineup(numCols,numRows) {
 		const currentCellX=this._activeDetailsCell.el.offsetLeft;
 		const currCelTop=this._activeDetailsCell.el.offsetTop;
@@ -2071,7 +2104,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (numCols) {//moving left or right
 			for (let i=this._activeDetailsCell.index,nextCel;nextCel=this._activeDetailsCell.parent.children[i+=numCols];) {
 				if (nextCel.el.offsetParent != null && (nextCel?.el.offsetLeft>currentCellX)==(numCols>0)) {
-					if (currCelBottom>nextCel.el.offsetTop&&nextCel.el.offsetTop+nextCel.el.offsetHeight>currCelTop)
+					if (this._getCellState(nextCel.el,nextCel)?.selectable!==false
+						&&currCelBottom>nextCel.el.offsetTop&&nextCel.el.offsetTop+nextCel.el.offsetHeight>currCelTop)
 						this._selectDetailsCell(nextCel);
 					break;
 				}
@@ -2080,7 +2114,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			let closestCell,closestCellX;
 			const siblings=this._activeDetailsCell.parent.children;
 			for (let i=this._activeDetailsCell.index,otherCell;otherCell=siblings[i+=numRows];) {
-				const skipCell=Math.max(otherCell.el.offsetTop,currCelTop) <= 					 //cell is on the
+					const skipCell=this._getCellState(otherCell.el,otherCell)?.selectable===false
+						||Math.max(otherCell.el.offsetTop,currCelTop) <= 					 //cell is on the
 								Math.min(otherCell.el.offsetTop+otherCell.el.offsetHeight,currCelBottom)//same line
 								||otherCell.el.offsetParent == null;//cell is hidden
 				if (skipCell)
@@ -2104,9 +2139,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		let cell=this._getAdjacentDetailsCell(instanceNode,isGoingDown);//repeat this line until valid cell is found?
 		if (cell)
 			return this._selectDetailsCell(cell);
-		if (!this._onlyDetails)
-			this._selectMainTableCell(this._mainTbody.querySelector(
-				`[data-data-row-index="${this._mainRowIndex+isGoingDown}"]`)?.cells[this._mainColIndex]);
+		if (!this._onlyDetails) {
+			const row=this._mainTbody.querySelector(
+				`[data-data-row-index="${this._mainRowIndex+isGoingDown}"]`);
+			const target=this._findSelectableMainCellFromRow(row,isGoingDown?1:-1,this._mainColIndex);
+			if (target)
+				this._selectMainTableCell(target);
+		}
 		else {
 			const nextTable=this.neighbourTables?.[isGoingDown?"down":"up"];
 			if (nextTable) {
@@ -2126,8 +2165,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const sibling=siblings[i];
 			if (sibling.hidden)
 				continue;
-			if (sibling.el)
-				return sibling;
+			if (sibling.el) {
+				if (this._getCellState(sibling.el,sibling)?.selectable!==false)
+					return sibling;
+				continue;
+			}
 			//else if sibling.children
 			const niece=this._getFirstSelectableDetailsCell(sibling,isGoingDown);
 			if (niece)
@@ -2141,8 +2183,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const newInstanceNode=this._getFirstSelectableDetailsCell(instanceNode,isGoingDown,onlyGetChild);
 		if (newInstanceNode)
 			return this._selectDetailsCell(newInstanceNode);
-		this._selectMainTableCell(this._mainTbody.querySelector(
-				`[data-data-row-index="${this._mainRowIndex+(isGoingDown||-1)}"]`)?.cells[this._mainColIndex]);
+		const row=this._mainTbody.querySelector(
+			`[data-data-row-index="${this._mainRowIndex+(isGoingDown||-1)}"]`);
+		const target=this._findSelectableMainCellFromRow(row,isGoingDown?1:-1,this._mainColIndex);
+		if (target)
+			this._selectMainTableCell(target);
 	}
 
 	/**Given an instanceNode, like the details of a row or any of its sub-containers, it will return the first
@@ -2152,8 +2197,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * @param {Boolean} onlyGetChild if set to true then it will never return the passed in instanceNode and instead
 	 *			only look at its (grand)children. Used for groups where both itself and its children can be selected*/
 	_getFirstSelectableDetailsCell(instanceNode,isGoingDown,onlyGetChild=false) {
-		if (!onlyGetChild&&instanceNode.el)
-			return instanceNode;
+		if (!onlyGetChild&&instanceNode.el) {
+			if (this._getCellState(instanceNode.el,instanceNode)?.selectable!==false)
+				return instanceNode;
+			return;
+		}
 		const children=instanceNode.children;
 		if (!children?.length)//check needed if a repeated-container hs a single field instead of a group
 			return onlyGetChild?instanceNode:undefined;
@@ -2183,6 +2231,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (!searchPassthroughKeys.includes(e.key))
 				return;
 		}
+		if (this._inReadOnlyMode)
+			return this._readOnlyPresentationKeyDown(e);
 		this._tooltip.style.visibility="hidden";
 		const keysThatEnterFromOutline=["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Escape",
 								"NumpadAdd","NumpadSubtract","Enter","NumpadEnter","Space"];
@@ -2195,8 +2245,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (keysThatEnterFromOutline.includes(e.code)&&this._filteredData.length) {
 				if (this._onlyDetails)
 					this.selectTopBottomCellOnlyDetails(true);
-				else
-					this._selectMainTableCell(this._mainTbody.rows[0].cells[0]);
+				else {
+					const firstCell=this._findSelectableMainCellFromRow(this._mainTbody.rows[0],1,0);
+					if (firstCell)
+						this._selectMainTableCell(firstCell);
+				}
 			}
 		}
 
@@ -2299,9 +2352,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_copySelectedCellText() {
 		// Copy displayed text of the selected field when not in edit mode.
-		if (this._inEditMode||this._activeSchemaNode?.type!=="field"||!this._selectedCell)
+		if (this._inEditMode||this._selectedCellState?.selectable===false
+			||this._activeSchemaNode?.type!=="field"||!this._selectedCell)
 			return;
-		const text=(this._selectedCell.innerText??"").trim();
+		const text=this._getDisplayedCellText();
 		if (!text)
 			return;
 		const fallback=()=>this._copySelectedCellText_fallback(text);
@@ -2670,6 +2724,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			instanceNode.creating=true;
 		else if (groupSchemaNode.closedRender)
 			this._setClosedRender(instanceNode,groupSchemaNode.closedRender(rowData),path,tbody);
+		const statePayload=this._makeCallbackPayload(instanceNode,{value:rowData},{
+			schemaNode:groupSchemaNode,mainIndex,rowData
+		});
+		this._setCellState(groupTable,this._resolveCellState(groupSchemaNode,statePayload),instanceNode);
 		return true;
 	}
 
@@ -2786,7 +2844,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			outerContainerEl.className="empty";	// Will be hidden while group is closed until content becomes non-empty
 
 			const td=outerContainerEl.insertCell();
-			td.classList.toggle("disabled",schemaNode.type=="field"&&!schemaNode.input&&!schemaNode.onEnter);
 
 			// Add separator for non-group members
 			if (schemaNode.type!="group")
@@ -2931,6 +2988,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._selectDetailsCell(instanceNode);
 		} else {//not in details
 			const td=e.target.closest(".main-table>tbody>tr>td");
+			if (this._getCellState(td)?.selectable===false)
+				return;
 			if (td?.classList.contains("expand-col")||td?.classList.contains("select-col")) {
 				if (e.shiftKey)
 					e.preventDefault();//prevent text-selection when shift-clicking checkboxes
@@ -3169,38 +3228,108 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 	}
 
-		_enterCell(e) {
-			if (this._inEditMode||this._cellCursor.classList.contains("disabled"))
-				return;
-			const selBefore=this._selectedCell;
-			const schemaBefore=this._activeSchemaNode;
-			let doEnter=true;
-			if (this._activeSchemaNode.onEnter) {
-				const payload=this._makeCallbackPayload(this._activeDetailsCell,{
-					event:e,
-					value:this._selectedCellVal,
-					preventEnter:()=>doEnter=false
-				},{
-					schemaNode:this._activeSchemaNode,
-					mainIndex:this._mainRowIndex
-				});
-				this._activeSchemaNode.onEnter(payload);
-			}
-			if (!doEnter||selBefore!==this._selectedCell||schemaBefore!==this._activeSchemaNode)
-				return;
+	_enterCell(e) {
+		if (this._inEditMode||this._inReadOnlyMode||!this._selectedCellState?.activatable)
+			return;
+		const selBefore=this._selectedCell;
+		const schemaBefore=this._activeSchemaNode;
+		let doEnter=true;
+		if (this._activeSchemaNode.onEnter) {
+			const payload=this._makeCallbackPayload(this._activeDetailsCell,{
+				event:e,
+				value:this._selectedCellVal,
+				preventEnter:()=>doEnter=false
+			},{
+				schemaNode:this._activeSchemaNode,
+				mainIndex:this._mainRowIndex
+			});
+			this._activeSchemaNode.onEnter(payload);
+		}
+		if (!doEnter||selBefore!==this._selectedCell||schemaBefore!==this._activeSchemaNode)
+			return;
+		if (this._selectedCellState.kind==="readOnly")
+			return this._openReadOnlyPresentation(e);
 		if (this._activeSchemaNode.input) {
 			e.preventDefault();//prevent text selection upon entering editmode
 			if (this._activeSchemaNode.input.type==="button")
-				return this._activeDetailsCell.el.click();
+				return (this._activeDetailsCell?.el??this._selectedCell.querySelector("button"))?.click();
 			this._clearStaticCellOverflowPreview();
 			this._inputVal=this._selectedCellVal;
 			this._inEditMode=true;
 			this._cellCursor.classList.add("edit-mode");
 			({textarea:this._openTextAreaEdit,date:this._openDateEdit,select:this._openSelectEdit
 				,file:this._openFileEdit}[this._activeSchemaNode.input.type]??this._openTextEdit).call(this,e);
-		} else if (this._activeSchemaNode.type==="group") {
+		} else if (this._activeSchemaNode.type==="group")
 			this._openGroup(this._activeDetailsCell);
+	}
+
+	_openReadOnlyPresentation(activationEvent=null) {
+		if (this._selectedCellState?.kind!=="readOnly"||this._inReadOnlyMode)
+			return false;
+		activationEvent?.preventDefault?.();
+		this._clearStaticCellOverflowPreview();
+		this._readOnlyDisplayedText=this._getDisplayedCellText();
+		this._inReadOnlyMode=true;
+		this._cellCursor.classList.add("read-only-mode");
+		const textarea=this._cellCursor.appendChild(document.createElement("textarea"));
+		textarea.className="read-only-presentation";
+		textarea.setAttribute("aria-readonly","true");
+		textarea.value=this._readOnlyDisplayedText;
+		textarea.style.padding=getComputedStyle(this._selectedCell).padding;
+		textarea.addEventListener("keydown",e=>this._readOnlyPresentationKeyDown(e));
+		textarea.addEventListener("beforeinput",e=>e.preventDefault());
+		textarea.addEventListener("paste",e=>e.preventDefault());
+		textarea.addEventListener("drop",e=>e.preventDefault());
+		textarea.addEventListener("cut",e=>{
+			e.preventDefault();
+			const selected=textarea.value.slice(textarea.selectionStart,textarea.selectionEnd);
+			e.clipboardData?.setData("text/plain",selected);
+		});
+		textarea.addEventListener("input",()=>{
+			if (textarea.value!==this._readOnlyDisplayedText) {
+				const start=textarea.selectionStart;
+				textarea.value=this._readOnlyDisplayedText;
+				textarea.setSelectionRange(Math.min(start,textarea.value.length),Math.min(start,textarea.value.length));
+			}
+		});
+		textarea.addEventListener("blur",()=>setTimeout(()=>this._exitReadOnlyMode(false)));
+		const caretPosition=textarea.value.length;
+		textarea.setSelectionRange(caretPosition,caretPosition);
+		textarea.focus({preventScroll:true});
+		textarea.setSelectionRange(caretPosition,caretPosition);
+		return true;
+	}
+
+	_readOnlyPresentationKeyDown(e) {
+		if (e.key==="Escape") {
+			e.preventDefault();
+			e.stopPropagation();
+			return this._exitReadOnlyMode();
 		}
+		if (e.key==="Tab") {
+			e.preventDefault();
+			e.stopPropagation();
+			this._exitReadOnlyMode();
+			return this._moveCellCursor(e.shiftKey?-1:1,0,e);
+		}
+		if (e.key==="Enter")
+			e.preventDefault();
+		// Leave text navigation and copy shortcuts entirely to the native presentation control. The event may
+		// bubble to the Tablance root, whose read-only-mode branch deliberately performs no cell navigation.
+	}
+
+	_exitReadOnlyMode(focusTable=true) {
+		if (!this._inReadOnlyMode)
+			return true;
+		this._inReadOnlyMode=false;
+		this._readOnlyDisplayedText=undefined;
+		this._cellCursor.classList.remove("read-only-mode");
+		this._cellCursor.replaceChildren();
+		if (focusTable)
+			this.rootEl.focus({preventScroll:true});
+		this._adjustCursorPosSize(this._selectedCell);
+		this._highlightOnFocus=false;
+		return true;
 	}
 
 	_openGroup(groupObj) {
@@ -4292,9 +4421,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_exitEditMode(save) {
+		if (this._inReadOnlyMode)
+			return this._exitReadOnlyMode();
 		if (!this._inEditMode)
-			return true;	
-		const input=this._cellCursor.querySelector("input");
+			return true;
+		if (!this._selectedCellState?.mutable)
+			save=false;
+		const input=this._cellCursor.querySelector("input,textarea");
 		if (this._activeSchemaNode.input.format?.stripDelimiterOnSave&&this._activeSchemaNode.input.format.delimiter)
 			input.value=input.value.replaceAll(this._activeSchemaNode.input.format.delimiter, "");
 		if (this._activeSchemaNode.input.validation&&save&&!this._validateInput(input.value))
@@ -4557,6 +4690,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_selectMainTableCell(cell) {
 		if (!cell)	//in case of trying to move up from top row etc,
 			return;
+		if (this._getCellState(cell)?.selectable===false)
+			return false;
 		if (!this._exitEditMode(true))//try to exit-mode and commit any changes.
 			return false;//if exiting edit-mode was denied then do nothing more
 			
@@ -4566,12 +4701,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					//directly because we do not want it to change if #selectCell returns false, preventing the select
 					
 		if (this._closeActiveDetailsCell(cell)) {
-			this._selectCell(cell,this._colSchemaNodes[this._mainColIndex],this._filteredData[mainRowIndex]);
+			const selected=this._selectCell(cell,this._colSchemaNodes[this._mainColIndex],this._filteredData[mainRowIndex]);
 			this._mainRowIndex=mainRowIndex;
+			return selected;
 		}
 	}
 
 	_selectDetailsCell(instanceNode) {
+		if (!instanceNode)
+			return false;
+		for (let node=instanceNode;node;node=node.parent)
+			if (this._getCellState(node.selEl??node.el,node)?.selectable===false)
+				return false;
 		if (!this._exitEditMode(true))//try to exit-mode and commit any changes.
 			return false;//if exiting edit-mode was denied then do nothing more
 
@@ -4614,14 +4755,20 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_selectCell(cellEl,schemaNode,dataObj,adjustCursorPosSize=true) {
+		const cellState=this._getCellState(cellEl);
+		if (cellState?.selectable===false)
+			return false;
 		this.rootEl.focus({preventScroll:true});
 		this._clearStaticCellOverflowPreview();
 		if (adjustCursorPosSize)
 			this._adjustCursorPosSize(cellEl);
 		this._cellCursor.classList.toggle("details",cellEl.closest(".details"));
-		this._cellCursor.classList.toggle("disabled",cellEl.classList.contains("disabled"));
+		this._cellCursor.classList.toggle("read-only",cellState?.kind==="readOnly");
+		this._cellCursor.classList.toggle("disabled",cellState?.kind==="disabled");
+		this._cellCursor.classList.toggle("action-cell",cellState?.kind==="action");
 		(this._scrollingContent??this.rootEl).appendChild(this._cellCursor);
 		this._selectedCell=cellEl;
+		this._selectedCellState=cellState;
 		this._activeSchemaNode=schemaNode;
 		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
 		const noPtrEvent=schemaNode.type==="expand"||schemaNode.type==="select"||schemaNode.input?.type==="button";
@@ -4630,6 +4777,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._cellCursorDataObj=dataObj;
 		this._selectedCellVal=dataObj?.[schemaNode.dataKey];
 		this._updateStaticCellOverflowPreview();
+		return true;
 	}
 
 	_getElPos(el,container) {
@@ -5498,8 +5646,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			let colSchemaNode=this._colSchemaNodes[colI];
 			if (colSchemaNode.type!="expand"&&colSchemaNode.type!="select")
 				this._updateMainRowCell(td,colSchemaNode);
-			else if (colSchemaNode.type=="select")
-				td.querySelector("input").checked=selected;
+			else {
+				const rowData=this._filteredData[mainIndex];
+				const valueBundle=this._getCellValueBundle(colSchemaNode,rowData,mainIndex,null);
+				const payload=this._makeCallbackPayload(null,valueBundle,{schemaNode:colSchemaNode,mainIndex,rowData});
+				const cellState=this._resolveCellState(colSchemaNode,payload);
+				this._setCellState(td,cellState);
+				if (colSchemaNode.type=="select") {
+					const checkbox=td.querySelector("input");
+					checkbox.checked=selected;
+					checkbox.disabled=cellState.kind==="disabled";
+				}
+			}
 		}
 		if (this._highlightRowsOnView[mainIndex]) {
 			delete this._highlightRowsOnView[mainIndex];
@@ -5543,6 +5701,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_generateFileCell(fileInstanceNode,cellEl,rowData,dataIndex) {
 		//schemaNode of instanceNode will get overwritten. Save reference here.
 		const fileSchemaNode=fileInstanceNode.schemaNode;
+		const valueBundle=this._getCellValueBundle(fileSchemaNode,rowData,dataIndex,fileInstanceNode);
+		const statePayload=this._makeCallbackPayload(fileInstanceNode,valueBundle,
+			{schemaNode:fileSchemaNode,mainIndex:dataIndex,rowData});
+		const fileFieldState=this._resolveCellState(fileSchemaNode,statePayload);
 
 		//saving this ref here which is used to revert with if user deletes file
 		fileInstanceNode.fileInputSchemaNode=fileSchemaNode;
@@ -5565,7 +5727,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			&&parentRepeated?.type==="repeated"&&parentRepeated?.create);
 		const baseOpenControl={type:"field",input:{type:"button",text:"Open"
 			,onClick:(payload)=>{
-				rowData??=this._filteredData[mainIndex];
+				rowData??=this._filteredData[dataIndex];
 				fileSchemaNode.input.onOpenFile?.(payload);
 		}}};
 
@@ -5575,7 +5737,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		} else {
 			fileGroup=this._schemaCopyWithDeleteButton({type:"group",entries:[]},this._fileOnDelete);
 			fileGroup.entries[0].entries.unshift(baseOpenControl);
+			for (const mutationControl of fileGroup.entries[0].entries.slice(1))
+				mutationControl.disabled=!fileFieldState.mutable;
 		}
+		fileGroup.disabled=fileFieldState.kind==="disabled";
 		fileGroup.entries.push({type:"lineup",entries:metaEntries});
 		// Anchor synthetic schema to the parent so closestMeta can traverse implicit groups.
 		const wrappedFileGroup=this._buildSchemaFacade(fileGroup,fileSchemaNode.parent??parentSchema);//WRAPPED
@@ -5614,8 +5779,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (instanceNode.schemaNode.input?.type=="file"&&scopedData[instanceNode.schemaNode.dataKey]) {
 			this._generateFileCell(instanceNode,cellEl,scopedData,rootCell.rowIndex);
 		} else {
-			this._updateCell(instanceNode.schemaNode,cellEl,instanceNode.selEl,scopedData,rootCell.rowIndex,
-				instanceNode);
+			const cellState=this._updateCell(instanceNode.schemaNode,cellEl,instanceNode.selEl,scopedData,
+				rootCell.rowIndex,instanceNode);
 			if (instanceNode.schemaNode.input?.type!=="button") {
 				const newCellContent=cellEl.innerText;
 				if (!newCellContent!=!oldCellContent) {
@@ -5624,8 +5789,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 							cellI.grpTr.classList.toggle("empty",!(cellI.nonEmptyDescentants+=newCellContent?1:-1));
 					return true;
 				}
-			} else
-				instanceNode.el=instanceNode.selEl=instanceNode.el.querySelector("button");
+				} else {
+					instanceNode.el=instanceNode.selEl=instanceNode.el.querySelector("button");
+					this._setCellState(instanceNode.el,cellState,instanceNode);
+				}
 		}
 	}
 
@@ -5680,10 +5847,91 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		return rowData[schemaNode.dataKey];
 	}
-	
+
+	_resolveCellState(schemaNode,payload={}) {
+		const disabledResult=typeof schemaNode.disabledIf==="function"?schemaNode.disabledIf(payload):false;
+		const isDisabled=schemaNode.disabled===true||disabledResult===true||disabledResult?.disabled===true;
+		if (isDisabled)
+			return {kind:"disabled",selectable:false,activatable:false,mutable:false,activation:"none",
+				message:disabledResult?.message};
+
+		const isAction=schemaNode.type==="expand"||schemaNode.type==="select"||schemaNode.type==="group"
+			||schemaNode.input?.type==="button"||(!schemaNode.input&&!!schemaNode.onEnter);
+		if (isAction)
+			return {kind:"action",selectable:true,activatable:true,mutable:false,activation:"action"};
+
+		let editableResult=true;
+		if (typeof schemaNode.editableIf==="function")
+			editableResult=schemaNode.editableIf(payload);
+		const isReadOnly=schemaNode.readOnly===true||!schemaNode.input||editableResult===false
+			||editableResult?.editable===false;
+		if (isReadOnly)
+			return {kind:"readOnly",selectable:true,activatable:true,mutable:false,activation:"presentation",
+				message:editableResult?.message};
+
+		return {kind:"editable",selectable:true,activatable:true,mutable:true,activation:"editor"};
+	}
+
+	_setCellState(cellEl,state,instanceNode=null) {
+		if (!cellEl)
+			return state;
+		this._cellStates.set(cellEl,state);
+		if (instanceNode)
+			instanceNode.cellState=state;
+		cellEl.classList.toggle("read-only",state.kind==="readOnly");
+		cellEl.classList.toggle("disabled",state.kind==="disabled");
+		cellEl.classList.toggle("action-cell",state.kind==="action");
+		cellEl.dataset.cellState=state.kind;
+		if (cellEl.matches("button,input,select,textarea"))
+			cellEl.disabled=state.kind==="disabled";
+		else if (instanceNode?.schemaNode.type==="group") {
+			for (const control of cellEl.querySelectorAll("button,input,select,textarea"))
+				control.disabled=state.kind==="disabled"||this._getCellState(control)?.kind==="disabled";
+		} else if (instanceNode?.schemaNode.type!=="group") {
+			const button=cellEl.querySelector("button");
+			if (button)
+				button.disabled=state.kind==="disabled";
+		}
+		if (state.kind==="readOnly")
+			cellEl.setAttribute("aria-readonly","true");
+		else
+			cellEl.removeAttribute("aria-readonly");
+		if (state.kind==="disabled")
+			cellEl.setAttribute("aria-disabled","true");
+		else
+			cellEl.removeAttribute("aria-disabled");
+		if (cellEl===this._selectedCell) {
+			this._selectedCellState=state;
+			this._cellCursor?.classList.toggle("read-only",state.kind==="readOnly");
+			this._cellCursor?.classList.toggle("disabled",state.kind==="disabled");
+			this._cellCursor?.classList.toggle("action-cell",state.kind==="action");
+			if (!state.mutable&&this._inEditMode)
+				this._exitEditMode(false);
+			if (state.kind==="disabled") {
+				this._exitReadOnlyMode(false);
+				this._cellCursor.style.display="none";
+			} else
+				this._adjustCursorPosSize(cellEl);
+		}
+		return state;
+	}
+
+	_getCellState(cellEl,instanceNode=null) {
+		if (!cellEl&&!instanceNode)
+			return;
+		return instanceNode?.cellState??this._cellStates.get(cellEl);
+	}
+
+	_getDisplayedCellText(cellEl=this._selectedCell) {
+		return (cellEl?.innerText??"").trim();
+	}
+
 
 	_updateCell(schemaNode,el,selEl,scopedData,mainIndex,instanceNode=null) {
-		let valueBundle;
+		const valueBundle=this._getCellValueBundle(schemaNode,scopedData,mainIndex,instanceNode);
+		const statePayload=this._makeCallbackPayload(instanceNode,valueBundle,
+			{schemaNode,mainIndex,rowData:scopedData});
+		const cellState=this._resolveCellState(schemaNode,statePayload);
 		if (!instanceNode)
 			selEl.className="";
 		else if (instanceNode.baseCss)
@@ -5693,7 +5941,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		} else {
 			let newCellContent;
 			if (schemaNode.render||schemaNode.input?.type!="select") {
-				valueBundle=this._getCellValueBundle(schemaNode,scopedData,mainIndex,instanceNode);
 				if (schemaNode.render) {
 					const payload=this._makeCallbackPayload(instanceNode,{...valueBundle,rowData: scopedData},{
 						schemaNode,mainIndex,rowData: scopedData});
@@ -5718,22 +5965,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					newCellContent=selOptObj?.text??rawVal??"";
 				}
 			}
-			let isDisabled=false;
-			if (this._spreadsheet&&schemaNode.type!=="expand") {
-				const hasOnEnter=!!schemaNode.onEnter;
-				let enabledFuncResult;
-				if (schemaNode.input?.enabledIf) {
-					const valuePayload=valueBundle??this._getCellValueBundle(schemaNode,scopedData,mainIndex,instanceNode);
-					const enabledPayload=this._makeCallbackPayload(instanceNode,valuePayload,
-						{schemaNode,mainIndex,rowData: scopedData});
-					enabledFuncResult=schemaNode.input.enabledIf(enabledPayload);
-				}
-				if (enabledFuncResult==false||enabledFuncResult?.enabled==false)
-					isDisabled=true;
-				else if (!schemaNode.input&&!hasOnEnter)
-					isDisabled=true;
-			}
-			(selEl??el).classList.toggle("disabled",isDisabled);
 			if (schemaNode.html)
 				el.innerHTML=newCellContent??"";
 			else
@@ -5741,6 +5972,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		if (instanceNode&&!instanceNode.schemaNode.baseCss)
 			instanceNode.baseCss=(selEl??el).className;
+		this._setCellState(selEl??el,cellState,instanceNode);
 		if (schemaNode.cssClass) {
 			let cssAddition;
 			if (typeof schemaNode.cssClass==="function") {
@@ -5753,6 +5985,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (cssAddition)//guard against undefined/null in case function returns that
 				(selEl??el).classList.add(...(Array.isArray(cssAddition)?cssAddition:cssAddition.split(" ")));
 		}
+		return cellState;
 	}
 
 	/**Updates the html-element of a main-table-cell
@@ -5859,9 +6092,38 @@ class TablanceBulk extends TablanceBase {
 		this._resetDataState();
 	}
 
-	
+	_resolveCellState(schemaNode,payload={}) {
+		const sourceSchemaNode=schemaNode.originalSchemaNode;
+		const selectedRows=this.mainInstance?._selectedRows;
+		if (!sourceSchemaNode||!selectedRows?.length)
+			return super._resolveCellState(schemaNode,payload);
+		const states=selectedRows.map(rowData=>{
+			const mainIndex=this.mainInstance._filteredData.indexOf(rowData);
+			const valueBundle=this.mainInstance._getCellValueBundle(sourceSchemaNode,rowData,mainIndex,null);
+			const sourcePayload=this.mainInstance._makeCallbackPayload(null,valueBundle,
+				{schemaNode:sourceSchemaNode,mainIndex,rowData,bulkEdit:true});
+			return this.mainInstance._resolveCellState(sourceSchemaNode,sourcePayload);
+		});
+		return states.find(state=>state.kind==="disabled")
+			??states.find(state=>state.kind==="readOnly")
+			??states.find(state=>state.kind==="action")
+			??states[0];
+	}
+
+	_selectedSourceRowsAreMutable() {
+		const sourceSchemaNode=this._activeSchemaNode.originalSchemaNode??this._activeSchemaNode;
+		return this.mainInstance._selectedRows.every(rowData=>{
+			const mainIndex=this.mainInstance._filteredData.indexOf(rowData);
+			const valueBundle=this.mainInstance._getCellValueBundle(sourceSchemaNode,rowData,mainIndex,null);
+			const payload=this.mainInstance._makeCallbackPayload(null,valueBundle,
+				{schemaNode:sourceSchemaNode,mainIndex,rowData,bulkEdit:true});
+			return this.mainInstance._resolveCellState(sourceSchemaNode,payload).mutable;
+		});
+	}
 
 	_doEditSave() {
+		if (!this._selectedCellState?.mutable||!this._selectedSourceRowsAreMutable())
+			return false;
 		const sourceSchemaNode=this._activeSchemaNode.originalSchemaNode??this._activeSchemaNode;
 		const inputVal=this._activeSchemaNode.input.type==="select"?this._getSelectValue(this._inputVal):this._inputVal;
 		const commitKey=this.mainInstance._getCommitChangeKey(sourceSchemaNode);
@@ -5910,6 +6172,8 @@ export default class Tablance extends TablanceBase {
 	}
 	
 		_doEditSave() {
+			if (!this._selectedCellState?.mutable)
+				return false;
 			let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
 			const inputVal=this._activeSchemaNode.input.type==="select"
 				?this._getSelectValue(this._inputVal):this._inputVal;
