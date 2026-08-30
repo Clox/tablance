@@ -48,7 +48,7 @@ try {
 			{title:"File",dataKey:"file",readOnly:true,input:{type:"file",onOpenFile:()=>actions++}},
 		]},
 	};
-	const table=new Tablance(host(),schema,true,true,{searchbar:false,ordering:false});
+	const table=new Tablance(host(),schema,true,true,{searchbar:false});
 	table.setData([row]);
 	await tick();
 	const cells=table._mainTbody.querySelector('tr[data-data-row-index="0"]:not(.details)').cells;
@@ -59,6 +59,16 @@ try {
 	assert(cells[4].dataset.cellState==="disabled"&&cells[4].getAttribute("aria-disabled")==="true","disabledIf true resolves disabled with ARIA");
 	assert(cells[5].dataset.cellState==="action","onEnter field resolves action");
 	assert(cells[6].dataset.cellState==="action","button resolves action");
+	assert([...cells].every(cell=>cell.classList.contains("tablance-cell-state")),
+		"every rendered main cell receives the canonical state styling hook");
+	assert(table._headerTable.querySelectorAll(".tablance-sort-icon").length===schema.main.columns.length,
+		"Tablance renders its native outline sort icons by default");
+	const headerStyle=getComputedStyle(table._headerTable);
+	assert(headerStyle.backgroundColor==="rgb(243, 246, 250)"&&headerStyle.borderTopColor==="rgb(217, 226, 239)"
+		&&headerStyle.borderTopLeftRadius==="10px","the modern header theme is the Tablance default");
+	assert(getComputedStyle(cells[0]).backgroundColor==="rgb(255, 255, 255)"
+		&&getComputedStyle(cells[1]).backgroundColor==="rgb(255, 255, 255)",
+		"ordinary and read-only cells share the default white cell surface");
 
 	const resolve=node=>table._resolveCellState(node,{rowData:row});
 	assert(resolve({input:{type:"text"},editableIf:()=>false}).kind==="readOnly","editableIf false resolves readOnly");
@@ -81,28 +91,34 @@ try {
 		"an unselected text-like action cell exposes its canonical indicator hook without showing it permanently");
 	table.selectCell(row,"action");
 	const actionIndicatorStyle=getComputedStyle(table._cellCursor,"::before");
-	assert(table._cellCursor.classList.contains("action-indicator")&&actionIndicatorStyle.content==="\"\""
+	assert(cells[5].classList.contains("tablance-active-cell")
+		&&table._cellCursor.classList.contains("action-indicator")&&actionIndicatorStyle.content==="\"\""
 		&&(actionIndicatorStyle.maskImage!=="none"||actionIndicatorStyle.webkitMaskImage!=="none"),
-		"a selected text-like action cell shows the action indicator");
+		"a selected text-like action cell receives the native active hook and shows the action indicator");
 	assert(actionIndicatorStyle.pointerEvents==="none","the action indicator cannot intercept pointer interaction");
 	assert(JSON.stringify(geometry(cells[5]))===JSON.stringify(actionCellGeometry)
 		&&JSON.stringify(geometry(cells[5].firstElementChild))===JSON.stringify(actionTextGeometry),
 		"the action indicator does not move text or change cell dimensions");
 	table.selectCell(row,"button");
-	assert(table._selectedCellState.kind==="action"&&!cells[6].classList.contains("action-indicator")
+	assert(!cells[5].classList.contains("tablance-active-cell")&&cells[6].classList.contains("tablance-active-cell")
+		&&table._selectedCellState.kind==="action"&&!cells[6].classList.contains("action-indicator")
 		&&!table._cellCursor.classList.contains("action-indicator"),
-		"a button action with its own affordance does not show the generic indicator");
+		"native active-cell ownership moves while a button action keeps its own affordance");
 	table.selectCell(row,"editable");
-	assert(!cells[0].classList.contains("action-indicator")&&!table._cellCursor.classList.contains("action-indicator")
+	assert(!cells[6].classList.contains("tablance-active-cell")&&cells[0].classList.contains("tablance-active-cell")
+		&&!cells[0].classList.contains("action-indicator")&&!table._cellCursor.classList.contains("action-indicator")
 		&&!table._cellCursor.classList.contains("read-only"),
-		"an editable cell shows no read-only or action state indicator");
+		"an editable active cell shows no read-only or action state indicator");
 	assert(table.selectCell(row,"disabledValue")===false&&!table._cellCursor.classList.contains("action-indicator"),
 		"a disabled cell cannot show the selected action indicator");
 
 	table.selectCell(row,"computed");
+	const lockIndicatorStyle=getComputedStyle(table._cellCursor,"::before");
 	assert(cells[1].classList.contains("read-only")&&!cells[1].classList.contains("action-indicator")
-		&&table._cellCursor.classList.contains("read-only")&&!table._cellCursor.classList.contains("action-indicator"),
-		"a selected readOnly cell retains its lock hook without the action indicator");
+		&&cells[1].classList.contains("tablance-active-cell")&&table._cellCursor.classList.contains("read-only")
+		&&!table._cellCursor.classList.contains("action-indicator")&&lockIndicatorStyle.content==="\"\""
+		&&(lockIndicatorStyle.maskImage!=="none"||lockIndicatorStyle.webkitMaskImage!=="none"),
+		"a selected readOnly cell shows Tablance's native lock without the action indicator");
 	let copied="";
 	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:text=>{copied=text;return Promise.resolve();}}});
 	key(table.rootEl,"c","KeyC",{ctrlKey:true});
@@ -112,6 +128,8 @@ try {
 	let presentation=table._cellCursor.querySelector("textarea.read-only-presentation");
 	assert(presentation?.getAttribute("aria-readonly")==="true"&&presentation.value==="Rendered age: 31",
 		"Enter opens an immutable read-only presentation with rendered text");
+	assert(getComputedStyle(presentation).backgroundColor==="rgb(247, 249, 252)",
+		"the native read-only presentation uses the subtle active surface");
 	assert(document.activeElement===presentation,"Enter gives the read-only textarea DOM focus immediately");
 	assert(presentation.selectionStart===presentation.value.length&&presentation.selectionEnd===presentation.value.length,
 		"Enter creates a caret at the end of the text");
@@ -227,9 +245,20 @@ try {
 		"a selected cell becoming disabled immediately loses its interactive cursor");
 
 	table.expandRow(0,false);
+	const detailsRow=table._mainTbody.querySelector('tr.details[data-data-row-index="0"]');
+	const detailsPanel=detailsRow.querySelector(":scope>td>.content");
+	const detailsPanelStyle=getComputedStyle(detailsPanel);
+	assert(getComputedStyle(detailsRow.cells[0]).backgroundColor==="rgba(0, 0, 0, 0)"
+		&&detailsPanelStyle.marginLeft==="20px"&&detailsPanelStyle.marginRight==="0px"
+		&&detailsPanelStyle.borderBottomLeftRadius==="6px"&&detailsPanelStyle.borderBottomRightRadius==="0px"
+		&&detailsPanelStyle.backgroundImage.includes("linear-gradient"),
+		"expanded details use Tablance's native transparent wrapper and layered indented panel");
 	const detail=table.getDetailCell(0,"detail");
-	assert(detail.cellState.kind==="readOnly"&&detail.el.classList.contains("read-only"),"details presentation field resolves readOnly");
+	assert(detail.cellState.kind==="readOnly"&&detail.el.classList.contains("read-only")
+		&&detail.el.classList.contains("tablance-cell-state"),"details presentation field resolves readOnly with a canonical styling hook");
 	detail.select();
+	assert(detail.el.classList.contains("tablance-active-cell")&&!cells[1].classList.contains("tablance-active-cell"),
+		"native active-cell ownership also follows selection into details");
 	key(table.rootEl,"Enter","Enter");
 	assert(table._cellCursor.querySelector("textarea")?.value==="DETAIL RENDERED","details presentation uses rendered text");
 	table._exitReadOnlyMode();
@@ -274,6 +303,23 @@ try {
 	const reusedCell=reusedRow.cells[0];
 	reuseTable._updateRowValues(reusedRow,1);
 	assert(reusedCell.dataset.cellState==="disabled"&&reusedCell.classList.contains("disabled")&&!reusedCell.classList.contains("read-only"),"virtualized/reused cell replaces prior state rather than retaining CSS state");
+
+	const headerlessTable=new Tablance(host(),{main:{columns:[{dataKey:"value",input:{type:"text"}}]}},true,true,
+		{searchbar:false,ordering:false,autoHeight:true,showHeader:false});
+	headerlessTable.setData([{value:"headerless"}]);
+	await tick();
+	const headerlessBodyStyle=getComputedStyle(headerlessTable._scrollBody);
+	assert(headerlessBodyStyle.borderTopWidth==="1px"&&headerlessBodyStyle.borderTopLeftRadius==="10px",
+		"headerless auto-height tables receive a complete rounded native frame");
+
+	const detailsOnlyTable=new Tablance(host(),{details:{type:"list",entries:[
+		{title:"Only detail",dataKey:"value",input:{type:"text"}},
+	]}},true,true,{searchbar:false});
+	detailsOnlyTable.setData([{value:"detail-only"}]);
+	await tick();
+	assert(detailsOnlyTable.rootEl.querySelector(".details .tablance-cell-state")
+		&&getComputedStyle(detailsOnlyTable.rootEl).fontFamily.includes("Inter"),
+		"details-only tables use the same native state hooks and default theme");
 
 	const bulkRows=[{locked:"one"},{locked:"two"}];
 	const bulkTable=new Tablance(host(),{main:{columns:[

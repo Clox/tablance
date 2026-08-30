@@ -725,20 +725,20 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._setupSpreadsheet(false);
 			
 
+			const sortIconAttrs='class="tablance-sort-icon" viewBox="0 0 24 24" fill="none" '
+				+'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" '
+				+'aria-hidden="true"';
 			if (this._opts.sortAscHtml==null)
-				this._opts.sortAscHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
-									+'points="4,0,8,4,0,4"/><polygon style="fill:#000" points="4,10,0,6,8,6"/></svg>';
+				this._opts.sortAscHtml=`<svg ${sortIconAttrs}><path d="m18 15-6-6-6 6"/></svg>`;
 			if (this._opts.sortDescHtml==null)
-				this._opts.sortDescHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#000" '
-									+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
-				if (this._opts.sortNoneHtml==null)
-					this._opts.sortNoneHtml='<svg viewBox="0 0 8 10" style="height:1em"><polygon style="fill:#ccc" '
-										+'points="4,0,8,4,0,4"/><polygon style="fill:#ccc" points="4,10,0,6,8,6"/></svg>';
-				this._updateHeaderSortHtml();
-				this._buildDependencyGraph(this._schema);
-				// Bulk-edit clones raw nodes but needs wrapper metadata (parents/meta), so pass the wrapped schema.
-				this._createBulkEditArea(this._schema);
-				this._updateSizesOfViewportAndCols();
+				this._opts.sortDescHtml=`<svg ${sortIconAttrs}><path d="m6 9 6 6 6-6"/></svg>`;
+			if (this._opts.sortNoneHtml==null)
+				this._opts.sortNoneHtml=`<svg ${sortIconAttrs}><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>`;
+			this._updateHeaderSortHtml();
+			this._buildDependencyGraph(this._schema);
+			// Bulk-edit clones raw nodes but needs wrapper metadata (parents/meta), so pass the wrapped schema.
+			this._createBulkEditArea(this._schema);
+			this._updateSizesOfViewportAndCols();
 			}
 		}
 
@@ -791,7 +791,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._mainColIndex=null;
 		this._activeDetailsCell=null;
 		this._cellCursorDataObj=null;
-		this._selectedCell=null;
+		this._setSelectedCellElement(null);
 		this._scrollRowIndex=0;
 		this._scrollY=0;
 		if (clearFilter) {
@@ -4768,7 +4768,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._cellCursor.classList.toggle("action-cell",cellState?.kind==="action");
 		this._cellCursor.classList.toggle("action-indicator",this._showsActionIndicator(cellState,schemaNode));
 		(this._scrollingContent??this.rootEl).appendChild(this._cellCursor);
-		this._selectedCell=cellEl;
+		this._setSelectedCellElement(cellEl);
 		this._selectedCellState=cellState;
 		this._activeSchemaNode=schemaNode;
 		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
@@ -4779,6 +4779,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._selectedCellVal=dataObj?.[schemaNode.dataKey];
 		this._updateStaticCellOverflowPreview();
 		return true;
+	}
+
+	_setSelectedCellElement(cellEl) {
+		if (this._selectedCell!==cellEl)
+			this._selectedCell?.classList.remove("tablance-active-cell");
+		this._selectedCell=cellEl;
+		cellEl?.classList.add("tablance-active-cell");
 	}
 
 	_showsActionIndicator(cellState,schemaNode) {
@@ -5552,7 +5559,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * @param {HTMLTableRowElement} tr */
 	_lookForActiveCellInRow(tr) {
 		if (tr.dataset.dataRowIndex==this._mainRowIndex&&!this._activeDetailsCell)
-				this._selectedCell=tr.cells[this._mainColIndex];
+				this._setSelectedCellElement(tr.cells[this._mainColIndex]);
 			//this._adjustCursorPosSize(this._selectedCell);
 	}
 
@@ -5644,6 +5651,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * The row needs to already have the right amount of td's.
 	 * @param {HTMLTableRowElement} tr The tr-element whose cells that should be updated*/
 	_updateRowValues(tr,mainIndex) {
+		for (const cell of tr.querySelectorAll(":scope>td.tablance-active-cell"))
+			cell.classList.remove("tablance-active-cell");
 		tr.dataset.dataRowIndex=mainIndex;
 		const selected=this._selectedRows.indexOf(this._filteredData[mainIndex])!=-1;
 		tr.classList.toggle("selected",!!selected);
@@ -5884,6 +5893,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._cellStates.set(cellEl,state);
 		if (instanceNode)
 			instanceNode.cellState=state;
+		cellEl.classList.add("tablance-cell-state");
 		cellEl.classList.toggle("read-only",state.kind==="readOnly");
 		cellEl.classList.toggle("disabled",state.kind==="disabled");
 		cellEl.classList.toggle("action-cell",state.kind==="action");
