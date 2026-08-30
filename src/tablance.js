@@ -4766,6 +4766,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._cellCursor.classList.toggle("read-only",cellState?.kind==="readOnly");
 		this._cellCursor.classList.toggle("disabled",cellState?.kind==="disabled");
 		this._cellCursor.classList.toggle("action-cell",cellState?.kind==="action");
+		this._cellCursor.classList.toggle("action-indicator",this._showsActionIndicator(cellState,schemaNode));
 		(this._scrollingContent??this.rootEl).appendChild(this._cellCursor);
 		this._selectedCell=cellEl;
 		this._selectedCellState=cellState;
@@ -4778,6 +4779,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._selectedCellVal=dataObj?.[schemaNode.dataKey];
 		this._updateStaticCellOverflowPreview();
 		return true;
+	}
+
+	_showsActionIndicator(cellState,schemaNode) {
+		return cellState?.kind==="action"&&!["expand","select","group"].includes(schemaNode?.type)
+			&&schemaNode?.input?.type!=="button";
 	}
 
 	_getElPos(el,container) {
@@ -5905,6 +5911,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._cellCursor?.classList.toggle("read-only",state.kind==="readOnly");
 			this._cellCursor?.classList.toggle("disabled",state.kind==="disabled");
 			this._cellCursor?.classList.toggle("action-cell",state.kind==="action");
+			this._cellCursor?.classList.toggle("action-indicator",this._showsActionIndicator(state,this._activeSchemaNode));
 			if (!state.mutable&&this._inEditMode)
 				this._exitEditMode(false);
 			if (state.kind==="disabled") {

@@ -61,8 +61,39 @@ try {
 	assert(resolve({input:{type:"text"},disabled:true,readOnly:true,editableIf:()=>true}).kind==="disabled","disabled has highest precedence");
 	assert(resolve({input:{type:"text"},readOnly:true,editableIf:()=>true}).kind==="readOnly","readOnly precedes editableIf");
 	assert(resolve({input:{type:"button"}}).kind==="action","button/control precedence resolves action");
+	assert(["expand","select","group"].every(type=>!table._showsActionIndicator({kind:"action"},{type}))
+		&&!table._showsActionIndicator({kind:"action"},{input:{type:"button"}}),
+		"controls with an explicit affordance are excluded from the generic action indicator");
+
+	const geometry=element=>{
+		const rect=element.getBoundingClientRect();
+		return [rect.left,rect.top,rect.width,rect.height];
+	};
+	const actionCellGeometry=geometry(cells[5]);
+	const actionTextGeometry=geometry(cells[5].firstElementChild);
+	assert(getComputedStyle(cells[5],"::before").content==="none",
+		"an unselected text-like action cell has no action indicator");
+	table.selectCell(row,"action");
+	const actionIndicatorStyle=getComputedStyle(table._cellCursor,"::before");
+	assert(table._cellCursor.classList.contains("action-indicator")&&actionIndicatorStyle.content==="\"\""
+		&&(actionIndicatorStyle.maskImage!=="none"||actionIndicatorStyle.webkitMaskImage!=="none"),
+		"a selected text-like action cell shows the action indicator");
+	assert(actionIndicatorStyle.pointerEvents==="none","the action indicator cannot intercept pointer interaction");
+	assert(JSON.stringify(geometry(cells[5]))===JSON.stringify(actionCellGeometry)
+		&&JSON.stringify(geometry(cells[5].firstElementChild))===JSON.stringify(actionTextGeometry),
+		"the action indicator does not move text or change cell dimensions");
+	table.selectCell(row,"button");
+	assert(table._selectedCellState.kind==="action"&&!table._cellCursor.classList.contains("action-indicator"),
+		"a button action with its own affordance does not show the generic indicator");
+	table.selectCell(row,"editable");
+	assert(!table._cellCursor.classList.contains("action-indicator")&&!table._cellCursor.classList.contains("read-only"),
+		"an editable cell shows no read-only or action state indicator");
+	assert(table.selectCell(row,"disabledValue")===false&&!table._cellCursor.classList.contains("action-indicator"),
+		"a disabled cell cannot show the selected action indicator");
 
 	table.selectCell(row,"computed");
+	assert(table._cellCursor.classList.contains("read-only")&&!table._cellCursor.classList.contains("action-indicator"),
+		"a selected readOnly cell retains its lock hook without the action indicator");
 	let copied="";
 	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:text=>{copied=text;return Promise.resolve();}}});
 	key(table.rootEl,"c","KeyC",{ctrlKey:true});
@@ -165,6 +196,8 @@ try {
 	table.selectCell(row,"action");
 	key(table.rootEl,"Enter","Enter");
 	assert(actions===1,"onEnter action activates without an editor");
+	table._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
+	assert(actions===2,"double-click preserves the existing text-action activation behavior");
 	table.selectCell(row,"button");
 	key(table.rootEl,"Enter","Enter");
 	assert(buttonActions===1,"button control activates as an action");

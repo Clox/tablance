@@ -37,6 +37,20 @@
 		&.read-only-mode {
 			cursor: text;
 		}
+		&.action-indicator::before {
+			position: absolute;
+			z-index: 1;
+			top: 2px;
+			left: 4px;
+			display: block;
+			width: 12px;
+			height: 12px;
+			background-color: currentColor;
+			content: "";
+			-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
+			mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
+			pointer-events: none;
+		}
 		&.edit-mode {
 			background-color: white;
 			box-shadow: 1px 1px 7px #222;
