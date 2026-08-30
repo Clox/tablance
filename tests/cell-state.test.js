@@ -244,6 +244,7 @@ try {
 	assert(table._selectedCellState.kind==="disabled"&&table._cellCursor.style.display==="none",
 		"a selected cell becoming disabled immediately loses its interactive cursor");
 
+	table.selectCell(row,"editable");
 	table.expandRow(0,false);
 	const detailsRow=table._mainTbody.querySelector('tr.details[data-data-row-index="0"]');
 	const detailsPanel=detailsRow.querySelector(":scope>td>.content");
@@ -281,6 +282,20 @@ try {
 	table._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
 	assert(historyEntries[1].el.classList.contains("open")&&table._activeSchemaNode.title==="Date",
 		"double-click opens another closed-render group through the same canonical action path");
+
+	const mainRow=table._mainTbody.querySelector('tr[data-data-row-index="0"]:not(.details)');
+	const detailsRoot=table._openDetailsPanes[0];
+	table._contractRow(mainRow);
+	const selectedWhenCollapseStarted=table._selectedCell;
+	assert(detailsRoot.collapsing===true&&!table._activeDetailsCell,
+		"details become non-navigable as soon as their collapse animation starts");
+	key(table.rootEl,"ArrowDown","ArrowDown");
+	assert(!table._activeDetailsCell&&table._selectedCell===selectedWhenCollapseStarted&&detail.select()===false,
+		"keyboard and programmatic selection cannot re-enter collapsing details");
+	detail.el.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,cancelable:true}));
+	assert(!table._activeDetailsCell,"mouse selection cannot re-enter collapsing details");
+	detailsPanel.style.height="0px";
+	detailsPanel.dispatchEvent(new Event("transitionend"));
 
 	const navigationSchema={main:{columns:[
 		{dataKey:"a",input:{type:"text"}},

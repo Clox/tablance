@@ -2032,9 +2032,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			let newColIndex=this._mainColIndex;
 			if (this._activeDetailsCell) {//moving from inside details.might move to another cell inside,or outside
 					this._selectAdjacentDetailsCell(this._activeDetailsCell,vSign==1);
-			} else if (vSign===1&&this._rowMeta.get(this._filteredData[this._mainRowIndex])?.h){//moving down into details
+			} else if (vSign===1&&this._openDetailsPanes[this._mainRowIndex]
+				&&!this._openDetailsPanes[this._mainRowIndex].collapsing
+				&&this._rowMeta.get(this._filteredData[this._mainRowIndex])?.h){//moving down into details
 				this._selectFirstSelectableDetailsCell(this._openDetailsPanes[this._mainRowIndex],true);
-			} else if (vSign===-1&&this._rowMeta.get(this._filteredData[this._mainRowIndex-1])?.h){//moving up into details
+			} else if (vSign===-1&&this._openDetailsPanes[this._mainRowIndex-1]
+				&&!this._openDetailsPanes[this._mainRowIndex-1].collapsing
+				&&this._rowMeta.get(this._filteredData[this._mainRowIndex-1])?.h){//moving up into details
 				this._selectFirstSelectableDetailsCell(this._openDetailsPanes[this._mainRowIndex-1],false);
 			} else {//moving from and to maintable-cells
 				const adjacentCell=this._findSelectableMainCellFromRow(
@@ -2980,6 +2984,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (!interactiveEl)
 				return;
 			let instanceNode=this._openDetailsPanes[mainTr?.dataset.dataRowIndex??0];
+			if (!instanceNode||instanceNode.collapsing)
+				return;
 			for (let step of interactiveEl.dataset.path.split("-")) {
 				instanceNode=instanceNode.children[step];
 				if (instanceNode.schemaNode.type==="group"&&!instanceNode.el.classList.contains("open"))
@@ -4710,6 +4716,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_selectDetailsCell(instanceNode) {
 		if (!instanceNode)
 			return false;
+		let root=instanceNode;
+		while (root.parent) root=root.parent;
+		if (root.collapsing)
+			return false;
 		for (let node=instanceNode;node;node=node.parent)
 			if (this._getCellState(node.selEl??node.el,node)?.selectable===false)
 				return false;
@@ -4720,7 +4730,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					//etc but we can't just use this._activeDetailsCell because #selectCell changes it and we do want
 					//to call #selectCell first in order to know if changing cell is being prevented by validation()
 
-		for (var root=instanceNode; root.parent; root=root.parent);
 		const mainRowIndex=root.rowIndex;
 		if (oldExpCell)//changing from an old detailsCell
 			for (let oldParnt=oldExpCell; oldParnt=oldParnt?.parent;)//traverse parents of old cell
@@ -6339,6 +6348,8 @@ export default class Tablance extends TablanceBase {
 				return;
 			this._scrollToCursor();
 		}
+		if (this._openDetailsPanes[dataRowIndex])
+			this._openDetailsPanes[dataRowIndex].collapsing=true;
 		const contentDiv=tr.nextSibling.querySelector(".content");
 		if (contentDiv.style.height==="auto") {//if fully expanded
 			contentDiv.style.height=rowMeta.h-this._detailsBordersHeight+"px";
