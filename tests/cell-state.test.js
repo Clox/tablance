@@ -340,9 +340,17 @@ try {
 	const historyEntries=historyGroup.children[0].children;
 	historyEntries[0].select();
 	assert(table._selectedCellState?.kind==="action","a closed-render group selection retains its canonical action state");
+	const closedGroupRenderStyle=getComputedStyle(historyEntries[0].el.querySelector("tbody>tr.group-render>td"));
+	assert(closedGroupRenderStyle.paddingLeft==="4px"&&closedGroupRenderStyle.paddingTop==="2px"
+		&&closedGroupRenderStyle.paddingBottom==="2px",
+		"a closed group render uses compact horizontal and vertical padding");
 	key(table.rootEl,"Enter","Enter");
 	assert(historyEntries[0].el.classList.contains("open")&&table._activeSchemaNode.title==="Date",
 		"Enter opens a selected closed-render group and selects its first editable field");
+	const openGroupFieldStyle=getComputedStyle(historyEntries[0].children[0].selEl);
+	assert(openGroupFieldStyle.paddingLeft==="4px"&&openGroupFieldStyle.paddingTop==="2px"
+		&&openGroupFieldStyle.paddingBottom==="2px",
+		"separate fields inside an open group use compact horizontal and vertical padding");
 	historyEntries[1].select();
 	table._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
 	assert(historyEntries[1].el.classList.contains("open")&&table._activeSchemaNode.title==="Date",

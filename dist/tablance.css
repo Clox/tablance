@@ -479,13 +479,16 @@
   color: red;
 }
 .tablance .details table.details-group > tbody > tr > td {
-  padding: 0;
+  padding: 2px 0 2px 4px;
 }
 .tablance .details table.details-group > tbody > tr > td:first-child > span.title {
   margin-top: 5px;
 }
 .tablance .details table.details-group > tbody > tr > td > div {
   padding: 0;
+}
+.tablance .details table.details-group > tbody > tr.group-render > td {
+  padding-top: 2px;
 }
 .tablance .details .repeat-insertion td {
   padding: 0;

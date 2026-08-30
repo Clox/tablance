@@ -527,13 +527,16 @@
 			}
 		}
 		table.details-group>tbody>tr>td {
-			padding: 0;
+			padding: 2px 0 2px 4px;
 			&:first-child>span.title {
 				margin-top: 5px;
 			}
 			>div {
 				padding: 0;
 			}
+		}
+		table.details-group>tbody>tr.group-render>td {
+			padding-top: 2px;
 		}
 		.repeat-insertion td{
 			padding: 0;
