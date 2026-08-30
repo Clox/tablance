@@ -5657,7 +5657,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				const valueBundle=this._getCellValueBundle(colSchemaNode,rowData,mainIndex,null);
 				const payload=this._makeCallbackPayload(null,valueBundle,{schemaNode:colSchemaNode,mainIndex,rowData});
 				const cellState=this._resolveCellState(colSchemaNode,payload);
-				this._setCellState(td,cellState);
+				this._setCellState(td,cellState,null,colSchemaNode);
 				if (colSchemaNode.type=="select") {
 					const checkbox=td.querySelector("input");
 					checkbox.checked=selected;
@@ -5878,7 +5878,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return {kind:"editable",selectable:true,activatable:true,mutable:true,activation:"editor"};
 	}
 
-	_setCellState(cellEl,state,instanceNode=null) {
+	_setCellState(cellEl,state,instanceNode=null,schemaNode=instanceNode?.schemaNode) {
 		if (!cellEl)
 			return state;
 		this._cellStates.set(cellEl,state);
@@ -5887,6 +5887,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		cellEl.classList.toggle("read-only",state.kind==="readOnly");
 		cellEl.classList.toggle("disabled",state.kind==="disabled");
 		cellEl.classList.toggle("action-cell",state.kind==="action");
+		cellEl.classList.toggle("action-indicator",this._showsActionIndicator(state,schemaNode));
 		cellEl.dataset.cellState=state.kind;
 		if (cellEl.matches("button,input,select,textarea"))
 			cellEl.disabled=state.kind==="disabled";
@@ -5979,7 +5980,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		if (instanceNode&&!instanceNode.schemaNode.baseCss)
 			instanceNode.baseCss=(selEl??el).className;
-		this._setCellState(selEl??el,cellState,instanceNode);
+		this._setCellState(selEl??el,cellState,instanceNode,schemaNode);
 		if (schemaNode.cssClass) {
 			let cssAddition;
 			if (typeof schemaNode.cssClass==="function") {

@@ -77,8 +77,8 @@ try {
 	};
 	const actionCellGeometry=geometry(cells[5]);
 	const actionTextGeometry=geometry(cells[5].firstElementChild);
-	assert(getComputedStyle(cells[5],"::before").content==="none",
-		"an unselected text-like action cell has no action indicator");
+	assert(cells[5].classList.contains("action-indicator")&&getComputedStyle(cells[5],"::before").content==="none",
+		"an unselected text-like action cell exposes its canonical indicator hook without showing it permanently");
 	table.selectCell(row,"action");
 	const actionIndicatorStyle=getComputedStyle(table._cellCursor,"::before");
 	assert(table._cellCursor.classList.contains("action-indicator")&&actionIndicatorStyle.content==="\"\""
@@ -89,16 +89,19 @@ try {
 		&&JSON.stringify(geometry(cells[5].firstElementChild))===JSON.stringify(actionTextGeometry),
 		"the action indicator does not move text or change cell dimensions");
 	table.selectCell(row,"button");
-	assert(table._selectedCellState.kind==="action"&&!table._cellCursor.classList.contains("action-indicator"),
+	assert(table._selectedCellState.kind==="action"&&!cells[6].classList.contains("action-indicator")
+		&&!table._cellCursor.classList.contains("action-indicator"),
 		"a button action with its own affordance does not show the generic indicator");
 	table.selectCell(row,"editable");
-	assert(!table._cellCursor.classList.contains("action-indicator")&&!table._cellCursor.classList.contains("read-only"),
+	assert(!cells[0].classList.contains("action-indicator")&&!table._cellCursor.classList.contains("action-indicator")
+		&&!table._cellCursor.classList.contains("read-only"),
 		"an editable cell shows no read-only or action state indicator");
 	assert(table.selectCell(row,"disabledValue")===false&&!table._cellCursor.classList.contains("action-indicator"),
 		"a disabled cell cannot show the selected action indicator");
 
 	table.selectCell(row,"computed");
-	assert(table._cellCursor.classList.contains("read-only")&&!table._cellCursor.classList.contains("action-indicator"),
+	assert(cells[1].classList.contains("read-only")&&!cells[1].classList.contains("action-indicator")
+		&&table._cellCursor.classList.contains("read-only")&&!table._cellCursor.classList.contains("action-indicator"),
 		"a selected readOnly cell retains its lock hook without the action indicator");
 	let copied="";
 	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:text=>{copied=text;return Promise.resolve();}}});
