@@ -84,6 +84,19 @@ try {
 	assert(fixedHeightTable._rowInnerHeights[0]!==fixedHeightTable._rowInnerHeights[1],
 		"each column derives its inner height from its own padding and borders");
 
+	const emptyGroupTable=new Tablance(host(),{details:{type:"list",entries:[
+		{title:"Addresses",type:"group",nodeId:"addressesGroup",entries:[
+			{type:"repeated",dataKey:"addresses",create:true,entry:{type:"group",entries:[]}},
+		]},
+	]}},true,true,{searchbar:false});
+	emptyGroupTable.setData([{addresses:[]}]);
+	await tick();
+	const emptyGroup=emptyGroupTable.getDetailCell(0,"addressesGroup");
+	const emptyGroupValueCell=emptyGroup.el.parentElement;
+	emptyGroupValueCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	assert(emptyGroup.selEl===emptyGroupValueCell&&emptyGroupTable._selectedCell===emptyGroupValueCell,
+		"a list group uses its full value cell as the hit target even when its inner content is empty");
+
 	const resolve=node=>table._resolveCellState(node,{rowData:row});
 	assert(resolve({input:{type:"text"},editableIf:()=>false}).kind==="readOnly","editableIf false resolves readOnly");
 	assert(resolve({input:{type:"text"},editableIf:()=>({editable:false,message:"locked"})}).message==="locked","editableIf object message is retained");

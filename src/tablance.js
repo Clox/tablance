@@ -2719,7 +2719,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const tbody=instanceNode.containerEl=groupTable.appendChild(document.createElement("tbody"));
 		groupTable.dataset.path=path.join("-");
 		parentEl.classList.add("group-cell");
-		instanceNode.el=groupTable;//so that the whole group-table can be selectedf
+		instanceNode.el=groupTable;
+		//A group directly inside a list is visually a full value cell, including the cell's padding. Use that cell as
+		//the hit target so an empty group does not shrink the clickable area to the height of its inner table.
+		if (instanceNode.parent?.schemaNode.type==="list") {
+			instanceNode.selEl=parentEl;
+			parentEl.dataset.path=groupTable.dataset.path;
+		}
 		this._generateDetailsCollection(groupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
 		groupTable.className="details-group "+(groupSchemaNode.cssClass??"");
 		if (notYetCreated)

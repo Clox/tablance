@@ -404,6 +404,9 @@
 .tablance .details .details-group.tablance-cell-state:not(.open):not(.disabled):hover {
   background-color: var(--tablance-hover-background);
 }
+.tablance .details .details-list > tbody > tr > td.group-cell:has(> .details-group.tablance-cell-state:not(.open):not(.disabled)):hover {
+  background-color: var(--tablance-hover-background);
+}
 .tablance .details .lineup > .date-container {
   min-width: 12ch;
 }
