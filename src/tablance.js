@@ -4739,7 +4739,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 							oldParnt.schemaNode.onBlur?.(oldParnt,mainRowIndex);
 					}
 				}
-		this._selectCell(instanceNode.selEl??instanceNode.el,instanceNode.schemaNode,instanceNode.dataObj,false);
+		this._selectCell(instanceNode.selEl??instanceNode.el,instanceNode.schemaNode,instanceNode.dataObj,false,instanceNode);
 		this._mainRowIndex=mainRowIndex;
 
 		//in case this was called via instanceNode.select() it might be necessary to make sure parent-groups are open
@@ -4754,8 +4754,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return instanceNode;
 	}
 
-	_selectCell(cellEl,schemaNode,dataObj,adjustCursorPosSize=true) {
-		const cellState=this._getCellState(cellEl);
+	_selectCell(cellEl,schemaNode,dataObj,adjustCursorPosSize=true,instanceNode=null) {
+		const cellState=this._getCellState(cellEl,instanceNode);
 		if (cellState?.selectable===false)
 			return false;
 		this.rootEl.focus({preventScroll:true});

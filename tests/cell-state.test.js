@@ -24,6 +24,7 @@ try {
 	let changes=0,commits=0,validations=0,actions=0,buttonActions=0;
 	const row={editable:"edit",computed:"source",explicit:"locked",conditional:"conditional",canEdit:true,
 		disabledValue:"unavailable",isDisabled:true,action:"act",button:"button",detail:"detail rendered",
+		history:[{date:"2026-01-01"},{date:"2026-02-01"}],
 		file:{name:"report.pdf",lastModified:"2026-08-30T10:00:00Z",size:1024,type:"application/pdf"}};
 	const schema={
 		onDataCommit:()=>commits++,
@@ -39,6 +40,11 @@ try {
 		details:{type:"list",entries:[
 			{title:"Detail",dataKey:"detail",nodeId:"detail",render:({value})=>value.toUpperCase()},
 			{title:"Explicit detail",dataKey:"explicit",readOnly:true,input:{type:"textarea"}},
+			{type:"group",title:"History",nodeId:"historyGroup",entries:[
+				{type:"repeated",dataKey:"history",entry:{type:"group",closedRender:({date})=>date,entries:[
+					{title:"Date",dataKey:"date",input:{type:"text"}},
+				]}},
+			]},
 			{title:"File",dataKey:"file",readOnly:true,input:{type:"file",onOpenFile:()=>actions++}},
 		]},
 	};
@@ -229,6 +235,20 @@ try {
 		"existing readOnly file retains its non-mutating open action");
 	assert(fileButtons.filter(button=>button.textContent!=="Open").every(button=>button.disabled),
 		"existing readOnly file disables delete mutation controls");
+
+	const historyGroup=table.getDetailCell(0,"historyGroup");
+	historyGroup.select();
+	key(table.rootEl,"Enter","Enter");
+	const historyEntries=historyGroup.children[0].children;
+	historyEntries[0].select();
+	assert(table._selectedCellState?.kind==="action","a closed-render group selection retains its canonical action state");
+	key(table.rootEl,"Enter","Enter");
+	assert(historyEntries[0].el.classList.contains("open")&&table._activeSchemaNode.title==="Date",
+		"Enter opens a selected closed-render group and selects its first editable field");
+	historyEntries[1].select();
+	table._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
+	assert(historyEntries[1].el.classList.contains("open")&&table._activeSchemaNode.title==="Date",
+		"double-click opens another closed-render group through the same canonical action path");
 
 	const navigationSchema={main:{columns:[
 		{dataKey:"a",input:{type:"text"}},
