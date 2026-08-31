@@ -63,6 +63,9 @@ try {
 		"every rendered main cell receives the canonical state styling hook");
 	assert(table._headerTable.querySelectorAll(".tablance-sort-icon").length===schema.main.columns.length,
 		"Tablance renders its native outline sort icons by default");
+	assert(table._focusEl===table._tableArea&&table._tableArea.tabIndex===0&&table.rootEl.tabIndex===-1
+		&&table._tableArea.contains(table._headerTable)&&table._tableArea.contains(table._scrollBody),
+		"the keyboard focus stop wraps the header and rows without wrapping the toolbar");
 	const headerStyle=getComputedStyle(table._headerTable);
 	assert(headerStyle.backgroundColor==="rgb(243, 246, 250)"&&headerStyle.borderTopColor==="rgb(217, 226, 239)"
 		&&headerStyle.borderTopLeftRadius==="10px","the modern header theme is the Tablance default");
@@ -234,7 +237,7 @@ try {
 	assert(nativeKeyboard.home?.[0]===0&&nativeKeyboard.home?.[1]===0,
 		"Home moves the native caret to the start of the line");
 	assert(presentation.value==="Rendered age: 31","trusted text input cannot mutate the read-only presentation");
-	assert(!table._inReadOnlyMode&&document.activeElement===table.rootEl,
+	assert(!table._inReadOnlyMode&&document.activeElement===table._focusEl,
 		"trusted Escape closes presentation and restores Tablance focus");
 	key(table.rootEl,"Enter","Enter");
 	presentation=table._cellCursor.querySelector("textarea.read-only-presentation");
@@ -382,6 +385,22 @@ try {
 	key(navigationTable.rootEl,"ArrowRight","ArrowRight");
 	assert(navigationTable._mainColIndex===2,"keyboard navigation skips disabled cells");
 	assert(navigationTable.selectCell(0,"b")===false,"disabled cells cannot be selected or activated");
+
+	const toolbarTable=new Tablance(host(),{main:{
+		toolbar:{defaultInsert:true},columns:[{dataKey:"value",input:{type:"text"}}],
+	}},true,true,{ordering:false});
+	assert(toolbarTable._toolbar.querySelector("button").tabIndex===0&&toolbarTable._searchInput.tabIndex===0
+		&&!toolbarTable._focusEl.contains(toolbarTable._toolbar)
+		&&toolbarTable._toolbar.nextElementSibling===toolbarTable._focusEl,
+		"toolbar controls are separate tab stops before the table focus stop");
+	toolbarTable._focusEl.focus();
+	const focusRect=toolbarTable._focusEl.getBoundingClientRect();
+	const headerRect=toolbarTable._headerTable.getBoundingClientRect();
+	const bodyRect=toolbarTable._scrollBody.getBoundingClientRect();
+	assert(Math.abs(focusRect.top-headerRect.top)<1&&Math.abs(focusRect.bottom-bodyRect.bottom)<1
+		&&toolbarTable._focusEl.classList.contains("show-focus-ring")
+		&&getComputedStyle(toolbarTable._focusEl,"::after").borderLeftWidth==="3px",
+		"the overlaid focus ring follows the table and is painted visibly above its contents");
 
 	const reuseRows=[{value:"one",disabled:false},{value:"two",disabled:true}];
 	const reuseTable=new Tablance(host(),{main:{columns:[{dataKey:"value",disabledIf:({rowData})=>rowData.disabled,input:{type:"text"}}]}},true,true,{searchbar:false,ordering:false});

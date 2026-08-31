@@ -89,6 +89,8 @@ class TablanceBase {
 	_scrollRowIndex=0;//the index in the #data of the top row in the view
 	_scrollBody;//resides directly inside #container and is the element with the scrollbar. It contains #scrollingDiv
 	_toolbar;
+	_tableArea;//focusable area containing the header and scrollable rows, but not the toolbar
+	_focusEl;//the element receiving spreadsheet focus (tableArea, or rootEl for details-only tables)
 	_scrollingContent;//a div that is inside #scrollbody and holds #tablesizer and #cellCursor if spreadsheet
 					//this is needed because putting #cellCursor directly inside #scrollBody will not make it scroll
 					//because it has position absolute and needs that. And putting it inside #tableSizer will cause it
@@ -720,6 +722,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			// }
 			this._colSchemaNodes=this._schema.main.columns;
 			this._setupToolbar();
+			this._tableArea=this.rootEl.appendChild(document.createElement("div"));
+			this._tableArea.className="table-area";
 			this._createTableHeader();
 			this._headerTable.hidden=this._opts.showHeader===false;
 			this._createTableBody();
@@ -1758,7 +1762,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_updateViewportHeight = () => {
 		this._scrollBody.style.height = this.hostEl.clientHeight - this._headerTable.offsetHeight
-		- (this._searchInput?.offsetHeight ?? 0) - this._bulkEditArea.offsetHeight + "px";
+		- (this._toolbar?.offsetHeight ?? 0) - this._bulkEditArea.offsetHeight + "px";
 	}
 
 	_updateAutoHeight() {
@@ -1946,7 +1950,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		btnWrap.className="toolbar-left";
 
 		for (const schemaNode of toolbarItems)
-			this._generateButton(schemaNode,null,btnWrap,null);
+			this._generateButton(schemaNode,null,btnWrap,null).tabIndex=0;
 
 		if (this._opts.searchbar!=false) {
 			this._searchInput=bar.appendChild(document.createElement("input"));
@@ -1962,6 +1966,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_setupSpreadsheet(onlyDetails) {
+		const focusEl=this._focusEl=onlyDetails?this.rootEl:this._tableArea;
 		this.rootEl.classList.add("spreadsheet");
 		this._cellCursor=document.createElement("div");
 		this._cellCursor.className="cell-cursor";
@@ -1971,9 +1976,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			//no cell will be selected which is bad user experience. Set it to 0 for headerTable too in order to match
 			this._mainTable.style.borderSpacing=this._headerTable.style.borderSpacing=this._borderSpacingY=0;
 		}
-		this.rootEl.addEventListener("focus",e=>this._spreadsheetOnFocus(e));
-		this.rootEl.addEventListener("blur",e=>this._spreadsheetOnBlur(e));
-		this.rootEl.tabIndex=0;//so that the table can be tabbed to
+		focusEl.addEventListener("focus",e=>this._spreadsheetOnFocus(e));
+		focusEl.addEventListener("blur",e=>this._spreadsheetOnBlur(e));
+		focusEl.tabIndex=0;//so that the table can be tabbed to
 		this.rootEl.addEventListener("keydown",e=>this._spreadsheetKeyDown(e));
 		this.rootEl.addEventListener("mousedown",e=>this._spreadsheetMouseDown(e));
 		this._cellCursor.addEventListener("dblclick",e=>this._enterCell(e));
@@ -1989,10 +1994,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		//user starts to navigate using the keyboard we want to hide it because it is a bit distracting when both it and
 		//a cell is highlighted. Thats why #spreadsheetKeyDown sets outline to none, and this line undos that
 		//also, we dont want it to show when focusing by mouse so we use #focusMethod (see its declaration)
-		if (!this._onlyDetails&&this._highlightOnFocus)
-			this.rootEl.style.removeProperty("outline");
-		else
-			this.rootEl.style.outline="none";
+		this._focusEl.classList.toggle("show-focus-ring",!this._onlyDetails&&this._highlightOnFocus);
+		if (this._onlyDetails||!this._highlightOnFocus)
+			this._focusEl.style.outline="none";
 		
 		//why is this needed? it messes things up when cellcursor is in mainpage of bulk-edit-area but hidden because
 		//other page is open, and the tablance gets focus because then it will be visible through the active page
@@ -2004,7 +2008,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_spreadsheetOnBlur(_e) {
 		setTimeout(()=>{
-			if (!this.rootEl.contains(document.activeElement)||this._bulkEditArea?.contains(document.activeElement)) {
+			if (!this._focusEl.contains(document.activeElement)||this._bulkEditArea?.contains(document.activeElement)) {
 				this._highlightOnFocus=true;
 				//if (this.neighbourTables&&Object.values(this.neighbourTables).filter(Boolean).length)
 					this._cellCursor.style.display="none";
@@ -2078,7 +2082,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return;
 		const targetCell=selectableCells.reduce((closest,cell)=>
 			Math.abs(cell.cellIndex-preferredColIndex)<Math.abs(closest.cellIndex-preferredColIndex)?cell:closest);
-		this.rootEl.focus({preventScroll:true});
+		this._focusEl.focus({preventScroll:true});
 		this._selectMainTableCell(targetCell);
 		this._scrollToCursor();
 		return true;
@@ -2156,7 +2160,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const nextTable=this.neighbourTables?.[isGoingDown?"down":"up"];
 			if (nextTable) {
 				this._mainColIndex=this._mainRowIndex=this._activeDetailsCell=null;
-				nextTable.rootEl.style.outline=this._cellCursor.style.display="none";
+				nextTable._focusEl.style.outline=this._cellCursor.style.display="none";
 				nextTable.selectTopBottomCellOnlyDetails(isGoingDown);
 			}
 		}
@@ -2231,6 +2235,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		//prevent this from running in outer Tablance if an inner Tablance-instance is selected
 		if (this._bulkEditArea?.contains(document.activeElement))
 			return;
+		if (this._toolbar?.contains(e.target))
+			return;
 		if (this._searchInput && document.activeElement === this._searchInput) {
 			// Block navigation when the search bar is active; add keys here to passthrough in the future.
 			const searchPassthroughKeys=[];
@@ -2260,7 +2266,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 
 		this._highlightOnFocus=false;
-		this.rootEl.style.outline="none";//see #spreadsheetOnFocus
+		this._focusEl.classList.remove("show-focus-ring");
+		this._focusEl.style.outline="none";//see #spreadsheetOnFocus
 
 		if (this._inEditMode&&this._activeSchemaNode.input.type==="date") {
 			if (e.key.slice(0,5)==="Arrow") {
@@ -2718,7 +2725,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			//prevent gaining focus upon clicking it whhich would cause problems. It should be "focused" by having the
 			//cellcursor on its cell which triggers it with enter-key anyway
 			btn.addEventListener("mousedown",e=>e.preventDefault());
-			return true;
+			return btn;
 	}
 
 		/**
@@ -2999,7 +3006,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	
 	_spreadsheetMouseDown(e) {
 		this._highlightOnFocus=false;//see decleration
-		this.rootEl.style.outline="none";//see #spreadsheetOnFocus
+		this._focusEl.classList.remove("show-focus-ring");
+		this._focusEl.style.outline="none";//see #spreadsheetOnFocus
 		this._tooltip.style.visibility="hidden";
 		if (Date.now()<this._ignoreClicksUntil)//see decleration of #ignoreClicksUntil
 			return;
@@ -3028,7 +3036,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					e.preventDefault();//prevent text-selection when shift-clicking checkboxes
 				if (this._mainRowIndex==null) {
 					this._selectMainTableCell(td);
-					this.rootEl.focus({preventScroll:true});
+					this._focusEl.focus({preventScroll:true});
 				}
 				if (td.classList.contains("expand-col"))
 					return this._toggleRowExpanded(td.parentElement);
@@ -3359,7 +3367,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._cellCursor.classList.remove("read-only-mode");
 		this._cellCursor.replaceChildren();
 		if (focusTable)
-			this.rootEl.focus({preventScroll:true});
+			this._focusEl.focus({preventScroll:true});
 		this._adjustCursorPosSize(this._selectedCell);
 		this._highlightOnFocus=false;
 		return true;
@@ -4466,7 +4474,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (this._activeSchemaNode.input.validation&&save&&!this._validateInput(input.value))
 			return false;
 		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
-		this.rootEl.focus({preventScroll:true});//so that #inputVal gets updated-
+		this._focusEl.focus({preventScroll:true});//so that #inputVal gets updated-
 
 
 		this._inEditMode=false;
@@ -4794,7 +4802,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const cellState=this._getCellState(cellEl,instanceNode);
 		if (cellState?.selectable===false)
 			return false;
-		this.rootEl.focus({preventScroll:true});
+		this._focusEl.focus({preventScroll:true});
 		this._clearStaticCellOverflowPreview();
 		if (adjustCursorPosSize)
 			this._adjustCursorPosSize(cellEl);
@@ -4904,7 +4912,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_createTableHeader() {
-		this._headerTable=this.rootEl.appendChild(document.createElement("table"));
+		this._headerTable=this._tableArea.appendChild(document.createElement("table"));
 		this._headerTable.classList.add("header-table");
 		const thead=this._headerTable.appendChild(document.createElement("thead"));
 		this._headerTr=thead.insertRow();
@@ -5031,7 +5039,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_createTableBody() {
-		this._scrollBody=this.rootEl.appendChild(document.createElement("div"));
+		this._scrollBody=this._tableArea.appendChild(document.createElement("div"));
 
 		if (this._naturalAutoHeight)
 			this._scrollMethod=this._onScrollNaturalAutoHeight;

@@ -29,9 +29,24 @@
 
 	&:focus {
 		outline: 2px solid rgba(37, 99, 235, .35);
-		outline-offset: 2px;
+		outline-offset: -2px;
 	}
-	>.scroll-body {
+	>.table-area {
+		position: relative;
+		border-radius: var(--tablance-radius);
+		outline: none;
+		&.show-focus-ring:focus::after {
+			position: absolute;
+			z-index: 10;
+			inset: 0;
+			box-sizing: border-box;
+			border: 3px solid rgba(37, 99, 235, .8);
+			border-radius: var(--tablance-radius);
+			pointer-events: none;
+			content: "";
+		}
+	}
+	>.table-area>.scroll-body {
 		overflow: auto;
 		border: 0;
 		border-bottom: 1px solid var(--tablance-border-color);
@@ -42,7 +57,7 @@
 			position: relative;
 		}
 	}
-	>.header-table[hidden]+.scroll-body {
+	>.table-area>.header-table[hidden]+.scroll-body {
 		border-top: 1px solid var(--tablance-border-color);
 		border-radius: var(--tablance-radius);
 	}
@@ -178,7 +193,7 @@
 		justify-content: space-between;
 		align-items: center;
 		gap: 8px;
-		margin-bottom: 10px;
+		padding-bottom: 10px;
 		.search {
 			float: none;
 		}
@@ -191,7 +206,7 @@
 			cursor: pointer;
 		}
 	}
-	>.header-table {
+	>.table-area>.header-table {
 		overflow: hidden;
 		border-collapse: separate;
 		border-spacing: 0;
