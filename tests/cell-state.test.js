@@ -59,6 +59,10 @@ try {
 	assert(cells[4].dataset.cellState==="disabled"&&cells[4].getAttribute("aria-disabled")==="true","disabledIf true resolves disabled with ARIA");
 	assert(cells[5].dataset.cellState==="action","onEnter field resolves action");
 	assert(cells[6].dataset.cellState==="action","button resolves action");
+	assert(getComputedStyle(cells[0]).paddingLeft==="12px"&&getComputedStyle(cells[1]).paddingLeft==="14px"
+		&&getComputedStyle(cells[1]).paddingTop==="9px"&&getComputedStyle(cells[5]).paddingLeft==="14px"
+		&&getComputedStyle(cells[5]).paddingTop==="9px"&&getComputedStyle(cells[6]).paddingLeft==="12px",
+		"only text-like main-row state cells reserve permanent space for their indicator");
 	assert([...cells].every(cell=>cell.classList.contains("tablance-cell-state")),
 		"every rendered main cell receives the canonical state styling hook");
 	assert(table._headerTable.querySelectorAll(".tablance-sort-icon").length===schema.main.columns.length,
@@ -325,6 +329,8 @@ try {
 	const detail=table.getDetailCell(0,"detail");
 	assert(detail.cellState.kind==="readOnly"&&detail.el.classList.contains("read-only")
 		&&detail.el.classList.contains("tablance-cell-state"),"details presentation field resolves readOnly with a canonical styling hook");
+	assert(getComputedStyle(detail.el).paddingLeft==="5px",
+		"main-row indicator spacing does not affect read-only cells in details");
 	detail.select();
 	assert(detail.el.classList.contains("tablance-active-cell")&&!cells[1].classList.contains("tablance-active-cell"),
 		"native active-cell ownership also follows selection into details");

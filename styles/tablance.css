@@ -296,6 +296,11 @@
 .tablance .main-table > tbody > tr:not(.details) > td {
   transition: background-color 120ms ease;
 }
+.tablance .main-table > tbody > tr:not(.details) > td.read-only,
+.tablance .main-table > tbody > tr:not(.details) > td.action-indicator {
+  padding-top: 9px;
+  padding-left: 14px;
+}
 .tablance .main-table > tbody > tr:not(.details) > td:first-child {
   border-left: 1px solid var(--tablance-border-color);
 }

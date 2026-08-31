@@ -316,6 +316,12 @@
 			transition: background-color 120ms ease;
 		}
 
+		>td.read-only,
+		>td.action-indicator {
+			padding-top: 9px;
+			padding-left: 14px;
+		}
+
 		>td:first-child {
 			border-left: 1px solid var(--tablance-border-color);
 		}
