@@ -63,6 +63,12 @@ try {
 		&&getComputedStyle(cells[1]).paddingTop==="9px"&&getComputedStyle(cells[5]).paddingLeft==="14px"
 		&&getComputedStyle(cells[5]).paddingTop==="9px"&&getComputedStyle(cells[6]).paddingLeft==="12px",
 		"only text-like main-row state cells reserve permanent space for their indicator");
+	table.selectCell(row,"editable");
+	key(table.rootEl,"Enter","Enter");
+	const textEditor=table._cellCursor.querySelector("input.text-editor");
+	assert(textEditor&&getComputedStyle(textEditor).paddingLeft==="4px",
+		"a text cell editor keeps a small amount of space before its text");
+	table._exitEditMode(false);
 	assert([...cells].every(cell=>cell.classList.contains("tablance-cell-state")),
 		"every rendered main cell receives the canonical state styling hook");
 	assert(table._headerTable.querySelectorAll(".tablance-sort-icon").length===schema.main.columns.length,

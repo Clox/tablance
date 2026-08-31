@@ -78,6 +78,9 @@
   box-shadow: 0 3px 10px rgba(15, 43, 75, 0.18);
   cursor: auto;
 }
+.tablance .cell-cursor.edit-mode > input.text-editor {
+  padding-left: 4px;
+}
 .tablance .cell-cursor.has-static-row-overflow-preview {
   outline: none;
 }

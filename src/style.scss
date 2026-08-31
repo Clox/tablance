@@ -81,6 +81,9 @@
 			background-color: var(--tablance-cell-background);
 			box-shadow: 0 3px 10px rgba(15, 43, 75, .18);
 			cursor:auto;
+			>input.text-editor {
+				padding-left: 4px;
+			}
 		}
 		&.has-static-row-overflow-preview {
 			outline: none;

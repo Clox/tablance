@@ -3836,6 +3836,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_openTextEdit() {
 		const input=this._cellCursor.appendChild(document.createElement("input"));
+		input.className="text-editor";
 
 		//for when blurring by clicking outside of table etc. exit edit-mode and commit the change but keep the cell
 		//selected. not sure why the timeout is needed but it is.
