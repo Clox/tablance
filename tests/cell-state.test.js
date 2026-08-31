@@ -370,6 +370,16 @@ try {
 	assert(openGroupFieldStyle.paddingLeft==="4px"&&openGroupFieldStyle.paddingTop==="2px"
 		&&openGroupFieldStyle.paddingBottom==="2px",
 		"separate fields inside an open group use compact horizontal and vertical padding");
+	const openGroupTitleStyle=getComputedStyle(historyEntries[0].children[0].selEl.querySelector(":scope>span.title"));
+	const openGroupValueStyle=getComputedStyle(historyEntries[0].children[0].selEl.querySelector(":scope>div"));
+	const openGroupSeparatorStyle=getComputedStyle(historyEntries[0].children[0].selEl.querySelector(":scope>.separator"));
+	assert(openGroupTitleStyle.marginLeft==="4px"&&openGroupTitleStyle.marginRight==="6px"
+		&&openGroupTitleStyle.marginBottom==="4px"&&openGroupTitleStyle.fontSize==="13px"
+		&&openGroupTitleStyle.fontWeight==="500"&&openGroupTitleStyle.color==="rgb(100, 116, 139)"
+		&&openGroupValueStyle.marginLeft==="4px"
+		&&openGroupValueStyle.marginRight==="6px"&&openGroupSeparatorStyle.marginLeft==="0px"
+		&&openGroupSeparatorStyle.marginRight==="0px",
+		"group field content gains subtle horizontal breathing room without changing separators");
 	historyEntries[1].select();
 	table._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
 	assert(historyEntries[1].el.classList.contains("open")&&table._activeSchemaNode.title==="Date",

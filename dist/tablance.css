@@ -501,11 +501,23 @@
 .tablance .details table.details-group > tbody > tr > td {
   padding: 2px 0 2px 4px;
 }
+.tablance .details table.details-group > tbody > tr > td > span.title {
+  margin-right: 6px;
+  margin-bottom: 4px;
+  margin-left: 4px;
+  color: #64748B;
+  font-size: 13px;
+  font-weight: 500;
+}
 .tablance .details table.details-group > tbody > tr > td:first-child > span.title {
   margin-top: 5px;
 }
 .tablance .details table.details-group > tbody > tr > td > div {
   padding: 0;
+}
+.tablance .details table.details-group > tbody > tr > td > div:not(.group-cell) {
+  margin-right: 6px;
+  margin-left: 4px;
 }
 .tablance .details table.details-group > tbody > tr > td > div.group-cell {
   padding-right: 4px;
