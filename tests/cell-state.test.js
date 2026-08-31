@@ -378,6 +378,8 @@ try {
 	historyGroup.select();
 	key(table.rootEl,"Enter","Enter");
 	const historyEntries=historyGroup.children[0].children;
+	assert(historyEntries.every(entry=>getComputedStyle(entry.el.parentElement.parentElement).paddingTop==="2px"),
+		"every nested group row reserves the same space above its selection outline");
 	assert(getComputedStyle(historyGroup.el).borderTopColor==="rgb(184, 198, 216)"
 		&&getComputedStyle(historyEntries[0].el).borderTopColor==="rgb(184, 198, 216)"
 		&&getComputedStyle(historyGroup.el).borderTopLeftRadius==="4px"
@@ -387,6 +389,9 @@ try {
 		"details groups use the subtle rounded blue-gray border with and without closedRender");
 	historyEntries[0].select();
 	assert(table._selectedCellState?.kind==="action","a closed-render group selection retains its canonical action state");
+	assert(table._cellCursor.classList.contains("group-cell-cursor")
+		&&getComputedStyle(table._cellCursor).outlineOffset==="-1px",
+		"a selected details group draws its outline one pixel inward on every side");
 	const closedGroupRenderStyle=getComputedStyle(historyEntries[0].el.querySelector("tbody>tr.group-render>td"));
 	assert(closedGroupRenderStyle.paddingLeft==="4px"&&closedGroupRenderStyle.paddingTop==="2px"
 		&&closedGroupRenderStyle.paddingBottom==="2px",

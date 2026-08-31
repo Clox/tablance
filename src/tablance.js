@@ -4811,6 +4811,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (adjustCursorPosSize)
 			this._adjustCursorPosSize(cellEl);
 		this._cellCursor.classList.toggle("details",cellEl.closest(".details"));
+		this._cellCursor.classList.toggle("group-cell-cursor",schemaNode.type==="group");
 		this._cellCursor.classList.toggle("read-only",cellState?.kind==="readOnly");
 		this._cellCursor.classList.toggle("disabled",cellState?.kind==="disabled");
 		this._cellCursor.classList.toggle("action-cell",cellState?.kind==="action");

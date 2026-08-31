@@ -70,6 +70,9 @@
 .tablance .cell-cursor:not(.details) {
   outline-offset: -2px;
 }
+.tablance .cell-cursor.details.group-cell-cursor {
+  outline-offset: -1px;
+}
 .tablance .cell-cursor.read-only-mode {
   cursor: text;
 }
@@ -603,6 +606,9 @@
 }
 .tablance .group-cell > table > tbody > tr:not(:first-child) > td {
   padding-top: 0;
+}
+.tablance .group-cell > table > tbody > tr > td:has(> div.group-cell) {
+  padding-top: 2px;
 }
 .tablance .group-cell > table > tbody > tr > td {
   padding: 6px 10px;

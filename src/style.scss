@@ -74,6 +74,9 @@
 		&:not(.details) {
 			outline-offset:-2px;
 		}
+		&.details.group-cell-cursor {
+			outline-offset: -1px;
+		}
 		&.read-only-mode {
 			cursor: text;
 		}
@@ -666,6 +669,9 @@
 			>tbody> {
 				tr:not(:first-child)>td {
 					padding-top: 0;
+				}
+				tr>td:has(>div.group-cell) {
+					padding-top: 2px;
 				}
 				tr>td {
 					padding: 6px 10px;
