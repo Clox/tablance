@@ -450,6 +450,9 @@
 			>table.details-list>tbody>tr:first-child>td {
 				padding-top: 10px;
 			}
+			>table.details-list>tbody>tr:first-child>td.value:not(.group-cell) {
+				padding-top: 12px;
+			}
 		}
 	}
 	.main-table>tbody>tr.details+tr:not(.details)>td {
@@ -481,6 +484,12 @@
 		}
 		.read-only {
 			background-color: transparent;
+		}
+		// A positioned table cell snaps its pseudo-element half a pixel below the equivalent cursor overlay in
+		// Chromium. Compensate only for detail table cells so hover and selected state indicators share a baseline.
+		td.action-indicator:not(.cell-cursor):hover::before,
+		td.read-only:not(.cell-cursor):hover::before {
+			top: 1.5px;
 		}
 		.disabled {
 			background-color: var(--tablance-disabled-background);
@@ -530,7 +539,7 @@
 					text-align: center;//when the field is larger than the title, the title should be centered
 				}
 				>div {
-					padding: 4px;
+					padding: 6px 4px 2px;
 					&.input-cell {
 						border: 1px solid #ddd;
 					}
@@ -577,6 +586,13 @@
 				padding-right: 4px;
 			}
 		}
+		table.details-group>tbody>tr>td:has(>div.value:not(.group-cell)) {
+			padding-top: 4px;
+			padding-bottom: 0;
+		}
+		table.details-group>tbody>tr:not(:first-child)>td:has(>div.value:not(.group-cell)) {
+			padding-top: 2px;
+		}
 		table.details-group>tbody>tr.group-render>td {
 			padding-top: 2px;
 		}
@@ -599,6 +615,9 @@
 							>.details-group {
 								min-height: 1.4em;
 							}
+					}
+					>td.value:not(.group-cell) {
+						padding: 7px 5px 3px;
 					}
 					>td.title {
 						// width: 8em;

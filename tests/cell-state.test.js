@@ -348,8 +348,9 @@ try {
 	const detail=table.getDetailCell(0,"detail");
 	assert(detail.cellState.kind==="readOnly"&&detail.el.classList.contains("read-only")
 		&&detail.el.classList.contains("tablance-cell-state"),"details presentation field resolves readOnly with a canonical styling hook");
-	assert(getComputedStyle(detail.el).paddingLeft==="5px",
-		"main-row indicator spacing does not affect read-only cells in details");
+	const detailStyle=getComputedStyle(detail.el);
+	assert(detailStyle.paddingLeft==="5px"&&detailStyle.paddingTop==="12px"&&detailStyle.paddingBottom==="3px",
+		`detail value content moves down without inheriting main-row indicator spacing or changing total padding (${detailStyle.paddingTop}/${detailStyle.paddingBottom}/${detailStyle.paddingLeft})`);
 	detail.select();
 	assert(detail.el.classList.contains("tablance-active-cell")&&!cells[1].classList.contains("tablance-active-cell"),
 		"native active-cell ownership also follows selection into details");
@@ -378,6 +379,9 @@ try {
 		"existing readOnly file disables delete mutation controls");
 
 	const historyGroup=table.getDetailCell(0,"historyGroup");
+	const historyGroupValueStyle=getComputedStyle(historyGroup.el.parentElement);
+	assert(historyGroupValueStyle.paddingTop==="5px"&&historyGroupValueStyle.paddingBottom==="5px",
+		`detail group containers retain their original vertical padding (${historyGroupValueStyle.paddingTop}/${historyGroupValueStyle.paddingBottom})`);
 	const safeTextRender=table.getDetailCell(0,"safeTextGroup").el.querySelector("tbody>tr.group-render>td");
 	const trustedHtmlRender=table.getDetailCell(0,"trustedHtmlGroup").el.querySelector("tbody>tr.group-render>td");
 	assert(safeTextRender.textContent==="<u>literal</u>"&&!safeTextRender.querySelector("u"),
@@ -425,9 +429,9 @@ try {
 		"inner cell separators return to dashed when their group closes");
 	historyEntries[0].el.classList.add("open");
 	const openGroupFieldStyle=getComputedStyle(historyEntries[0].children[0].selEl);
-	assert(openGroupFieldStyle.paddingLeft==="4px"&&openGroupFieldStyle.paddingTop==="2px"
-		&&openGroupFieldStyle.paddingBottom==="2px",
-		"separate fields inside an open group use compact horizontal and vertical padding");
+	assert(openGroupFieldStyle.paddingLeft==="4px"&&openGroupFieldStyle.paddingTop==="4px"
+		&&openGroupFieldStyle.paddingBottom==="0px",
+		`separate value fields inside an open group move down while retaining compact total padding (${openGroupFieldStyle.paddingTop}/${openGroupFieldStyle.paddingBottom}/${openGroupFieldStyle.paddingLeft})`);
 	const openGroupTitleStyle=getComputedStyle(historyEntries[0].children[0].selEl.querySelector(":scope>span.title"));
 	const openGroupValueStyle=getComputedStyle(historyEntries[0].children[0].selEl.querySelector(":scope>div"));
 	const openGroupSeparatorStyle=getComputedStyle(historyEntries[0].children[0].selEl.querySelector(":scope>.separator"));
