@@ -364,13 +364,17 @@ try {
 	assert(nestedGroupCellStyle.paddingRight==="4px"&&getComputedStyle(historyEntries[0].el).boxSizing==="border-box",
 		"a nested group keeps visible space between its right border and its parent border");
 	const firstHistorySeparator=historyEntries[0].children[0].selEl.querySelector(":scope>.separator");
-	assert(getComputedStyle(firstHistorySeparator).borderTopStyle==="dashed",
-		"inner cell separators are dashed while their group is closed");
+	assert(getComputedStyle(firstHistorySeparator).borderTopStyle==="dashed"
+		&&getComputedStyle(firstHistorySeparator).marginLeft==="0px"
+		&&getComputedStyle(firstHistorySeparator).marginRight==="4px",
+		"closed inner cell separators are dashed with balanced horizontal indentation");
 	key(table.rootEl,"Enter","Enter");
 	assert(historyEntries[0].el.classList.contains("open")&&table._activeSchemaNode.title==="Date",
 		"Enter opens a selected closed-render group and selects its first editable field");
-	assert(getComputedStyle(firstHistorySeparator).borderTopStyle==="solid",
-		"inner cell separators become solid while their group is open");
+	assert(getComputedStyle(firstHistorySeparator).borderTopStyle==="solid"
+		&&getComputedStyle(firstHistorySeparator).marginLeft==="0px"
+		&&getComputedStyle(firstHistorySeparator).marginRight==="4px",
+		"open inner cell separators become solid while retaining the same indentation");
 	historyEntries[0].el.classList.remove("open");
 	assert(getComputedStyle(firstHistorySeparator).borderTopStyle==="dashed",
 		"inner cell separators return to dashed when their group closes");
@@ -387,7 +391,7 @@ try {
 		&&openGroupTitleStyle.fontWeight==="500"&&openGroupTitleStyle.color==="rgb(100, 116, 139)"
 		&&openGroupValueStyle.marginLeft==="4px"
 		&&openGroupValueStyle.marginRight==="6px"&&openGroupSeparatorStyle.marginLeft==="0px"
-		&&openGroupSeparatorStyle.marginRight==="0px",
+		&&openGroupSeparatorStyle.marginRight==="4px",
 		"group field content gains subtle horizontal breathing room without changing separators");
 	historyEntries[1].select();
 	table._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
