@@ -565,7 +565,10 @@
   margin-bottom: 4px;
 }
 .tablance .group-cell > table {
-  border: 1px solid #bbb;
+  border: 1px solid #B8C6D8;
+  border-radius: 4px;
+  border-collapse: separate;
+  border-spacing: 0;
   width: 100%;
 }
 .tablance .group-cell > table:not(.open) > tbody > tr.empty, .tablance .group-cell > table:not(.open) > tbody > tr > td > div > .empty {

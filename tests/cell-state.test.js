@@ -347,6 +347,13 @@ try {
 	historyGroup.select();
 	key(table.rootEl,"Enter","Enter");
 	const historyEntries=historyGroup.children[0].children;
+	assert(getComputedStyle(historyGroup.el).borderTopColor==="rgb(184, 198, 216)"
+		&&getComputedStyle(historyEntries[0].el).borderTopColor==="rgb(184, 198, 216)"
+		&&getComputedStyle(historyGroup.el).borderTopLeftRadius==="4px"
+		&&getComputedStyle(historyEntries[0].el).borderTopLeftRadius==="4px"
+		&&getComputedStyle(historyGroup.el).borderCollapse==="separate"
+		&&getComputedStyle(historyEntries[0].el).borderSpacing==="0px 0px",
+		"details groups use the subtle rounded blue-gray border with and without closedRender");
 	historyEntries[0].select();
 	assert(table._selectedCellState?.kind==="action","a closed-render group selection retains its canonical action state");
 	const closedGroupRenderStyle=getComputedStyle(historyEntries[0].el.querySelector("tbody>tr.group-render>td"));

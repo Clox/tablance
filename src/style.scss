@@ -622,7 +622,10 @@
 			&:not(:last-child) {
 				margin-bottom: 4px;
 			}
-			border: 1px solid #bbb;
+			border: 1px solid #B8C6D8;
+			border-radius: 4px;
+			border-collapse: separate;
+			border-spacing: 0;
 			width: 100%;
 			&:not(.open)>tbody>tr {
 				&.empty,>td>div>.empty {
