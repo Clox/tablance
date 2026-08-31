@@ -280,7 +280,8 @@ class TablanceBase {
 	 * 					will be displayed in the cell. It receives a payload from _makeCallbackPayload plus:
 	 * 					- value: resolved cell value (dataKey wins when present, otherwise dependsOn*)
 	 * 					- idValue: rowData[schemaNode.dataKey] (if dataKey is set)
-	 * 					- dependedValue: the resolved dependee value when dependsOn* is used
+	 * 					- dependedValue: the resolved dependee value when dependsOn* is used; an array when
+	 * 						dependsOn contains multiple identifiers
 	 * 			html Bool Default is false. If true then the content of the cell will be rendered as html
 	 * 			type String The default is "data". Possible values are:
 	 * 				"data" - As it it implies, simply to display data but also input-elements such as fields or buttons
@@ -321,7 +322,7 @@ class TablanceBase {
 	 *   					- If the entry is visible, no `hidden` property is present.
 	 *
 	 *
-	 * 				* dependsOn String Optional string identifying another entry that this entry depends on.
+	 * 				* dependsOn String|String[] Optional identifier(s) for entries that this entry depends on.
 	 * 					Whenever the referenced entry is edited, this entry automatically refreshes.
 	 * 					The refresh cycle includes:
  	 *						- Re-evaluating `visibleIf` (if provided).
@@ -588,6 +589,8 @@ class TablanceBase {
   	 * 				entries Array Array of entries. fields, lists, etc.. 
 	 * 				closedRender Function pass a method here that will get the data for the group as first arg.
 	 * 								it needs to return a string which will replace the group-content when it is closed
+	 * 				closedRenderHtml Bool Defaults to false. If true, closedRender output is inserted as HTML. Only
+	 * 								enable this for trusted or escaped output; the default text rendering remains injection-safe.
 	 * 				creationValidation Function If this group is placed within a repeated-container with create set to
 	 * 								true then this function will be executed upon commiting the creation. The callback
 	 * 								gets a single payload-object with the following keys:
@@ -1275,7 +1278,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!schemaNode)
 			return {value: undefined, idValue: undefined, dependedValue: undefined};
 		const idValue=schemaNode.dataKey!=null?dataObj?.[schemaNode.dataKey]:undefined;
-		const dependedValue=(schemaNode.dependsOnDataPath||schemaNode.dependsOnCellPaths)
+		const dependedValue=(schemaNode.dependsOnDataPath||schemaNode.dependsOnDataPaths||schemaNode.dependsOnCellPaths)
 			?this._getTargetVal(false,schemaNode,instanceNode,dataObj)
 			:undefined;
 		const value=this._getTargetVal(true,schemaNode,instanceNode,dataObj);
@@ -1483,7 +1486,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * Permanent runtime metadata produced on wrapped schema-nodes:
 	 *  - dependencyPaths: UI-forward paths (dependee → dependent)
 	 *  - dependsOnCellPaths: reverse structural path(s) (exp→exp)
-	 *  - dependsOnDataPath: absolute data path for non-exp→exp deps
+	 *  - dependsOnDataPath: absolute data path for one non-exp→exp dependency
+	 *  - dependsOnDataPaths: absolute data paths for multiple non-exp→exp dependencies
 	 *
 	 * Temporary builder-only metadata (removed in PASS 4):
 	 *  - _autoId
@@ -1734,11 +1738,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (cellPaths.length) {
 			schemaNode.dependsOnCellPaths = cellPaths;
 			delete schemaNode.dependsOnDataPath;
+			delete schemaNode.dependsOnDataPaths;
 			return;
 		}
 
 		if (dataPaths.length === 1) {
 			schemaNode.dependsOnDataPath = dataPaths[0];
+			delete schemaNode.dependsOnDataPaths;
 			delete schemaNode.dependsOnCellPaths;
 
 			if (!schemaNode._dataPath)
@@ -1748,13 +1754,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 
 		if (dataPaths.length > 1) {
-			console.warn("Multiple data dependencies not supported:", schemaNode);
-
-			schemaNode.dependsOnDataPath = dataPaths[0];
+			schemaNode.dependsOnDataPaths = dataPaths;
+			delete schemaNode.dependsOnDataPath;
 			delete schemaNode.dependsOnCellPaths;
-
-			if (!schemaNode._dataPath)
-				schemaNode._dataPath = dataPaths[0];
 		}
 	}
 
@@ -2703,7 +2705,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				return {...srcVal};
 			return srcVal;
 		};
-		for (const key of ["dependencyPaths","dependsOnCellPaths","dependsOnDataPath"])
+		for (const key of ["dependencyPaths","dependsOnCellPaths","dependsOnDataPath","dependsOnDataPaths"])
 			if (sourceNode?.[key]!==undefined)
 				targetNode[key]=copyMeta(sourceNode[key]);
 		const sourceChildren=this._dep_children(sourceNode);
@@ -3296,6 +3298,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			e.preventDefault();//prevent text selection upon entering editmode
 			if (this._activeSchemaNode.input.type==="button")
 				return (this._activeDetailsCell?.el??this._selectedCell.querySelector("button"))?.click();
+			if (!this._selectedCellState.mutable)
+				return false;
 			this._clearStaticCellOverflowPreview();
 			this._inputVal=this._selectedCellVal;
 			this._inEditMode=true;
@@ -3708,7 +3712,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		row.className="group-render";
 		row.dataset.path=path?.join("-")??"";
 		const cell=row.cells[0]??row.insertCell();
-		cell.innerText=renderText;
+		if (groupObject.schemaNode.closedRenderHtml===true)
+			cell.innerHTML=renderText;
+		else
+			cell.innerText=renderText;
 	}
 
 	_repeatInsert(repeated,creating,data,entrySchemaNode=null) {
@@ -5907,6 +5914,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_getTargetVal(idOverDependee,schemaNode, instanceNode, rowData=instanceNode.dataObj) {
 		if (idOverDependee&&schemaNode.dataKey)
 			return rowData[schemaNode.dataKey];
+		if (schemaNode.dependsOnDataPaths) {
+			if (instanceNode)
+				for (var root=instanceNode; root.parent; root=root.parent,rowData=root.dataObj);
+			return schemaNode.dependsOnDataPaths.map(dataPath=>this._getValueByPath(rowData,dataPath));
+		}
 		if (schemaNode.dependsOnDataPath) {
 			if (instanceNode)
 				for (var root=instanceNode; root.parent; root=root.parent,rowData=root.dataObj);
@@ -6432,7 +6444,8 @@ export default class Tablance extends TablanceBase {
 		if (schemaNode.input?.type==="select"&&val?.value)
 			val=val.value;
 		const idValue=schemaNode.dataKey!=null?instanceNode.dataObj?.[schemaNode.dataKey]:undefined;
-		const dependedValue=(schemaNode.dependsOnDataPath||schemaNode.dependsOnCellPaths)?val:undefined;
+		const dependedValue=(schemaNode.dependsOnDataPath||schemaNode.dependsOnDataPaths
+			||schemaNode.dependsOnCellPaths)?val:undefined;
 		const payload=this._makeCallbackPayload(instanceNode,{value: val,idValue,dependedValue},{
 			schemaNode,
 			mainIndex,

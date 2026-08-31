@@ -55,6 +55,9 @@ try {
 					{title:"Date",dataKey:"date",input:{type:"text"}},
 				]}},
 			]},
+			{type:"group",title:"Safe text",nodeId:"safeTextGroup",closedRender:()=>"<u>literal</u>",entries:[]},
+			{type:"group",title:"Trusted HTML",nodeId:"trustedHtmlGroup",closedRenderHtml:true,
+				closedRender:()=>"<u>underlined</u>",entries:[]},
 			{title:"File",dataKey:"file",readOnly:true,input:{type:"file",onOpenFile:()=>actions++}},
 		]},
 	};
@@ -375,6 +378,12 @@ try {
 		"existing readOnly file disables delete mutation controls");
 
 	const historyGroup=table.getDetailCell(0,"historyGroup");
+	const safeTextRender=table.getDetailCell(0,"safeTextGroup").el.querySelector("tbody>tr.group-render>td");
+	const trustedHtmlRender=table.getDetailCell(0,"trustedHtmlGroup").el.querySelector("tbody>tr.group-render>td");
+	assert(safeTextRender.textContent==="<u>literal</u>"&&!safeTextRender.querySelector("u"),
+		"closedRender remains injection-safe text by default");
+	assert(trustedHtmlRender.textContent==="underlined"&&trustedHtmlRender.querySelector("u"),
+		"closedRenderHtml explicitly enables trusted markup for closed groups");
 	historyGroup.select();
 	key(table.rootEl,"Enter","Enter");
 	const historyEntries=historyGroup.children[0].children;
@@ -517,6 +526,45 @@ try {
 	bulkCell.select();
 	bulkTable._bulkEditTable._inputVal="illegal bulk";
 	assert(bulkTable._bulkEditTable._doEditSave()===false&&bulkRows.every(item=>item.locked!=="illegal bulk"),"bulk save guard blocks readOnly mutation");
+
+	let multiDependedValue;
+	const multiDependencyTable=new Tablance(host(),{main:{columns:[
+		{dataKey:"combined",dependsOn:["firstSource","secondSource"],
+			render:({dependedValue})=>(multiDependedValue=dependedValue).join(" | "),
+			onEnter:({mainIndex,tablance})=>tablance.selectCell(mainIndex,"firstSource")},
+	]},details:{type:"list",entries:[
+		{dataKey:"first",nodeId:"firstSource"},
+		{dataKey:"second",nodeId:"secondSource"},
+	]}},true,true,{searchbar:false,ordering:false});
+	const multiDependencyRow={combined:"stored",first:"Alpha",second:"Beta"};
+	multiDependencyTable.setData([multiDependencyRow]);
+	await tick();
+	const multiDependencyCell=multiDependencyTable._mainTbody
+		.querySelector('tr[data-data-row-index="0"]:not(.details)').cells[0];
+	assert(multiDependencyCell.textContent==="Alpha | Beta"
+		&&JSON.stringify(multiDependedValue)===JSON.stringify(["Alpha","Beta"]),
+		"multiple data dependencies expose their values in declaration order");
+	multiDependencyTable.selectCell(multiDependencyRow,"combined");
+	assert(multiDependencyCell.dataset.cellState==="action"&&!multiDependencyTable._selectedCellState.mutable,
+		"a derived navigation field is an immutable action rather than a read-only presentation");
+	key(multiDependencyTable.rootEl,"Enter","Enter");
+	const firstSource=multiDependencyTable._activeDetailsCell;
+	assert(firstSource?.schemaNode.nodeId==="firstSource"&&!multiDependencyTable._inEditMode,
+		"activating a derived navigation field selects its source without opening a main-row editor");
+	firstSource.dataObj.first="Changed";
+	multiDependencyTable._updateDependentCells(firstSource.schemaNode,firstSource);
+	assert(multiDependencyCell.textContent==="Changed | Beta",
+		"a main cell with multiple data dependencies refreshes when either source changes");
+
+	const guardedActionEditorTable=new Tablance(host(),{main:{columns:[
+		{type:"group",dataKey:"invalid",input:{type:"text"}},
+	]}},true,true,{searchbar:false,ordering:false});
+	guardedActionEditorTable.setData([{invalid:"must stay unchanged"}]);
+	await tick();
+	guardedActionEditorTable.selectCell(0,"invalid");
+	key(guardedActionEditorTable.rootEl,"Enter","Enter");
+	assert(!guardedActionEditorTable._inEditMode&&!guardedActionEditorTable._selectedCellState.mutable,
+		"a non-mutable action schema cannot open an ordinary editor even if one was configured");
 
 	result.textContent=`${assertions.length} cell-state assertions passed`;
 	result.dataset.status="passed";

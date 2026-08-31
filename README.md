@@ -51,3 +51,22 @@ The default palette can be themed by overriding CSS custom properties on a `.tab
 ```
 
 Text-like action cells and read-only cells display their native navigation and lock indicators on hover or selection. The indicators are non-interactive absolute overlays and do not affect cell content or geometry.
+
+## Closed group rendering
+
+Groups with `closedRender` render its result as text by default. A consumer that needs markup may explicitly opt in with
+`closedRenderHtml: true`. HTML output must be trusted or escaped by the consumer.
+
+```js
+{
+  type: "group",
+  closedRenderHtml: true,
+  closedRender: data => `<strong>${escapeHtml(data.name)}</strong>`,
+  entries: []
+}
+```
+
+## Multiple dependencies
+
+`dependsOn` accepts either one identifier or an array of identifiers. With an array, dependent cells refresh when any
+source changes and callback payloads receive `dependedValue` as an array in declaration order.
