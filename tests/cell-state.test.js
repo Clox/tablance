@@ -21,6 +21,14 @@ const host=()=>{
 
 try {
 	assert(Tablance.version==="2.0.0","built UMD exposes the breaking 2.0.0 version");
+	Tablance.defaultLang={filterPlaceholder:"Global search"};
+	const globalLangTable=new Tablance(host(),{main:{columns:[{dataKey:"value"}]}},true,true,{ordering:false});
+	const localLangTable=new Tablance(host(),{main:{columns:[{dataKey:"value"}]}},true,true,
+		{ordering:false,lang:{filterPlaceholder:"Local search"}});
+	assert(globalLangTable._searchInput.placeholder==="Global search"
+		&&localLangTable._searchInput.placeholder==="Local search",
+		"global language defaults apply to every table while per-instance language keeps priority");
+	Tablance.defaultLang={};
 	let changes=0,commits=0,validations=0,actions=0,buttonActions=0;
 	const row={editable:"edit",computed:"source",explicit:"locked",conditional:"conditional",canEdit:true,
 		disabledValue:"unavailable",isDisabled:true,action:"act",button:"button",detail:"detail rendered",

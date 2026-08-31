@@ -62,6 +62,7 @@ const DEFAULT_LANG=Object.freeze({
 	fieldValidationFailedHint:"Press Esc to cancel.",
 	groupValidationFailedHint:"Press Ctrl+Esc to discard changes and back out.",
 });
+let defaultLangOverrides=Object.create(null);
 
 
 /** 
@@ -683,9 +684,10 @@ class TablanceBase {
 	 * 								insertEntry "Insert new" (Used in repeat-schemaNode if create is set to true)
 	 * 								insertRow "Insert new" (Used for default toolbar insert button)
 	 * 							}
+	 * Language defaults for every instance can also be set through Tablance.defaultLang.
 	 * */
 constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
-		this.lang=Object.assign(Object.create(null),DEFAULT_LANG,opts?.lang??{});
+		this.lang=Object.assign(Object.create(null),DEFAULT_LANG,defaultLangOverrides,opts?.lang??{});
 		this.hostEl=hostEl;
 		const rootEl=this.rootEl = document.createElement("div");
 		this.hostEl.appendChild(this.rootEl);
@@ -6235,6 +6237,12 @@ class TablanceBulk extends TablanceBase {
 export default class Tablance extends TablanceBase {
 	static version=TABLANCE_VERSION;
 	static build=TABLANCE_BUILD;
+	static get defaultLang() {
+		return defaultLangOverrides;
+	}
+	static set defaultLang(lang) {
+		defaultLangOverrides=lang??Object.create(null);
+	}
 
 	constructor() {
 		super(...arguments);
