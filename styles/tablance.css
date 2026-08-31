@@ -502,6 +502,9 @@
 .tablance .details table.details-group > tbody > tr > td > div {
   padding: 0;
 }
+.tablance .details table.details-group > tbody > tr > td > div.group-cell {
+  padding-right: 4px;
+}
 .tablance .details table.details-group > tbody > tr.group-render > td {
   padding-top: 2px;
 }
@@ -549,6 +552,9 @@
 }
 .tablance .group-cell {
   padding: 4px;
+}
+.tablance .group-cell > table {
+  box-sizing: border-box;
 }
 .tablance .group-cell > table:not(:last-child) {
   margin-bottom: 4px;

@@ -347,6 +347,9 @@ try {
 	assert(closedGroupRenderStyle.paddingLeft==="4px"&&closedGroupRenderStyle.paddingTop==="2px"
 		&&closedGroupRenderStyle.paddingBottom==="2px",
 		"a closed group render uses compact horizontal and vertical padding");
+	const nestedGroupCellStyle=getComputedStyle(historyEntries[0].el.parentElement);
+	assert(nestedGroupCellStyle.paddingRight==="4px"&&getComputedStyle(historyEntries[0].el).boxSizing==="border-box",
+		"a nested group keeps visible space between its right border and its parent border");
 	key(table.rootEl,"Enter","Enter");
 	assert(historyEntries[0].el.classList.contains("open")&&table._activeSchemaNode.title==="Date",
 		"Enter opens a selected closed-render group and selects its first editable field");

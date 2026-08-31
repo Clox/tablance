@@ -549,6 +549,9 @@
 			>div {
 				padding: 0;
 			}
+			>div.group-cell {
+				padding-right: 4px;
+			}
 		}
 		table.details-group>tbody>tr.group-render>td {
 			padding-top: 2px;
@@ -609,6 +612,7 @@
 	.group-cell{
 		padding: 4px;
 		>table {
+			box-sizing: border-box;
 			&:not(:last-child) {
 				margin-bottom: 4px;
 			}
