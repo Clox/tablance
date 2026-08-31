@@ -24,6 +24,7 @@ try {
 	let changes=0,commits=0,validations=0,actions=0,buttonActions=0;
 	const row={editable:"edit",computed:"source",explicit:"locked",conditional:"conditional",canEdit:true,
 		disabledValue:"unavailable",isDisabled:true,action:"act",button:"button",detail:"detail rendered",
+		notes:"One line",
 		history:[{date:"2026-01-01"},{date:"2026-02-01"}],
 		file:{name:"report.pdf",lastModified:"2026-08-30T10:00:00Z",size:1024,type:"application/pdf"}};
 	const schema={
@@ -40,6 +41,7 @@ try {
 		details:{type:"list",entries:[
 			{title:"Detail",dataKey:"detail",nodeId:"detail",render:({value})=>value.toUpperCase()},
 			{title:"Explicit detail",dataKey:"explicit",readOnly:true,input:{type:"textarea"}},
+			{title:"Notes",dataKey:"notes",nodeId:"notes",input:{type:"textarea"}},
 			{type:"group",title:"History",nodeId:"historyGroup",entries:[
 				{type:"repeated",dataKey:"history",entry:{type:"group",closedRender:({date})=>date,entries:[
 					{title:"Date",dataKey:"date",input:{type:"text"}},
@@ -343,6 +345,21 @@ try {
 	key(table.rootEl,"Enter","Enter");
 	assert(table._cellCursor.querySelector("textarea")?.value==="DETAIL RENDERED","details presentation uses rendered text");
 	table._exitReadOnlyMode();
+	const notes=table.getDetailCell(0,"notes");
+	notes.select();
+	key(table.rootEl,"Enter","Enter");
+	const notesEditor=table._cellCursor.querySelector("textarea");
+	assert(notesEditor?.rows===1,"an editable textarea measures one line as its minimum height");
+	notesEditor.dispatchEvent(new Event("input",{bubbles:true}));
+	const oneLineHeight=parseFloat(table._selectedCell.style.height);
+	notesEditor.value="First line\nSecond line";
+	notesEditor.dispatchEvent(new Event("input",{bubbles:true}));
+	const twoLineHeight=parseFloat(table._selectedCell.style.height);
+	notesEditor.value="One line";
+	notesEditor.dispatchEvent(new Event("input",{bubbles:true}));
+	assert(twoLineHeight>oneLineHeight&&parseFloat(table._selectedCell.style.height)===oneLineHeight,
+		"textarea auto-resize grows for multiple lines and returns consistently to one-line height");
+	table._exitEditMode(false);
 	const fileButtons=[...table._mainTbody.querySelector('tr.details').querySelectorAll("button")];
 	assert(fileButtons.find(button=>button.textContent==="Open")?.disabled===false,
 		"existing readOnly file retains its non-mutating open action");

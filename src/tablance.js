@@ -3998,6 +3998,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_openTextAreaEdit() {
 		const textarea=this._cellCursor.appendChild(document.createElement("textarea"));
+		textarea.rows=1;
 		textarea.addEventListener('input', this._autoTextAreaResize.bind(this));
 
 		{	const {paddingLeft,paddingRight,paddingTop,paddingBottom}=window.getComputedStyle(this._selectedCell);
