@@ -649,6 +649,9 @@
 					display: block;
 				}
 			}
+			&.open>tbody>tr>td>.separator {
+				border-top-style: solid;
+			}
 			&.closed-render {
 				&.open>tbody>tr.group-render {
 					display: none;

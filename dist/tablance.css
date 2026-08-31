@@ -589,6 +589,9 @@
 .tablance .group-cell > table.open > tbody > tr:not(:first-child) > td > .separator, .tablance .group-cell > table > tbody > tr:not(.empty) + tr:not(.empty) > td > .separator {
   display: block;
 }
+.tablance .group-cell > table.open > tbody > tr > td > .separator {
+  border-top-style: solid;
+}
 .tablance .group-cell > table.closed-render.open > tbody > tr.group-render {
   display: none;
 }

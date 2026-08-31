@@ -363,9 +363,18 @@ try {
 	const nestedGroupCellStyle=getComputedStyle(historyEntries[0].el.parentElement);
 	assert(nestedGroupCellStyle.paddingRight==="4px"&&getComputedStyle(historyEntries[0].el).boxSizing==="border-box",
 		"a nested group keeps visible space between its right border and its parent border");
+	const firstHistorySeparator=historyEntries[0].children[0].selEl.querySelector(":scope>.separator");
+	assert(getComputedStyle(firstHistorySeparator).borderTopStyle==="dashed",
+		"inner cell separators are dashed while their group is closed");
 	key(table.rootEl,"Enter","Enter");
 	assert(historyEntries[0].el.classList.contains("open")&&table._activeSchemaNode.title==="Date",
 		"Enter opens a selected closed-render group and selects its first editable field");
+	assert(getComputedStyle(firstHistorySeparator).borderTopStyle==="solid",
+		"inner cell separators become solid while their group is open");
+	historyEntries[0].el.classList.remove("open");
+	assert(getComputedStyle(firstHistorySeparator).borderTopStyle==="dashed",
+		"inner cell separators return to dashed when their group closes");
+	historyEntries[0].el.classList.add("open");
 	const openGroupFieldStyle=getComputedStyle(historyEntries[0].children[0].selEl);
 	assert(openGroupFieldStyle.paddingLeft==="4px"&&openGroupFieldStyle.paddingTop==="2px"
 		&&openGroupFieldStyle.paddingBottom==="2px",
