@@ -161,6 +161,168 @@ try {
 		&&afterDeleteCalls===1&&deleteCommits===1,
 		"an allowed deletion continues through mutation, onDelete, and persistence");
 
+	const sortedBacking=[{id:1,order:30,label:"thirty"},{id:2,order:10,label:"ten"},
+		{id:3,order:20,label:"twenty"}];
+	const sortedCommits=[];
+	let sortedCreatePayload,sortedDeletePayload,sortedDeleteLifecycleCalls=0,sortedCreateCancelCalls=0;
+	let cancelSortedCreate=false,compareContextValid=true;
+	const sortedIdentityTable=new Tablance(host(),{
+		onDataCommit:payload=>sortedCommits.push(payload),main:{columns:[{dataKey:"title"}]},
+		details:{type:"list",entries:[
+			{type:"repeated",dataKey:"items",nodeId:"sortedItems",create:true,
+				createData:()=>({order:7,label:"new"}),
+				onCreate:payload=>{
+					sortedCreatePayload=payload;
+					if (cancelSortedCreate)
+						payload.cancelCreate();
+				},
+				onCreateCancel:()=>sortedCreateCancelCalls++,
+				sortCompare:(a,b,rowData,instanceNode)=>{
+					compareContextValid&&=rowData?.items===sortedBacking
+						&&instanceNode?.schemaNode?.nodeId==="sortedItems";
+					return a.order-b.order;
+				},
+				beforeDelete:payload=>sortedDeletePayload=payload,
+				onDelete:()=>sortedDeleteLifecycleCalls++,entry:{type:"group",entries:[
+					{title:"Order",dataKey:"order",nodeId:"sortedOrder",input:{type:"text"}},
+					{title:"Label",dataKey:"label",input:{type:"text"}},
+					{title:"Collection state",dataKey:"state",dependsOn:"sortedItems",
+						visibleIf:({dependedValue})=>dependedValue.length<3,
+						render:({dependedValue})=>dependedValue.map(item=>item.order).join(",")},
+					{title:"Collection edit",dataKey:"collectionEdit",dependsOn:"sortedItems",
+						editableIf:({dependedValue})=>dependedValue.length<3,input:{type:"text"}},
+				]}},
+		]},
+	},true,true,{searchbar:false});
+	sortedIdentityTable.setData([{title:"Sorted",items:sortedBacking}]);
+	await tick();
+	const sortedRepeated=sortedIdentityTable.getDetailCell(0,"sortedItems");
+	const visualEntries=()=>sortedRepeated.children.filter(child=>!child.schemaNode.creator);
+	assert(JSON.stringify(visualEntries().map(entry=>entry.dataObj.id))===JSON.stringify([2,3,1])
+		&&JSON.stringify(sortedBacking.map(entry=>entry.id))===JSON.stringify([1,2,3])&&compareContextValid,
+		"sortCompare creates a visual order without mutating backing-array order and receives full context");
+	const sortedCandidate=visualEntries()[1];
+	assert(sortedCandidate.dataObj.id===3&&sortedCandidate.index===1,
+		"the deletion candidate can have a visual index different from its backing-array index");
+	sortedCandidate.children[0].select();
+	const sortedDeleteControl={parent:{parent:sortedCandidate}};
+	assert(sortedIdentityTable._repeatedOnDelete({instanceNode:sortedDeleteControl})===true
+		&&JSON.stringify(sortedBacking.map(entry=>entry.id))===JSON.stringify([1,2])
+		&&sortedDeletePayload.deletedDataItem.id===3&&sortedDeletePayload.itemIndex===2
+		&&sortedDeletePayload.visualIndex===1
+		&&JSON.stringify(sortedDeletePayload.remainingData.map(entry=>entry.id))===JSON.stringify([1,2])
+		&&sortedCommits.filter(payload=>payload.mode==="delete").length===1
+		&&sortedCommits.find(payload=>payload.mode==="delete").data.id===3
+		&&sortedDeleteLifecycleCalls===1,
+		"sorted deletion mutates, validates, and persists exactly once by object identity");
+	const identityOne=visualEntries().find(entry=>entry.dataObj.id===1);
+	const identityOneElement=identityOne.outerContainerEl;
+	const identityOneOrder=identityOne.children[0];
+	identityOneOrder.select();
+	identityOne.dataObj.order=5;
+	sortedIdentityTable._markDirtyField(identityOneOrder);
+	assert(sortedIdentityTable._closeGroup(identityOne)
+		&&visualEntries()[0]===identityOne&&identityOne.outerContainerEl===identityOneElement
+		&&sortedIdentityTable._activeDetailsCell===identityOneOrder
+		&&JSON.stringify(sortedBacking.map(entry=>entry.id))===JSON.stringify([1,2]),
+		"accepted sort-key updates move the existing instance and DOM without changing identity, "
+			+"focus, or backing order");
+	const collectionState=visualEntries().find(entry=>entry.dataObj.id===2).children[2];
+	const collectionEdit=visualEntries().find(entry=>entry.dataObj.id===2).children[3];
+	assert(!collectionState.hidden&&collectionState.el.textContent==="5,10"
+		&&collectionEdit.cellState.kind==="editable",
+		"a committed repeated mutation natively refreshes cross-entry visibility, rendering, and editability");
+	sortedRepeated.createNewEntry();
+	const pendingSortedEntry=sortedRepeated.children.find(entry=>entry.creating);
+	const pendingSortedElement=pendingSortedEntry.outerContainerEl;
+	assert(!collectionState.hidden&&collectionEdit.cellState.kind==="editable"
+		&&JSON.stringify(sortedBacking.map(entry=>entry.id))===JSON.stringify([1,2]),
+		"an open repeated draft neither mutates backing data nor invalidates committed collection dependents");
+	assert(sortedIdentityTable._closeGroup(pendingSortedEntry)
+		&&JSON.stringify(sortedBacking.map(entry=>entry.id??"new"))===JSON.stringify([1,2,"new"])
+		&&visualEntries()[1]===pendingSortedEntry&&pendingSortedEntry.outerContainerEl===pendingSortedElement
+		&&sortedCreatePayload.itemIndex===2&&sortedCreatePayload.visualIndex===2
+		&&collectionState.hidden&&collectionEdit.cellState.kind==="readOnly",
+		"accepted creation appends to backing data, sorts the existing instance visually, "
+			+"and invalidates collection dependents");
+	const identityOneLabel=identityOne.children[1];
+	identityOneLabel.select();
+	sortedIdentityTable.updateData(sortedIdentityTable._filteredData[0],"items[0].order",50);
+	assert(visualEntries().at(-1)===identityOne&&identityOne.el.classList.contains("open")
+		&&sortedIdentityTable._activeDetailsCell===identityOneLabel&&identityOne.outerContainerEl===identityOneElement,
+		"external re-sorting moves DOM without losing an open group or its active field");
+	sortedIdentityTable.updateData(sortedIdentityTable._filteredData[0],"items[1].order",1);
+	assert(sortedBacking[1].id===2&&sortedBacking[1].order===1&&visualEntries()[0].dataObj.id===2
+		&&JSON.stringify(sortedBacking.map(entry=>entry.id??"new"))===JSON.stringify([1,2,"new"]),
+		"updateData addresses a backing-array index by object identity and then re-sorts only the presentation");
+	const createCommitsBeforeCancel=sortedCommits.filter(payload=>payload.mode==="create").length;
+	cancelSortedCreate=true;
+	sortedRepeated.createNewEntry();
+	const cancelledSortedEntry=sortedRepeated.children.find(entry=>entry.creating);
+	assert(sortedIdentityTable._closeGroup(cancelledSortedEntry)===false
+		&&!sortedRepeated.children.includes(cancelledSortedEntry)&&sortedCreateCancelCalls===1
+		&&sortedCommits.filter(payload=>payload.mode==="create").length===createCommitsBeforeCancel
+		&&JSON.stringify(sortedBacking.map(entry=>entry.id??"new"))===JSON.stringify([1,2,"new"]),
+		"cancelCreate removes the pending object and instance without persistence or backing-array residue");
+
+	const nestedDependencyRenders={};
+	const countNestedRender=(kind,rowData,value)=>{
+		const key=`${kind}:${rowData.id}`;
+		nestedDependencyRenders[key]=(nestedDependencyRenders[key]??0)+1;
+		return value;
+	};
+	const nestedRows=[{id:"outer-a",inner:[{id:"inner-a",value:1}]},
+		{id:"outer-b",inner:[{id:"inner-b",value:2}]}];
+	const nestedDependencyTable=new Tablance(host(),{
+		main:{columns:[{dataKey:"title"}]},details:{type:"list",entries:[
+			{type:"repeated",dataKey:"outer",nodeId:"outerCollection",entry:{type:"group",entries:[
+				{type:"repeated",dataKey:"inner",nodeId:"innerCollection",entry:{type:"group",entries:[
+					{title:"Value",dataKey:"value",input:{type:"text"}},
+					{title:"Inner state",dataKey:"innerState",dependsOn:"innerCollection",
+						render:({dependedValue,rowData})=>countNestedRender("inner",rowData,
+							dependedValue.reduce((sum,item)=>sum+Number(item.value),0))},
+				]}},
+				{title:"Outer state",dataKey:"outerState",dependsOn:"outerCollection",
+					render:({dependedValue,rowData})=>countNestedRender("outer",rowData,
+						dependedValue.flatMap(item=>item.inner).reduce((sum,item)=>sum+Number(item.value),0))},
+			]}},
+	]}},true,true,{searchbar:false});
+	nestedDependencyTable.setData([{title:"Nested",outer:nestedRows}]);
+	await tick();
+	const outerRepeated=nestedDependencyTable.getDetailCell(0,"outerCollection");
+	const outerA=outerRepeated.children.find(entry=>entry.dataObj.id==="outer-a");
+	const innerARepeated=outerA.children[0];
+	const innerA=innerARepeated.children[0];
+	const innerAValue=innerA.children[0];
+	innerAValue.select();
+	for (const key of Object.keys(nestedDependencyRenders))
+		delete nestedDependencyRenders[key];
+	innerA.dataObj.value=4;
+	nestedDependencyTable._markDirtyField(innerAValue);
+	assert(nestedDependencyTable._closeGroup(innerA)&&outerA.el.classList.contains("open")
+		&&nestedDependencyRenders["inner:inner-a"]===1
+		&&!nestedDependencyRenders["inner:inner-b"]
+		&&nestedDependencyRenders["outer:outer-a"]===1&&nestedDependencyRenders["outer:outer-b"]===1,
+		"accepted nested commits invalidate their collection dependencies while an outer group remains open");
+	assert(nestedDependencyTable._closeGroup(outerA)
+		&&nestedDependencyRenders["inner:inner-a"]===1
+		&&nestedDependencyRenders["outer:outer-a"]===1&&nestedDependencyRenders["outer:outer-b"]===1,
+		"closing the outer group flushes the already-finalized nested commit without another invalidation");
+
+	const duplicateIdentity={id:"duplicate"};
+	const duplicateIdentityTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},
+		details:{type:"list",entries:[{type:"repeated",dataKey:"items",entry:{dataKey:"id"}}]}},
+	true,true,{searchbar:false});
+	let duplicateIdentityRejected=false;
+	try {
+		duplicateIdentityTable._validateRepeatedDataArray([duplicateIdentity,duplicateIdentity]);
+	} catch (error) {
+		duplicateIdentityRejected=error instanceof TypeError
+			&&error.message.includes("unique object identities");
+	}
+	assert(duplicateIdentityRejected,
+		"repeated arrays reject duplicate object identities instead of silently making identity ambiguous");
+
 	const resolve=node=>table._resolveCellState(node,{rowData:row});
 	const conditionallyLockedState=resolve({input:{type:"text"},editableIf:()=>false});
 	assert(conditionallyLockedState.kind==="readOnly"&&!conditionallyLockedState.activatable

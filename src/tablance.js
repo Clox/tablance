@@ -43,6 +43,8 @@ REPEATED_INSTANCE_NODE_PROTOTYPE.createNewEntry=function(e,_groupObject) {
 		?this.schemaNode.createData(payload):{};
 	if (createdData==null||typeof createdData!=="object"||Array.isArray(createdData))
 		throw new TypeError("repeated.createData must return an object.");
+	if (repeatData.includes(createdData))
+		throw new TypeError("repeated.createData must return a new object identity.");
 	const pendingData=createdData;
 	this.tablance?._repeatInsert(this,true,pendingData);
 };
@@ -548,6 +550,7 @@ class TablanceBase {
 	 * 					- dataKey: optional key for the repeated array (creation context)
 	 * 					- dataArray: optional repeated array reference (creation context)
 	 * 					- itemIndex: index of the new item within dataArray
+	 * 					- visualIndex: visual position before any post-commit sort
 	 * 					- repeatedSchemaNode: the repeated container schema node
 	 * 					- entrySchemaNode: the schema node for the created entry (often a group)
 	 * 					- newInstanceNode: the instance node for the created entry
@@ -567,12 +570,15 @@ class TablanceBase {
 	 * 					context as onDelete plus remainingData (a shallow copy without the candidate) and
 	 * 					preventDelete(message?).
 	 * 					Call preventDelete or return false to leave the data, instance tree and DOM unchanged.
-	 * 				onDelete Function Callback fired after the user has successfully deleted an entry via the interface
-	 * 					available if "create" is true. Receives a payload object:
+	 * 				onDelete Function Lifecycle callback fired after the user has successfully deleted an entry via the
+	 * 					interface available if "create" is true. Persistence is emitted once through root
+	 * 					`onDataCommit`;
+	 * 					use this callback only for local follow-up effects. Receives a payload object:
 	 * 					- deletedDataItem: the deleted data object
 	 * 					- dataKey: optional key for the repeated array (creation context)
 	 * 					- dataArray: optional repeated array reference
 	 * 					- itemIndex: index the deleted item had before removal
+	 * 					- visualIndex: visual position the deleted item had before removal
 	 * 					- repeatedSchemaNode: the repeated container schema node
 	 * 					- entrySchemaNode: the schema node for the deleted entry (often a group)
 	 * 					- deletedInstanceNode: the instance node for the deleted entry
@@ -581,6 +587,7 @@ class TablanceBase {
 	 * 					- closestMeta: function(key) to read meta data closest to the schema node
 	 * 				sortCompare Function Passing in a function allows for sorting the entries. As expected this
 	 * 					function will get called multiple times to compare the entries to one another.
+	 * 					Sorting affects only rendered instances; backing-array order and object identity are unchanged.
 	 * 					It gets 4 arguments: 1: object A, 2: object B, 3: rowData, 4: instanceNode
 	 * 					Return >0 to sort A after B, <0 to sort B after A, or ===0 to keep original order of A and B
 	 * 				creationText String Used if "create" is true. the text of the creation-cell. Default is "Insert new"
@@ -1011,6 +1018,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		//The data is somewhere in details
 		
 		let nodeToUpdate=this._openDetailsPanes[mainIndx];//points to the instance-node that will be subject for update
+		const repeatedMutations=new Set;
 		if (!nodeToUpdate)//if the updates details is not open
 			return;
 
@@ -1023,7 +1031,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const arrayIndex=dataPath[i+1]?.replace(/^\[|\]$/g,"");
 			nodeToUpdate=this._findDescendantInstanceNodeById(nodeToUpdate,instanceNodeId);
 			if (nodeToUpdate.schemaNode.type=="repeated") {//should be true until possibly last iteration
+				repeatedMutations.add(nodeToUpdate);
 				if (i==dataPath.length-1) {//final array-index not specified. replace all of the data in repeated
+					const replacement=nodeToUpdate.parent.dataObj[nodeToUpdate.schemaNode.dataKey];
+					this._validateRepeatedDataArray(replacement);
 
 					//remove all the current entries. Do it backwards so that the remaining entries doesn't have to
 					//have their index&path updates each time
@@ -1032,13 +1043,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 						this._deleteCell(entry,true);
 
 					//insert all the new data
-					nodeToUpdate.dataObj=nodeToUpdate.parent.dataObj[nodeToUpdate.schemaNode.dataKey];
+					nodeToUpdate.dataObj=replacement;
 					nodeToUpdate.dataObj.forEach(
 									dataEntry=>updatedEls.push(this._repeatInsert(nodeToUpdate,false,dataEntry)));
 					break;
-				} else if (arrayIndex) {//index pointing at existing repeated-child
-					nodeToUpdate=nodeToUpdate.children[arrayIndex];
+				} else if (arrayIndex!==undefined&&arrayIndex!=="") {//backing-array index pointing at an entry
+					const dataEntry=nodeToUpdate.dataObj[Number(arrayIndex)];
+					nodeToUpdate=nodeToUpdate.children.find(child=>!child.schemaNode.creator
+						&&child.dataObj===dataEntry);
+					if (!nodeToUpdate)
+						throw new RangeError(`No repeated entry exists at data index ${arrayIndex}.`);
 				} else {//[] - insert new
+					this._validateRepeatedDataArray(nodeToUpdate.dataObj);
 					updatedEls.push(this._repeatInsert(nodeToUpdate,false,nodeToUpdate.dataObj.at(-1)));
 					break;
 				}
@@ -1047,6 +1063,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		if (nodeToUpdate.schemaNode.type=="field")
 			this._updateDetailsCell(nodeToUpdate,dataRow);
+		for (const repeated of repeatedMutations)
+			this._finalizeRepeatedMutation(repeated);
 		if (scrollTo) {
 			nodeToUpdate.el.scrollIntoView({behavior:'smooth',block:"center"});
 			updatedEls.forEach(el=>this._highlightElements([el,...el.getElementsByTagName('*')]));
@@ -1658,6 +1676,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 				const dependentIsExp = schemaNode._path && schemaNode._path[0] !== "m";
 				const cellPaths = [];
+				const cellSources = [];
 				const dataPaths = [];
 
 				for (const depName of deps) {
@@ -1678,8 +1697,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 					if (dependentIsExp && dependeeIsExp) {
 						const rev = this._dep_computeReversePath(schemaNode, dependee);
-						if (rev && rev.length)
+						if (rev && rev.length) {
 							cellPaths.push(rev);
+							cellSources.push({type:dependee.type,nodeId:dependee.nodeId,dataKey:dependee.dataKey});
+						}
 					} else {
 						if (dependee._dataPath)
 							dataPaths.push(dependee._dataPath);
@@ -1688,7 +1709,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					}
 				}
 
-				this._dep_finalizeDependency(schemaNode, cellPaths, dataPaths);
+				this._dep_finalizeDependency(schemaNode, cellPaths, dataPaths,cellSources);
 			}
 
 			stack.push(...this._dep_children(schemaNode));
@@ -1784,10 +1805,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	/*───────────────────────────────────────────────────────────
 		Helper: Finalize dependency classification (exclusive)
 	───────────────────────────────────────────────────────────*/
-	_dep_finalizeDependency(schemaNode, cellPaths, dataPaths) {
+	_dep_finalizeDependency(schemaNode, cellPaths, dataPaths,cellSources=[]) {
 
 		if (cellPaths.length) {
 			schemaNode.dependsOnCellPaths = cellPaths;
+			schemaNode.dependsOnCellSources = cellSources;
 			delete schemaNode.dependsOnDataPath;
 			delete schemaNode.dependsOnDataPaths;
 			return;
@@ -1797,6 +1819,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			schemaNode.dependsOnDataPath = dataPaths[0];
 			delete schemaNode.dependsOnDataPaths;
 			delete schemaNode.dependsOnCellPaths;
+			delete schemaNode.dependsOnCellSources;
 
 			if (!schemaNode._dataPath)
 				schemaNode._dataPath = dataPaths[0];
@@ -1808,6 +1831,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			schemaNode.dependsOnDataPaths = dataPaths;
 			delete schemaNode.dependsOnDataPath;
 			delete schemaNode.dependsOnCellPaths;
+			delete schemaNode.dependsOnCellSources;
 		}
 	}
 
@@ -2584,9 +2608,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_repeatedOnDelete=({instanceNode})=>{
 		const entryNode=instanceNode.parent.parent;
 		const repeatedContainer=entryNode.parent;
+		const itemIndex=this._getRepeatedDataIndex(entryNode);
 		const payload=this._makeCallbackPayload(entryNode,{
 			deletedDataItem: entryNode.dataObj,
-			itemIndex: entryNode.index,
+			itemIndex,
+			visualIndex: entryNode.index,
 			repeatedSchemaNode: repeatedContainer?.schemaNode,
 			entrySchemaNode: entryNode.schemaNode,
 			deletedInstanceNode: entryNode,
@@ -2601,7 +2627,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const beforeDelete=repeatedContainer?.schemaNode.beforeDelete;
 		if (beforeDelete) {
 			const remainingData=Array.isArray(payload.dataArray)
-				?payload.dataArray.filter((_item,index)=>index!==payload.itemIndex):[];
+				?payload.dataArray.filter((_item,index)=>index!==itemIndex):[];
 			const result=beforeDelete({...payload,remainingData,preventDelete:(message)=>{
 				doDelete=false;
 				preventMessage=message??preventMessage;
@@ -2614,8 +2640,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._showTooltip(preventMessage,entryNode.selEl??entryNode.el);
 			return false;
 		}
-		this._deleteCell(entryNode);
-		repeatedContainer?.schemaNode.onDelete?.(payload);
+		const deletion=this._deleteCell(entryNode);
+		if (!deletion?.wasCreating)
+			repeatedContainer?.schemaNode.onDelete?.(payload);
 		return true;
 	}
 
@@ -2671,6 +2698,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		let repeatData=rowData?.[repeatedSchemaNode.dataKey];
 		if (!Array.isArray(repeatData))
 			repeatData=[];
+		this._validateRepeatedDataArray(repeatData);
 		instanceNode.dataObj=repeatData;
 		instanceNode.insertionPoint=parentEl.appendChild(document.createComment("repeated-insert"));
 		repeatedSchemaNode.create&&this._generateRepeatedCreator(instanceNode);
@@ -2756,7 +2784,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				return {...srcVal};
 			return srcVal;
 		};
-		for (const key of ["dependencyPaths","dependsOnCellPaths","dependsOnDataPath","dependsOnDataPaths"])
+		for (const key of ["dependencyPaths","dependsOnCellPaths","dependsOnCellSources",
+			"dependsOnDataPath","dependsOnDataPaths"])
 			if (sourceNode?.[key]!==undefined)
 				targetNode[key]=copyMeta(sourceNode[key]);
 		const sourceChildren=this._dep_children(sourceNode);
@@ -2893,6 +2922,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (let entryI=-1,childSchemaNode; childSchemaNode=containerSchemaNode.entries[++entryI];) {
 			if (childSchemaNode.type==="repeated") {
 				const repeatData=rowData?.[childSchemaNode.dataKey];
+				if (Array.isArray(repeatData))
+					this._validateRepeatedDataArray(repeatData);
 				const rptCelObj=collectionObj.children[entryI]=Object.assign(
 					this._createInstanceNode(collectionObj,entryI,REPEATED_INSTANCE_NODE_PROTOTYPE),
 					{children:[],schemaNode:childSchemaNode,dataObj:Array.isArray(repeatData)?repeatData:[],path:[...path,entryI]}
@@ -2908,6 +2939,19 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._generateCollectionItem(childSchemaNode,mainIndex,collectionObj,path,rowData);
 		}
 		return true;
+	}
+
+	_validateRepeatedDataArray(dataArray) {
+		if (!Array.isArray(dataArray))
+			throw new TypeError("Repeated data must be an array.");
+		const identities=new Set;
+		for (const entry of dataArray) {
+			if (entry==null||typeof entry!=="object"||Array.isArray(entry))
+				throw new TypeError("Every repeated data entry must be an object.");
+			if (identities.has(entry))
+				throw new TypeError("Repeated data entries must have unique object identities.");
+			identities.add(entry);
+		}
 	}
 
 	/**
@@ -3584,7 +3628,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			payload.mode="update";
 		if (payload.mode==="create")
 			payload.changes=null;
-		const txn=this._queueCommitIntent(payload,{instanceNode,depth: depthOverride});
+		for (const repeated of this._getRepeatedAncestors(instanceNode))
+			this._finalizeRepeatedMutation(repeated);
+		const transactionGroup=this._getOpenGroupAncestor(instanceNode?.parent);
+		const txn=this._queueCommitIntent(payload,{group:transactionGroup,instanceNode,depth: depthOverride});
 		if (!txn.stack.length)
 			this._flushBufferedGroupCommits();
 	}
@@ -3694,7 +3741,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_closeGroup(groupObject,targetCell=null,suppressTooltip=false) {
 		this._enterEditTransaction(groupObject);
-		const {payload,closePayload,closeState}=this._buildGroupPayload(groupObject);
+		const {payload,closePayload,closeState,changed}=this._buildGroupPayload(groupObject);
 		const commitPayload={...payload};
 		groupObject.schemaNode.onClose?.(closePayload);
 		if (!closeState.doClose) {
@@ -3708,6 +3755,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (groupObject.creating&&!this._closeRepeatedInsertion(groupObject))
 			return false;
 		this._finalizeGroupClose(groupObject);
+		if (changed)
+			for (const repeated of this._getRepeatedAncestors(groupObject))
+				this._finalizeRepeatedMutation(repeated);
 		// Buffer commit so outer groups can still cancel; flush once the outermost edit scope commits.
 		this._bufferGroupCommit(groupObject,commitPayload);
 		this._removeGroupFromTransaction(groupObject);
@@ -3786,8 +3836,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		let indexOfNew,rowIndex;
 		if (!creating&&repeated.schemaNode.sortCompare&&!entrySchemaNode.creator) {
+			const rowData=repeated.parent?.dataObj;
 			for (indexOfNew=0;indexOfNew<repeated.children.length-!!repeated.schemaNode.create; indexOfNew++)
-				if (repeated.schemaNode.sortCompare(data,repeated.children[indexOfNew].dataObj)<0)
+				if (repeated.schemaNode.sortCompare(
+					data,repeated.children[indexOfNew].dataObj,rowData,repeated)<0)
 					break;
 		} else
 			indexOfNew=repeated.children.length-(repeated.schemaNode.create&&!entrySchemaNode.creator)//pos be4 creator
@@ -3806,6 +3858,58 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			repeated.schemaNode.onCreateOpen?.(repeated);
 		}
 		return newObj.el;
+	}
+
+	_getRepeatedDataIndex(instanceNode) {
+		const repeated=instanceNode?.parent;
+		if (repeated?.schemaNode?.type!=="repeated"||!Array.isArray(repeated.dataObj))
+			return -1;
+		return repeated.dataObj.indexOf(instanceNode.dataObj);
+	}
+
+	_getRepeatedAncestors(instanceNode) {
+		const repeatedAncestors=[];
+		for (let node=instanceNode;node;node=node.parent)
+			if (node.schemaNode?.type==="repeated")
+				repeatedAncestors.push(node);
+		return repeatedAncestors;
+	}
+
+	_sortRepeatedInstances(repeated) {
+		const compare=repeated?.schemaNode?.sortCompare;
+		if (typeof compare!=="function")
+			return false;
+		const creators=[];
+		const entries=[];
+		for (const child of repeated.children??[])
+			(child.schemaNode?.creator?creators:entries).push(child);
+		const previousOrder=new Map(entries.map((entry,index)=>[entry,index]));
+		const rowData=repeated.parent?.dataObj;
+		const sorted=[...entries].sort((a,b)=>compare(a.dataObj,b.dataObj,rowData,repeated)
+			||(previousOrder.get(a)-previousOrder.get(b)));
+		if (sorted.every((entry,index)=>entry===entries[index]))
+			return false;
+		repeated.children=[...sorted,...creators];
+		const collectionEl=repeated.parent?.containerEl;
+		for (const entry of repeated.children) {
+			if (entry.outerContainerEl&&collectionEl)
+				collectionEl.insertBefore(entry.outerContainerEl,repeated.insertionPoint);
+		}
+		for (let index=0;index<repeated.children.length;index++)
+			this._changeInstanceNodeIndex(repeated.children[index],index);
+		this._adjustCursorPosSize?.(this._selectedCell,true);
+		return true;
+	}
+
+	_finalizeRepeatedMutation(repeated) {
+		if (!repeated?.schemaNode||repeated.schemaNode.type!=="repeated")
+			return;
+		this._sortRepeatedInstances(repeated);
+		this._updateDependentCells(repeated.schemaNode,repeated);
+		const detailsTr=repeated.outerContainerEl?.closest?.("tr.details")
+			??repeated.parent?.containerEl?.closest?.("tr.details");
+		if (detailsTr&&!this._onlyDetails)
+			this._updateDetailsHeight(detailsTr);
 	}
 
 	/**
@@ -3835,8 +3939,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		if (!dataObj||dataArray.includes(dataObj))
 			return;
-		const insertAt=Math.min(Number.isInteger(instanceNode.index)?instanceNode.index:dataArray.length,dataArray.length);
-		dataArray.splice(insertAt,0,dataObj);
+		// Backing-array order is data order. Visual sort order is maintained independently in repeated.children.
+		dataArray.push(dataObj);
 		instanceNode.dataArray=dataArray;
 	}
 
@@ -3858,9 +3962,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_deleteCell(instanceNode,programatically=false) {
 		const parent=instanceNode.parent;
-		const deletedIndex=instanceNode.index;
+		const visualIndex=instanceNode.index;
 		const dataArray=parent?.dataObj;
-		const deletedData=Array.isArray(dataArray)?dataArray[deletedIndex]:undefined;
+		const dataIndex=this._getRepeatedDataIndex(instanceNode);
+		const deletedData=instanceNode.dataObj;
+		const wasCreating=!!instanceNode.creating;
 		let mainIndex;
 		for (let root=instanceNode; root.parent; root=root.parent)
 			if (root.rowIndex!=null)
@@ -3869,12 +3975,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const parentData=instanceNode.parentData??null;
 
 		// Mutate data array
-		if (!programatically&&parent?.schemaNode?.type==="repeated"&&Array.isArray(dataArray)&&deletedIndex>-1)
-			dataArray.splice(deletedIndex,1);
+		if (!programatically&&parent?.schemaNode?.type==="repeated"&&Array.isArray(dataArray)&&dataIndex>-1)
+			dataArray.splice(dataIndex,1);
 
 		// Remove instance and reindex siblings
-		parent.children.splice(deletedIndex,1);
-		for (let i=deletedIndex,otherCell; otherCell=parent.children[i]; i++)
+		parent.children.splice(visualIndex,1);
+		for (let i=visualIndex,otherCell; otherCell=parent.children[i]; i++)
 			this._changeInstanceNodeIndex(otherCell,i);
 
 		// DOM removal
@@ -3883,13 +3989,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		else
 			instanceNode.el.parentElement.remove();
 		this._activeDetailsCell=null;//causes problem otherwise when #selectDetailsCell checks old cell
+		if (instanceNode.schemaNode?.type==="group")
+			this._removeGroupFromTransaction(instanceNode,true);
 
 		// Commit deletion after mutation/reindex
-		if (!programatically&&parent?.schemaNode?.type==="repeated"&&deletedData!==undefined) {
+		if (!programatically&&parent?.schemaNode?.type==="repeated"&&dataIndex>-1) {
 			const payload=this._makeCallbackPayload(instanceNode,{
 				data: deletedData,
 				dataArray,
-				deletedIndex
+				itemIndex:dataIndex,
+				visualIndex
 			},{
 				schemaNode: instanceNode.schemaNode,
 				mainIndex,
@@ -3902,10 +4011,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 
 		// Select next cell
-		let newSelectedCell=parent.children[deletedIndex]??parent.children[deletedIndex-1];
+		let newSelectedCell=parent.children[visualIndex]??parent.children[visualIndex-1];
 		if (!programatically)
 			this._selectDetailsCell(newSelectedCell??parent.parent);
 		instanceNode.creating&&parent.schemaNode.onCreateCancel?.(parent);
+		return {deletedDataItem:deletedData,itemIndex:dataIndex,visualIndex,wasCreating};
 	}
 
 	_openTextEdit() {
@@ -4829,9 +4939,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._showTooltip(message,repeatEntry.el);
 				return false;//prevent commiting/closing the group
 			}
+				this._ensureRepeatedEntryInsertion(repeatEntry);
+				const insertedIndex=this._getRepeatedDataIndex(repeatEntry);
 				const payload=this._makeCallbackPayload(repeatEntry,{
 					newDataItem: repeatEntry.dataObj,
-					itemIndex: repeatEntry.index,
+					itemIndex: insertedIndex,
+					visualIndex: repeatEntry.index,
 					repeatedSchemaNode: repeatedContainer?.schemaNode,
 					entrySchemaNode: creationContainer.schemaNode,
 					newInstanceNode: repeatEntry,
@@ -4843,11 +4956,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					rowData: parentDataContext,
 					bulkEdit: false
 				});
-				this._ensureRepeatedEntryInsertion(repeatEntry);
 				repeatEntry.creating=false;
-				creationContainer.schemaNode.onCreate?.(payload);
+				repeatedContainer.schemaNode.onCreate?.(payload);
 				if (!doCreate) {
-					this._deleteCell(repeatEntry);
+					if (insertedIndex>-1)
+						repeatedContainer.dataObj.splice(insertedIndex,1);
+					repeatEntry.creating=true;
+					this._deleteCell(repeatEntry,true);
 					return false;
 			}
 		} else {
@@ -6043,6 +6158,26 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return target;
 	}
 
+	_resolveDependeeInstance(baseCell,path,source={}) {
+		let target=this._resolveCellPaths(baseCell,path);
+		if (source.type!=="repeated")
+			return target;
+		for (let node=target;node;node=node.parent)
+			if (node.schemaNode?.type==="repeated"
+				&&(source.nodeId==null||node.schemaNode.nodeId===source.nodeId)
+				&&(source.dataKey==null||node.schemaNode.dataKey===source.dataKey))
+				return node;
+		return target;
+	}
+
+	_getInstanceNodeValue(instanceNode) {
+		if (!instanceNode)
+			return;
+		if (instanceNode.schemaNode?.type==="field")
+			return instanceNode.dataObj?.[instanceNode.schemaNode.dataKey];
+		return instanceNode.dataObj;
+	}
+
 	/**
 	 * Gets the value of a cell, pointed to by its ID, or if it depends on another cell, gets that value. The value
 	 * is the raw data from the data-object, not rendered.
@@ -6065,8 +6200,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			 return this._getValueByPath(rowData,schemaNode.dependsOnDataPath);
 		}
 		if (schemaNode.dependsOnCellPaths) {
-			const dependee=this._resolveCellPaths(instanceNode,schemaNode.dependsOnCellPaths[0]);
-			return dependee?.dataObj?.[dependee.schemaNode.dataKey];
+			const values=schemaNode.dependsOnCellPaths.map((path,index)=>this._getInstanceNodeValue(
+				this._resolveDependeeInstance(instanceNode,path,schemaNode.dependsOnCellSources?.[index])));
+			return values.length===1?values[0]:values;
 		}
 		return rowData[schemaNode.dataKey];
 	}
