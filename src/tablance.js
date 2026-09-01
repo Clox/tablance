@@ -5098,6 +5098,19 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		cellEl?.classList.add("tablance-active-cell");
 	}
 
+	_cellElementRepresentsLogicalCursor(cellEl,instanceNode=null) {
+		if (!cellEl)
+			return false;
+		if (this._activeDetailsCell) {
+			const activeCellEl=this._activeDetailsCell.selEl??this._activeDetailsCell.el;
+			return cellEl===activeCellEl&&(!instanceNode||instanceNode===this._activeDetailsCell);
+		}
+		const tr=cellEl.parentElement;
+		const rowIndex=Number(tr?.dataset?.dataRowIndex);
+		return tr?.parentElement===this._mainTbody&&cellEl.cellIndex===this._mainColIndex
+			&&rowIndex===this._mainRowIndex&&this._filteredData[rowIndex]===this._cellCursorDataObj;
+	}
+
 	_showsActionIndicator(cellState,schemaNode) {
 		return cellState?.kind==="action"&&!["expand","select","group"].includes(schemaNode?.type)
 			&&schemaNode?.input?.type!=="button";
@@ -5748,6 +5761,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		//its position and size needs to be udated.Hide for now and let #updateRowValues or #renderDetails add it back
 		this._cellCursor.style.display="none";
+		this._detachMainCursorFromRow(this._selectedCell?.parentElement);
 
 		this._mainTbody.replaceChildren();//remove all the tr-elements
 		this._maybeAddTrs();//add them again and with their correct data, at least based on them being the top rows 
@@ -5774,11 +5788,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._scrollRowIndex+=scrollSignum;
 				if (scrollSignum==1) {//moving down												move top row to bottom
 					const dataIndex=this._scrollRowIndex+this._numRenderedRows-1;
-					this._updateRowValues(this._mainTbody.appendChild(this._mainTbody.firstChild),dataIndex);
+					const trToMove=this._updateRowValues(
+						this._mainTbody.appendChild(this._mainTbody.firstChild),dataIndex);
+					this._lookForActiveCellInRow(trToMove);
 				} else {//moving up
 					let trToMove=this._mainTbody.lastChild;									//move bottom row to top
 					this._mainTbody.prepend(trToMove);
 					this._updateRowValues(trToMove,this._scrollRowIndex);
+					this._lookForActiveCellInRow(trToMove);
 				}
 			} while (this._scrollRowIndex!=newScrollRowIndex);
 		}
@@ -5868,9 +5885,26 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * to set #selectedCell to the correct element
 	 * @param {HTMLTableRowElement} tr */
 	_lookForActiveCellInRow(tr) {
-		if (tr.dataset.dataRowIndex==this._mainRowIndex&&!this._activeDetailsCell)
-				this._setSelectedCellElement(tr.cells[this._mainColIndex]);
-			//this._adjustCursorPosSize(this._selectedCell);
+		const rowIndex=Number(tr.dataset.dataRowIndex);
+		if (rowIndex!==this._mainRowIndex||this._activeDetailsCell
+			||this._filteredData[rowIndex]!==this._cellCursorDataObj)
+			return;
+		const cell=tr.cells[this._mainColIndex];
+		this._setSelectedCellElement(cell);
+		const state=this._getCellState(cell);
+		if (state)
+			this._setCellState(cell,state);
+	}
+
+	_detachMainCursorFromRow(tr,nextMainIndex=null) {
+		if (this._activeDetailsCell||this._selectedCell?.parentElement!==tr)
+			return;
+		if (nextMainIndex===this._mainRowIndex
+			&&this._filteredData[nextMainIndex]===this._cellCursorDataObj)
+			return;
+		this._setSelectedCellElement(null);
+		this._clearStaticCellOverflowPreview();
+		this._cellCursor.style.display="none";
 	}
 
 	_refreshTableSizerNoDetails() {
@@ -5959,6 +5993,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._mainTbody.lastChild.remove();
 				delete this._openDetailsPanes[this._scrollRowIndex+this._numRenderedRows];
 			}
+			this._detachMainCursorFromRow(this._mainTbody.lastChild);
 			this._mainTbody.lastChild.remove();
 			this._numRenderedRows--;
 		}
@@ -5968,6 +6003,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * The row needs to already have the right amount of td's.
 	 * @param {HTMLTableRowElement} tr The tr-element whose cells that should be updated*/
 	_updateRowValues(tr,mainIndex) {
+		this._detachMainCursorFromRow(tr,mainIndex);
 		for (const cell of tr.querySelectorAll(":scope>td.tablance-active-cell"))
 			cell.classList.remove("tablance-active-cell");
 		tr.dataset.dataRowIndex=mainIndex;
@@ -6265,7 +6301,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			cellEl.setAttribute("aria-disabled","true");
 		else
 			cellEl.removeAttribute("aria-disabled");
-		if (cellEl===this._selectedCell) {
+		if (cellEl===this._selectedCell&&this._cellElementRepresentsLogicalCursor(cellEl,instanceNode)) {
 			this._selectedCellState=state;
 			this._cellCursor?.classList.toggle("read-only",state.kind==="readOnly");
 			this._cellCursor?.classList.toggle("disabled",state.kind==="disabled");

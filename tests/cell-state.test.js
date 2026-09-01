@@ -111,6 +111,45 @@ try {
 	assert(fixedHeightTable._rowInnerHeights[0]!==fixedHeightTable._rowInnerHeights[1],
 		"each column derives its inner height from its own padding and borders");
 
+	const assertVirtualCursorRecycling=async withDetails=>{
+		const virtualHost=host();
+		virtualHost.style.height="160px";
+		const virtualRows=Array.from({length:80},(_entry,index)=>({id:index,value:`Row ${index}`}));
+		const virtualSchema={main:{columns:[
+			{title:"ID",dataKey:"id"},{title:"Value",dataKey:"value",input:{type:"text"}},
+		]}};
+		if (withDetails)
+			virtualSchema.details={type:"list",entries:[{title:"Value",dataKey:"value"}]};
+		const virtualTable=new Tablance(virtualHost,virtualSchema,true,true,{searchbar:false,ordering:false});
+		virtualTable.setData(virtualRows);
+		await tick();
+		const viewportKind=withDetails?"details":"plain";
+		assert(virtualTable._numRenderedRows<virtualRows.length,
+			`${viewportKind} virtual cursor test uses a viewport with recycled rows`);
+		const firstVirtualRow=virtualTable._mainTbody.querySelector('[data-data-row-index="0"]:not(.details)');
+		virtualTable._selectMainTableCell(firstVirtualRow.cells[1]);
+		const logicalRowIndex=virtualTable._mainRowIndex;
+		const logicalData=virtualTable._cellCursorDataObj;
+		const recycledRow=virtualTable._selectedCell.parentElement;
+		const recycledCell=virtualTable._selectedCell;
+		virtualTable._scrollBody.scrollTop=virtualTable._scrollMarginPx+virtualTable._rowHeight+1;
+		virtualTable._scrollBody.dispatchEvent(new Event("scroll"));
+		assert(Number(recycledRow.dataset.dataRowIndex)!==logicalRowIndex
+			&&virtualTable._selectedCell===null&&virtualTable._cellCursor.style.display==="none"
+			&&!recycledCell.classList.contains("tablance-active-cell")
+			&&virtualTable._mainRowIndex===logicalRowIndex&&virtualTable._cellCursorDataObj===logicalData,
+			`${viewportKind} recycled row hides the cursor without changing its logical data cell`);
+		virtualTable._scrollBody.scrollTop=0;
+		virtualTable._scrollBody.dispatchEvent(new Event("scroll"));
+		assert(virtualTable._selectedCell===recycledCell
+			&&Number(virtualTable._selectedCell.parentElement.dataset.dataRowIndex)===logicalRowIndex
+			&&virtualTable._selectedCell.cellIndex===1&&virtualTable._cellCursor.style.display==="block"
+			&&virtualTable._mainRowIndex===logicalRowIndex&&virtualTable._cellCursorDataObj===logicalData,
+			`${viewportKind} cursor returns to exactly the same logical cell after recycling`);
+	};
+	await assertVirtualCursorRecycling(false);
+	await assertVirtualCursorRecycling(true);
+
 	const emptyGroupTable=new Tablance(host(),{details:{type:"list",entries:[
 		{title:"Addresses",type:"group",nodeId:"addressesGroup",entries:[
 			{type:"repeated",dataKey:"addresses",create:true,entry:{type:"group",entries:[]}},
