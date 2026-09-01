@@ -4119,13 +4119,33 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const highlighted=ctx.ulDiv.getElementsByClassName("highlighted")[0];
 			if (highlighted)
 				highlighted.classList.remove("highlighted");
-			const ul=ctx.ulDiv.children[ctx.highlightUlIndex=ulIndex];
-			const li=ul.children[ctx.highlightLiIndex=liIndex];
-			if (!li)
+			const ul=ctx.ulDiv.children[ulIndex];
+			const li=ul?.children[liIndex];
+			if (!li) {
+				ctx.highlightUlIndex=ctx.highlightLiIndex=null;
 				return;
+			}
+			ctx.highlightUlIndex=ulIndex;
+			ctx.highlightLiIndex=liIndex;
 			li.classList.add("highlighted");
 			if (ulIndex&&keyboardNavigating)
 				ul.scrollTop=li.offsetTop-ul.offsetTop+li.offsetHeight/2-ul.offsetHeight/2;
+		}
+
+		/**
+		 * Highlight the first rendered option when an empty cell opens a select.
+		 * Pinned options are rendered before the main list and therefore take precedence.
+		 * @param {Object} ctx
+		 * @returns {boolean} whether an option was highlighted
+		 */
+		_highlightFirstSelectOption(ctx) {
+			if (ctx.pinnedUl.children.length)
+				this._highlightSelectOption(ctx,0,0,false);
+			else if (ctx.mainUl.children.length)
+				this._highlightSelectOption(ctx,1,0,false);
+			else
+				return false;
+			return true;
 		}
 	
 		/**
@@ -4380,15 +4400,19 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		_closeSelectDropdown(ctx,e,cancel=false) {
 			if (!ctx.selectContainer.parentElement)
 				return;
-			if (!ctx.highlightUlIndex&&ctx.pinnedUl.children[ctx.highlightLiIndex]?.dataset.type=="create") {
+			const highlightedUl=ctx.highlightUlIndex==null?null:ctx.ulDiv.children[ctx.highlightUlIndex];
+			const highlightedLi=ctx.highlightLiIndex==null?null:highlightedUl?.children[ctx.highlightLiIndex];
+			if (!cancel&&ctx.highlightUlIndex===0&&highlightedLi?.dataset.type=="create") {
 				ctx.filterText=ctx.filterText??ctx.input.value;
 				this._inputVal={text:ctx.filterText};
 				ctx.strctInp.options.push(this._inputVal);
 				ctx.allOpts.push(this._inputVal);
 				ctx.strctInp.createNewOptionHandler?.(this._inputVal,e,this._cellCursorDataObj,this._mainRowIndex
-																,this._activeSchemaNode,this._activeDetailsCell);
-			} else if (!cancel)
-				this._inputVal=(ctx.highlightUlIndex?ctx.looseOpts:ctx.pinnedOpts)[ctx.highlightLiIndex].value;
+															,this._activeSchemaNode,this._activeDetailsCell);
+			} else if (!cancel&&highlightedLi) {
+				const highlightedOpts=ctx.highlightUlIndex===1?ctx.looseOpts:ctx.pinnedOpts;
+				this._inputVal=highlightedOpts[ctx.highlightLiIndex]?.value;
+			}
 			if (typeof ctx.selectContainer.hidePopover==="function") {
 				try { ctx.selectContainer.hidePopover(); } catch(_e) {}
 			}
@@ -4427,6 +4451,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 			this._renderSelectOptions(ctx.pinnedUl,ctx.pinnedOpts,this._inputVal,ctx);
 			this._renderSelectOptions(ctx.mainUl,ctx.looseOpts,this._inputVal,ctx);
+			if (this._getSelectValue(this._inputVal)==null&&ctx.highlightUlIndex==null)
+				this._highlightFirstSelectOption(ctx);
 			this._cellCursor.parentElement.appendChild(ctx.selectContainer);
 			ctx.selectContainer.className="tablance-select-container";
 			if (typeof ctx.selectContainer.showPopover==="function") {

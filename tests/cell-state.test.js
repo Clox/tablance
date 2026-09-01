@@ -654,6 +654,31 @@ try {
 	assert(!guardedActionEditorTable._inEditMode&&!guardedActionEditorTable._selectedCellState.mutable,
 		"a non-mutable action schema cannot open an ordinary editor even if one was configured");
 
+	const emptySelectRows=[{scope:null},{scope:"current"}];
+	const emptySelectTable=new Tablance(host(),{main:{columns:[
+		{dataKey:"scope",input:{type:"select",minOptsFilter:100,options:[
+			{text:"Legacy",value:"legacy"},{text:"Current",value:"current"},
+		]}},
+	]}},true,true,{searchbar:false,ordering:false});
+	emptySelectTable.setData(emptySelectRows);
+	await tick();
+	emptySelectTable.selectCell(emptySelectRows[0],"scope");
+	key(emptySelectTable.rootEl,"Enter","Enter");
+	let selectDropdown=emptySelectTable.rootEl.querySelector(".tablance-select-container");
+	let selectInput=selectDropdown.querySelector("input");
+	assert(selectDropdown.querySelector("ul.main>li.highlighted")?.textContent==="Legacy",
+		"opening a select for a cell without a value highlights its first rendered option");
+	key(selectInput,"Enter","Enter");
+	assert(emptySelectRows[0].scope==="legacy"&&!emptySelectTable._inEditMode
+		&&!emptySelectTable.rootEl.querySelector(".tablance-select-container"),
+		"Enter commits the initial select option and closes the dropdown before navigation");
+	emptySelectTable.selectCell(emptySelectRows[1],"scope");
+	key(emptySelectTable.rootEl,"Enter","Enter");
+	selectDropdown=emptySelectTable.rootEl.querySelector(".tablance-select-container");
+	assert(selectDropdown.querySelector("ul.main>li.highlighted")?.textContent==="Current",
+		"an existing select value remains highlighted instead of defaulting to the first option");
+	key(selectDropdown.querySelector("input"),"Escape","Escape");
+
 	result.textContent=`${assertions.length} cell-state assertions passed`;
 	result.dataset.status="passed";
 } catch (error) {
