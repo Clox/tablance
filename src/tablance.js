@@ -643,6 +643,8 @@ class TablanceBase {
 	 * 					- instanceNode: instance-node of the group
 	 * 					- mainIndex: index of the main row
 	 * 					- mode: "create"|"update", whether the group was being created or already existed
+	 * 					- changed: true for dirty existing groups and for non-empty pending creations, including values
+	 * 						provided entirely by repeated.createData
 	 * 					- preventClose(message?): cancel closing/committing, optional tooltip message
 	 *					- closestMeta: function(key) to read meta data closest to the schema node. In the schema
 	 * 								objects may be specified via "meta" propert and this object may contain any custom
@@ -3473,7 +3475,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (let root=groupObject; root.parent; root=root.parent)
 			if (root.rowIndex!=null)
 				mainIndex=root.rowIndex;
-		const {changed,changes}=this._collectGroupChanges(groupObject);
+		const {changed:fieldsChanged,changes}=this._collectGroupChanges(groupObject);
+		// A non-empty pending repeated entry is itself a change, even when every value came from createData and the
+		// user closes it without editing a field. onClose validators must be able to distinguish that commit attempt
+		// from merely opening and closing an unchanged existing group.
+		const changed=fieldsChanged||(groupObject.creating&&this._objectHasData(groupObject.dataObj));
 		const closeState={doClose:true,preventMessage:undefined};
 		const mode=groupObject.creating?"create":"update";
 		const normalizedChanges=groupObject.creating?null:changes;
@@ -3784,6 +3790,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const newObj=this._generateCollectionItem(entryNode,rowIndex,repeated,repeated.path,data,indexOfNew,creating);
 		if (creating) {
 			newObj.creating=true;//creating means it hasn't been commited yet.
+			// Creating groups have no closed render until their first successful commit. Ensure that commit renders the
+			// actual summary even when every value came from createData and no individual field became dirty.
+			if (newObj.schemaNode.closedRender)
+				newObj.updateRenderOnClose=true;
 			this._selectFirstSelectableDetailsCell(newObj,true,true);
 			repeated.schemaNode.onCreateOpen?.(repeated);
 		}

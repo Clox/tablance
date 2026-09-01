@@ -644,6 +644,39 @@ try {
 		&&initializedEntry.el.querySelector("tr.group-render").textContent==="appointment:current",
 		"refreshSubtree recursively refreshes visibility and closed group rendering after cross-entry changes");
 
+	let untouchedCreateClosePayload,untouchedCreateCommits=0;
+	const untouchedCreateRows=[];
+	const untouchedCreateTable=new Tablance(host(),{
+		onDataCommit:()=>untouchedCreateCommits++,details:{type:"list",entries:[
+			{type:"repeated",dataKey:"history",nodeId:"untouchedCreateHistory",create:true,
+				createData:()=>({event:"change",scope:null}),entry:{type:"group",
+					closedRender:data=>`${data.event}:${data.scope??"missing"}`,onClose:payload=>{
+						untouchedCreateClosePayload=payload;
+						if (!payload.data.scope)
+							payload.preventClose("A scope is required");
+					},entries:[
+						{title:"Event",dataKey:"event",input:{type:"text"}},
+						{title:"Scope",dataKey:"scope",input:{type:"text"}},
+					]},
+			},
+		]},
+	},true,true,{searchbar:false});
+	untouchedCreateTable.setData([{history:untouchedCreateRows}]);
+	await tick();
+	const untouchedRepeated=untouchedCreateTable.getDetailCell(0,"untouchedCreateHistory");
+	untouchedRepeated.createNewEntry();
+	const untouchedEntry=untouchedRepeated.children.find(child=>child.creating);
+	assert(untouchedCreateTable._closeGroup(untouchedEntry)===false
+		&&untouchedCreateClosePayload.mode==="create"&&untouchedCreateClosePayload.changed===true
+		&&untouchedCreateRows.length===0&&untouchedEntry.creating&&untouchedEntry.el.classList.contains("open")
+		&&untouchedCreateCommits===0,
+		"an untouched non-empty createData draft must pass onClose validation before array insertion or persistence");
+	untouchedEntry.dataObj.scope="legacy";
+	assert(untouchedCreateTable._closeGroup(untouchedEntry)===true&&untouchedCreateRows.length===1
+		&&untouchedCreateRows[0]===untouchedEntry.dataObj&&!untouchedEntry.creating&&untouchedCreateCommits===1
+		&&untouchedEntry.el.querySelector("tr.group-render")?.textContent==="change:legacy",
+		"a validated untouched createData draft commits once and receives its real closed render immediately");
+
 	const guardedActionEditorTable=new Tablance(host(),{main:{columns:[
 		{type:"group",dataKey:"invalid",input:{type:"text"}},
 	]}},true,true,{searchbar:false,ordering:false});
