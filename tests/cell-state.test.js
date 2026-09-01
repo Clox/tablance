@@ -33,7 +33,7 @@ try {
 	const row={editable:"edit",computed:"source",explicit:"locked",conditional:"conditional",canEdit:true,
 		disabledValue:"unavailable",isDisabled:true,action:"act",button:"button",detail:"detail rendered",
 		notes:"One line",
-		history:[{date:"2026-01-01"},{date:"2026-02-01"}],
+		history:[{date:"2026-01-01",event:"Appointment"},{date:"2026-02-01",event:"Change"}],
 		file:{name:"report.pdf",lastModified:"2026-08-30T10:00:00Z",size:1024,type:"application/pdf"}};
 	const schema={
 		onDataCommit:()=>commits++,
@@ -53,6 +53,7 @@ try {
 			{type:"group",title:"History",nodeId:"historyGroup",entries:[
 				{type:"repeated",dataKey:"history",entry:{type:"group",closedRender:({date})=>date,entries:[
 					{title:"Date",dataKey:"date",input:{type:"text"}},
+					{title:"Event",dataKey:"event",editableIf:()=>false,input:{type:"text"}},
 				]}},
 			]},
 			{type:"group",title:"Safe text",nodeId:"safeTextGroup",closedRender:()=>"<u>literal</u>",entries:[]},
@@ -161,11 +162,18 @@ try {
 		"an allowed deletion continues through mutation, onDelete, and persistence");
 
 	const resolve=node=>table._resolveCellState(node,{rowData:row});
-	assert(resolve({input:{type:"text"},editableIf:()=>false}).kind==="readOnly","editableIf false resolves readOnly");
+	const conditionallyLockedState=resolve({input:{type:"text"},editableIf:()=>false});
+	assert(conditionallyLockedState.kind==="readOnly"&&!conditionallyLockedState.activatable
+		&&conditionallyLockedState.activation==="none",
+		"editableIf false resolves to one canonical locked and non-activatable state");
 	assert(resolve({input:{type:"text"},editableIf:()=>({editable:false,message:"locked"})}).message==="locked","editableIf object message is retained");
 	assert(resolve({input:{type:"text"},disabledIf:()=>false}).kind==="editable","disabledIf false preserves editable");
 	assert(resolve({input:{type:"text"},disabled:true,readOnly:true,editableIf:()=>true}).kind==="disabled","disabled has highest precedence");
-	assert(resolve({input:{type:"text"},readOnly:true,editableIf:()=>true}).kind==="readOnly","readOnly precedes editableIf");
+	const explicitlyLockedState=resolve({input:{type:"text"},readOnly:true,editableIf:()=>true});
+	assert(explicitlyLockedState.kind==="readOnly"&&!explicitlyLockedState.activatable,
+		"explicit readOnly precedes editableIf and cannot activate its configured editor");
+	assert(resolve({render:()=>"presented"}).activation==="presentation",
+		"a pure presentation field retains read-only text presentation behavior");
 	assert(resolve({input:{type:"button"}}).kind==="action","button/control precedence resolves action");
 	assert(["expand","select","group"].every(type=>!table._showsActionIndicator({kind:"action"},{type}))
 		&&!table._showsActionIndicator({kind:"action"},{input:{type:"button"}}),
@@ -296,10 +304,13 @@ try {
 
 	table.selectCell(row,"explicit");
 	key(table.rootEl,"Enter","Enter");
-	assert(table._inReadOnlyMode,"explicit readOnly opens presentation instead of its editor");
+	assert(!table._inEditMode&&!table._inReadOnlyMode&&!table._cellCursor.querySelector("input,textarea"),
+		"Enter cannot activate an explicitly locked editor");
+	table._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
+	assert(!table._inEditMode&&!table._inReadOnlyMode&&!table._cellCursor.querySelector("input,textarea"),
+		"double-click cannot activate an explicitly locked editor");
 	table._inputVal="illegal";
 	assert(table._doEditSave()===false&&row.explicit==="locked","final save guard rejects readOnly mutation");
-	table._exitReadOnlyMode();
 	assert(changes===0&&commits===0&&validations===0,"readOnly triggers no validation, onChange, or onDataCommit callbacks");
 
 	table.selectCell(row,"editable");
@@ -420,6 +431,49 @@ try {
 	key(table.rootEl,"Enter","Enter");
 	assert(historyEntries[0].el.classList.contains("open")&&table._activeSchemaNode.title==="Date",
 		"Enter opens a selected closed-render group and selects its first editable field");
+	const [editableHistoryField,readOnlyHistoryField]=historyEntries[0].children;
+	assert(getComputedStyle(editableHistoryField.selEl).paddingLeft==="4px"
+		&&getComputedStyle(readOnlyHistoryField.selEl).paddingLeft==="4px"
+		&&getComputedStyle(editableHistoryField.selEl.querySelector(":scope>span.title"),"::after").content==="none",
+		"group value fields retain their compact left edge and fields without indicators reserve no empty space");
+	const readOnlyTitle=readOnlyHistoryField.selEl.querySelector(":scope>span.title");
+	const readOnlyValue=readOnlyHistoryField.selEl.querySelector(":scope>div.value");
+	const layoutWithoutIndicator={
+		cellHeight:readOnlyHistoryField.selEl.getBoundingClientRect().height,
+		titleTop:readOnlyTitle.getBoundingClientRect().top,
+		titleHeight:readOnlyTitle.getBoundingClientRect().height,
+		valueTop:readOnlyValue.getBoundingClientRect().top,
+	};
+	readOnlyHistoryField.select();
+	const readOnlyTitleIndicator=getComputedStyle(readOnlyTitle,"::after");
+	const layoutWithIndicator={
+		cellHeight:readOnlyHistoryField.selEl.getBoundingClientRect().height,
+		titleTop:readOnlyTitle.getBoundingClientRect().top,
+		titleHeight:readOnlyTitle.getBoundingClientRect().height,
+		valueTop:readOnlyValue.getBoundingClientRect().top,
+	};
+	assert(readOnlyHistoryField.selEl.classList.contains("read-only")
+		&&table._cellCursor.classList.contains("inline-title-indicator")
+		&&getComputedStyle(table._cellCursor,"::before").content==="none"
+		&&readOnlyTitleIndicator.content==='""'&&readOnlyTitleIndicator.width==="12px"
+		&&readOnlyTitleIndicator.marginLeft==="4px"&&readOnlyTitleIndicator.position==="absolute"
+		&&JSON.stringify(layoutWithIndicator)===JSON.stringify(layoutWithoutIndicator),
+		"a selected group-field indicator is rendered inline directly after its title instead of at the cell edge");
+	const lockedGroupTitleHtml=readOnlyTitle.innerHTML;
+	const lockedGroupValue=readOnlyHistoryField.dataObj.event;
+	copied="";
+	key(table.rootEl,"c","KeyC",{ctrlKey:true});
+	await Promise.resolve();
+	assert(copied===lockedGroupValue,
+		`copying a titled group field includes only its value, never its label (${JSON.stringify(copied)})`);
+	key(table.rootEl,"Enter","Enter");
+	assert(!table._inEditMode&&!table._inReadOnlyMode&&!table._cellCursor.querySelector("input,textarea")
+		&&readOnlyTitle.innerHTML===lockedGroupTitleHtml&&readOnlyHistoryField.dataObj.event===lockedGroupValue,
+		"a locked titled group field cannot activate an editor or involve its label via Enter");
+	table._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
+	assert(!table._inEditMode&&!table._inReadOnlyMode&&!table._cellCursor.querySelector("input,textarea")
+		&&readOnlyTitle.innerHTML===lockedGroupTitleHtml&&readOnlyHistoryField.dataObj.event===lockedGroupValue,
+		"a locked titled group field cannot activate an editor or involve its label via double-click");
 	assert(getComputedStyle(firstHistorySeparator).borderTopStyle==="solid"
 		&&getComputedStyle(firstHistorySeparator).marginLeft==="0px"
 		&&getComputedStyle(firstHistorySeparator).marginRight==="4px",
@@ -431,7 +485,7 @@ try {
 	const openGroupFieldStyle=getComputedStyle(historyEntries[0].children[0].selEl);
 	assert(openGroupFieldStyle.paddingLeft==="4px"&&openGroupFieldStyle.paddingTop==="4px"
 		&&openGroupFieldStyle.paddingBottom==="0px",
-		`separate value fields inside an open group move down while retaining compact total padding (${openGroupFieldStyle.paddingTop}/${openGroupFieldStyle.paddingBottom}/${openGroupFieldStyle.paddingLeft})`);
+		`separate value fields inside an open group retain compact padding without an indicator gutter (${openGroupFieldStyle.paddingTop}/${openGroupFieldStyle.paddingBottom}/${openGroupFieldStyle.paddingLeft})`);
 	const openGroupTitleStyle=getComputedStyle(historyEntries[0].children[0].selEl.querySelector(":scope>span.title"));
 	const openGroupValueStyle=getComputedStyle(historyEntries[0].children[0].selEl.querySelector(":scope>div"));
 	const openGroupSeparatorStyle=getComputedStyle(historyEntries[0].children[0].selEl.querySelector(":scope>.separator"));
@@ -559,6 +613,36 @@ try {
 	multiDependencyTable._updateDependentCells(firstSource.schemaNode,firstSource);
 	assert(multiDependencyCell.textContent==="Changed | Beta",
 		"a main cell with multiple data dependencies refreshes when either source changes");
+
+	let createDataPayload;
+	const initializedRows=[];
+	const initializedTable=new Tablance(host(),{details:{type:"list",entries:[
+		{type:"repeated",dataKey:"history",nodeId:"initializedHistory",create:true,
+			createData:payload=>{
+				createDataPayload=payload;
+				return {event:"appointment",scope:"legacy",showScope:true};
+			},
+			entry:{type:"group",closedRender:data=>`${data.event}:${data.scope}`,entries:[
+				{title:"Event",dataKey:"event",input:{type:"text"}},
+				{title:"Scope",dataKey:"scope",visibleIf:({rowData})=>rowData.showScope,input:{type:"text"}},
+			]},
+		},
+	]}},true,true,{searchbar:false});
+	initializedTable.setData([{history:initializedRows}]);
+	await tick();
+	const initializedRepeated=initializedTable.getDetailCell(0,"initializedHistory");
+	initializedRepeated.createNewEntry();
+	const initializedEntry=initializedRepeated.children.find(child=>child.creating);
+	assert(initializedEntry?.dataObj.event==="appointment"&&initializedEntry.dataObj.scope==="legacy"
+		&&createDataPayload.dataArray===initializedRows&&createDataPayload.itemIndex===0,
+		"repeated createData supplies contextual pending entry defaults before rendering");
+	const scopeField=initializedEntry.children[1];
+	initializedEntry.dataObj.showScope=false;
+	initializedEntry.dataObj.scope="current";
+	initializedTable.refreshSubtree(initializedEntry);
+	assert(scopeField.hidden&&scopeField.outerContainerEl.style.display==="none"
+		&&initializedEntry.el.querySelector("tr.group-render").textContent==="appointment:current",
+		"refreshSubtree recursively refreshes visibility and closed group rendering after cross-entry changes");
 
 	const guardedActionEditorTable=new Tablance(host(),{main:{columns:[
 		{type:"group",dataKey:"invalid",input:{type:"text"}},

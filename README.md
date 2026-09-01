@@ -17,7 +17,8 @@ Tablance 2 separates a cell's availability from its editor configuration. State 
 The canonical states and capabilities are:
 
 - `editable`: selectable, activatable and mutable; activation opens the configured editor.
-- `readOnly`: selectable and activatable but never mutable; activation opens a native read-only text presentation.
+- `readOnly`: selectable but never mutable. Pure presentation fields can open a native read-only text presentation;
+  a field with a configured editor that is currently locked cannot be activated.
 - `action`: selectable and activatable but not mutable; activation invokes a control or callback.
 - `disabled`: unavailable, non-selectable, non-activatable and non-mutable.
 

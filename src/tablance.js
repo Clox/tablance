@@ -33,7 +33,17 @@ REPEATED_INSTANCE_NODE_PROTOTYPE.createNewEntry=function(e,_groupObject) {
 	let repeatData=this.dataObj;
 	if (!Array.isArray(repeatData))
 		this.dataObj=repeatData=[];
-	const pendingData={};
+	const mainIndex=this.rowIndex??this.tablance?._mainRowIndex??0;
+	const payload=this.tablance?._makeCallbackPayload(this,{
+		dataArray:repeatData,
+		itemIndex:repeatData.length,
+		repeatedSchemaNode:this.schemaNode
+	},{schemaNode:this.schemaNode,mainIndex});
+	const createdData=typeof this.schemaNode.createData==="function"
+		?this.schemaNode.createData(payload):{};
+	if (createdData==null||typeof createdData!=="object"||Array.isArray(createdData))
+		throw new TypeError("repeated.createData must return an object.");
+	const pendingData=createdData;
 	this.tablance?._repeatInsert(this,true,pendingData);
 };
 
@@ -525,6 +535,10 @@ class TablanceBase {
  	 * 				entry Object Any entry. May be item or list for instance. The data retrieved for these will be 1
 	 * 								level deeper so the path from the base would be dataKeyOfRepeatedRows->arrayIndex->*
 	 * 				create: Bool If true then there will be a user-interface for creating and deleting entries
+	 * 				createData Function Optional callback invoked immediately before a new entry is rendered. It must
+	 * 					return the initial data object and receives a standard callback payload plus dataArray,
+	 * 					itemIndex and repeatedSchemaNode. Use this for context-dependent defaults; the returned object
+	 * 					remains pending until the user commits data in the entry.
 	 * 				onCreate Function Callback fired when the user has created an entry via the interface available if
 	 * 					"create" is true. It is considered committed when the cell-cursor has left the repeat-row after
 	 * 					having created it. Receives a single object:
@@ -1298,6 +1312,39 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 		}
 		return displayVal;
+	}
+
+	/**
+	 * Re-evaluate and repaint an already rendered details subtree after external or cross-entry data changes.
+	 * Visibility, cell state, field rendering and group closedRender output are refreshed recursively.
+	 * @param {object} instanceNode Root instance node of the subtree to refresh.
+	 * @returns {boolean} True when a rendered node was refreshed.
+	 */
+	refreshSubtree(instanceNode) {
+		if (!instanceNode?.schemaNode)
+			return false;
+		let refreshed=false;
+		const visit=node=>{
+			if (!node?.schemaNode||node.schemaNode.creator)
+				return;
+			if (node.schemaNode.visibleIf)
+				this._applyVisibleIf(node,node.rowIndex??this._mainRowIndex);
+			if (node.schemaNode.type==="field"&&!node.hidden) {
+				this._updateDetailsCell(node,node.dataObj);
+				refreshed=true;
+			}
+			for (const child of node.children??[])
+				visit(child);
+			if (node.schemaNode.type==="group"&&node.schemaNode.closedRender)
+				this._setClosedRender(node,node.schemaNode.closedRender(node.dataObj));
+		};
+		visit(instanceNode);
+		const detailsTr=instanceNode.outerContainerEl?.closest?.("tr.details")
+			??instanceNode.el?.closest?.("tr.details");
+		if (detailsTr&&!this._onlyDetails)
+			this._updateDetailsHeight(detailsTr);
+		this._adjustCursorPosSize?.(this._selectedCell,true);
+		return refreshed;
 	}
 
 	_getSortValue(schemaNode,dataObj,mainIndex) {
@@ -4819,6 +4866,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._adjustCursorPosSize(cellEl);
 		this._cellCursor.classList.toggle("details",cellEl.closest(".details"));
 		this._cellCursor.classList.toggle("group-cell-cursor",schemaNode.type==="group");
+		this._cellCursor.classList.toggle("inline-title-indicator",Boolean(
+			cellEl.closest(".details")&&cellEl.querySelector(":scope>span.title")
+				&&cellEl.querySelector(":scope>div.value:not(.group-cell)")
+		));
 		this._cellCursor.classList.toggle("read-only",cellState?.kind==="readOnly");
 		this._cellCursor.classList.toggle("disabled",cellState?.kind==="disabled");
 		this._cellCursor.classList.toggle("action-cell",cellState?.kind==="action");
@@ -5948,9 +5999,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			editableResult=schemaNode.editableIf(payload);
 		const isReadOnly=schemaNode.readOnly===true||!schemaNode.input||editableResult===false
 			||editableResult?.editable===false;
-		if (isReadOnly)
-			return {kind:"readOnly",selectable:true,activatable:true,mutable:false,activation:"presentation",
-				message:editableResult?.message};
+		if (isReadOnly) {
+			// A configured editor that is currently read-only is locked, not an activatable presentation. Every
+			// normal entry path will therefore obey the same canonical state that renders the lock indicator.
+			const hasLockedEditor=!!schemaNode.input;
+			return {kind:"readOnly",selectable:true,activatable:!hasLockedEditor,mutable:false,
+				activation:hasLockedEditor?"none":"presentation",message:editableResult?.message};
+		}
 
 		return {kind:"editable",selectable:true,activatable:true,mutable:true,activation:"editor"};
 	}
@@ -6009,6 +6064,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_getDisplayedCellText(cellEl=this._selectedCell) {
+		// A field inside a group selects its containing <td>, which also contains the title. Presentation and copy
+		// operations belong to the field value only; the title is structural UI and is never part of the field data.
+		if (cellEl===this._selectedCell&&this._activeDetailsCell?.schemaNode.type==="field")
+			cellEl=this._activeDetailsCell.el;
 		return (cellEl?.innerText??"").trim();
 	}
 

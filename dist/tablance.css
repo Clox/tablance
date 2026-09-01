@@ -187,6 +187,10 @@
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center/contain no-repeat;
   pointer-events: none;
 }
+.tablance .cell-cursor.details.inline-title-indicator.read-only::before,
+.tablance .cell-cursor.details.inline-title-indicator.action-indicator::before {
+  content: none;
+}
 .tablance .search {
   float: right;
 }
@@ -538,6 +542,35 @@
 .tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)) {
   padding-top: 4px;
   padding-bottom: 0;
+}
+.tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)) > span.title {
+  position: relative;
+  width: fit-content;
+}
+.tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)) > span.title::after {
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  display: block;
+  width: 12px;
+  height: 12px;
+  margin-left: 4px;
+  background-color: var(--tablance-indicator-color);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)).read-only:is(:hover, .tablance-active-cell) > span.title::after {
+  content: "";
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+.tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)).action-indicator:is(:hover, .tablance-active-cell) > span.title::after {
+  content: "";
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+.tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)).read-only:hover::before, .tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)).action-indicator:hover::before {
+  content: none;
 }
 .tablance .details table.details-group > tbody > tr:not(:first-child) > td:has(> div.value:not(.group-cell)) {
   padding-top: 2px;
