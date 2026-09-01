@@ -585,11 +585,15 @@ try {
 	bulkTable._bulkEditTable._inputVal="illegal bulk";
 	assert(bulkTable._bulkEditTable._doEditSave()===false&&bulkRows.every(item=>item.locked!=="illegal bulk"),"bulk save guard blocks readOnly mutation");
 
-	let multiDependedValue;
+	let multiDependedValue,chainedMainRenders=0;
 	const multiDependencyTable=new Tablance(host(),{main:{columns:[
 		{dataKey:"combined",dependsOn:["firstSource","secondSource"],
 			render:({dependedValue})=>(multiDependedValue=dependedValue).join(" | "),
 			onEnter:({mainIndex,tablance})=>tablance.selectCell(mainIndex,"firstSource")},
+		{dataKey:"chained",dependsOn:"combined",render:({rowData})=>{
+			chainedMainRenders++;
+			return `Chain: ${rowData.first}`;
+		}},
 	]},details:{type:"list",entries:[
 		{dataKey:"first",nodeId:"firstSource"},
 		{dataKey:"second",nodeId:"secondSource"},
@@ -599,6 +603,7 @@ try {
 	await tick();
 	const multiDependencyCell=multiDependencyTable._mainTbody
 		.querySelector('tr[data-data-row-index="0"]:not(.details)').cells[0];
+	const chainedMainCell=multiDependencyCell.parentElement.cells[1];
 	assert(multiDependencyCell.textContent==="Alpha | Beta"
 		&&JSON.stringify(multiDependedValue)===JSON.stringify(["Alpha","Beta"]),
 		"multiple data dependencies expose their values in declaration order");
@@ -610,9 +615,46 @@ try {
 	assert(firstSource?.schemaNode.nodeId==="firstSource"&&!multiDependencyTable._inEditMode,
 		"activating a derived navigation field selects its source without opening a main-row editor");
 	firstSource.dataObj.first="Changed";
+	chainedMainRenders=0;
 	multiDependencyTable._updateDependentCells(firstSource.schemaNode,firstSource);
-	assert(multiDependencyCell.textContent==="Changed | Beta",
-		"a main cell with multiple data dependencies refreshes when either source changes");
+	assert(multiDependencyCell.textContent==="Changed | Beta"&&chainedMainCell.textContent==="Chain: Changed"
+		&&chainedMainRenders===1,
+		"main-cell dependencies propagate transitively and repaint each target once");
+
+	const repeatedChainRenders={};
+	const countRepeatedRender=(kind,rowData)=>{
+		const key=`${kind}:${rowData.id}`;
+		repeatedChainRenders[key]=(repeatedChainRenders[key]??0)+1;
+		return `${kind}:${rowData.source}`;
+	};
+	const repeatedChainTable=new Tablance(host(),{main:{columns:[{dataKey:"label"}]},details:{type:"list",entries:[
+		{type:"repeated",dataKey:"chains",nodeId:"dependencyChains",entry:{type:"group",entries:[
+			{title:"Source",dataKey:"source",nodeId:"chainSource",dependsOn:"chainLeaf",input:{type:"text"}},
+			{title:"Middle",dataKey:"middle",nodeId:"chainMiddle",dependsOn:"chainSource",
+				render:({rowData})=>countRepeatedRender("middle",rowData)},
+			{title:"Leaf",dataKey:"leaf",nodeId:"chainLeaf",dependsOn:["chainSource","chainMiddle"],
+				visibleIf:({rowData})=>rowData.source==="show",
+				render:({rowData})=>countRepeatedRender("leaf",rowData)},
+		]}},
+	]}},true,true,{searchbar:false});
+	const repeatedChainRows=[{id:"first",source:"hide",middle:"",leaf:""},
+		{id:"second",source:"hide",middle:"",leaf:""}];
+	repeatedChainTable.setData([{label:"Repeated dependencies",chains:repeatedChainRows}]);
+	await tick();
+	const repeatedChains=repeatedChainTable.getDetailCell(0,"dependencyChains");
+	const firstChain=repeatedChains.children.find(child=>child.dataObj.id==="first");
+	const firstChainSource=firstChain.children[0];
+	const firstChainLeaf=firstChain.children[2];
+	assert(firstChainLeaf.hidden,"a repeated dependent starts hidden according to its own entry data");
+	firstChainSource.select();
+	for (const key of Object.keys(repeatedChainRenders))
+		delete repeatedChainRenders[key];
+	repeatedChainRows[0].source="show";
+	repeatedChainTable._updateDependentCells(firstChainSource.schemaNode,firstChainSource);
+	assert(!firstChainLeaf.hidden&&repeatedChainRenders["middle:first"]===1
+		&&repeatedChainRenders["leaf:first"]===1
+		&&!repeatedChainRenders["middle:second"]&&!repeatedChainRenders["leaf:second"],
+		"repeated dependencies propagate transitively per instance, de-duplicate paths, and stop cycles");
 
 	let createDataPayload;
 	const initializedRows=[];
@@ -637,12 +679,19 @@ try {
 		&&createDataPayload.dataArray===initializedRows&&createDataPayload.itemIndex===0,
 		"repeated createData supplies contextual pending entry defaults before rendering");
 	const scopeField=initializedEntry.children[1];
+	assert(initializedEntry.el.querySelectorAll(".delete-controls button").length===3,
+		"a repeated group initially renders one set of delete controls");
 	initializedEntry.dataObj.showScope=false;
 	initializedEntry.dataObj.scope="current";
+	initializedTable.refreshSubtree(initializedEntry);
 	initializedTable.refreshSubtree(initializedEntry);
 	assert(scopeField.hidden&&scopeField.outerContainerEl.style.display==="none"
 		&&initializedEntry.el.querySelector("tr.group-render").textContent==="appointment:current",
 		"refreshSubtree recursively refreshes visibility and closed group rendering after cross-entry changes");
+	assert(initializedEntry.el.querySelectorAll(".delete-controls button").length===3
+		&&![...initializedEntry.el.querySelectorAll(".delete-controls button")]
+			.some(button=>button.querySelector("button")),
+		"refreshSubtree reuses repeated-entry controls without nesting new buttons inside them");
 
 	let untouchedCreateClosePayload,untouchedCreateCommits=0;
 	const untouchedCreateRows=[];

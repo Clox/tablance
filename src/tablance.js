@@ -333,7 +333,9 @@ class TablanceBase {
 	 *
 	 *
 	 * 				* dependsOn String|String[] Optional identifier(s) for entries that this entry depends on.
-	 * 					Whenever the referenced entry is edited, this entry automatically refreshes.
+	 * 					Whenever the referenced entry is edited, this entry and its transitive dependents automatically
+	 * 					refresh. Each concrete cell refreshes at most once per propagation, including when paths converge
+	 * 					or contain a cycle.
 	 * 					The refresh cycle includes:
  	 *						- Re-evaluating `visibleIf` (if provided).
 	 *						- Re-rendering this entry (unless it is hidden).
@@ -2764,6 +2766,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 		_generateButton(schemaNode,mainIndex,parentEl,scopedData,instanceNode=null) {
+		// Details refreshes pass the button itself after the initial render. Reuse it instead of appending a new button
+		// inside the existing control on every refreshSubtree call.
+		if (parentEl.matches?.("button")) {
+			parentEl.innerHTML=schemaNode.input.text;
+			return parentEl;
+		}
 			const btn=parentEl.appendChild(document.createElement("button"));
 			btn.tabIndex="-1";//so it can't be tabbed to
 			btn.innerHTML=schemaNode.input.text;
@@ -4508,51 +4516,95 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	/**
 	 * Updates dependent cells when a cell's value changes.
 	 *
-	 * This method propagates changes from a modified cell to its dependent cells,
-	 * ensuring that the dependent cells are updated accordingly. It traverses the
-	 * hierarchical structure of cells and updates both details cells and main-row
-	 * cells as needed.
+	 * This method propagates changes transitively from a modified cell to all of its
+	 * dependent cells. The queue is keyed by concrete instance-node (or by schema-node
+	 * for main cells), so repeated instances stay in their own scope while converging
+	 * dependency paths are de-duplicated. Marking the edited source as visited also
+	 * makes cycles terminate without repainting the source that initiated the update.
 	 *
 	 * @param {Object} editedCellSchemaNode - The schema-node of the cell that was edited.
 	 * @param {Object} [editedInstanceNode] - The instance-node representing the edited cell. This is used to determine
 	 *                                   the closest scope for dependency updates.
 	 */
 	_updateDependentCells(editedCellSchemaNode, editedInstanceNode) {
-		for (const depPath of editedCellSchemaNode.dependencyPaths??[])
-			if (depPath[0]==="m") {//if cell is in main row cell
-				// Find the corresponding table row for the main data row
-				const tr=this._mainTbody.querySelector(`[data-data-row-index="${this._mainRowIndex}"]:not(.details)`);
-				// Update the content of the dependent cell in the main table
-				this._updateMainRowCell(tr.cells[depPath[1]], this._colSchemaNodes[depPath[1]]);
-			} else if (this._openDetailsPanes[this._mainRowIndex]) {//if cell is in details and details is open
-				//cells is an array that potentially can hold more than 1 cell. The reason is that when going into
-				//repeated structures, it "splits" into multiple cells if there are multiple repeated-entries/instances
-				let cells=depPath[0]==="r"?[editedInstanceNode]:[this._openDetailsPanes[this._mainRowIndex]];
-
-				for (var step=1; depPath[step]===".."; step++)//if there are any, iterate all the ".."
-					cells[0] = cells[0].parent;//go up one level per "..". At this point cells will only have one cell
-
-				for (; step<depPath.length; step++) {//iterate the steps
-					if (cells[0].schemaNode.type==="repeated") {
-						const newCells=[];//will hold the new set of cells after this step
-						for (const cell of cells)
-							newCells.push(...cell.children);//add all repeated-children of current cell
-						cells=newCells;//set cells to the new set of cells
-					}
-					for (let cellI=0; cellI<cells.length; cellI++)//iterate the cell(s)
-						cells[cellI]=cells[cellI].children[depPath[step]];//and do the step
-				}
+		if (!editedCellSchemaNode)
+			return;
+		const queue=[];
+		const seenMainSchemas=new WeakSet;
+		const seenInstances=new WeakMap;
+		const enqueue=(schemaNode,instanceNode)=>{
+			if (!schemaNode)
+				return false;
+			if (!instanceNode) {
+				if (seenMainSchemas.has(schemaNode))
+					return false;
+				seenMainSchemas.add(schemaNode);
+			} else {
+				let instances=seenInstances.get(schemaNode);
+				if (!instances)
+					seenInstances.set(schemaNode,instances=new WeakSet);
+				if (instances.has(instanceNode))
+					return false;
+				instances.add(instanceNode);
+			}
+			queue.push({schemaNode,instanceNode});
+			return true;
+		};
+		const resolveDetailsCells=(depPath,sourceInstance)=>{
+			const detailsRoot=depPath[0]==="r"?null:this._openDetailsPanes[this._mainRowIndex];
+			let cells=depPath[0]==="r"?[sourceInstance]:[detailsRoot];
+			if (!cells[0])
+				return [];
+			let step=1;
+			for (;depPath[step]==="..";step++) {
+				cells=[cells[0]?.parent].filter(Boolean);
+				if (!cells.length)
+					return [];
+			}
+			for (;step<depPath.length;step++) {
+				const childIndex=depPath[step];
+				const next=[];
 				for (const cell of cells) {
-					// Re-evaluate visibility before updating so hidden dependents collapse immediately.
-					if (cell.schemaNode.visibleIf) {
-						const isVisible=this._applyVisibleIf(cell, cell.rowIndex ?? this._mainRowIndex);
-						if (!isVisible)//no need to update content for hidden nodes
-							continue;
-						// If it just became visible, fall through to refresh its contents.
+					const parents=cell?.schemaNode?.type==="repeated"?(cell.children??[]):[cell];
+					for (const parent of parents) {
+						const child=parent?.children?.[childIndex];
+						if (child)
+							next.push(child);
 					}
-					this._updateDetailsCell(cell,cell.dataObj);//and do the actual update
+				}
+				cells=next;
+				if (!cells.length)
+					break;
+			}
+			return cells;
+		};
+
+		// The initiating cell is a signal source, not a dependent repaint target. Recording it up front is the
+		// cycle guard for graphs such as A -> B -> C -> A.
+		enqueue(editedCellSchemaNode,editedInstanceNode);
+		for (let queueIndex=0;queueIndex<queue.length;queueIndex++) {
+			const {schemaNode,instanceNode}=queue[queueIndex];
+			for (const depPath of schemaNode.dependencyPaths??[]) {
+				if (depPath[0]==="m") {
+					const dependentSchema=this._colSchemaNodes[depPath[1]];
+					if (!enqueue(dependentSchema,null))
+						continue;
+					const rowSelector=`[data-data-row-index="${this._mainRowIndex}"]:not(.details)`;
+					const tr=this._mainTbody.querySelector(rowSelector);
+					if (tr?.cells?.[depPath[1]])
+						this._updateMainRowCell(tr.cells[depPath[1]],dependentSchema);
+					continue;
+				}
+				for (const cell of resolveDetailsCells(depPath,instanceNode)) {
+					if (!enqueue(cell.schemaNode,cell))
+						continue;
+					// Hidden cells still propagate their dependency signal, but need no content repaint.
+					if (cell.schemaNode.visibleIf&&!this._applyVisibleIf(cell,cell.rowIndex??this._mainRowIndex))
+						continue;
+					this._updateDetailsCell(cell,cell.dataObj);
 				}
 			}
+		}
 	}
 
 	_exitEditMode(save) {
@@ -5955,7 +6007,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					return true;
 				}
 				} else {
-					instanceNode.el=instanceNode.selEl=instanceNode.el.querySelector("button");
+					const button=cellEl.matches?.("button")?cellEl:cellEl.querySelector("button");
+					instanceNode.el=instanceNode.selEl=button;
 					this._setCellState(instanceNode.el,cellState,instanceNode);
 				}
 		}
