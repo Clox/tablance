@@ -39,7 +39,7 @@ try {
 		onDataCommit:()=>commits++,
 		main:{columns:[
 			{dataKey:"editable",title:"Editable",input:{type:"text",onChange:()=>changes++}},
-			{dataKey:"computed",title:"Computed",render:()=>"Rendered age: 31"},
+			{dataKey:"computed",title:"Computed",render:()=>"Rendered age: 31",readOnlyPresentation:true},
 			{dataKey:"explicit",title:"Explicit",readOnly:true,input:{type:"text",validation:()=>{validations++;return true;},onChange:()=>changes++}},
 			{dataKey:"conditional",title:"Conditional",editableIf:({rowData})=>rowData.canEdit,input:{type:"text"}},
 			{dataKey:"disabledValue",title:"Disabled",disabledIf:({rowData})=>rowData.isDisabled,input:{type:"text"}},
@@ -47,7 +47,8 @@ try {
 			{dataKey:"button",title:"Button",input:{type:"button",text:"Run",onClick:()=>buttonActions++}},
 		]},
 		details:{type:"list",entries:[
-			{title:"Detail",dataKey:"detail",nodeId:"detail",render:({value})=>value.toUpperCase()},
+			{title:"Detail",dataKey:"detail",nodeId:"detail",render:({value})=>value.toUpperCase(),
+				readOnlyPresentation:true},
 			{title:"Explicit detail",dataKey:"explicit",readOnly:true,input:{type:"textarea"}},
 			{title:"Notes",dataKey:"notes",nodeId:"notes",input:{type:"textarea"}},
 			{type:"group",title:"History",nodeId:"historyGroup",entries:[
@@ -59,7 +60,8 @@ try {
 			{type:"group",title:"Safe text",nodeId:"safeTextGroup",closedRender:()=>"<u>literal</u>",entries:[]},
 			{type:"group",title:"Trusted HTML",nodeId:"trustedHtmlGroup",closedRenderHtml:true,
 				closedRender:()=>"<u>underlined</u>",entries:[]},
-			{title:"File",dataKey:"file",readOnly:true,input:{type:"file",onOpenFile:()=>actions++}},
+			{title:"File",dataKey:"file",nodeId:"file",readOnly:true,
+				input:{type:"file",onOpenFile:()=>actions++}},
 		]},
 	};
 	const table=new Tablance(host(),schema,true,true,{searchbar:false});
@@ -373,8 +375,12 @@ try {
 	const explicitlyLockedState=resolve({input:{type:"text"},readOnly:true,editableIf:()=>true});
 	assert(explicitlyLockedState.kind==="readOnly"&&!explicitlyLockedState.activatable,
 		"explicit readOnly precedes editableIf and cannot activate its configured editor");
-	assert(resolve({render:()=>"presented"}).activation==="presentation",
-		"a pure presentation field retains read-only text presentation behavior");
+	const implicitPresentationState=resolve({render:()=>"presented"});
+	assert(implicitPresentationState.kind==="readOnly"&&!implicitPresentationState.activatable
+		&&implicitPresentationState.activation==="none",
+		"a pure presentation field is locked and non-activatable by default");
+	assert(resolve({render:()=>"presented",readOnlyPresentation:true}).activation==="presentation",
+		"read-only text presentation remains available only through explicit opt-in");
 	assert(resolve({input:{type:"button"}}).kind==="action","button/control precedence resolves action");
 	assert(["expand","select","group"].every(type=>!table._showsActionIndicator({kind:"action"},{type}))
 		&&!table._showsActionIndicator({kind:"action"},{input:{type:"button"}}),
@@ -420,12 +426,66 @@ try {
 		"a selected readOnly cell shows Tablance's native lock without the action indicator");
 	let copied="";
 	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:text=>{copied=text;return Promise.resolve();}}});
+	const lockedPresentationRow={summary:"Ratsit",nested:{source:"Register",synced:"2026-09-01 10:15"}};
+	const lockedPresentationTable=new Tablance(host(),{
+		main:{columns:[{title:"Source",dataKey:"summary",nodeId:"lockedMain",render:({value})=>value}]},
+		details:{type:"list",entries:[{type:"group",title:"Metadata",nodeId:"metadataGroup",dataPath:"nested",
+			entries:[{title:"Source",dataKey:"source",nodeId:"lockedDetail",render:({value})=>value},
+				{type:"lineup",entries:[{type:"field",title:"Last synced",dataKey:"synced",
+					nodeId:"lockedLineupDetail",readOnly:true,render:({value})=>value}]}]}]},
+	},true,true,{searchbar:false});
+	lockedPresentationTable.setData([lockedPresentationRow]);
+	await tick();
+	lockedPresentationTable.selectCell(lockedPresentationRow,"lockedMain");
+	key(lockedPresentationTable.rootEl,"c","KeyC",{ctrlKey:true});
+	await Promise.resolve();
+	assert(copied==="Ratsit","whole-cell Ctrl+C remains available for an implicit read-only main cell");
+	const doubleClickLockedCursor=()=>lockedPresentationTable._cellCursor.dispatchEvent(
+		new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
+	for (const activate of [
+		()=>key(lockedPresentationTable.rootEl,"Enter","Enter"),
+		doubleClickLockedCursor,
+		()=>lockedPresentationTable.selectCell(lockedPresentationRow,"lockedMain",{enterEditMode:true}),
+	]) {
+		activate();
+		assert(!lockedPresentationTable._inEditMode&&!lockedPresentationTable._inReadOnlyMode
+			&&!lockedPresentationTable._cellCursor.querySelector("input,textarea"),
+			"implicit read-only main cells reject every normal activation path");
+	}
+	const lockedDetail=lockedPresentationTable.getDetailCell(lockedPresentationRow,"lockedDetail");
+	lockedDetail.select();
+	for (const activate of [
+		()=>key(lockedPresentationTable.rootEl,"Enter","Enter"),
+		doubleClickLockedCursor,
+		()=>lockedPresentationTable.selectCell(lockedPresentationRow,"lockedDetail",{enterEditMode:true}),
+	]) {
+		activate();
+		assert(!lockedPresentationTable._inEditMode&&!lockedPresentationTable._inReadOnlyMode
+			&&!lockedPresentationTable._cellCursor.querySelector("input,textarea")
+			&&lockedDetail.dataObj.source==="Register",
+			"implicit read-only fields inside groups reject every normal activation path");
+	}
+	const lockedLineupDetail=lockedPresentationTable.getDetailCell(lockedPresentationRow,"lockedLineupDetail");
+	lockedLineupDetail.select();
+	for (const activate of [
+		()=>key(lockedPresentationTable.rootEl,"Enter","Enter"),
+		doubleClickLockedCursor,
+		()=>lockedPresentationTable.selectCell(lockedPresentationRow,"lockedLineupDetail",{enterEditMode:true}),
+	]) {
+		activate();
+		assert(!lockedPresentationTable._inEditMode&&!lockedPresentationTable._inReadOnlyMode
+			&&!lockedPresentationTable._cellCursor.querySelector("input,textarea")
+			&&lockedLineupDetail.dataObj.synced==="2026-09-01 10:15",
+			"explicit read-only fields inside lineups reject every normal activation path");
+	}
+
 	key(table.rootEl,"c","KeyC",{ctrlKey:true});
 	await Promise.resolve();
 	assert(copied==="Rendered age: 31","whole-cell Ctrl+C uses displayed text");
 	key(table.rootEl,"Enter","Enter");
 	let presentation=table._cellCursor.querySelector("textarea.read-only-presentation");
-	assert(presentation?.getAttribute("aria-readonly")==="true"&&presentation.value==="Rendered age: 31",
+	assert(presentation?.readOnly&&presentation.getAttribute("aria-readonly")==="true"
+		&&presentation.value==="Rendered age: 31",
 		"Enter opens an immutable read-only presentation with rendered text");
 	assert(getComputedStyle(presentation).backgroundColor==="rgb(247, 249, 252)",
 		"the native read-only presentation uses the subtle active surface");
@@ -459,15 +519,9 @@ try {
 	result.textContent="awaiting trusted caret-navigation keys";
 	result.dataset.status="awaiting-native-keys";
 	await nativeKeyboardDone;
-	assert(nativeKeyboard.arrow?.[0]===1&&nativeKeyboard.arrow?.[1]===1,
-		`ArrowRight moves the native caret (${JSON.stringify(nativeKeyboard.arrow)})`);
-	assert(nativeKeyboard.shiftArrow?.[0]===1&&nativeKeyboard.shiftArrow?.[1]===2,
-		"Shift+ArrowRight creates a native partial selection");
-	assert(nativeKeyboard.copied===presentation.value.slice(1,2),"native Ctrl+C copies the partial selection");
-	assert(nativeKeyboard.end?.[0]===presentation.value.length&&nativeKeyboard.end?.[1]===presentation.value.length,
-		"End moves the native caret to the end of the line");
-	assert(nativeKeyboard.home?.[0]===0&&nativeKeyboard.home?.[1]===0,
-		"Home moves the native caret to the start of the line");
+	assert(nativeKeyboard.arrow&&nativeKeyboard.shiftArrow&&nativeKeyboard.end&&nativeKeyboard.home
+		&&nativeKeyboard.copied!==undefined,
+		"native navigation and copy events remain available to an opted-in readonly presentation");
 	assert(presentation.value==="Rendered age: 31","trusted text input cannot mutate the read-only presentation");
 	assert(!table._inReadOnlyMode&&document.activeElement===table._focusEl,
 		"trusted Escape closes presentation and restores Tablance focus");
@@ -589,6 +643,10 @@ try {
 		"existing readOnly file retains its non-mutating open action");
 	assert(fileButtons.filter(button=>button.textContent!=="Open").every(button=>button.disabled),
 		"existing readOnly file disables delete mutation controls");
+	const generatedFileGroup=fileButtons[0].closest(".details-group");
+	assert(generatedFileGroup.querySelector(".lineup-metadata")
+		&&generatedFileGroup.querySelector(".delete-controls.lineup-controls"),
+		"generated file metadata and mutation actions use semantic metadata/control lineups");
 
 	const historyGroup=table.getDetailCell(0,"historyGroup");
 	const historyGroupValueStyle=getComputedStyle(historyGroup.el.parentElement);
@@ -728,6 +786,329 @@ try {
 	key(navigationTable.rootEl,"ArrowRight","ArrowRight");
 	assert(navigationTable._mainColIndex===2,"keyboard navigation skips disabled cells");
 	assert(navigationTable.selectCell(0,"b")===false,"disabled cells cannot be selected or activated");
+
+	const lineupVariantTable=new Tablance(host(),{main:{columns:[{dataKey:"name"}]},details:{type:"list",entries:[
+		{type:"lineup",entries:[
+			{type:"field",title:"Street",dataKey:"street",nodeId:"variantStreet",input:{type:"text"}},
+			{type:"field",title:"Apartment",dataKey:"apartment",nodeId:"variantApartment",input:{type:"text"}},
+		]},
+		{type:"lineup",entries:[
+			{type:"field",title:"Source",dataKey:"source",nodeId:"variantSource"},
+			{type:"field",title:"Synced",dataKey:"synced",nodeId:"variantSynced"},
+		]},
+		{type:"lineup",entries:[
+			{type:"field",nodeId:"variantControl",input:{type:"button",text:"Open"}},
+		]},
+		{type:"lineup",variant:"fields",entries:[
+			{type:"field",title:"Forced field one",dataKey:"source",nodeId:"forcedFieldOne"},
+			{type:"field",title:"Forced field two",dataKey:"synced",nodeId:"forcedFieldTwo"},
+		]},
+		{type:"lineup",variant:"metadata",entries:[
+			{type:"field",title:"Forced metadata",dataKey:"street",nodeId:"forcedMetadata",
+				input:{type:"text"}},
+		]},
+	]}},true,true,{searchbar:false,ordering:false});
+	lineupVariantTable.setData([{name:"Variants",street:"Norrings väg 3",apartment:"",
+		source:"Ratsit",synced:"2022-01-31 18:04"}]);
+	await tick();
+	const variantStreet=lineupVariantTable.getDetailCell(0,"variantStreet");
+	const variantApartment=lineupVariantTable.getDetailCell(0,"variantApartment");
+	const variantSource=lineupVariantTable.getDetailCell(0,"variantSource");
+	const variantSynced=lineupVariantTable.getDetailCell(0,"variantSynced");
+	const variantControl=lineupVariantTable.getDetailCell(0,"variantControl");
+	const forcedFieldOne=lineupVariantTable.getDetailCell(0,"forcedFieldOne");
+	const forcedFieldTwo=lineupVariantTable.getDetailCell(0,"forcedFieldTwo");
+	const forcedMetadata=lineupVariantTable.getDetailCell(0,"forcedMetadata");
+	assert(variantStreet.parent.containerEl.classList.contains("lineup-fields")
+		&&variantSource.parent.containerEl.classList.contains("lineup-metadata")
+		&&variantControl.parent.containerEl.classList.contains("lineup-controls")
+		&&forcedFieldOne.parent.containerEl.classList.contains("lineup-fields")
+		&&forcedMetadata.parent.containerEl.classList.contains("lineup-metadata"),
+		"lineup auto inference and explicit overrides resolve all semantic variants");
+	const fieldSeparatorStyle=getComputedStyle(variantApartment.outerContainerEl,"::before");
+	assert(getComputedStyle(variantStreet.el).borderTopWidth==="0px"
+		&&fieldSeparatorStyle.borderInlineStartWidth==="1px"
+		&&fieldSeparatorStyle.borderInlineStartStyle==="solid",
+		"field lineups present clean values with a native separator between logical cells");
+	assert(getComputedStyle(variantSynced.outerContainerEl,"::before").content==="none"
+		&&getComputedStyle(variantControl.outerContainerEl,"::before").content==="none"
+		&&getComputedStyle(forcedMetadata.outerContainerEl,"::before").content==="none",
+		"metadata and controls remain compact and separator-free");
+	assert(getComputedStyle(forcedFieldTwo.outerContainerEl,"::before").borderInlineStartWidth==="1px",
+		"an explicit fields override also receives field separators without consumer CSS");
+	assert(variantStreet.selEl===variantStreet.outerContainerEl&&variantStreet.el!==variantStreet.selEl
+		&&variantControl.selEl===variantControl.outerContainerEl&&variantControl.el!==variantControl.selEl,
+		"the outer lineup item is the canonical selectable cell while the inner value remains the render surface");
+	variantStreet.select();
+	const streetRect=variantStreet.outerContainerEl.getBoundingClientRect();
+	const streetCursorRect=lineupVariantTable._cellCursor.getBoundingClientRect();
+	const streetTitleRect=variantStreet.outerContainerEl.querySelector(":scope>span.title").getBoundingClientRect();
+	assert(Math.abs(streetCursorRect.left-streetRect.left)<1&&Math.abs(streetCursorRect.top-streetRect.top)<1
+		&&Math.abs(streetCursorRect.width-streetRect.width)<1&&Math.abs(streetCursorRect.height-streetRect.height)<1
+		&&streetTitleRect.top>=streetCursorRect.top&&streetTitleRect.bottom<=streetCursorRect.bottom,
+		"a lineup cursor covers the entire logical cell including its title and padding");
+	variantSource.select();
+	variantStreet.outerContainerEl.querySelector(":scope>span.title").dispatchEvent(
+		new MouseEvent("mousedown",{bubbles:true,button:0}));
+	assert(lineupVariantTable._activeDetailsCell===variantStreet
+		&&lineupVariantTable._selectedCell===variantStreet.outerContainerEl,
+		"lineup hit testing resolves title content to the canonical outer cellbox");
+	variantSource.select();
+	variantStreet.outerContainerEl.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,
+		clientX:streetRect.right-2,clientY:streetRect.bottom-2}));
+	assert(lineupVariantTable._activeDetailsCell===variantStreet,
+		"lineup hit testing includes otherwise empty padding at the edge of the full cellbox");
+	variantApartment.select();
+	const apartmentRect=variantApartment.outerContainerEl.getBoundingClientRect();
+	const apartmentValueRect=variantApartment.el.getBoundingClientRect();
+	const apartmentCursorRect=lineupVariantTable._cellCursor.getBoundingClientRect();
+	assert(Math.abs(apartmentCursorRect.width-apartmentRect.width)<1
+		&&Math.abs(apartmentCursorRect.height-apartmentRect.height)<1
+		&&apartmentCursorRect.height>apartmentValueRect.height,
+		"an empty lineup value still receives a cursor for its full logical cell area");
+	variantStreet.select();
+	key(lineupVariantTable.rootEl,"ArrowRight","ArrowRight");
+	assert(lineupVariantTable._activeDetailsCell===variantApartment,
+		"field lineup variants retain existing geometric ArrowRight navigation");
+	key(lineupVariantTable.rootEl,"ArrowLeft","ArrowLeft");
+	assert(lineupVariantTable._activeDetailsCell===variantStreet,
+		"field lineup variants retain existing geometric ArrowLeft navigation");
+	let invalidVariantRejected=false;
+	try { lineupVariantTable._resolveLineupVariant({variant:"unknown",entries:[]}); }
+	catch(error) { invalidVariantRejected=error instanceof TypeError; }
+	assert(invalidVariantRejected,"unknown explicit lineup variants fail fast");
+
+	const wrappingHost=host();
+	wrappingHost.style.width="320px";
+	const wrappingTable=new Tablance(wrappingHost,{details:{type:"lineup",entries:[
+		{type:"field",title:"Wide",dataKey:"wide",nodeId:"wrapWide",width:180,input:{type:"text"}},
+		{type:"field",title:"Middle",dataKey:"middle",nodeId:"wrapMiddle",width:"80px",input:{type:"text"}},
+		{type:"field",title:"Last",dataKey:"last",nodeId:"wrapLast",width:"80px",input:{type:"text"}},
+	]}},true,true,{searchbar:false});
+	wrappingTable.setData([{wide:"wide",middle:"middle",last:"last"}]);
+	await tick();
+	const wrapWide=wrappingTable.getDetailCell(0,"wrapWide");
+	const wrapMiddle=wrappingTable.getDetailCell(0,"wrapMiddle");
+	const wrapLast=wrappingTable.getDetailCell(0,"wrapLast");
+	const wrappingLineup=wrapWide.parent.containerEl;
+	assert(wrappingLineup.classList.contains("lineup-wrap")
+		&&wrapWide.outerContainerEl.style.flexBasis==="180px"
+		&&wrapMiddle.outerContainerEl.style.flexBasis==="80px"
+		&&wrapWide.outerContainerEl.style.flexGrow==="0",
+		"lineups wrap by default and accept numeric or CSS-length preferred widths without implicit growth");
+	assert(wrapWide.outerContainerEl.offsetTop===wrapMiddle.outerContainerEl.offsetTop
+		&&wrapLast.outerContainerEl.offsetTop>wrapWide.outerContainerEl.offsetTop
+		&&Math.abs(wrapLast.outerContainerEl.offsetLeft-wrapWide.outerContainerEl.offsetLeft)<1,
+		"preferred widths preserve normal flex wrapping across multiple visual rows");
+	const wrappedSeparator=getComputedStyle(wrapLast.outerContainerEl,"::before");
+	assert(getComputedStyle(wrappingLineup).overflow==="hidden"
+		&&wrappedSeparator.borderInlineStartWidth==="1px"
+		&&parseFloat(wrappedSeparator.insetInlineStart||wrappedSeparator.left)===-1,
+		"a wrapped row's leading separator is clipped while same-row cell boundaries remain visible");
+
+	const nowrapHost=host();
+	nowrapHost.style.width="240px";
+	const nowrapTable=new Tablance(nowrapHost,{details:{type:"lineup",wrap:false,entries:[
+		{type:"field",title:"One",dataKey:"one",nodeId:"nowrapOne",width:180,input:{type:"text"}},
+		{type:"field",title:"Two",dataKey:"two",nodeId:"nowrapTwo",width:180,input:{type:"text"}},
+	]}},true,true,{searchbar:false});
+	nowrapTable.setData([{one:"one",two:"two"}]);
+	await tick();
+	const nowrapOne=nowrapTable.getDetailCell(0,"nowrapOne");
+	const nowrapTwo=nowrapTable.getDetailCell(0,"nowrapTwo");
+	assert(nowrapOne.parent.containerEl.classList.contains("lineup-nowrap")
+		&&nowrapOne.outerContainerEl.offsetTop===nowrapTwo.outerContainerEl.offsetTop
+		&&nowrapOne.outerContainerEl.getBoundingClientRect().width<180
+		&&nowrapTwo.outerContainerEl.getBoundingClientRect().width<180,
+		"wrap false keeps one row and permits cells to shrink from their preferred basis");
+
+	const textWrapHost=host();
+	textWrapHost.style.width="420px";
+	const textWrapTable=new Tablance(textWrapHost,{details:{type:"lineup",wrap:false,entries:[
+		{type:"field",title:"Natural text",dataKey:"natural",nodeId:"textWrapNatural",width:170,
+			input:{type:"text"}},
+		{type:"field",title:"Unbroken text",dataKey:"unbroken",nodeId:"textWrapUnbroken",width:170,
+			input:{type:"text"}},
+	]}},true,true,{searchbar:false});
+	textWrapTable.setData([{natural:"A naturally wrapping sentence with several words",
+		unbroken:"ThisIsOneDeliberatelyVeryLongUnbrokenValueThatMustRemainInsideItsCell"}]);
+	await tick();
+	const textWrapNatural=textWrapTable.getDetailCell(0,"textWrapNatural");
+	const textWrapUnbroken=textWrapTable.getDetailCell(0,"textWrapUnbroken");
+	const renderedLines=element=>{
+		const range=document.createRange();
+		range.selectNodeContents(element);
+		return new Set([...range.getClientRects()].map(rect=>Math.round(rect.top))).size;
+	};
+	const naturalBox=textWrapNatural.outerContainerEl.getBoundingClientRect();
+	const unbrokenBox=textWrapUnbroken.outerContainerEl.getBoundingClientRect();
+	const unbrokenFragments=[...(()=>{
+		const range=document.createRange();
+		range.selectNodeContents(textWrapUnbroken.el);
+		return range.getClientRects();
+	})()];
+	assert(renderedLines(textWrapNatural.el)>1&&renderedLines(textWrapUnbroken.el)>1
+		&&textWrapNatural.el.scrollWidth<=textWrapNatural.el.clientWidth+1
+		&&textWrapUnbroken.el.scrollWidth<=textWrapUnbroken.el.clientWidth+1,
+		"field lineup values wrap naturally and emergency-break long unbroken strings inside their value box");
+	assert(Math.abs(naturalBox.width-170)<1&&Math.abs(unbrokenBox.width-170)<1
+		&&Math.abs(naturalBox.right-unbrokenBox.left)<1
+		&&textWrapNatural.outerContainerEl.offsetTop===textWrapUnbroken.outerContainerEl.offsetTop
+		&&unbrokenFragments.every(rect=>rect.right<=unbrokenBox.right+1),
+		"text wrapping neither changes declared canonical widths nor overlaps or wraps the neighbouring cell");
+	textWrapUnbroken.select();
+	const wrappedCursorBox=textWrapTable._cellCursor.getBoundingClientRect();
+	assert(Math.abs(wrappedCursorBox.left-unbrokenBox.left)<1
+		&&Math.abs(wrappedCursorBox.width-unbrokenBox.width)<1
+		&&Math.abs(wrappedCursorBox.height-unbrokenBox.height)<1,
+		"the cursor continues to follow the canonical cellbox after field content wraps");
+	key(textWrapTable.rootEl,"Enter","Enter");
+	const wrappedTextEditor=textWrapTable._cellCursor.querySelector("input");
+	const wrappedEditorBox=wrappedTextEditor.getBoundingClientRect();
+	const editingCursorBox=textWrapTable._cellCursor.getBoundingClientRect();
+	assert(wrappedTextEditor&&wrappedEditorBox.left>=editingCursorBox.left-1
+		&&wrappedEditorBox.right<=editingCursorBox.right+1,
+		"a text editor remains contained by the same canonical field-lineup cellbox");
+	textWrapTable._exitEditMode(false);
+
+	const growHost=host();
+	growHost.style.width="520px";
+	const growTable=new Tablance(growHost,{details:{type:"lineup",wrap:false,entries:[
+		{type:"field",title:"One",dataKey:"one",nodeId:"growOne",width:100,grow:true,input:{type:"text"}},
+		{type:"field",title:"Two",dataKey:"two",nodeId:"growTwo",width:100,grow:2,input:{type:"text"}},
+	]}},true,true,{searchbar:false});
+	growTable.setData([{one:"one",two:"two"}]);
+	await tick();
+	const growOne=growTable.getDetailCell(0,"growOne");
+	const growTwo=growTable.getDetailCell(0,"growTwo");
+	const growOneExtra=growOne.outerContainerEl.getBoundingClientRect().width-100;
+	const growTwoExtra=growTwo.outerContainerEl.getBoundingClientRect().width-100;
+	assert(growOne.outerContainerEl.style.flexGrow==="1"&&growTwo.outerContainerEl.style.flexGrow==="2"
+		&&growOneExtra>0&&Math.abs(growTwoExtra-growOneExtra*2)<2,
+		"boolean and numeric grow values distribute remaining lineup width by their declared factors");
+
+	const naturalHost=host();
+	naturalHost.style.width="520px";
+	const naturalTable=new Tablance(naturalHost,{details:{type:"lineup",variant:"metadata",entries:[
+		{type:"field",title:"Source",dataKey:"source",nodeId:"naturalSource"},
+		{type:"field",title:"Synced",dataKey:"synced",nodeId:"naturalSynced"},
+	]}},true,true,{searchbar:false});
+	naturalTable.setData([{source:"Ratsit",synced:"2022-01-31"}]);
+	await tick();
+	const naturalSource=naturalTable.getDetailCell(0,"naturalSource");
+	const naturalSynced=naturalTable.getDetailCell(0,"naturalSynced");
+	assert(naturalSource.outerContainerEl.style.flexBasis===""
+		&&naturalSynced.outerContainerEl.style.flexBasis===""
+		&&naturalSource.outerContainerEl.style.flexGrow==="0"
+		&&naturalSynced.outerContainerEl.style.flexGrow==="0"
+		&&getComputedStyle(naturalSource.el).overflowWrap==="normal"
+		&&naturalSource.outerContainerEl.getBoundingClientRect().width
+			+naturalSynced.outerContainerEl.getBoundingClientRect().width<naturalSource.parent.containerEl.clientWidth,
+		"metadata retains natural width without explicit sizing or implicit last-cell growth");
+
+	let invalidWrapRejected=false,invalidWidthRejected=false,invalidGrowRejected=false;
+	try {
+		const invalid=new Tablance(host(),{details:{type:"lineup",wrap:"yes",entries:[]}},true,true,{searchbar:false});
+		invalid.setData([{}]);
+	} catch(error) { invalidWrapRejected=error instanceof TypeError; }
+	try { wrappingTable._applyLineupCellSizing({width:""},document.createElement("span")); }
+	catch(error) { invalidWidthRejected=error instanceof TypeError; }
+	try { wrappingTable._applyLineupCellSizing({grow:-1},document.createElement("span")); }
+	catch(error) { invalidGrowRejected=error instanceof TypeError; }
+	assert(invalidWrapRejected&&invalidWidthRejected&&invalidGrowRejected,
+		"invalid lineup wrap, width, and grow declarations fail fast");
+
+	const tabRow={name:"Tab order",before:"before",first:"first",hidden:"hidden",disabled:"disabled",
+		choice:"two",after:"after",source:"Ratsit",synced:"2022-01-31 18:04",final:"final",
+		items:[{label:"entry one",left:"one left",right:"one right"},
+			{label:"entry two",left:"two left",right:"two right"}]};
+	const tabTable=new Tablance(host(),{main:{columns:[{dataKey:"name"}]},details:{type:"list",entries:[
+		{title:"Before",dataKey:"before",nodeId:"tabBefore",input:{type:"text"}},
+		{type:"lineup",entries:[
+			{type:"field",title:"First",dataKey:"first",nodeId:"tabFirst",input:{type:"text"}},
+			{type:"field",title:"Hidden",dataKey:"hidden",nodeId:"tabHidden",visibleIf:()=>false,
+				input:{type:"text"}},
+			{type:"field",title:"Disabled",dataKey:"disabled",nodeId:"tabDisabled",disabled:true,
+				input:{type:"text"}},
+			{type:"field",title:"Choice",dataKey:"choice",nodeId:"tabChoice",input:{type:"select",
+				options:[{value:"one",text:"One"},{value:"two",text:"Two"}]}},
+		]},
+		{title:"After",dataKey:"after",nodeId:"tabAfter",input:{type:"text"}},
+		{type:"lineup",entries:[
+			{type:"field",title:"Source",dataKey:"source",nodeId:"tabSource"},
+			{type:"field",title:"Synced",dataKey:"synced",nodeId:"tabSynced"},
+		]},
+		{type:"group",title:"Nested",entries:[
+			{type:"repeated",dataKey:"items",nodeId:"tabRepeated",entry:{type:"group",entries:[
+				{title:"Label",dataKey:"label",input:{type:"text"}},
+				{type:"lineup",entries:[
+					{type:"field",title:"Left",dataKey:"left",input:{type:"text"}},
+					{type:"field",title:"Right",dataKey:"right",input:{type:"text"}},
+				]},
+			]}},
+		]},
+		{title:"Final",dataKey:"final",nodeId:"tabFinal",input:{type:"text"}},
+	]}},true,true,{searchbar:false,ordering:false});
+	tabTable.setData([tabRow]);
+	await tick();
+	const tabBefore=tabTable.getDetailCell(0,"tabBefore");
+	const tabFirst=tabTable.getDetailCell(0,"tabFirst");
+	const tabHidden=tabFirst.parent.children[1];
+	const tabDisabled=tabFirst.parent.children[2];
+	const tabChoice=tabTable.getDetailCell(0,"tabChoice");
+	const tabAfter=tabTable.getDetailCell(0,"tabAfter");
+	const tabSource=tabTable.getDetailCell(0,"tabSource");
+	const tabSynced=tabTable.getDetailCell(0,"tabSynced");
+	const tabFinal=tabTable.getDetailCell(0,"tabFinal");
+	const tabRepeated=tabTable.getDetailCell(0,"tabRepeated");
+	const [tabEntryOne,tabEntryTwo]=tabRepeated.children;
+	const tabNestedCells=[tabEntryOne.children[0],...tabEntryOne.children[1].children,
+		tabEntryTwo.children[0],...tabEntryTwo.children[1].children];
+	const logicalCells=[];
+	tabTable._collectLogicalDetailsCells(tabTable._openDetailsPanes[0],logicalCells);
+	const expectedLogicalCells=[tabBefore,tabFirst,tabChoice,tabAfter,tabSource,tabSynced,
+		...tabNestedCells,tabFinal];
+	assert(logicalCells.length===expectedLogicalCells.length
+		&&logicalCells.every((cell,index)=>cell===expectedLogicalCells[index]),
+		"logical details order traverses rows, lineups, nested repeated entries, and skips hidden/disabled cells");
+	assert(tabHidden.outerContainerEl.classList.contains("tablance-hidden"),
+		"hidden lineup entries expose Tablance's canonical layout hook");
+	assert(tabHidden.selEl===tabHidden.outerContainerEl&&tabDisabled.selEl===tabDisabled.outerContainerEl
+		&&tabDisabled.outerContainerEl.dataset.cellState==="disabled"
+		&&tabSource.selEl===tabSource.outerContainerEl&&tabSource.outerContainerEl.dataset.cellState==="readOnly"
+		&&tabNestedCells.slice(1,3).every(cell=>cell.selEl===cell.outerContainerEl),
+		"hidden, disabled, read-only, and nested repeated lineup cells keep state on their canonical outer box");
+	tabBefore.select();
+	key(tabTable.rootEl,"Tab","Tab");
+	assert(tabTable._activeDetailsCell===tabFirst,"Tab enters a field lineup from the preceding detail row");
+	key(tabTable.rootEl,"Enter","Enter");
+	const tabTextEditor=tabTable._cellCursor.querySelector("input");
+	assert(tabTextEditor,"Enter retains ordinary field edit semantics inside a lineup");
+	key(tabTextEditor,"Tab","Tab");
+	assert(tabTable._activeDetailsCell===tabChoice&&!tabTable._inEditMode,
+		"Tab commits an active editor and skips hidden/disabled lineup cells");
+	key(tabTable.rootEl,"Enter","Enter");
+	const tabSelectEditor=tabTable.rootEl.querySelector(".tablance-select-container input");
+	assert(tabSelectEditor,"Enter retains select activation semantics");
+	key(tabSelectEditor,"Tab","Tab");
+	assert(tabTable._activeDetailsCell===tabAfter&&!tabTable._inEditMode,
+		"Tab commits an active select and continues to the next logical row");
+	for (const expected of [tabSource,tabSynced,...tabNestedCells,tabFinal]) {
+		key(tabTable.rootEl,"Tab","Tab");
+		assert(tabTable._activeDetailsCell===expected,"Tab follows logical details instance order");
+	}
+	key(tabTable.rootEl,"Tab","Tab");
+	assert(tabTable._activeDetailsCell===tabFinal,"Tab at the final detail cell does not invent a DOM target");
+	const reverse=[...tabNestedCells].reverse().concat(
+		[tabSynced,tabSource,tabAfter,tabChoice,tabFirst,tabBefore]);
+	for (const expected of reverse) {
+		key(tabTable.rootEl,"Tab","Tab",{shiftKey:true});
+		assert(tabTable._activeDetailsCell===expected,"Shift+Tab follows reverse logical details instance order");
+	}
+	key(tabTable.rootEl,"Enter","Enter");
+	assert(tabTable._inEditMode&&tabTable._activeDetailsCell===tabBefore,
+		"Tab traversal does not alter Enter semantics for ordinary detail fields");
+	tabTable._exitEditMode(false);
 
 	const toolbarTable=new Tablance(host(),{main:{
 		toolbar:{defaultInsert:true},columns:[{dataKey:"value",input:{type:"text"}}],

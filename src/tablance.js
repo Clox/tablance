@@ -370,6 +370,10 @@ class TablanceBase {
 	 *				type "lineup" similiar to a list but each item is inlined, meaning they will be lined up
 	 *									in a horizontal line and will also wrap to multiple lines if needed
 	 * 				entries Array each element should be another entry
+	 * 				variant "auto"|"fields"|"metadata"|"controls" Semantic presentation. Auto (default) resolves
+	 * 					to fields when a non-button editor is present, controls for action/button lineups, and metadata
+	 * 					for presentation-only fields. Set explicitly for intentionally ambiguous lineups.
+	 * 				wrap Bool Whether cells may wrap onto additional visual rows. Defaults to true.
 	 * 				cssClass String Css-classes to be added to the lineup-div
 	 * 				onBlur Function Callback fired when cellcursor goes from being inside the container to outside
 	 * 					It will get passed arguments 1:instanceNode, 2:mainIndex
@@ -386,6 +390,10 @@ class TablanceBase {
   	 * 				type "field" this is what will display data and which also can be editable by specifying "input"
  	 * 				dataKey String the key of the property in the data that the row should display
 	 * 				cssClass String Css-classes to be added to the field
+	 * 				width Number|String Preferred width when the field is inside a lineup. Numbers are pixels and
+	 * 					strings are CSS lengths. It becomes the flex basis; the cell may still shrink or wrap.
+	 * 				grow Bool|Number Flex growth when the field is inside a lineup. Defaults to 0. True means 1;
+	 * 					a non-negative number is used directly. No cell grows implicitly.
 	 * 				render Function Function that can be set to render the content of the cell. The return-value is what
 	 * 					will be displayed in the cell. Similiarly to columns->render it gets passed the following:
 	 * 					1: The value from data pointed to by "dataKey". If dataKey is not set but dependsOn is then this
@@ -441,8 +449,10 @@ class TablanceBase {
 	 * 							- cancelUpdate: function() to prevent the value from being persisted
 	 * 						onBlur Function Callback fired when cellcursor goes from being inside the container
 	 * 							to outside. It will get passed arguments 1:instanceNode, 2:mainIndex
-	 * 				readOnly Bool If true, the field is permanently read-only. Activating it opens a read-only
-	 * 					presentation control for native caret, text selection and copying.
+	 * 				readOnly Bool If true, the field is permanently read-only and cannot be activated.
+	 * 				readOnlyPresentation Bool Explicit opt-in that lets a read-only field open a native read-only
+	 * 					text presentation for native selection and copying. Read-only fields are
+	 * 					non-activatable by default, including implicit presentation fields without input.
 	 * 				editableIf Function Optional callback deciding whether an input field is editable. It receives a
 	 * 							payload from _makeCallbackPayload plus:
 	 * 							- value: resolved cell value (dataKey wins when present, select uses option.value when 
@@ -1066,7 +1076,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (const repeated of repeatedMutations)
 			this._finalizeRepeatedMutation(repeated);
 		if (scrollTo) {
-			nodeToUpdate.el.scrollIntoView({behavior:'smooth',block:"center"});
+			(nodeToUpdate.selEl??nodeToUpdate.el).scrollIntoView({behavior:'smooth',block:"center"});
 			updatedEls.forEach(el=>this._highlightElements([el,...el.getElementsByTagName('*')]));
 		}
 		this._adjustCursorPosSize(this._selectedCell,true);
@@ -2111,7 +2121,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!this._onlyDetails&&!this._naturalAutoHeight)
 			this._scrollToCursor();//need this first to make sure adjacent cell is even rendered
 
-		if (this._activeDetailsCell?.parent?.schemaNode.type==="lineup")
+		// Tab follows the logical details instance tree. Arrow keys deliberately retain their geometric spreadsheet
+		// behavior, including wrapped-lineup navigation based on rendered position.
+		if ((e?.key==="Tab"||e?.code==="Tab")&&this._activeDetailsCell)
+			this._moveDetailsTab(hSign<0?-1:1);
+		else if (this._activeDetailsCell?.parent?.schemaNode.type==="lineup")
 			this._moveInsideLineup(hSign,vSign);
 		else if (vSign) {//moving up or down
 			let newColIndex=this._mainColIndex;
@@ -2137,6 +2151,75 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._selectMainTableCell(this._getAdjacentSelectableMainCell(this._selectedCell,hSign));
 		if ((this._onlyDetails||this._naturalAutoHeight)&&this._mainRowIndex!=null)
 			this._scrollToCursor();
+	}
+
+	/**
+	 * Move to the previous/next logical navigable details cell for Tab/Shift+Tab.
+	 * Ordering comes exclusively from the rendered instance tree; DOM geometry is intentionally irrelevant. Closed
+	 * rendered groups are one logical cell, while open/structural groups expose their children. Hidden and disabled
+	 * nodes use the same instance flags and canonical cell-state rules as the rest of Tablance navigation.
+	 */
+	_moveDetailsTab(direction) {
+		const root=this._openDetailsPanes[this._mainRowIndex];
+		if (!root||!this._activeDetailsCell)
+			return false;
+		const cells=[];
+		this._collectLogicalDetailsCells(root,cells);
+		const currentIndex=cells.indexOf(this._activeDetailsCell);
+		const target=currentIndex<0?null:cells[currentIndex+direction];
+		if (target)
+			return this._selectDetailsCell(target);
+		return this._leaveDetailsByTab(direction);
+	}
+
+	_collectLogicalDetailsCells(instanceNode,cells) {
+		if (!instanceNode||instanceNode.hidden)
+			return cells;
+		const schemaNode=instanceNode.schemaNode;
+		const children=instanceNode.children??[];
+		if (schemaNode?.type==="group") {
+			const isOpen=instanceNode.el?.classList.contains("open");
+			if (schemaNode.closedRender&&!isOpen) {
+				if (this._isNavigableDetailsInstance(instanceNode))
+					cells.push(instanceNode);
+				return cells;
+			}
+			const before=cells.length;
+			for (const child of children)
+				this._collectLogicalDetailsCells(child,cells);
+			// Empty structural groups remain reachable through their existing group/action cell.
+			if (cells.length===before&&this._isNavigableDetailsInstance(instanceNode))
+				cells.push(instanceNode);
+			return cells;
+		}
+		if (schemaNode?.type==="field"||(!children.length&&instanceNode.el)) {
+			if (this._isNavigableDetailsInstance(instanceNode))
+				cells.push(instanceNode);
+			return cells;
+		}
+		for (const child of children)
+			this._collectLogicalDetailsCells(child,cells);
+		return cells;
+	}
+
+	_isNavigableDetailsInstance(instanceNode) {
+		const cellEl=instanceNode?.selEl??instanceNode?.el;
+		return !!cellEl&&!instanceNode.hidden&&this._getCellState(cellEl,instanceNode)?.selectable!==false;
+	}
+
+	_leaveDetailsByTab(direction) {
+		if (!this._onlyDetails) {
+			const row=this._mainTbody.querySelector(
+				`[data-data-row-index="${this._mainRowIndex+direction}"]:not(.details)`);
+			const target=this._findSelectableMainCellFromRow(row,direction,this._mainColIndex);
+			return target?this._selectMainTableCell(target):false;
+		}
+		const nextTable=this.neighbourTables?.[direction>0?"down":"up"];
+		if (!nextTable)
+			return false;
+		this._mainColIndex=this._mainRowIndex=this._activeDetailsCell=null;
+		nextTable._focusEl.style.outline=this._cellCursor.style.display="none";
+		return nextTable.selectTopBottomCellOnlyDetails(direction>0);
 	}
 
 	_selectAdjacentMainTable(isGoingDown,preferredColIndex) {
@@ -2187,14 +2270,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_moveInsideLineup(numCols,numRows) {
-		const currentCellX=this._activeDetailsCell.el.offsetLeft;
-		const currCelTop=this._activeDetailsCell.el.offsetTop;
-		const currCelBottom=currCelTop+this._activeDetailsCell.el.offsetHeight;
+		const activeCellEl=this._activeDetailsCell.selEl??this._activeDetailsCell.el;
+		const currentCellX=activeCellEl.offsetLeft;
+		const currCelTop=activeCellEl.offsetTop;
+		const currCelBottom=currCelTop+activeCellEl.offsetHeight;
 		if (numCols) {//moving left or right
 			for (let i=this._activeDetailsCell.index,nextCel;nextCel=this._activeDetailsCell.parent.children[i+=numCols];) {
-				if (nextCel.el.offsetParent != null && (nextCel?.el.offsetLeft>currentCellX)==(numCols>0)) {
-					if (this._getCellState(nextCel.el,nextCel)?.selectable!==false
-						&&currCelBottom>nextCel.el.offsetTop&&nextCel.el.offsetTop+nextCel.el.offsetHeight>currCelTop)
+				const nextCellEl=nextCel.selEl??nextCel.el;
+				if (nextCellEl.offsetParent != null && (nextCellEl.offsetLeft>currentCellX)==(numCols>0)) {
+					if (this._getCellState(nextCellEl,nextCel)?.selectable!==false
+						&&currCelBottom>nextCellEl.offsetTop&&nextCellEl.offsetTop+nextCellEl.offsetHeight>currCelTop)
 						this._selectDetailsCell(nextCel);
 					break;
 				}
@@ -2203,17 +2288,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			let closestCell,closestCellX;
 			const siblings=this._activeDetailsCell.parent.children;
 			for (let i=this._activeDetailsCell.index,otherCell;otherCell=siblings[i+=numRows];) {
-					const skipCell=this._getCellState(otherCell.el,otherCell)?.selectable===false
-						||Math.max(otherCell.el.offsetTop,currCelTop) <= 					 //cell is on the
-								Math.min(otherCell.el.offsetTop+otherCell.el.offsetHeight,currCelBottom)//same line
-								||otherCell.el.offsetParent == null;//cell is hidden
+					const otherCellEl=otherCell.selEl??otherCell.el;
+					const skipCell=this._getCellState(otherCellEl,otherCell)?.selectable===false
+						||Math.max(otherCellEl.offsetTop,currCelTop) <= 					 //cell is on the
+								Math.min(otherCellEl.offsetTop+otherCellEl.offsetHeight,currCelBottom)//same line
+								||otherCellEl.offsetParent == null;//cell is hidden
 				if (skipCell)
 					continue;
-				else if (closestCell&&(otherCell.el.offsetLeft<closestCellX)===(numRows>0))//scrolled past whole row
+				else if (closestCell&&(otherCellEl.offsetLeft<closestCellX)===(numRows>0))//scrolled past whole row
 					break;
-				if (!closestCell||Math.abs(otherCell.el.offsetLeft-currentCellX)<Math.abs(closestCellX-currentCellX)) {
+				if (!closestCell||Math.abs(otherCellEl.offsetLeft-currentCellX)<Math.abs(closestCellX-currentCellX)) {
 					closestCell=otherCell;
-					closestCellX=closestCell.el.offsetLeft;
+					closestCellX=otherCellEl.offsetLeft;
 				} else//if further away than current closest one.
 					break;
 			}
@@ -2255,7 +2341,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (sibling.hidden)
 				continue;
 			if (sibling.el) {
-				if (this._getCellState(sibling.el,sibling)?.selectable!==false)
+				if (this._getCellState(sibling.selEl??sibling.el,sibling)?.selectable!==false)
 					return sibling;
 				continue;
 			}
@@ -2287,7 +2373,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 *			only look at its (grand)children. Used for groups where both itself and its children can be selected*/
 	_getFirstSelectableDetailsCell(instanceNode,isGoingDown,onlyGetChild=false) {
 		if (!onlyGetChild&&instanceNode.el) {
-			if (this._getCellState(instanceNode.el,instanceNode)?.selectable!==false)
+			if (this._getCellState(instanceNode.selEl??instanceNode.el,instanceNode)?.selectable!==false)
 				return instanceNode;
 			return;
 		}
@@ -2298,12 +2384,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (instanceNode.schemaNode.type==="lineup"&&!isGoingDown) {
 			let chosenCell;
 			for (let i=startI,otherCell;otherCell=children[i--];)
-				if (otherCell.el.offsetParent)
-					if (!chosenCell||otherCell.el.offsetLeft<chosenCell.el.offsetLeft)
+				if ((otherCell.selEl??otherCell.el)?.offsetParent)
+					if (!chosenCell||(otherCell.selEl??otherCell.el).offsetLeft
+						<(chosenCell.selEl??chosenCell.el).offsetLeft)
 						chosenCell=otherCell;
 					else
 						break;
-			startI=chosenCell.index;
+			if (chosenCell)
+				startI=chosenCell.index;
 		}
 		for (let childI=startI;childI>=0&&childI<children.length; childI+=isGoingDown||-1)
 			if (!children[childI].hidden&&(children[childI].children||children[childI].select))
@@ -2661,7 +2749,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	/** Build the delete controls schema snippet for repeated/file entries. */
 	_buildDeleteControls(schemaNode) {
-		return {type:"lineup",cssClass:"delete-controls"
+		return {type:"lineup",variant:"controls",cssClass:"delete-controls"
 			,onBlur:cel=>cel.selEl.querySelector(".lineup").classList.remove("delete-confirming")
 			,entries:[{type:"field",input:{type:"button",
 				text:schemaNode.deleteText??this.lang.delete
@@ -2727,7 +2815,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			// the circumstance the index of it may be different. For file-deletion the button-container also contains
 			//open-button, but not for when deleting other repeated-entries.
 			for (const buttonInstanceNode of instanceNode.parent.children)
-				if (buttonInstanceNode.el.offsetParent) {
+				if ((buttonInstanceNode.selEl??buttonInstanceNode.el).offsetParent) {
 					this._selectDetailsCell(buttonInstanceNode);
 					break;
 				}
@@ -2906,8 +2994,35 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 */
 	_generateDetailsLineup(lineupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
 		instanceNode.containerEl=parentEl.appendChild(document.createElement("div"));
-		instanceNode.containerEl.classList.add("lineup","collection",...lineupSchemaNode.cssClass?.split(" ")??[]);
+		const variant=this._resolveLineupVariant(lineupSchemaNode);
+		const wrap=lineupSchemaNode.wrap??true;
+		if (typeof wrap!=="boolean")
+			throw new TypeError("lineup.wrap must be a boolean.");
+		instanceNode.lineupVariant=variant;
+		instanceNode.containerEl.classList.add("lineup",`lineup-${variant}`,wrap?"lineup-wrap":"lineup-nowrap","collection",
+			...lineupSchemaNode.cssClass?.split(" ")??[]);
 		return this._generateDetailsCollection(lineupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
+	}
+
+	_resolveLineupVariant(lineupSchemaNode) {
+		const requested=lineupSchemaNode.variant??"auto";
+		if (!["auto","fields","metadata","controls"].includes(requested))
+			throw new TypeError(`Unknown lineup variant: ${requested}`);
+		if (requested!=="auto")
+			return requested;
+		let hasFieldEditor=false;
+		let hasControl=false;
+		for (const entry of lineupSchemaNode.entries??[]) {
+			if (entry.input?.type==="button"||(!entry.input&&entry.onEnter))
+				hasControl=true;
+			else if (entry.input)
+				hasFieldEditor=true;
+		}
+		if (hasFieldEditor)
+			return "fields";
+		if (hasControl)
+			return "controls";
+		return "metadata";
 	}
 
 	/**
@@ -2981,7 +3096,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			outerContainerEl=document.createElement("span");
 			if (title)
 				outerContainerEl.appendChild(title);
-			containerEl=itemObj.selEl=outerContainerEl.appendChild(document.createElement("div"));
+			itemObj.selEl=outerContainerEl;
+			containerEl=outerContainerEl.appendChild(document.createElement("div"));
 		} else if (type=="group") {//GROUP: More complex <tr> with special rules for empty/hiding and more
 			outerContainerEl=document.createElement("tr");
 			outerContainerEl.className="empty";	// Will be hidden while group is closed until content becomes non-empty
@@ -3073,6 +3189,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		// Build DOM structure for this item
 		const {outerContainerEl,containerEl}=this._buildCollectionItemDOM(schemaNode,collection,itemObj,title);
+		if (collection.schemaNode.type==="lineup")
+			this._applyLineupCellSizing(schemaNode,outerContainerEl);
 
 
 		// Visual CSS classes
@@ -3100,6 +3218,23 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		path.pop();
 		return itemObj;
+	}
+
+	_applyLineupCellSizing(schemaNode,cellEl) {
+		if (schemaNode.width!=null) {
+			const width=typeof schemaNode.width==="number"?`${schemaNode.width}px`:schemaNode.width;
+			if (typeof width!=="string"||!width.trim())
+				throw new TypeError("A lineup cell width must be a number or non-empty CSS length.");
+			cellEl.style.flexBasis=width;
+		}
+		let grow=schemaNode.grow??0;
+		if (grow===true)
+			grow=1;
+		else if (grow===false)
+			grow=0;
+		if (typeof grow!=="number"||!Number.isFinite(grow)||grow<0)
+			throw new TypeError("A lineup cell grow value must be true, false, or a non-negative number.");
+		cellEl.style.flexGrow=String(grow);
 	}
 
 	_generateField(fieldSchemaNode,mainIndex,instanceNode,parentEl,path,scopedData) {
@@ -3421,6 +3556,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._cellCursor.classList.add("read-only-mode");
 		const textarea=this._cellCursor.appendChild(document.createElement("textarea"));
 		textarea.className="read-only-presentation";
+		textarea.readOnly=true;
 		textarea.setAttribute("aria-readonly","true");
 		textarea.value=this._readOnlyDisplayedText;
 		textarea.style.padding=getComputedStyle(this._selectedCell).padding;
@@ -6101,7 +6237,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		let fileGroup;
 		if (suppressFileDelete) {
-			fileGroup={type:"group",entries:[{type:"lineup",entries:[baseOpenControl]}],origin:"internal"};
+			fileGroup={type:"group",entries:[{type:"lineup",variant:"controls",entries:[baseOpenControl]}],origin:"internal"};
 		} else {
 			fileGroup=this._schemaCopyWithDeleteButton({type:"group",entries:[]},this._fileOnDelete);
 			fileGroup.entries[0].entries.unshift(baseOpenControl);
@@ -6109,7 +6245,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				mutationControl.disabled=!fileFieldState.mutable;
 		}
 		fileGroup.disabled=fileFieldState.kind==="disabled";
-		fileGroup.entries.push({type:"lineup",entries:metaEntries});
+		fileGroup.entries.push({type:"lineup",variant:"metadata",entries:metaEntries});
 		// Anchor synthetic schema to the parent so closestMeta can traverse implicit groups.
 		const wrappedFileGroup=this._buildSchemaFacade(fileGroup,fileSchemaNode.parent??parentSchema);//WRAPPED
 		
@@ -6159,8 +6295,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				}
 				} else {
 					const button=cellEl.matches?.("button")?cellEl:cellEl.querySelector("button");
-					instanceNode.el=instanceNode.selEl=button;
-					this._setCellState(instanceNode.el,cellState,instanceNode);
+					instanceNode.el=button;
+					if (instanceNode.parent?.schemaNode.type!=="lineup")
+						instanceNode.selEl=button;
+					this._setCellState(instanceNode.selEl??instanceNode.el,cellState,instanceNode);
 				}
 		}
 	}
@@ -6261,11 +6399,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const isReadOnly=schemaNode.readOnly===true||!schemaNode.input||editableResult===false
 			||editableResult?.editable===false;
 		if (isReadOnly) {
-			// A configured editor that is currently read-only is locked, not an activatable presentation. Every
-			// normal entry path will therefore obey the same canonical state that renders the lock indicator.
-			const hasLockedEditor=!!schemaNode.input;
-			return {kind:"readOnly",selectable:true,activatable:!hasLockedEditor,mutable:false,
-				activation:hasLockedEditor?"none":"presentation",message:editableResult?.message};
+			// The lock indicator and activation behavior derive from the same canonical state. Text presentation is
+			// available only as an explicit opt-in; an absent editor never implies activatability.
+			const hasReadOnlyPresentation=schemaNode.readOnlyPresentation===true;
+			return {kind:"readOnly",selectable:true,activatable:hasReadOnlyPresentation,mutable:false,
+				activation:hasReadOnlyPresentation?"presentation":"none",message:editableResult?.message};
 		}
 
 		return {kind:"editable",selectable:true,activatable:true,mutable:true,activation:"editor"};
@@ -6286,8 +6424,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (cellEl.matches("button,input,select,textarea"))
 			cellEl.disabled=state.kind==="disabled";
 		else if (instanceNode?.schemaNode.type==="group") {
-			for (const control of cellEl.querySelectorAll("button,input,select,textarea"))
-				control.disabled=state.kind==="disabled"||this._getCellState(control)?.kind==="disabled";
+			for (const control of cellEl.querySelectorAll("button,input,select,textarea")) {
+				const controlCell=control.closest(".tablance-cell-state");
+				control.disabled=state.kind==="disabled"
+					||this._getCellState(controlCell??control)?.kind==="disabled";
+			}
 		} else if (instanceNode?.schemaNode.type!=="group") {
 			const button=cellEl.querySelector("button");
 			if (button)
@@ -6778,6 +6919,7 @@ export default class Tablance extends TablanceBase {
 		if (!!schemaNode.visibleIf(payload) == instanceNode.hidden) {
 			instanceNode.hidden=!instanceNode.hidden;
 			instanceNode.outerContainerEl.style.display=instanceNode.hidden?"none":"";
+			instanceNode.outerContainerEl.classList.toggle("tablance-hidden",instanceNode.hidden);
 		}
 
 		return !instanceNode.hidden;

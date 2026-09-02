@@ -535,8 +535,19 @@
 			}
 		}
 		.lineup {
+			display: flex;
+			align-items: stretch;
+			&.lineup-wrap {
+				flex-wrap: wrap;
+			}
+			&.lineup-nowrap {
+				flex-wrap: nowrap;
+			}
 			>span {
-				display: inline-block;
+				position: relative;
+				box-sizing: border-box;
+				flex: 0 1 auto;
+				max-width: 100%;
 				padding: .4em;
 				min-width: 50px;
 				>span.title {
@@ -544,8 +555,43 @@
 				}
 				>div {
 					padding: 6px 4px 2px;
-					&.input-cell {
-						border: 1px solid #ddd;
+				}
+			}
+			&.lineup-fields {
+				overflow: hidden;//clips a separator positioned before the first cell of every wrapped flex line
+				>span {
+					>span.title {
+						text-align: left;
+					}
+					>div.value {
+						box-sizing: border-box;
+						max-width: 100%;
+						min-width: 0;
+						white-space: normal;
+						overflow-wrap: anywhere;
+					}
+					>div.input-cell {
+						border: 0;
+					}
+					&::before {
+						position: absolute;
+						top: .4em;
+						bottom: .4em;
+						inset-inline-start: -1px;
+						border-inline-start: 1px solid var(--tablance-row-border-color);
+						content: "";
+						pointer-events: none;
+					}
+				}
+			}
+			&.lineup-metadata {
+				>span {
+					>span.title,
+					>div.value {
+						color: #64748B;
+					}
+					>div.value {
+						font-size: .94em;
 					}
 				}
 			}

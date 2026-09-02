@@ -489,8 +489,21 @@
   padding-top: 0.1em;
   font-size: 1em;
 }
+.tablance .details .lineup {
+  display: flex;
+  align-items: stretch;
+}
+.tablance .details .lineup.lineup-wrap {
+  flex-wrap: wrap;
+}
+.tablance .details .lineup.lineup-nowrap {
+  flex-wrap: nowrap;
+}
 .tablance .details .lineup > span {
-  display: inline-block;
+  position: relative;
+  box-sizing: border-box;
+  flex: 0 1 auto;
+  max-width: 100%;
   padding: 0.4em;
   min-width: 50px;
 }
@@ -500,8 +513,37 @@
 .tablance .details .lineup > span > div {
   padding: 6px 4px 2px;
 }
-.tablance .details .lineup > span > div.input-cell {
-  border: 1px solid #ddd;
+.tablance .details .lineup.lineup-fields {
+  overflow: hidden;
+}
+.tablance .details .lineup.lineup-fields > span > span.title {
+  text-align: left;
+}
+.tablance .details .lineup.lineup-fields > span > div.value {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.tablance .details .lineup.lineup-fields > span > div.input-cell {
+  border: 0;
+}
+.tablance .details .lineup.lineup-fields > span::before {
+  position: absolute;
+  top: 0.4em;
+  bottom: 0.4em;
+  inset-inline-start: -1px;
+  border-inline-start: 1px solid var(--tablance-row-border-color);
+  content: "";
+  pointer-events: none;
+}
+.tablance .details .lineup.lineup-metadata > span > span.title,
+.tablance .details .lineup.lineup-metadata > span > div.value {
+  color: #64748B;
+}
+.tablance .details .lineup.lineup-metadata > span > div.value {
+  font-size: 0.94em;
 }
 .tablance .details .lineup.delete-controls:not(.delete-confirming) > .yes, .tablance .details .lineup.delete-controls:not(.delete-confirming) > .no {
   display: none;
