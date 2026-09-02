@@ -65,7 +65,10 @@ presentation entries make it metadata. Use an explicit variant for intentionally
 
 Field lineups present ordinary detail values separated into discrete horizontal cells. Metadata stays compact and
 separator-free, while controls retain their button/action layout. Tab and Shift+Tab follow logical instance-tree order
-through ordinary detail rows and lineups; arrow and Enter behavior remain unchanged.
+through ordinary detail rows and lineups; horizontal-arrow and Enter behavior remain unchanged.
+
+ArrowUp and ArrowDown retain structural detail navigation. Geometry is consulted only between visual rows created by
+wrapping inside the same lineup; it is not used to infer columns between separate containers.
 
 Lineups wrap by default; set `wrap: false` for a single flex row. Fields inside a lineup may reuse the schema-level
 `width` property as a preferred flex basis and may opt into free-space growth with `grow: true` (equivalent to `1`) or
@@ -76,6 +79,20 @@ navigation geometry, while its inner value element remains the rendering/editing
 Static values in field lineups wrap inside that canonical box. Normal text uses ordinary wrapping opportunities, and
 an otherwise unbreakable string may break at any point rather than overflow into a neighbouring cell. Metadata lineups
 retain their compact presentation and do not inherit this field-value wrapping rule.
+
+## Details grids
+
+Use `{type: "grid", columns: 2, entries: [...]}` for a fixed logical grid of equally flexible columns. Entries are
+placed left-to-right and then top-to-bottom in schema order. A direct child may set `columnSpan` (default `1`); hidden
+children do not occupy a slot, disabled children occupy their slot but are skipped by navigation, and read-only cells
+remain navigable. Grid arrow navigation uses logical occupancy rows and columns without viewport geometry, while Tab
+and Shift+Tab retain schema order.
+
+`columns` may instead be a non-empty array of CSS track values, such as `columns: ["34ch", "34ch"]`. The array length
+defines the logical column count. Grid renders one subtle full-width separator between each pair of logical rows.
+
+Grid v1 intentionally excludes direct repeated children, explicit coordinates, row spans, responsive column changes,
+and responsive column changes.
 
 ## Closed group rendering
 

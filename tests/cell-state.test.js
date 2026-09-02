@@ -1018,6 +1018,235 @@ try {
 	assert(invalidWrapRejected&&invalidWidthRejected&&invalidGrowRejected,
 		"invalid lineup wrap, width, and grow declarations fail fast");
 
+	const gridHost=host();
+	gridHost.style.width="640px";
+	const gridTable=new Tablance(gridHost,{details:{type:"list",titlesColWidth:false,entries:[
+		{type:"field",title:"Before",dataKey:"before",nodeId:"gridBefore",input:{type:"text"}},
+		{type:"grid",columns:2,entries:[
+			{type:"field",title:"A1",dataKey:"a1",nodeId:"gridA1",input:{type:"text"}},
+			{type:"field",title:"B1",dataKey:"b1",nodeId:"gridB1",input:{type:"text"}},
+			{type:"field",title:"Spanning",dataKey:"span",nodeId:"gridSpan",columnSpan:2,input:{type:"text"}},
+			{type:"field",title:"A2",dataKey:"a2",nodeId:"gridA2",input:{type:"text"}},
+			{type:"field",title:"B2",dataKey:"b2",nodeId:"gridB2",input:{type:"text"}},
+			{type:"field",title:"Disabled",dataKey:"disabled",nodeId:"gridDisabled",disabled:true,input:{type:"text"}},
+			{type:"field",title:"Read only",dataKey:"readOnly",nodeId:"gridReadOnly",readOnly:true},
+		]},
+		{type:"lineup",variant:"metadata",entries:[
+			{type:"field",title:"Source",dataKey:"source",nodeId:"gridMetadataSource",readOnly:true},
+			{type:"field",title:"Synced",dataKey:"synced",nodeId:"gridMetadataSynced",readOnly:true},
+		]},
+	]}},true,true,{searchbar:false});
+	gridTable.setData([{before:"Before",a1:"A1",b1:"B1",span:"Span",a2:"A2",b2:"B2",
+		disabled:"Disabled",readOnly:"Read only",source:"Manual",synced:"Today"}]);
+	await tick();
+	const gridA1=gridTable.getDetailCell(0,"gridA1");
+	const gridB1=gridTable.getDetailCell(0,"gridB1");
+	const gridSpan=gridTable.getDetailCell(0,"gridSpan");
+	const gridA2=gridTable.getDetailCell(0,"gridA2");
+	const gridB2=gridTable.getDetailCell(0,"gridB2");
+	const gridDisabled=gridTable.getDetailCell(0,"gridDisabled");
+	const gridReadOnly=gridTable.getDetailCell(0,"gridReadOnly");
+	const grid=gridA1.parent;
+	assert(grid.schemaNode.type==="grid"&&grid.containerEl.classList.contains("details-grid")
+		&&grid.containerEl.style.gridTemplateColumns.startsWith("repeat(2, minmax(0"),
+		"Grid v1 renders a dedicated collection with equal flexible columns");
+	assert(grid.gridRows.length===4&&grid.gridRows[1][0]===gridSpan&&grid.gridRows[1][1]===gridSpan
+		&&gridSpan.gridColumn===0&&gridSpan.gridColumnSpan===2,
+		"the logical occupancy matrix represents automatic rows and spanning cells with canonical instances");
+	const defaultGridSeparators=[...grid.containerEl.querySelectorAll(":scope>.grid-row-separator")];
+	assert(defaultGridSeparators.length===grid.gridRows.length-1
+		&&defaultGridSeparators.every((separator,index)=>separator.style.gridRow===String((index+1)*2))
+		&&defaultGridSeparators.at(-1).style.gridRow!==String(grid.gridRows.length*2),
+		"Grid renders one logical full-row separator between rows and none after the final row");
+	assert(Math.abs(gridA1.outerContainerEl.getBoundingClientRect().width
+		-gridB1.outerContainerEl.getBoundingClientRect().width)<1,
+		"two-column grids render equal canonical cellboxes");
+	gridA1.select();
+	key(gridTable.rootEl,"ArrowRight","ArrowRight");
+	assert(gridTable._activeDetailsCell===gridB1,"ArrowRight moves to the next distinct cell on the same grid row");
+	key(gridTable.rootEl,"ArrowLeft","ArrowLeft");
+	assert(gridTable._activeDetailsCell===gridA1,"ArrowLeft moves to the previous distinct cell on the same grid row");
+	key(gridTable.rootEl,"ArrowLeft","ArrowLeft");
+	assert(gridTable._activeDetailsCell===gridA1,"horizontal grid navigation does not wrap to another row");
+	key(gridTable.rootEl,"ArrowDown","ArrowDown");
+	assert(gridTable._activeDetailsCell===gridSpan&&grid.gridPreferredColumn===0,
+		"left-column vertical navigation enters a spanning cell while preserving column one");
+	key(gridTable.rootEl,"ArrowDown","ArrowDown");
+	assert(gridTable._activeDetailsCell===gridA2,"left -> spanning -> left preserves the logical grid column");
+	gridB1.select();
+	key(gridTable.rootEl,"ArrowDown","ArrowDown");
+	assert(gridTable._activeDetailsCell===gridSpan&&grid.gridPreferredColumn===1,
+		"right-column vertical navigation enters a spanning cell while preserving column two");
+	key(gridTable.rootEl,"ArrowDown","ArrowDown");
+	assert(gridTable._activeDetailsCell===gridB2,"right -> spanning -> right preserves the logical grid column");
+	gridSpan.select();
+	key(gridTable.rootEl,"ArrowDown","ArrowDown");
+	assert(gridTable._activeDetailsCell===gridA2&&grid.gridPreferredColumn===0,
+		"vertical navigation starting on a spanning cell uses its first column");
+	gridA2.select();
+	key(gridTable.rootEl,"ArrowDown","ArrowDown");
+	assert(gridTable._activeDetailsCell===gridReadOnly&&gridTable._selectedCellState.kind==="readOnly",
+		"a disabled target slot falls back to the nearest selectable grid cell and read-only remains navigable");
+	key(gridTable.rootEl,"ArrowUp","ArrowUp");
+	assert(gridTable._activeDetailsCell===gridA2,
+		"the fallback target does not overwrite the preferred grid column");
+	gridA1.select();
+	key(gridTable.rootEl,"Tab","Tab");
+	assert(gridTable._activeDetailsCell===gridB1,"Tab follows grid schema order");
+	key(gridTable.rootEl,"Tab","Tab",{shiftKey:true});
+	assert(gridTable._activeDetailsCell===gridA1,"Shift+Tab follows reverse grid schema order");
+
+	const explicitGridTable=new Tablance(host(),{details:{type:"grid",columns:["34ch","34ch"],entries:[
+		{type:"field",title:"Left",dataKey:"left",nodeId:"explicitGridLeft",input:{type:"text"}},
+		{type:"field",title:"Right",dataKey:"right",nodeId:"explicitGridRight",input:{type:"text"}},
+		{type:"field",title:"Span",dataKey:"span",nodeId:"explicitGridSpan",columnSpan:2,input:{type:"text"}},
+		{type:"field",title:"Next left",dataKey:"nextLeft",nodeId:"explicitGridNextLeft",input:{type:"text"}},
+		{type:"field",title:"Next right",dataKey:"nextRight",nodeId:"explicitGridNextRight",input:{type:"text"}},
+	]}},true,true,{searchbar:false});
+	explicitGridTable.setData([{left:"Left",right:"Right",span:"Span",nextLeft:"Next left",nextRight:"Next right"}]);
+	await tick();
+	const explicitLeft=explicitGridTable.getDetailCell(0,"explicitGridLeft");
+	const explicitRight=explicitGridTable.getDetailCell(0,"explicitGridRight");
+	const explicitSpan=explicitGridTable.getDetailCell(0,"explicitGridSpan");
+	const explicitNextRight=explicitGridTable.getDetailCell(0,"explicitGridNextRight");
+	const explicitGrid=explicitLeft.parent;
+	const explicitSeparators=[...explicitGrid.containerEl.querySelectorAll(":scope>.grid-row-separator")];
+	assert(explicitGrid.gridColumns===2&&explicitGrid.gridRows.every(row=>row.length===2)
+		&&explicitGrid.containerEl.style.gridTemplateColumns==="34ch 34ch",
+		"an explicit track array defines both CSS widths and the logical occupancy column count");
+	assert(explicitGrid.gridRows[1][0]===explicitSpan&&explicitGrid.gridRows[1][1]===explicitSpan,
+		"columnSpan uses the same logical columns with explicit track widths");
+	const explicitTrackWidth=explicitLeft.outerContainerEl.getBoundingClientRect().width;
+	const separatorWidth=explicitSeparators[0].getBoundingClientRect().width;
+	assert(Math.abs(explicitTrackWidth-explicitRight.outerContainerEl.getBoundingClientRect().width)<1
+		&&Math.abs(separatorWidth-explicitTrackWidth*2)<1&&explicitSeparators.length===2,
+		"row separators form one continuous line across all explicit tracks, including around a spanning row");
+	explicitRight.select();
+	key(explicitGridTable.rootEl,"ArrowDown","ArrowDown");
+	key(explicitGridTable.rootEl,"ArrowDown","ArrowDown");
+	assert(explicitGridTable._activeDetailsCell===explicitNextRight,
+		"logical vertical navigation is unchanged for explicitly sized Grid tracks");
+	const threeColumnGridTable=new Tablance(host(),{details:{type:"grid",columns:3,entries:[
+		{type:"field",dataKey:"a"},{type:"field",dataKey:"b",columnSpan:2},
+		{type:"field",dataKey:"c",columnSpan:3},{type:"field",dataKey:"d"},
+		{type:"field",dataKey:"e"},{type:"field",dataKey:"f"},
+	]}},true,true,{searchbar:false});
+	threeColumnGridTable.setData([{a:"A",b:"B",c:"C",d:"D",e:"E",f:"F"}]);
+	await tick();
+	const threeColumnGrid=threeColumnGridTable._openDetailsPanes[0];
+	assert(threeColumnGrid.gridRows.length===3&&threeColumnGrid.gridRows.every(row=>row.length===3)
+		&&threeColumnGrid.gridRowSeparators.length===2
+		&&threeColumnGrid.gridRowSeparators.every(separator=>separator.style.gridColumn==="1 / -1"),
+		"row separators span the complete logical width of grids with arbitrary column counts and spans");
+
+	const hiddenGridTable=new Tablance(host(),{details:{type:"grid",columns:2,entries:[
+		{type:"field",title:"One",dataKey:"one",nodeId:"hiddenGridOne",input:{type:"text"}},
+		{type:"field",title:"Conditional",dataKey:"conditional",nodeId:"hiddenGridConditional",
+			dependsOn:"show",visibleIf:({rowData})=>rowData.show,input:{type:"text"}},
+		{type:"field",title:"Show",dataKey:"show",nodeId:"hiddenGridShow",input:{type:"text"}},
+	]}},true,true,{searchbar:false});
+	const hiddenGridRow={one:"One",conditional:"Conditional",show:false};
+	hiddenGridTable.setData([hiddenGridRow]);
+	await tick();
+	const hiddenGridOne=hiddenGridTable.getDetailCell(0,"hiddenGridOne");
+	const hiddenGridConditional=hiddenGridTable.getDetailCell(0,"hiddenGridConditional");
+	const hiddenGridShow=hiddenGridTable.getDetailCell(0,"hiddenGridShow");
+	assert(hiddenGridConditional.hidden&&hiddenGridShow.gridRow===0&&hiddenGridShow.gridColumn===1
+		&&hiddenGridOne.parent.gridRowSeparators.length===0,
+		"hidden grid children do not occupy slots and following children are re-placed");
+	hiddenGridRow.show=true;
+	hiddenGridTable.refreshSubtree(hiddenGridOne.parent);
+	assert(!hiddenGridConditional.hidden&&hiddenGridConditional.gridColumn===1
+		&&hiddenGridShow.gridRow===1&&hiddenGridShow.gridColumn===0
+		&&hiddenGridOne.parent.gridRowSeparators.length===1,
+		"visibility refresh rebuilds rendering and navigation from the same grid placement");
+
+	const repeatedGridTable=new Tablance(host(),{details:{type:"list",entries:[
+		{type:"repeated",dataKey:"items",entry:{type:"group",closedRender:({name})=>name,entries:[
+			{type:"grid",columns:2,entries:[
+				{type:"field",title:"Left",dataKey:"left",input:{type:"text"}},
+				{type:"field",title:"Right",dataKey:"right",input:{type:"text"}},
+			]},
+		]}},
+	]}},true,true,{searchbar:false});
+	repeatedGridTable.setData([{items:[{name:"Entry",left:"Left",right:"Right"}]}]);
+	await tick();
+	const repeatedGridGroup=repeatedGridTable._openDetailsPanes[0].children[0].children[0];
+	repeatedGridGroup.select();
+	key(repeatedGridTable.rootEl,"Enter","Enter");
+	const repeatedGrid=repeatedGridGroup.children[0];
+	assert(repeatedGrid.schemaNode.type==="grid"&&repeatedGrid.gridRows[0][1].dataObj.name==="Entry",
+		"a grid nested in repeated/group retains the repeated entry's logical data identity");
+
+	const mainGridTable=new Tablance(host(),{main:{columns:[
+		{dataKey:"left",input:{type:"text"}},{dataKey:"right",input:{type:"text"}},
+	]},details:{type:"grid",columns:2,entries:[
+		{type:"field",title:"Detail left",dataKey:"detailLeft",nodeId:"mainGridLeft",input:{type:"text"}},
+		{type:"field",title:"Detail right",dataKey:"detailRight",nodeId:"mainGridRight",input:{type:"text"}},
+	]}},true,true,{searchbar:false,ordering:false});
+	mainGridTable.setData([
+		{left:"1L",right:"1R",detailLeft:"DL",detailRight:"DR"},
+		{left:"2L",right:"2R",detailLeft:"DL2",detailRight:"DR2"},
+	]);
+	await tick();
+	mainGridTable.selectCell(0,"right");
+	mainGridTable.expandRow(0,false);
+	mainGridTable.getDetailCell(0,"mainGridRight").select();
+	key(mainGridTable.rootEl,"ArrowDown","ArrowDown");
+	assert(!mainGridTable._activeDetailsCell&&mainGridTable._mainRowIndex===1&&mainGridTable._mainColIndex===1,
+		"leaving a Grid through an expansion preserves the main table's independent logical column");
+
+	let invalidColumns=false,emptyColumns=false,invalidTrack=false,invalidSpan=false,directRepeated=false;
+	try {
+		const invalid=new Tablance(host(),{details:{type:"grid",columns:0,entries:[]}},true,true,{searchbar:false});
+		invalid.setData([{}]);
+	} catch(error) { invalidColumns=error instanceof TypeError; }
+	try {
+		const invalid=new Tablance(host(),{details:{type:"grid",columns:[],entries:[]}},true,true,{searchbar:false});
+		invalid.setData([{}]);
+	} catch(error) { emptyColumns=error instanceof TypeError; }
+	try {
+		const invalid=new Tablance(host(),{details:{type:"grid",columns:["34ch","not("],entries:[]}},true,true,
+			{searchbar:false});
+		invalid.setData([{}]);
+	} catch(error) { invalidTrack=error instanceof TypeError; }
+	try {
+		const invalid=new Tablance(host(),{details:{type:"grid",columns:2,entries:[
+			{type:"field",dataKey:"value",columnSpan:3},
+		]}},true,true,{searchbar:false});
+		invalid.setData([{value:"x"}]);
+	} catch(error) { invalidSpan=error instanceof TypeError; }
+	try {
+		const invalid=new Tablance(host(),{details:{type:"grid",columns:2,entries:[
+			{type:"repeated",dataKey:"items",entry:{type:"field",dataKey:"value"}},
+		]}},true,true,{searchbar:false});
+		invalid.setData([{items:[]}]);
+	} catch(error) { directRepeated=error instanceof TypeError; }
+	assert(invalidColumns&&emptyColumns&&invalidTrack&&invalidSpan&&directRepeated,
+		"Grid rejects invalid integer/track columns, invalid spans, and direct repeated row models");
+
+	const wrappedVerticalHost=host();
+	wrappedVerticalHost.style.width="340px";
+	const wrappedVerticalTable=new Tablance(wrappedVerticalHost,{details:{type:"lineup",entries:[
+		{type:"field",title:"Top left",dataKey:"a",nodeId:"wrappedA",width:180,input:{type:"text"}},
+		{type:"field",title:"Top right",dataKey:"b",nodeId:"wrappedB",width:80,input:{type:"text"}},
+		{type:"field",title:"Bottom left",dataKey:"c",nodeId:"wrappedC",width:180,input:{type:"text"}},
+		{type:"field",title:"Bottom right",dataKey:"d",nodeId:"wrappedD",width:80,input:{type:"text"}},
+	]}},true,true,{searchbar:false});
+	wrappedVerticalTable.setData([{a:"A long value that makes the first cell taller",b:"B",c:"C",d:"D"}]);
+	await tick();
+	const wrappedA=wrappedVerticalTable.getDetailCell(0,"wrappedA");
+	const wrappedB=wrappedVerticalTable.getDetailCell(0,"wrappedB");
+	const wrappedC=wrappedVerticalTable.getDetailCell(0,"wrappedC");
+	const wrappedD=wrappedVerticalTable.getDetailCell(0,"wrappedD");
+	wrappedB.select();
+	key(wrappedVerticalTable.rootEl,"ArrowDown","ArrowDown");
+	assert(wrappedVerticalTable._activeDetailsCell===wrappedD,
+		"Lineup retains fresh geometric navigation between visual rows inside the same wrapped flow");
+	key(wrappedVerticalTable.rootEl,"ArrowUp","ArrowUp");
+	assert(wrappedVerticalTable._activeDetailsCell===wrappedB,
+		"wrapped Lineup geometry remains bidirectional and does not use Grid state");
+
 	const tabRow={name:"Tab order",before:"before",first:"first",hidden:"hidden",disabled:"disabled",
 		choice:"two",after:"after",source:"Ratsit",synced:"2022-01-31 18:04",final:"final",
 		items:[{label:"entry one",left:"one left",right:"one right"},
@@ -1038,7 +1267,7 @@ try {
 			{type:"field",title:"Source",dataKey:"source",nodeId:"tabSource"},
 			{type:"field",title:"Synced",dataKey:"synced",nodeId:"tabSynced"},
 		]},
-		{type:"group",title:"Nested",entries:[
+		{type:"group",title:"Nested",nodeId:"tabNestedGroup",entries:[
 			{type:"repeated",dataKey:"items",nodeId:"tabRepeated",entry:{type:"group",entries:[
 				{title:"Label",dataKey:"label",input:{type:"text"}},
 				{type:"lineup",entries:[
@@ -1061,16 +1290,20 @@ try {
 	const tabSynced=tabTable.getDetailCell(0,"tabSynced");
 	const tabFinal=tabTable.getDetailCell(0,"tabFinal");
 	const tabRepeated=tabTable.getDetailCell(0,"tabRepeated");
+	const tabNestedGroup=tabTable.getDetailCell(0,"tabNestedGroup");
 	const [tabEntryOne,tabEntryTwo]=tabRepeated.children;
-	const tabNestedCells=[tabEntryOne.children[0],...tabEntryOne.children[1].children,
-		tabEntryTwo.children[0],...tabEntryTwo.children[1].children];
+	const tabEntryOneCells=[tabEntryOne.children[0],...tabEntryOne.children[1].children];
+	const tabEntryTwoCells=[tabEntryTwo.children[0],...tabEntryTwo.children[1].children];
+	const tabNestedCells=[...tabEntryOneCells,...tabEntryTwoCells];
 	const logicalCells=[];
 	tabTable._collectLogicalDetailsCells(tabTable._openDetailsPanes[0],logicalCells);
 	const expectedLogicalCells=[tabBefore,tabFirst,tabChoice,tabAfter,tabSource,tabSynced,
-		...tabNestedCells,tabFinal];
+		tabNestedGroup,tabFinal];
 	assert(logicalCells.length===expectedLogicalCells.length
 		&&logicalCells.every((cell,index)=>cell===expectedLogicalCells[index]),
-		"logical details order traverses rows, lineups, nested repeated entries, and skips hidden/disabled cells");
+		"logical details order treats a closed group as one cell and skips hidden/disabled cells");
+	assert(!logicalCells.some(cell=>tabNestedCells.includes(cell)),
+		"children of a closed group are absent from logical navigation");
 	assert(tabHidden.outerContainerEl.classList.contains("tablance-hidden"),
 		"hidden lineup entries expose Tablance's canonical layout hook");
 	assert(tabHidden.selEl===tabHidden.outerContainerEl&&tabDisabled.selEl===tabDisabled.outerContainerEl
@@ -1093,18 +1326,62 @@ try {
 	key(tabSelectEditor,"Tab","Tab");
 	assert(tabTable._activeDetailsCell===tabAfter&&!tabTable._inEditMode,
 		"Tab commits an active select and continues to the next logical row");
-	for (const expected of [tabSource,tabSynced,...tabNestedCells,tabFinal]) {
+	for (const expected of [tabSource,tabSynced,tabNestedGroup]) {
 		key(tabTable.rootEl,"Tab","Tab");
 		assert(tabTable._activeDetailsCell===expected,"Tab follows logical details instance order");
 	}
+	key(tabTable.rootEl,"Enter","Enter");
+	assert(tabNestedGroup.el.classList.contains("open")
+		&&tabTable._activeDetailsCell===tabEntryOne,
+		"Enter opens a closed group before its first nested group becomes navigable");
+	key(tabTable.rootEl,"Enter","Enter");
+	assert(tabEntryOne.el.classList.contains("open")
+		&&tabTable._activeDetailsCell===tabEntryOne.children[0],
+		"a nested closed group remains atomic until it is opened in turn");
+	for (const expected of [...tabEntryOneCells.slice(1),tabEntryTwo]) {
+		key(tabTable.rootEl,"Tab","Tab");
+		assert(tabTable._activeDetailsCell===expected,"Tab traverses children only while their group is open");
+	}
+	key(tabTable.rootEl,"Enter","Enter");
+	assert(tabEntryTwo.el.classList.contains("open")
+		&&tabTable._activeDetailsCell===tabEntryTwo.children[0],
+		"Enter exposes the children of the next repeated group independently");
+	for (const expected of [...tabEntryTwoCells.slice(1),tabFinal]) {
+		key(tabTable.rootEl,"Tab","Tab");
+		assert(tabTable._activeDetailsCell===expected,"Tab traverses an opened repeated group in logical order");
+	}
+	assert(!tabNestedGroup.el.classList.contains("open"),
+		"leaving an open group closes it and restores its atomic navigation state");
 	key(tabTable.rootEl,"Tab","Tab");
 	assert(tabTable._activeDetailsCell===tabFinal,"Tab at the final detail cell does not invent a DOM target");
-	const reverse=[...tabNestedCells].reverse().concat(
-		[tabSynced,tabSource,tabAfter,tabChoice,tabFirst,tabBefore]);
+	key(tabTable.rootEl,"Tab","Tab",{shiftKey:true});
+	assert(tabTable._activeDetailsCell===tabNestedGroup
+		&&!tabNestedGroup.el.classList.contains("open"),
+		"reverse navigation reaches the closed group itself instead of a hidden child");
+	tabTable._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,button:0}));
+	assert(tabNestedGroup.el.classList.contains("open")
+		&&tabTable._activeDetailsCell===tabEntryOne,
+		"double-click opens a selected closed group before selecting its first nested group");
+	tabSynced.select();
+	const reverse=[tabSource,tabAfter,tabChoice,tabFirst,tabBefore];
 	for (const expected of reverse) {
 		key(tabTable.rootEl,"Tab","Tab",{shiftKey:true});
 		assert(tabTable._activeDetailsCell===expected,"Shift+Tab follows reverse logical details instance order");
 	}
+	tabSynced.select();
+	key(tabTable.rootEl,"ArrowDown","ArrowDown");
+	assert(tabTable._activeDetailsCell===tabNestedGroup,
+		"vertical navigation reaches a closed group instead of descending into its children");
+	tabNestedCells[1].selEl.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	assert(tabTable._activeDetailsCell===tabNestedGroup,
+		"clicking visible descendant content cannot bypass its closed group as the navigation unit");
+	key(tabTable.rootEl,"Enter","Enter");
+	assert(tabNestedGroup.el.classList.contains("open")
+		&&tabTable._activeDetailsCell===tabEntryOne,
+		"a closed group reached by vertical navigation opens normally with Enter");
+	tabBefore.select();
+	assert(!tabNestedGroup.el.classList.contains("open"),
+		"closing the group after pointer and arrow navigation makes it atomic again");
 	key(tabTable.rootEl,"Enter","Enter");
 	assert(tabTable._inEditMode&&tabTable._activeDetailsCell===tabBefore,
 		"Tab traversal does not alter Enter semantics for ordinary detail fields");

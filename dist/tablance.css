@@ -443,6 +443,41 @@
 .tablance .details .lineup > .date-container {
   min-width: 12ch;
 }
+.tablance .details .details-grid {
+  display: grid;
+  width: 100%;
+}
+.tablance .details .details-grid > .grid-row-separator {
+  box-sizing: border-box;
+  width: 100%;
+  height: 0;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--tablance-row-border-color);
+}
+.tablance .details .details-grid > span {
+  position: relative;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0.4em;
+}
+.tablance .details .details-grid > span > span.title {
+  display: block;
+  text-align: left;
+}
+.tablance .details .details-grid > span > div {
+  padding: 6px 4px 2px;
+}
+.tablance .details .details-grid > span > div.value {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.tablance .details .details-grid > span > div.input-cell {
+  border: 0;
+}
 .tablance .details .read-only {
   background-color: transparent;
 }

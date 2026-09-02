@@ -154,6 +154,7 @@ class TablanceBase {
 	_selectedCell;//the HTML-element of the cell-cursor. probably TD's most of the time.
 	_cellStates=new WeakMap();//canonical functional state for every currently rendered cell element
 	_selectedCellState;//canonical state for the selected cell; DOM classes are styling hooks only
+	_activeVerticalGrid=null;//grid instance whose logical preferred column is active during vertical grid navigation
 	_inEditMode;//whether the user is currently in edit-mode
 	_inReadOnlyMode=false;//whether a read-only presentation textarea is currently open
 	_readOnlyDisplayedText;//immutable displayed text used while read-only presentation mode is open
@@ -387,6 +388,13 @@ class TablanceBase {
 	 * 							at first but by entering it a page dedicated to that container is changed to.
 	 *	 		}
  *			{
+	 *			type "grid" lays entries out in a fixed logical grid with equal-width columns
+	 *			columns Positive integer number of equal flexible columns, or a non-empty array of CSS track values
+	 *			entries Array of entries, placed left-to-right and then top-to-bottom in schema order. A repeated
+	 *				container cannot be a direct grid child in Grid v1.
+	 *			A direct child may set columnSpan to a positive integer no larger than columns. It defaults to 1.
+	 *		}
+	 *		{
   	 * 				type "field" this is what will display data and which also can be editable by specifying "input"
  	 * 				dataKey String the key of the property in the data that the row should display
 	 * 				cssClass String Css-classes to be added to the field
@@ -2121,16 +2129,22 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!this._onlyDetails&&!this._naturalAutoHeight)
 			this._scrollToCursor();//need this first to make sure adjacent cell is even rendered
 
-		// Tab follows the logical details instance tree. Arrow keys deliberately retain their geometric spreadsheet
-		// behavior, including wrapped-lineup navigation based on rendered position.
+		// Tab follows the logical details instance tree. Grid arrows use logical rows/columns; geometry is reserved for
+		// choosing between visual rows created by wrapping within one lineup.
+		const isVerticalArrow=vSign!==0&&(e?.key==="ArrowUp"||e?.key==="ArrowDown"
+			||e?.code==="ArrowUp"||e?.code==="ArrowDown");
+		if (!isVerticalArrow)
+			this._resetGridPreferredColumn();
 		if ((e?.key==="Tab"||e?.code==="Tab")&&this._activeDetailsCell)
 			this._moveDetailsTab(hSign<0?-1:1);
+		else if (this._activeDetailsCell?.parent?.schemaNode.type==="grid")
+			this._moveInsideGrid(hSign,vSign);
 		else if (this._activeDetailsCell?.parent?.schemaNode.type==="lineup")
-			this._moveInsideLineup(hSign,vSign);
+			this._moveInsideLineup(hSign,vSign,isVerticalArrow);
 		else if (vSign) {//moving up or down
 			let newColIndex=this._mainColIndex;
 			if (this._activeDetailsCell) {//moving from inside details.might move to another cell inside,or outside
-					this._selectAdjacentDetailsCell(this._activeDetailsCell,vSign==1);
+				this._selectAdjacentDetailsCell(this._activeDetailsCell,vSign==1);
 			} else if (vSign===1&&this._openDetailsPanes[this._mainRowIndex]
 				&&!this._openDetailsPanes[this._mainRowIndex].collapsing
 				&&this._rowMeta.get(this._filteredData[this._mainRowIndex])?.h){//moving down into details
@@ -2155,8 +2169,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	/**
 	 * Move to the previous/next logical navigable details cell for Tab/Shift+Tab.
-	 * Ordering comes exclusively from the rendered instance tree; DOM geometry is intentionally irrelevant. Closed
-	 * rendered groups are one logical cell, while open/structural groups expose their children. Hidden and disabled
+	 * Ordering comes exclusively from the rendered instance tree; DOM geometry is intentionally irrelevant. Every
+	 * closed group is one logical cell, while open groups expose their children. Hidden and disabled
 	 * nodes use the same instance flags and canonical cell-state rules as the rest of Tablance navigation.
 	 */
 	_moveDetailsTab(direction) {
@@ -2172,6 +2186,72 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return this._leaveDetailsByTab(direction);
 	}
 
+	_resetGridPreferredColumn() {
+		if (this._activeVerticalGrid)
+			this._activeVerticalGrid.gridPreferredColumn=null;
+		this._activeVerticalGrid=null;
+	}
+
+	_getDetailsCellRect(instanceNode) {
+		const cellEl=instanceNode?.selEl??instanceNode?.el;
+		if (!cellEl?.isConnected||!cellEl.getClientRects().length)
+			return;
+		const rect=cellEl.getBoundingClientRect();
+		if (rect.bottom<=rect.top||rect.right<=rect.left)
+			return;
+		return {left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom,
+			centerX:(rect.left+rect.right)/2};
+	}
+
+	/**Build visual rows only for one lineup. Geometry is ephemeral; instance nodes remain navigation identity.*/
+	_getLineupVisualRows(lineup) {
+		const geometries=[];
+		for (let logicalOrder=0;logicalOrder<(lineup?.children?.length??0);logicalOrder++) {
+			const instanceNode=lineup.children[logicalOrder];
+			if (instanceNode.hidden||!this._isNavigableDetailsInstance(instanceNode))
+				continue;
+			const rect=this._getDetailsCellRect(instanceNode);
+			if (!rect)
+				continue;
+			geometries.push({instanceNode,logicalOrder,...rect});
+		}
+		geometries.sort((a,b)=>a.top-b.top||a.left-b.left||a.logicalOrder-b.logicalOrder);
+		const rows=[];
+		const overlapEpsilon=.5;
+		for (const geometry of geometries) {
+			const row=rows.at(-1);
+			const overlap=row
+				?Math.min(row.overlapBottom,geometry.bottom)-Math.max(row.overlapTop,geometry.top):0;
+			if (!row||overlap<=overlapEpsilon) {
+				rows.push({items:[geometry],overlapTop:geometry.top,overlapBottom:geometry.bottom});
+				continue;
+			}
+			row.items.push(geometry);
+			// Keeping the common intersection prevents partial/transitive overlaps from joining separate visual rows.
+			row.overlapTop=Math.max(row.overlapTop,geometry.top);
+			row.overlapBottom=Math.min(row.overlapBottom,geometry.bottom);
+		}
+		return rows;
+	}
+
+	_pickLineupRowTarget(row,sourceRect) {
+		if (!row?.items.length)
+			return;
+		if (!sourceRect)
+			return row.items[0].instanceNode;
+		const pointX=sourceRect.centerX;
+		const score=item=>[
+			pointX<item.left?item.left-pointX:pointX>item.right?pointX-item.right:0,
+			Math.abs(item.centerX-pointX),
+			item.logicalOrder
+		];
+		const compare=(a,b)=>{
+			const aScore=score(a),bScore=score(b);
+			return aScore[0]-bScore[0]||aScore[1]-bScore[1]||aScore[2]-bScore[2];
+		};
+		return row.items.reduce((best,item)=>compare(item,best)<0?item:best).instanceNode;
+	}
+
 	_collectLogicalDetailsCells(instanceNode,cells) {
 		if (!instanceNode||instanceNode.hidden)
 			return cells;
@@ -2179,7 +2259,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const children=instanceNode.children??[];
 		if (schemaNode?.type==="group") {
 			const isOpen=instanceNode.el?.classList.contains("open");
-			if (schemaNode.closedRender&&!isOpen) {
+			if (!isOpen) {
 				if (this._isNavigableDetailsInstance(instanceNode))
 					cells.push(instanceNode);
 				return cells;
@@ -2269,7 +2349,57 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 	}
 
-	_moveInsideLineup(numCols,numRows) {
+	_moveInsideGrid(numCols,numRows) {
+		const current=this._activeDetailsCell;
+		const grid=current?.parent;
+		if (!grid||grid.schemaNode.type!=="grid")
+			return false;
+		this._refreshGridLayout(grid);
+		if (numCols) {
+			this._resetGridPreferredColumn();
+			const row=grid.gridRows[current.gridRow]??[];
+			const candidates=[...new Set(row)].filter(candidate=>candidate&&candidate!==current
+				&&this._isNavigableDetailsInstance(candidate));
+			const currentStart=current.gridColumn;
+			const currentEnd=currentStart+current.gridColumnSpan-1;
+			const target=candidates.filter(candidate=>numCols>0
+				?candidate.gridColumn>currentEnd
+				:candidate.gridColumn+candidate.gridColumnSpan-1<currentStart)
+				.sort((a,b)=>numCols>0?a.gridColumn-b.gridColumn:b.gridColumn-a.gridColumn)[0];
+			return target?this._selectDetailsCell(target):false;
+		}
+		if (!numRows)
+			return false;
+		if (this._activeVerticalGrid!==grid) {
+			this._resetGridPreferredColumn();
+			this._activeVerticalGrid=grid;
+		}
+		grid.gridPreferredColumn??=current.gridColumn;
+		const preferred=grid.gridPreferredColumn;
+		const direction=numRows>0?1:-1;
+		for (let rowIndex=current.gridRow+direction;rowIndex>=0&&rowIndex<grid.gridRows.length;
+			rowIndex+=direction) {
+			const row=grid.gridRows[rowIndex]??[];
+			const exact=row[preferred];
+			if (exact&&exact!==current&&this._isNavigableDetailsInstance(exact))
+				return this._selectDetailsCell(exact,true);
+			const candidates=[...new Set(row)].filter(candidate=>candidate&&candidate!==current
+				&&this._isNavigableDetailsInstance(candidate));
+			if (!candidates.length)
+				continue;
+			const distance=candidate=>preferred<candidate.gridColumn
+				?candidate.gridColumn-preferred
+				:preferred>=candidate.gridColumn+candidate.gridColumnSpan
+					?preferred-(candidate.gridColumn+candidate.gridColumnSpan-1):0;
+			const target=candidates.reduce((best,candidate)=>distance(candidate)<distance(best)
+				||(distance(candidate)===distance(best)&&candidate.gridColumn<best.gridColumn)?candidate:best);
+			return this._selectDetailsCell(target,true);
+		}
+		this._resetGridPreferredColumn();
+		return this._selectAdjacentDetailsCell(grid,direction>0);
+	}
+
+	_moveInsideLineup(numCols,numRows,isVerticalArrow=false) {
 		const activeCellEl=this._activeDetailsCell.selEl??this._activeDetailsCell.el;
 		const currentCellX=activeCellEl.offsetLeft;
 		const currCelTop=activeCellEl.offsetTop;
@@ -2285,28 +2415,38 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				}
 			}
 		} else {//moving up or down
-			let closestCell,closestCellX;
-			const siblings=this._activeDetailsCell.parent.children;
-			for (let i=this._activeDetailsCell.index,otherCell;otherCell=siblings[i+=numRows];) {
+			const direction=numRows>0?1:-1;
+			if (!isVerticalArrow) {
+				let closestCell,closestCellX;
+				const siblings=this._activeDetailsCell.parent.children;
+				for (let i=this._activeDetailsCell.index,otherCell;otherCell=siblings[i+=numRows];) {
 					const otherCellEl=otherCell.selEl??otherCell.el;
 					const skipCell=this._getCellState(otherCellEl,otherCell)?.selectable===false
-						||Math.max(otherCellEl.offsetTop,currCelTop) <= 					 //cell is on the
-								Math.min(otherCellEl.offsetTop+otherCellEl.offsetHeight,currCelBottom)//same line
-								||otherCellEl.offsetParent == null;//cell is hidden
-				if (skipCell)
-					continue;
-				else if (closestCell&&(otherCellEl.offsetLeft<closestCellX)===(numRows>0))//scrolled past whole row
-					break;
-				if (!closestCell||Math.abs(otherCellEl.offsetLeft-currentCellX)<Math.abs(closestCellX-currentCellX)) {
-					closestCell=otherCell;
-					closestCellX=otherCellEl.offsetLeft;
-				} else//if further away than current closest one.
-					break;
+						||Math.max(otherCellEl.offsetTop,currCelTop)
+							<=Math.min(otherCellEl.offsetTop+otherCellEl.offsetHeight,currCelBottom)
+						||otherCellEl.offsetParent==null;
+					if (skipCell)
+						continue;
+					if (closestCell&&(otherCellEl.offsetLeft<closestCellX)===(numRows>0))
+						break;
+					if (!closestCell||Math.abs(otherCellEl.offsetLeft-currentCellX)
+						<Math.abs(closestCellX-currentCellX)) {
+						closestCell=otherCell;
+						closestCellX=otherCellEl.offsetLeft;
+					} else
+						break;
+				}
+				return closestCell?this._selectDetailsCell(closestCell)
+					:this._selectAdjacentDetailsCell(this._activeDetailsCell.parent,direction>0);
 			}
-			if (closestCell)
-				this._selectDetailsCell(closestCell);
-			else
-				this._selectAdjacentDetailsCell(this._activeDetailsCell.parent,numRows==1?true:false);
+			const sourceRect=this._getDetailsCellRect(this._activeDetailsCell);
+			const rows=this._getLineupVisualRows(this._activeDetailsCell.parent);
+			const currentRowIndex=rows.findIndex(row=>row.items.some(
+				item=>item.instanceNode===this._activeDetailsCell));
+			const target=this._pickLineupRowTarget(rows[currentRowIndex+direction],sourceRect);
+			if (target)
+				return this._selectDetailsCell(target);
+			return this._selectAdjacentDetailsCell(this._activeDetailsCell.parent,direction>0);
 		}
 	}
 
@@ -2394,8 +2534,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				startI=chosenCell.index;
 		}
 		for (let childI=startI;childI>=0&&childI<children.length; childI+=isGoingDown||-1)
-			if (!children[childI].hidden&&(children[childI].children||children[childI].select))
-				 return this._getFirstSelectableDetailsCell(children[childI],isGoingDown);
+			if (!children[childI].hidden&&(children[childI].children||children[childI].select)) {
+				const target=this._getFirstSelectableDetailsCell(children[childI],isGoingDown);
+				if (target)
+					return target;
+			}
 	}
 	
 	_spreadsheetKeyDown(e) {
@@ -2690,6 +2833,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			case "group": return this._generateDetailsGroup(schemaNode,mainIndex,instanceNode,parentEl,path,scopedData,notYetCreated);
 			case "repeated": return this._generateDetailsRepeated(schemaNode,mainIndex,instanceNode,parentEl,path,scopedData,notYetCreated);
 			case "lineup": return this._generateDetailsLineup(schemaNode,mainIndex,instanceNode,parentEl,path,scopedData,notYetCreated);
+			case "grid": return this._generateDetailsGrid(schemaNode,mainIndex,instanceNode,parentEl,path,scopedData,notYetCreated);
 		}
 	}
 
@@ -3004,6 +3148,84 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return this._generateDetailsCollection(lineupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
 	}
 
+	_generateDetailsGrid(gridSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
+		const columnSchema=gridSchemaNode.columns;
+		let columns,gridTemplateColumns;
+		if (Number.isInteger(columnSchema)&&columnSchema>0) {
+			columns=columnSchema;
+			gridTemplateColumns=`repeat(${columns}, minmax(0, 1fr))`;
+		} else if (Array.isArray(columnSchema)&&columnSchema.length
+			&&columnSchema.every(track=>typeof track==="string"&&track.trim())) {
+			columns=columnSchema.length;
+			gridTemplateColumns=columnSchema.map(track=>track.trim()).join(" ");
+			const validationStyle=document.createElement("div").style;
+			validationStyle.gridTemplateColumns=gridTemplateColumns;
+			if (!validationStyle.gridTemplateColumns)
+				throw new TypeError("grid.columns contains an invalid CSS track value.");
+		} else
+			throw new TypeError("grid.columns must be a positive integer or a non-empty array of CSS track values.");
+		if (gridSchemaNode.entries?.some(entry=>entry.type==="repeated"))
+			throw new TypeError("A repeated container cannot be a direct child of a grid.");
+		instanceNode.gridColumns=columns;
+		instanceNode.gridPreferredColumn=null;
+		instanceNode.containerEl=parentEl.appendChild(document.createElement("div"));
+		instanceNode.containerEl.classList.add("details-grid","collection",
+			...gridSchemaNode.cssClass?.split(" ")??[]);
+		instanceNode.containerEl.style.gridTemplateColumns=gridTemplateColumns;
+		const generated=this._generateDetailsCollection(gridSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
+		this._refreshGridLayout(instanceNode);
+		return generated;
+	}
+
+	_refreshGridLayout(grid) {
+		if (grid?.schemaNode?.type!=="grid")
+			return;
+		const columns=grid.gridColumns;
+		const rows=[];
+		let row=0,column=0;
+		for (const child of grid.children??[]) {
+			const span=child.schemaNode.columnSpan??1;
+			if (!Number.isInteger(span)||span<1||span>columns)
+				throw new TypeError("A grid child columnSpan must be a positive integer no larger than grid.columns.");
+			child.gridColumnSpan=span;
+			if (child.hidden) {
+				child.gridRow=child.gridColumn=null;
+				continue;
+			}
+			if (column+span>columns) {
+				row++;
+				column=0;
+			}
+			child.gridRow=row;
+			child.gridColumn=column;
+			rows[row]??=Array(columns).fill(null);
+			for (let slot=column;slot<column+span;slot++)
+				rows[row][slot]=child;
+			child.outerContainerEl.style.gridRow=String(row*2+1);
+			child.outerContainerEl.style.gridColumn=`${column+1} / span ${span}`;
+			column+=span;
+			if (column===columns) {
+				row++;
+				column=0;
+			}
+		}
+		grid.gridRows=rows;
+		const separatorCount=Math.max(0,rows.length-1);
+		grid.gridRowSeparators??=[];
+		while (grid.gridRowSeparators.length<separatorCount) {
+			const separator=grid.containerEl.appendChild(document.createElement("hr"));
+			separator.className="grid-row-separator";
+			separator.setAttribute("aria-hidden","true");
+			grid.gridRowSeparators.push(separator);
+		}
+		while (grid.gridRowSeparators.length>separatorCount)
+			grid.gridRowSeparators.pop().remove();
+		grid.gridRowSeparators.forEach((separator,index)=>{
+			separator.style.gridRow=String((index+1)*2);
+			separator.style.gridColumn="1 / -1";
+		});
+	}
+
 	_resolveLineupVariant(lineupSchemaNode) {
 		const requested=lineupSchemaNode.variant??"auto";
 		if (!["auto","fields","metadata","controls"].includes(requested))
@@ -3092,7 +3314,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					td.innerText=schemaNode.title??"";
 			}
 			containerEl=outerContainerEl.insertCell();
-		} else if (type=="lineup") {// LINEUP: Items rendered inline, outerContainerEl wraps title + inner content
+		} else if (type=="lineup"||type==="grid") {// Flow/grid items use their outer box as the canonical cell.
 			outerContainerEl=document.createElement("span");
 			if (title)
 				outerContainerEl.appendChild(title);
@@ -3245,6 +3467,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 	
 	_spreadsheetMouseDown(e) {
+		this._resetGridPreferredColumn();
 		this._highlightOnFocus=false;//see decleration
 		this._focusEl.classList.remove("show-focus-ring");
 		this._focusEl.style.outline="none";//see #spreadsheetOnFocus
@@ -3510,6 +3733,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_enterCell(e) {
+		this._resetGridPreferredColumn();
 		if (this._inEditMode||this._inReadOnlyMode||!this._selectedCellState?.activatable)
 			return;
 		const selBefore=this._selectedCell;
@@ -5139,13 +5363,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					//directly because we do not want it to change if #selectCell returns false, preventing the select
 					
 		if (this._closeActiveDetailsCell(cell)) {
-			const selected=this._selectCell(cell,this._colSchemaNodes[this._mainColIndex],this._filteredData[mainRowIndex]);
+			const selected=this._selectCell(cell,this._colSchemaNodes[this._mainColIndex],
+				this._filteredData[mainRowIndex]);
 			this._mainRowIndex=mainRowIndex;
 			return selected;
 		}
 	}
 
-	_selectDetailsCell(instanceNode) {
+	_selectDetailsCell(instanceNode,preserveGridPreferredColumn=false) {
 		if (!instanceNode)
 			return false;
 		let root=instanceNode;
@@ -5180,7 +5405,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 							oldParnt.schemaNode.onBlur?.(oldParnt,mainRowIndex);
 					}
 				}
-		this._selectCell(instanceNode.selEl??instanceNode.el,instanceNode.schemaNode,instanceNode.dataObj,false,instanceNode);
+		this._selectCell(instanceNode.selEl??instanceNode.el,instanceNode.schemaNode,instanceNode.dataObj,false,
+			instanceNode,preserveGridPreferredColumn);
 		this._mainRowIndex=mainRowIndex;
 
 		//in case this was called via instanceNode.select() it might be necessary to make sure parent-groups are open
@@ -5195,7 +5421,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return instanceNode;
 	}
 
-	_selectCell(cellEl,schemaNode,dataObj,adjustCursorPosSize=true,instanceNode=null) {
+	_selectCell(cellEl,schemaNode,dataObj,adjustCursorPosSize=true,instanceNode=null,preserveGridPreferredColumn=false) {
+		if (!preserveGridPreferredColumn)
+			this._resetGridPreferredColumn();
 		const cellState=this._getCellState(cellEl,instanceNode);
 		if (cellState?.selectable===false)
 			return false;
@@ -6920,6 +7148,9 @@ export default class Tablance extends TablanceBase {
 			instanceNode.hidden=!instanceNode.hidden;
 			instanceNode.outerContainerEl.style.display=instanceNode.hidden?"none":"";
 			instanceNode.outerContainerEl.classList.toggle("tablance-hidden",instanceNode.hidden);
+			if (instanceNode.parent?.schemaNode?.type==="grid"
+				&&instanceNode.parent.children?.includes(instanceNode))
+				this._refreshGridLayout(instanceNode.parent);
 		}
 
 		return !instanceNode.hidden;
