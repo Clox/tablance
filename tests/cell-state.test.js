@@ -60,6 +60,12 @@ try {
 			{type:"group",title:"Safe text",nodeId:"safeTextGroup",closedRender:()=>"<u>literal</u>",entries:[]},
 			{type:"group",title:"Trusted HTML",nodeId:"trustedHtmlGroup",closedRenderHtml:true,
 				closedRender:()=>"<u>underlined</u>",entries:[]},
+			{type:"group",title:"Long summary",nodeId:"longSummaryGroup",
+				closedRender:()=>"A deliberately long group summary that wraps naturally without allowing its chevron to overlap the visible content",
+				entries:[]},
+			{type:"group",title:"Unavailable group",nodeId:"disabledGroup",disabled:true,
+				closedRender:()=>"Unavailable",entries:[]},
+			{type:"group",title:"Phone numbers",nodeId:"emptyGroup",entries:[]},
 			{title:"File",dataKey:"file",nodeId:"file",readOnly:true,
 				input:{type:"file",onOpenFile:()=>actions++}},
 		]},
@@ -658,18 +664,76 @@ try {
 		"closedRender remains injection-safe text by default");
 	assert(trustedHtmlRender.textContent==="underlined"&&trustedHtmlRender.querySelector("u"),
 		"closedRenderHtml explicitly enables trusted markup for closed groups");
+	const historyGroupChevron=historyGroup.groupChevronEl;
+	const initiallyNestedHistoryEntries=historyGroup.children[0].children;
+	const initialChevronState=[historyGroupChevron?.classList.contains("group-chevron"),!historyGroupChevron?.hidden,
+		historyGroupChevron?.getAttribute("aria-hidden")==="true",
+		historyGroupChevron?.closest("table")===historyGroup.el,
+		historyGroupChevron?.closest("tr")===historyGroup.groupChevronFooterEl,
+		historyGroup.groupChevronFooterEl?.parentElement===historyGroup.el.tBodies[0],
+		getComputedStyle(historyGroupChevron).display==="inline-flex",
+		getComputedStyle(historyGroupChevron).pointerEvents==="none",
+		initiallyNestedHistoryEntries.every(entry=>entry.groupChevronEl.hidden)];
+	assert(initialChevronState.every(Boolean),
+		`only the current closed atomic group exposes a non-interactive footer chevron inside its own container (${initialChevronState})`);
 	historyGroup.select();
+	const selectedHistoryGroupTextPosition=historyGroup.el.querySelector("td").getBoundingClientRect().left;
 	key(table.rootEl,"Enter","Enter");
 	const historyEntries=historyGroup.children[0].children;
+	assert(historyGroup.el.classList.contains("open")
+		&&historyGroupChevron.hidden
+		&&getComputedStyle(historyGroup.groupChevronFooterEl).display==="none"
+		&&historyEntries.every(entry=>!entry.groupChevronEl.hidden)
+		&&historyGroup.el.querySelector("td").getBoundingClientRect().left===selectedHistoryGroupTextPosition,
+		"opening a group hides its own chevron and exposes its closed child groups without moving content");
 	assert(historyEntries.every(entry=>getComputedStyle(entry.el.parentElement.parentElement).paddingTop==="2px"),
 		"every nested group row reserves the same space above its selection outline");
-	assert(getComputedStyle(historyGroup.el).borderTopColor==="rgb(184, 198, 216)"
-		&&getComputedStyle(historyEntries[0].el).borderTopColor==="rgb(184, 198, 216)"
-		&&getComputedStyle(historyGroup.el).borderTopLeftRadius==="4px"
-		&&getComputedStyle(historyEntries[0].el).borderTopLeftRadius==="4px"
+	const groupStyles=[getComputedStyle(historyGroup.el),getComputedStyle(historyEntries[0].el)];
+	assert(groupStyles.every(style=>["Top","Right","Bottom","Left"].every(side=>
+		style[`border${side}Width`]==="1px"&&style[`border${side}Style`]==="solid"
+			&&style[`border${side}Color`]==="rgb(200, 205, 211)"))
+		&&groupStyles.every(style=>style.boxShadow.includes("rgba(71, 86, 106, 0.1)")
+			&&style.boxShadow.match(/rgba\(148, 163, 184, 0\.1\)/g)?.length===2
+			&&style.boxShadow.includes("rgba(51, 65, 85, 0.1)")
+			&&!style.boxShadow.includes("7px 7px 8px")
+			&&style.boxShadow.split("inset").length===5)
+		&&getComputedStyle(historyGroup.el).backgroundColor==="rgba(0, 0, 0, 0)"
+		&&getComputedStyle(historyEntries[0].el).backgroundColor==="rgba(0, 0, 0, 0)"
+		&&getComputedStyle(historyGroup.el).borderTopLeftRadius==="8px"
+		&&getComputedStyle(historyEntries[0].el).borderTopLeftRadius==="8px"
 		&&getComputedStyle(historyGroup.el).borderCollapse==="separate"
 		&&getComputedStyle(historyEntries[0].el).borderSpacing==="0px 0px",
-		"details groups use the subtle rounded blue-gray border with and without closedRender");
+		"details groups use the finalized transparent, solid-border custom inset design at every nesting level");
+	const nestedGroupChevron=historyEntries[0].groupChevronEl;
+	const nestedClosedRender=historyEntries[0].el.querySelector("tbody>tr.group-render>td");
+	assert(nestedGroupChevron?.classList.contains("group-chevron")
+		&&nestedClosedRender.lastElementChild===nestedGroupChevron
+		&&nestedGroupChevron.previousElementSibling?.classList.contains("group-closed-content")
+		&&!historyEntries[0].groupChevronFooterEl
+		&&getComputedStyle(nestedGroupChevron).marginLeft==="6px"
+		&&getComputedStyle(nestedGroupChevron).backgroundColor!=="rgba(0, 0, 0, 0)"
+		&&getComputedStyle(nestedGroupChevron,"::before").content==='""'
+		&&getComputedStyle(nestedGroupChevron).pointerEvents==="none",
+		"closedRender groups place the chevron's subtle non-interactive icon container directly after visible content");
+	const longSummaryGroup=table.getDetailCell(0,"longSummaryGroup");
+	longSummaryGroup.el.style.width="240px";
+	const longSummaryContent=longSummaryGroup.el.querySelector(".group-closed-content");
+	const longSummaryChevron=longSummaryGroup.groupChevronEl;
+	const textRange=document.createRange();
+	textRange.selectNodeContents(longSummaryContent);
+	const lastTextRect=[...textRange.getClientRects()].at(-1);
+	const longChevronRect=longSummaryChevron.getBoundingClientRect();
+	assert(longSummaryChevron.previousElementSibling===longSummaryContent
+		&&(longChevronRect.top>lastTextRect.top||longChevronRect.left>=lastTextRect.right),
+		"long closedRender content wraps with its inline chevron without overlap");
+	assert(table.getDetailCell(0,"disabledGroup").groupChevronEl.hidden,
+		"a disabled group does not advertise an open action with a chevron");
+	const phoneEmptyGroup=table.getDetailCell(0,"emptyGroup");
+	assert(!phoneEmptyGroup.groupChevronEl.hidden
+		&&phoneEmptyGroup.groupChevronEl.closest("tr")===phoneEmptyGroup.groupChevronFooterEl
+		&&phoneEmptyGroup.groupChevronFooterEl.closest("table")===phoneEmptyGroup.el
+		&&getComputedStyle(phoneEmptyGroup.groupChevronFooterEl.cells[0]).height==="19px",
+		"an empty group keeps a compact chevron footer inside its own visual container");
 	historyEntries[0].select();
 	assert(table._selectedCellState?.kind==="action","a closed-render group selection retains its canonical action state");
 	assert(table._cellCursor.classList.contains("group-cell-cursor")
@@ -690,6 +754,8 @@ try {
 	key(table.rootEl,"Enter","Enter");
 	assert(historyEntries[0].el.classList.contains("open")&&table._activeSchemaNode.title==="Date",
 		"Enter opens a selected closed-render group and selects its first editable field");
+	assert(nestedGroupChevron.hidden,
+		"an open child group no longer displays an open-state chevron");
 	const [editableHistoryField,readOnlyHistoryField]=historyEntries[0].children;
 	assert(getComputedStyle(editableHistoryField.selEl).paddingLeft==="4px"
 		&&getComputedStyle(readOnlyHistoryField.selEl).paddingLeft==="4px"
@@ -738,9 +804,12 @@ try {
 		&&getComputedStyle(firstHistorySeparator).marginRight==="4px",
 		"open inner cell separators become solid while retaining the same indentation");
 	historyEntries[0].el.classList.remove("open");
-	assert(getComputedStyle(firstHistorySeparator).borderTopStyle==="dashed",
-		"inner cell separators return to dashed when their group closes");
+	table._syncGroupChevronVisibility(historyEntries[0]);
+	assert(getComputedStyle(firstHistorySeparator).borderTopStyle==="dashed"
+		&&!nestedGroupChevron.hidden,
+		"inner separators and the inline chevron return to their closed state together");
 	historyEntries[0].el.classList.add("open");
+	table._syncGroupChevronVisibility(historyEntries[0]);
 	const openGroupFieldStyle=getComputedStyle(historyEntries[0].children[0].selEl);
 	assert(openGroupFieldStyle.paddingLeft==="4px"&&openGroupFieldStyle.paddingTop==="4px"
 		&&openGroupFieldStyle.paddingBottom==="0px",
@@ -1118,9 +1187,16 @@ try {
 		"columnSpan uses the same logical columns with explicit track widths");
 	const explicitTrackWidth=explicitLeft.outerContainerEl.getBoundingClientRect().width;
 	const separatorWidth=explicitSeparators[0].getBoundingClientRect().width;
+	const explicitGridWidth=explicitGrid.containerEl.getBoundingClientRect().width;
 	assert(Math.abs(explicitTrackWidth-explicitRight.outerContainerEl.getBoundingClientRect().width)<1
-		&&Math.abs(separatorWidth-explicitTrackWidth*2)<1&&explicitSeparators.length===2,
-		"row separators form one continuous line across all explicit tracks, including around a spanning row");
+		&&explicitTrackWidth*2<explicitGridWidth
+		&&Math.abs(separatorWidth-explicitGridWidth)<1&&explicitSeparators.length===2,
+		"explicit tracks stay compact while row separators span the full Grid/details container width");
+	const explicitGridStyle=getComputedStyle(explicitGrid.containerEl);
+	assert(explicitGridStyle.borderTopWidth==="0px"
+		&&explicitGridStyle.backgroundColor==="rgba(0, 0, 0, 0)"
+		&&getComputedStyle(explicitLeft.outerContainerEl).borderRightWidth==="0px",
+		"Grid adds neither an outer container treatment nor vertical cell dividers");
 	explicitRight.select();
 	key(explicitGridTable.rootEl,"ArrowDown","ArrowDown");
 	key(explicitGridTable.rootEl,"ArrowDown","ArrowDown");

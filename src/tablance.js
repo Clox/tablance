@@ -3080,10 +3080,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		this._generateDetailsCollection(groupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
 		groupTable.className="details-group "+(groupSchemaNode.cssClass??"");
+		const chevron=document.createElement("span");
+		chevron.className="group-chevron";
+		chevron.setAttribute("aria-hidden","true");
+		instanceNode.groupChevronEl=chevron;
 		if (notYetCreated)
 			instanceNode.creating=true;
 		else if (groupSchemaNode.closedRender)
 			this._setClosedRender(instanceNode,groupSchemaNode.closedRender(rowData),path,tbody);
+		else
+			this._placeGroupChevron(instanceNode);
 		const statePayload=this._makeCallbackPayload(instanceNode,{value:rowData},{
 			schemaNode:groupSchemaNode,mainIndex,rowData
 		});
@@ -3850,6 +3856,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!groupObj._openSnapshot)
 			groupObj._openSnapshot=this._cloneGroupData(groupObj.dataObj);
 		groupObj.el.classList.add("open");
+		this._syncGroupChevronVisibility(groupObj);
 		this._selectDetailsCell(this._getFirstSelectableDetailsCell(groupObj,true,true));
 		groupObj.schemaNode.onOpenAfter?.(groupObj);
 		
@@ -4166,7 +4173,50 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			delete groupObject.updateRenderOnClose;//delete the flag so it doesn't get triggered again
 			this._setClosedRender(groupObject,groupObject.schemaNode.closedRender(groupObject.dataObj));
 		}
+		this._syncGroupChevronVisibility(groupObject);
 		delete groupObject._dirtyFields;
+	}
+
+	_placeGroupChevron(groupObject,target=null) {
+		const chevron=groupObject?.groupChevronEl;
+		if (!chevron)
+			return;
+		if (target) {
+			groupObject.groupChevronFooterEl?.remove();
+			groupObject.groupChevronFooterEl=null;
+		} else {
+			let footer=groupObject.groupChevronFooterEl;
+			if (!footer) {
+				footer=groupObject.el.tBodies[0].insertRow();
+				footer.className="group-chevron-footer";
+				groupObject.groupChevronFooterEl=footer;
+			}
+			target=footer.cells[0]??footer.insertCell();
+		}
+		target?.appendChild(chevron);
+	}
+
+	_syncGroupChevronVisibility(groupObject) {
+		if (!groupObject)
+			return;
+		let blocked=false;
+		for (let ancestor=groupObject.parent;ancestor;ancestor=ancestor.parent)
+			if (ancestor.schemaNode?.type==="group"&&!ancestor.el.classList.contains("open")) {
+				blocked=true;
+				break;
+			}
+		const visit=(node,closedAncestor)=>{
+			let descendantsBlocked=closedAncestor;
+			if (node.schemaNode?.type==="group") {
+				const closed=!node.el.classList.contains("open");
+				if (node.groupChevronEl)
+					node.groupChevronEl.hidden=closedAncestor||!closed||node.cellState?.activatable!==true;
+				descendantsBlocked=closedAncestor||closed;
+			}
+			for (const child of node.children??[])
+				visit(child,descendantsBlocked);
+		};
+		visit(groupObject,blocked);
 	}
 
 	_setClosedRender(groupObject,renderText,path=groupObject.path,tbody=groupObject.el.tBodies?.[0]) {
@@ -4174,6 +4224,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (renderText==null) {
 			groupObject.el.classList.remove("closed-render");
 			renderRow?.remove();
+			this._placeGroupChevron(groupObject);
 			return;
 		}
 		groupObject.el.classList.add("closed-render");
@@ -4183,10 +4234,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		row.className="group-render";
 		row.dataset.path=path?.join("-")??"";
 		const cell=row.cells[0]??row.insertCell();
+		const content=document.createElement("span");
+		content.className="group-closed-content";
 		if (groupObject.schemaNode.closedRenderHtml===true)
-			cell.innerHTML=renderText;
+			content.innerHTML=renderText;
 		else
-			cell.innerText=renderText;
+			content.innerText=renderText;
+		cell.replaceChildren(content);
+		this._placeGroupChevron(groupObject,cell);
 	}
 
 	_repeatInsert(repeated,creating,data,entrySchemaNode=null) {
@@ -6670,6 +6725,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			cellEl.setAttribute("aria-disabled","true");
 		else
 			cellEl.removeAttribute("aria-disabled");
+		if (instanceNode?.schemaNode.type==="group")
+			this._syncGroupChevronVisibility(instanceNode);
 		if (cellEl===this._selectedCell&&this._cellElementRepresentsLogicalCursor(cellEl,instanceNode)) {
 			this._selectedCellState=state;
 			this._cellCursor?.classList.toggle("read-only",state.kind==="readOnly");
