@@ -66,6 +66,10 @@ try {
 			{type:"group",title:"Unavailable group",nodeId:"disabledGroup",disabled:true,
 				closedRender:()=>"Unavailable",entries:[]},
 			{type:"group",title:"Phone numbers",nodeId:"emptyGroup",entries:[]},
+			{type:"group",title:"Lazy empty group",nodeId:"lazyEmptyGroup",dataPath:"lazyEmpty",entries:[
+				{title:"First",dataKey:"first",input:{type:"text"}},
+				{title:"Second",dataKey:"second",input:{type:"text"}},
+			]},
 			{title:"File",dataKey:"file",nodeId:"file",readOnly:true,
 				input:{type:"file",onOpenFile:()=>actions++}},
 		]},
@@ -734,6 +738,23 @@ try {
 		&&phoneEmptyGroup.groupChevronFooterEl.closest("table")===phoneEmptyGroup.el
 		&&getComputedStyle(phoneEmptyGroup.groupChevronFooterEl.cells[0]).height==="19px",
 		"an empty group keeps a compact chevron footer inside its own visual container");
+	const lazyEmptyGroup=table.getDetailCell(0,"lazyEmptyGroup");
+	assert(!lazyEmptyGroup.creating&&!lazyEmptyGroup.groupChevronEl.hidden,
+		"a static group with a lazily created dataPath is not mistaken for a repeated-entry draft");
+	lazyEmptyGroup.select();
+	key(table.rootEl,"Enter","Enter");
+	assert(lazyEmptyGroup.el.classList.contains("open")&&table._activeDetailsCell===lazyEmptyGroup.children[0],
+		"a lazy empty static group opens and exposes its first editable field");
+	assert(table._closeGroup(lazyEmptyGroup)===true&&lazyEmptyGroup.el.isConnected
+		&&!lazyEmptyGroup.el.classList.contains("open")&&table.getDetailCell(0,"lazyEmptyGroup")===lazyEmptyGroup,
+		"closing an untouched lazy empty static group preserves its instance and DOM cell");
+	table._ignoreClicksUntil=0;
+	lazyEmptyGroup.selEl.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	assert(table._activeDetailsCell===lazyEmptyGroup&&table._selectedCell===lazyEmptyGroup.selEl,
+		"the untouched lazy empty static group remains pointer-selectable after it closes");
+	key(table.rootEl,"Enter","Enter");
+	assert(lazyEmptyGroup.el.classList.contains("open")&&table._activeDetailsCell===lazyEmptyGroup.children[0],
+		"the untouched lazy empty static group can be opened again after it closes");
 	historyEntries[0].select();
 	assert(table._selectedCellState?.kind==="action","a closed-render group selection retains its canonical action state");
 	assert(table._cellCursor.classList.contains("group-cell-cursor")

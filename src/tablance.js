@@ -3084,7 +3084,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		chevron.className="group-chevron";
 		chevron.setAttribute("aria-hidden","true");
 		instanceNode.groupChevronEl=chevron;
-		if (notYetCreated)
+		// A missing dataPath is created lazily for ordinary structural groups as well. Only an entry whose direct
+		// owner is a repeated container is a pending creation; treating every lazy data object as one makes closing an
+		// untouched static group delete its instance from the details tree.
+		const isRepeatedCreation=notYetCreated&&instanceNode.parent?.schemaNode.type==="repeated";
+		if (isRepeatedCreation)
 			instanceNode.creating=true;
 		else if (groupSchemaNode.closedRender)
 			this._setClosedRender(instanceNode,groupSchemaNode.closedRender(rowData),path,tbody);
@@ -4119,7 +4123,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 			return false;
 		}
-		if (groupObject.creating&&!this._closeRepeatedInsertion(groupObject))
+		if (groupObject.creating&&groupObject.parent?.schemaNode.type==="repeated"
+			&&!this._closeRepeatedInsertion(groupObject))
 			return false;
 		this._finalizeGroupClose(groupObject);
 		if (changed)
