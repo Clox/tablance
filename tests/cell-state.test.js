@@ -70,6 +70,17 @@ try {
 				{title:"First",dataKey:"first",input:{type:"text"}},
 				{title:"Second",dataKey:"second",input:{type:"text"}},
 			]},
+			{type:"group",title:"Visual hierarchy",nodeId:"visualHierarchyGroup",entries:[
+				{type:"grid",columns:1,entries:[
+					{type:"lineup",variant:"fields",entries:[
+						{title:"Bridge field",dataKey:"detail",input:{type:"text"}},
+					]},
+					{type:"group",nodeId:"deepVisualGroup",closedRender:()=>"Nested preview",entries:[
+						{title:"Nested first",dataKey:"editable",input:{type:"text"}},
+						{title:"Nested second",dataKey:"notes",input:{type:"text"}},
+					]},
+				]},
+			]},
 			{title:"File",dataKey:"file",nodeId:"file",readOnly:true,
 				input:{type:"file",onOpenFile:()=>actions++}},
 		]},
@@ -673,20 +684,65 @@ try {
 	const initialChevronState=[historyGroupChevron?.classList.contains("group-chevron"),!historyGroupChevron?.hidden,
 		historyGroupChevron?.getAttribute("aria-hidden")==="true",
 		historyGroupChevron?.closest("table")===historyGroup.el,
-		historyGroupChevron?.closest("tr")===historyGroup.groupChevronFooterEl,
-		historyGroup.groupChevronFooterEl?.parentElement===historyGroup.el.tBodies[0],
-		getComputedStyle(historyGroupChevron).display==="inline-flex",
+		historyGroupChevron?.parentElement===historyGroup.el,
+		!table.rootEl.querySelector(".group-chevron-footer"),
+		["flex","inline-flex"].includes(getComputedStyle(historyGroupChevron).display),
 		getComputedStyle(historyGroupChevron).pointerEvents==="none",
 		initiallyNestedHistoryEntries.every(entry=>entry.groupChevronEl.hidden)];
 	assert(initialChevronState.every(Boolean),
-		`only the current closed atomic group exposes a non-interactive footer chevron inside its own container (${initialChevronState})`);
+		`only the current closed atomic group exposes a non-interactive preview-adjacent chevron (${initialChevronState})`);
+	const closedHistoryPreviewRect=historyGroup.containerEl.getBoundingClientRect();
+	const closedHistoryChevronRect=historyGroupChevron.getBoundingClientRect();
+	assert(Math.abs((closedHistoryPreviewRect.top+closedHistoryPreviewRect.bottom)/2
+		-(closedHistoryChevronRect.top+closedHistoryChevronRect.bottom)/2)<1
+		&&closedHistoryChevronRect.left>=closedHistoryPreviewRect.right,
+		"a parent chevron is vertically centered against the complete multi-row preview");
+	assert(initiallyNestedHistoryEntries.every(entry=>entry.detailsAffordancesExposed===false
+		&&entry.el.classList.contains("details-affordances-suppressed")
+		&&entry.el.querySelector(".group-closed-content")?.getClientRects().length
+		&&getComputedStyle(entry.el).borderTopColor==="rgba(0, 0, 0, 0)"
+		&&getComputedStyle(entry.el).boxShadow==="none"),
+		"nested groups keep preview content but suppress their own boundaries behind a closed nearest group");
+	const visualHierarchyGroup=table.getDetailCell(0,"visualHierarchyGroup");
+	const hierarchyGrid=visualHierarchyGroup.children[0];
+	const hierarchyLineup=hierarchyGrid.children[0];
+	const hierarchyField=hierarchyLineup.children[0];
+	const deepVisualGroup=hierarchyGrid.children[1];
+	const deepFieldSeparator=deepVisualGroup.children[1].selEl.querySelector(":scope>.separator");
+	assert(visualHierarchyGroup.detailsAffordancesExposed===true&&!visualHierarchyGroup.groupChevronEl.hidden
+		&&getComputedStyle(visualHierarchyGroup.el).borderTopColor==="rgb(200, 205, 211)",
+		"a top-level group exposes its own border and chevron");
+	assert(deepVisualGroup.el.querySelector(".group-closed-content")?.textContent==="Nested preview"
+		&&deepVisualGroup.detailsAffordancesExposed===false&&deepVisualGroup.groupChevronEl.hidden
+		&&getComputedStyle(deepVisualGroup.el).borderTopColor==="rgba(0, 0, 0, 0)"
+		&&getComputedStyle(hierarchyGrid.gridRowSeparators[0]).display==="none"
+		&&hierarchyGrid.gridRowExtensions.every(extension=>getComputedStyle(extension).display==="none")
+		&&getComputedStyle(hierarchyField.selEl,"::before").display==="none",
+		"the nearest closed ancestor group suppresses group, group-row, Grid and Lineup affordances through containers");
+	visualHierarchyGroup.select();
+	key(table.rootEl,"Enter","Enter");
+	const openedHierarchyState=[visualHierarchyGroup.el.classList.contains("open"),
+		deepVisualGroup.detailsAffordancesExposed===true,!deepVisualGroup.groupChevronEl.hidden,
+		getComputedStyle(deepVisualGroup.el).borderTopColor==="rgb(200, 205, 211)",
+		getComputedStyle(hierarchyGrid.gridRowSeparators[0]).display==="block",
+		hierarchyGrid.gridRowExtensions.every(extension=>getComputedStyle(extension).display!=="none"),
+		getComputedStyle(hierarchyField.selEl,"::before").display==="block",
+		getComputedStyle(deepFieldSeparator).display==="none"];
+	assert(openedHierarchyState.every(Boolean),
+		`opening the nearest group restores child affordances while a deeper closed group still suppresses its children (${openedHierarchyState})`);
+	deepVisualGroup.select();
+	key(table.rootEl,"Enter","Enter");
+	assert(deepVisualGroup.el.classList.contains("open")&&getComputedStyle(deepFieldSeparator).display==="block",
+		"opening the nearest nested group restores its descendants' separators");
+	assert(table._closeGroup(deepVisualGroup)&&table._closeGroup(visualHierarchyGroup),
+		"the presentation-state checks leave nested groups closable through their ordinary lifecycle");
 	historyGroup.select();
 	const selectedHistoryGroupTextPosition=historyGroup.el.querySelector("td").getBoundingClientRect().left;
 	key(table.rootEl,"Enter","Enter");
 	const historyEntries=historyGroup.children[0].children;
 	assert(historyGroup.el.classList.contains("open")
 		&&historyGroupChevron.hidden
-		&&getComputedStyle(historyGroup.groupChevronFooterEl).display==="none"
+		&&!table.rootEl.querySelector(".group-chevron-footer")
 		&&historyEntries.every(entry=>!entry.groupChevronEl.hidden)
 		&&historyGroup.el.querySelector("td").getBoundingClientRect().left===selectedHistoryGroupTextPosition,
 		"opening a group hides its own chevron and exposes its closed child groups without moving content");
@@ -711,14 +767,14 @@ try {
 	const nestedGroupChevron=historyEntries[0].groupChevronEl;
 	const nestedClosedRender=historyEntries[0].el.querySelector("tbody>tr.group-render>td");
 	assert(nestedGroupChevron?.classList.contains("group-chevron")
-		&&nestedClosedRender.lastElementChild===nestedGroupChevron
-		&&nestedGroupChevron.previousElementSibling?.classList.contains("group-closed-content")
-		&&!historyEntries[0].groupChevronFooterEl
+		&&nestedClosedRender.lastElementChild?.classList.contains("group-closed-content")
+		&&nestedGroupChevron.parentElement===historyEntries[0].el
+		&&nestedGroupChevron.previousElementSibling===historyEntries[0].containerEl
 		&&getComputedStyle(nestedGroupChevron).marginLeft==="6px"
 		&&getComputedStyle(nestedGroupChevron).backgroundColor!=="rgba(0, 0, 0, 0)"
 		&&getComputedStyle(nestedGroupChevron,"::before").content==='""'
 		&&getComputedStyle(nestedGroupChevron).pointerEvents==="none",
-		"closedRender groups place the chevron's subtle non-interactive icon container directly after visible content");
+		"closedRender groups place the chevron's subtle non-interactive icon container after the preview table");
 	const longSummaryGroup=table.getDetailCell(0,"longSummaryGroup");
 	longSummaryGroup.el.style.width="240px";
 	const longSummaryContent=longSummaryGroup.el.querySelector(".group-closed-content");
@@ -727,17 +783,15 @@ try {
 	textRange.selectNodeContents(longSummaryContent);
 	const lastTextRect=[...textRange.getClientRects()].at(-1);
 	const longChevronRect=longSummaryChevron.getBoundingClientRect();
-	assert(longSummaryChevron.previousElementSibling===longSummaryContent
+	assert(longSummaryChevron.previousElementSibling===longSummaryGroup.containerEl
 		&&(longChevronRect.top>lastTextRect.top||longChevronRect.left>=lastTextRect.right),
 		"long closedRender content wraps with its inline chevron without overlap");
 	assert(table.getDetailCell(0,"disabledGroup").groupChevronEl.hidden,
 		"a disabled group does not advertise an open action with a chevron");
 	const phoneEmptyGroup=table.getDetailCell(0,"emptyGroup");
 	assert(!phoneEmptyGroup.groupChevronEl.hidden
-		&&phoneEmptyGroup.groupChevronEl.closest("tr")===phoneEmptyGroup.groupChevronFooterEl
-		&&phoneEmptyGroup.groupChevronFooterEl.closest("table")===phoneEmptyGroup.el
-		&&getComputedStyle(phoneEmptyGroup.groupChevronFooterEl.cells[0]).height==="19px",
-		"an empty group keeps a compact chevron footer inside its own visual container");
+		&&phoneEmptyGroup.groupChevronEl.parentElement===phoneEmptyGroup.el,
+		"an empty group keeps its chevron inside its own visual container without footer markup");
 	const lazyEmptyGroup=table.getDetailCell(0,"lazyEmptyGroup");
 	assert(!lazyEmptyGroup.creating&&!lazyEmptyGroup.groupChevronEl.hidden,
 		"a static group with a lazily created dataPath is not mistaken for a repeated-entry draft");
@@ -768,10 +822,10 @@ try {
 	assert(nestedGroupCellStyle.paddingRight==="4px"&&getComputedStyle(historyEntries[0].el).boxSizing==="border-box",
 		"a nested group keeps visible space between its right border and its parent border");
 	const firstHistorySeparator=historyEntries[0].children[0].selEl.querySelector(":scope>.separator");
-	assert(getComputedStyle(firstHistorySeparator).borderTopStyle==="dashed"
+	assert(getComputedStyle(firstHistorySeparator).display==="none"
 		&&getComputedStyle(firstHistorySeparator).marginLeft==="0px"
 		&&getComputedStyle(firstHistorySeparator).marginRight==="4px",
-		"closed inner cell separators are dashed with balanced horizontal indentation");
+		"entities behind their closed nearest group suppress their own separators");
 	key(table.rootEl,"Enter","Enter");
 	assert(historyEntries[0].el.classList.contains("open")&&table._activeSchemaNode.title==="Date",
 		"Enter opens a selected closed-render group and selects its first editable field");
@@ -826,9 +880,9 @@ try {
 		"open inner cell separators become solid while retaining the same indentation");
 	historyEntries[0].el.classList.remove("open");
 	table._syncGroupChevronVisibility(historyEntries[0]);
-	assert(getComputedStyle(firstHistorySeparator).borderTopStyle==="dashed"
+	assert(getComputedStyle(firstHistorySeparator).display==="none"
 		&&!nestedGroupChevron.hidden,
-		"inner separators and the inline chevron return to their closed state together");
+		"closing a nested group suppresses descendant separators while exposing the group's own chevron");
 	historyEntries[0].el.classList.add("open");
 	table._syncGroupChevronVisibility(historyEntries[0]);
 	const openGroupFieldStyle=getComputedStyle(historyEntries[0].children[0].selEl);
@@ -1218,6 +1272,52 @@ try {
 		&&explicitGridStyle.backgroundColor==="rgba(0, 0, 0, 0)"
 		&&getComputedStyle(explicitLeft.outerContainerEl).borderRightWidth==="0px",
 		"Grid adds neither an outer container treatment nor vertical cell dividers");
+	const [explicitFirstExtension,explicitSpanExtension,explicitLastExtension]=explicitGrid.gridRowExtensions;
+	const explicitRightRect=explicitRight.outerContainerEl.getBoundingClientRect();
+	const explicitGridRect=explicitGrid.containerEl.getBoundingClientRect();
+	const explicitExtensionRect=explicitFirstExtension.getBoundingClientRect();
+	assert(explicitGrid.gridRowExtensions.length===3
+		&&explicitFirstExtension.parentElement===explicitRight.outerContainerEl
+		&&explicitFirstExtension._tablanceGridTarget===explicitRight
+		&&explicitSpanExtension.parentElement===explicitSpan.outerContainerEl
+		&&explicitSpanExtension._tablanceGridTarget===explicitSpan
+		&&explicitLastExtension._tablanceGridTarget===explicitNextRight
+		&&Math.abs(explicitExtensionRect.left-explicitRightRect.right)<1
+		&&explicitGridRect.right-explicitExtensionRect.left>100,
+		"each logical Grid row extends only the empty area after its rightmost occupied cell and targets its last selectable instance");
+	explicitRight.outerContainerEl.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	assert(explicitGridTable._activeDetailsCell===explicitRight,
+		"clicking the real last Grid cell keeps its ordinary selection path");
+	explicitFirstExtension.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	const extensionSelectedCursor=explicitGridTable._cellCursor.getBoundingClientRect();
+	assert(explicitGridTable._activeDetailsCell===explicitRight
+		&&explicitGridTable._selectedCell===explicitRight.outerContainerEl
+		&&Math.abs(extensionSelectedCursor.left-explicitRightRect.left)<1
+		&&Math.abs(extensionSelectedCursor.right-explicitRightRect.right)<1
+		&&!explicitFirstExtension.classList.contains("tablance-active-cell"),
+		"clicking a row extension selects and outlines only its canonical real cell");
+	assert(!explicitFirstExtension.classList.contains("grid-extension-hover")
+		&&!explicitRight.outerContainerEl.classList.contains("grid-extension-target-hover"),
+		"hovering the real cell does not activate its separate extension presentation");
+	explicitFirstExtension.dispatchEvent(new MouseEvent("mouseenter"));
+	await new Promise(resolve=>setTimeout(resolve,140));
+	const extensionHoverColor=getComputedStyle(explicitFirstExtension).backgroundColor;
+	const extensionTargetHoverColor=getComputedStyle(explicitRight.outerContainerEl).backgroundColor;
+	assert(explicitFirstExtension.classList.contains("grid-extension-hover")
+		&&explicitRight.outerContainerEl.classList.contains("grid-extension-target-hover")
+		&&["rgb(243, 247, 252)","rgba(243, 247, 252, 1)"].includes(extensionTargetHoverColor)
+		&&extensionHoverColor!=="rgba(0, 0, 0, 0)"&&extensionHoverColor!==extensionTargetHoverColor,
+		`extension hover keeps the target's normal hover and adds a distinct weaker tone only over empty space (${extensionTargetHoverColor}/${extensionHoverColor})`);
+	explicitFirstExtension.dispatchEvent(new MouseEvent("mouseleave"));
+	assert(!explicitFirstExtension.classList.contains("grid-extension-hover")
+		&&!explicitRight.outerContainerEl.classList.contains("grid-extension-target-hover"),
+		"leaving the extension clears both hover layers without changing selection");
+	explicitFirstExtension.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	explicitFirstExtension.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,button:0,cancelable:true}));
+	assert(explicitGridTable._activeDetailsCell===explicitRight&&explicitGridTable._inEditMode
+		&&explicitGridTable._cellCursor.querySelector("input.text-editor"),
+		"double-clicking a row extension activates the associated real cell through the ordinary editor path");
+	explicitGridTable._exitEditMode(false);
 	explicitRight.select();
 	key(explicitGridTable.rootEl,"ArrowDown","ArrowDown");
 	key(explicitGridTable.rootEl,"ArrowDown","ArrowDown");
@@ -1226,7 +1326,7 @@ try {
 	const threeColumnGridTable=new Tablance(host(),{details:{type:"grid",columns:3,entries:[
 		{type:"field",dataKey:"a"},{type:"field",dataKey:"b",columnSpan:2},
 		{type:"field",dataKey:"c",columnSpan:3},{type:"field",dataKey:"d"},
-		{type:"field",dataKey:"e"},{type:"field",dataKey:"f"},
+		{type:"field",dataKey:"e"},{type:"field",dataKey:"f",disabled:true},
 	]}},true,true,{searchbar:false});
 	threeColumnGridTable.setData([{a:"A",b:"B",c:"C",d:"D",e:"E",f:"F"}]);
 	await tick();
@@ -1235,6 +1335,15 @@ try {
 		&&threeColumnGrid.gridRowSeparators.length===2
 		&&threeColumnGrid.gridRowSeparators.every(separator=>separator.style.gridColumn==="1 / -1"),
 		"row separators span the complete logical width of grids with arbitrary column counts and spans");
+	const disabledLastExtension=threeColumnGrid.gridRowExtensions[2];
+	const threeColumnE=threeColumnGrid.children[4];
+	const threeColumnF=threeColumnGrid.children[5];
+	assert(disabledLastExtension.parentElement===threeColumnF.outerContainerEl
+		&&disabledLastExtension._tablanceGridTarget===threeColumnE,
+		"a disabled geometrical last cell bounds empty space while the same row's last selectable cell owns interaction");
+	disabledLastExtension.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	assert(threeColumnGridTable._activeDetailsCell===threeColumnE,
+		"a row extension never selects its disabled geometrical anchor");
 
 	const hiddenGridTable=new Tablance(host(),{details:{type:"grid",columns:2,entries:[
 		{type:"field",title:"One",dataKey:"one",nodeId:"hiddenGridOne",input:{type:"text"}},
@@ -1249,13 +1358,19 @@ try {
 	const hiddenGridConditional=hiddenGridTable.getDetailCell(0,"hiddenGridConditional");
 	const hiddenGridShow=hiddenGridTable.getDetailCell(0,"hiddenGridShow");
 	assert(hiddenGridConditional.hidden&&hiddenGridShow.gridRow===0&&hiddenGridShow.gridColumn===1
-		&&hiddenGridOne.parent.gridRowSeparators.length===0,
+		&&hiddenGridOne.parent.gridRowSeparators.length===0
+		&&hiddenGridOne.parent.gridRowExtensions.length===1
+		&&hiddenGridOne.parent.gridRowExtensions[0]._tablanceGridTarget===hiddenGridShow,
 		"hidden grid children do not occupy slots and following children are re-placed");
+	const preRefreshExtension=hiddenGridOne.parent.gridRowExtensions[0];
 	hiddenGridRow.show=true;
 	hiddenGridTable.refreshSubtree(hiddenGridOne.parent);
 	assert(!hiddenGridConditional.hidden&&hiddenGridConditional.gridColumn===1
 		&&hiddenGridShow.gridRow===1&&hiddenGridShow.gridColumn===0
-		&&hiddenGridOne.parent.gridRowSeparators.length===1,
+		&&hiddenGridOne.parent.gridRowSeparators.length===1&&!preRefreshExtension.isConnected
+		&&hiddenGridOne.parent.gridRowExtensions.length===2
+		&&hiddenGridOne.parent.gridRowExtensions[0]._tablanceGridTarget===hiddenGridConditional
+		&&hiddenGridOne.parent.gridRowExtensions[1]._tablanceGridTarget===hiddenGridShow,
 		"visibility refresh rebuilds rendering and navigation from the same grid placement");
 
 	const repeatedGridTable=new Tablance(host(),{details:{type:"list",entries:[

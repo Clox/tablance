@@ -487,9 +487,28 @@
 			}
 		}
 		.details-grid {
+			position: relative;
 			display: grid;
 			width: 100%;
+			overflow: hidden;
 			container-type: inline-size;
+			.grid-row-extension {
+				position: absolute;
+				z-index: 1;
+				top: 0;
+				bottom: 0;
+				left: 100%;
+				width: 100cqw;
+				background-color: transparent;
+				cursor: cell;
+				transition: background-color 120ms ease;
+				&.grid-extension-hover {
+					background-color: color-mix(in srgb, var(--tablance-hover-background) 35%, transparent);
+				}
+			}
+			&.details-affordances-suppressed .grid-row-extension {
+				display: none;
+			}
 			>.grid-row-separator {
 				box-sizing: border-box;
 				width: 100%;
@@ -498,6 +517,9 @@
 				margin: 0;
 				border: 0;
 				border-top: 1px solid var(--tablance-row-border-color);
+			}
+			&.details-affordances-suppressed>.grid-row-separator {
+				display: none;
 			}
 			>span {
 				position: relative;
@@ -522,6 +544,9 @@
 					border: 0;
 				}
 			}
+		}
+		.grid-extension-target-hover:not(.disabled) {
+			background-color: var(--tablance-hover-background);
 		}
 		.read-only {
 			background-color: transparent;
@@ -618,6 +643,9 @@
 						border-inline-start: 1px solid var(--tablance-row-border-color);
 						content: "";
 						pointer-events: none;
+					}
+					&.details-affordances-suppressed::before {
+						display: none;
 					}
 				}
 			}
@@ -787,6 +815,20 @@
 				inset 0 -2px 4px rgba(148, 163, 184, .10),
 				inset 3px 3px 4px -2px rgba(51, 65, 85, .10);
 			width: 100%;
+			&:not(.open) {
+				display: flex;
+				align-items: center;
+				>tbody {
+					display: table;
+					flex: 0 1 auto;
+					width: auto;
+					min-width: 0;
+				}
+			}
+			&.details-affordances-suppressed {
+				border-color: transparent;
+				box-shadow: none;
+			}
 			&:not(.open)>tbody>tr {
 				&.empty,>td>div>.empty {
 					display: none;
@@ -809,17 +851,6 @@
 				}
 			}
 			>tbody> {
-				tr.group-chevron-footer {
-					display: table-row;
-					>td {
-						height: 19px;
-						padding: 1px 5px 3px;
-						line-height: 15px;
-					}
-					&:has(.group-chevron[hidden]) {
-						display: none;
-					}
-				}
 				tr:not(:first-child)>td {
 					padding-top: 0;
 				}
@@ -835,6 +866,9 @@
 						border-top: 1px dashed #ccc;
 						margin: 0 4px 0 0;
 						display: none;
+					}
+					&.details-affordances-suppressed>.separator {
+						display: none !important;
 					}
 				}
 			}
