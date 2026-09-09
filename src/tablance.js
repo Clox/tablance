@@ -2565,7 +2565,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				return;
 
 			// First navigation keystroke after focusing the table should select the top-left cell (or top details cell).
-			if (keysThatEnterFromOutline.includes(e.code)&&this._filteredData.length) {
+			if (keysThatEnterFromOutline.includes(this._expansionShortcutCode(e))&&this._filteredData.length) {
 				if (this._onlyDetails)
 					this.selectTopBottomCellOnlyDetails(true);
 				else {
@@ -2618,12 +2618,26 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 	}
 
+	_expansionShortcutCode(e) {
+		if (!e.ctrlKey&&!e.metaKey&&!e.isComposing) {
+			// Match the character, not a physical key position, across keyboard layouts.
+			if (!e.altKey&&(e.key==="+"||e.key==="-"))
+				return e.key==="+"?"NumpadAdd":"NumpadSubtract";
+			if (e.altKey&&!e.shiftKey&&(e.key==="ArrowDown"||e.key==="ArrowUp"))
+				return e.key==="ArrowDown"?"NumpadAdd":"NumpadSubtract";
+		}
+		return e.code;
+	}
+
 	_spreadsheetKeyDown_non_edit_mode(e) {
+		const code=this._expansionShortcutCode(e);
+		if (code!==e.code&&e.altKey)
+			e.preventDefault();
 		const scrollKeys=["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Escape",
 							"NumpadAdd","NumpadSubtract","Enter","NumpadEnter"];
-		if (scrollKeys.includes(e.code))
+		if (scrollKeys.includes(code))
 			this._scrollToCursor();
-		switch (e.code) {
+		switch (code) {
 			case "ArrowUp":
 				this._moveCellCursor(0,-1,e);
 			break; case "ArrowDown":

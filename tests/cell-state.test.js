@@ -20,6 +20,49 @@ const host=()=>{
 };
 
 try {
+	const shortcuts=new Tablance(host(),{
+		main:{columns:[{dataKey:"name",input:{type:"text"}}]},
+		details:{type:"list",entries:[{dataKey:"detail"}]},
+	},true,true,{ordering:false});
+	shortcuts.setData([{name:"one",detail:"details"},{name:"two",detail:"more"}]);
+	await tick();
+	for (const [plus,minus] of [
+		[{key:"+",code:"NumpadAdd"},{key:"-",code:"NumpadSubtract"}],
+		[{key:"+",code:"Equal",shiftKey:true},{key:"-",code:"Minus"}],
+		[{key:"+",code:"Minus"},{key:"-",code:"Slash"}],
+		[{key:"+",code:"BracketRight"},{key:"-",code:"Digit6"}],
+		[{key:"ArrowDown",code:"ArrowDown",altKey:true},{key:"ArrowUp",code:"ArrowUp",altKey:true}],
+	]) {
+		shortcuts._mainRowIndex=shortcuts._mainColIndex=null;
+		shortcuts.rootEl.focus();
+		const expandEvent=key(shortcuts.rootEl,plus.key,plus.code,plus);
+		await tick();
+		assert(!!shortcuts._openDetailsPanes[0],`${JSON.stringify(plus)} opens first row from outline`);
+		assert(shortcuts._mainRowIndex===0,"expansion shortcut does not navigate to another row");
+		const collapseEvent=key(shortcuts.rootEl,minus.key,minus.code,minus);
+		await new Promise(resolve=>setTimeout(resolve,350));
+		assert(!shortcuts._openDetailsPanes[0],`${JSON.stringify(minus)} closes the same row`);
+		if (plus.altKey)
+			assert(expandEvent.defaultPrevented&&collapseEvent.defaultPrevented,"Alt arrows suppress browser default");
+	}
+	for (const binding of [{key:"=",code:"Equal"},{key:"_",code:"Minus",shiftKey:true},
+		{key:"+",code:"Equal",ctrlKey:true},{key:"+",code:"Equal",metaKey:true},
+		{key:"+",code:"Equal",isComposing:true}]) {
+		key(shortcuts.rootEl,binding.key,binding.code,binding);
+		assert(!shortcuts._openDetailsPanes[0],"unrelated characters and modified shortcuts do not expand");
+	}
+	shortcuts._inEditMode=true;
+	for (const binding of [{key:"+",code:"Equal"},{key:"-",code:"Minus"},
+		{key:"ArrowDown",code:"ArrowDown",altKey:true}]) {
+		key(shortcuts.rootEl,binding.key,binding.code,binding);
+		assert(!shortcuts._openDetailsPanes[0],"editing does not trigger expansion bindings");
+	}
+	shortcuts._inEditMode=false;
+	key(shortcuts.rootEl,"ArrowDown");
+	assert(shortcuts._mainRowIndex===1,"ordinary ArrowDown retains row navigation");
+	key(shortcuts.rootEl,"ArrowUp");
+	assert(shortcuts._mainRowIndex===0,"ordinary ArrowUp retains row navigation");
+	shortcuts.rootEl.remove();
 	assert(Tablance.version==="2.0.0","built UMD exposes the breaking 2.0.0 version");
 	Tablance.defaultLang={filterPlaceholder:"Global search"};
 	const globalLangTable=new Tablance(host(),{main:{columns:[{dataKey:"value"}]}},true,true,{ordering:false});
