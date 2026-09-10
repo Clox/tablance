@@ -6699,7 +6699,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._setSelectedCellElement(cell);
 		const state=this._getCellState(cell);
 		if (state)
-			this._setCellState(cell,state);
+			this._setCellState(cell,state,null,this._colSchemaNodes[this._mainColIndex]);
 	}
 
 	_detachMainCursorFromRow(tr,nextMainIndex=null) {
@@ -7082,6 +7082,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_setCellState(cellEl,state,instanceNode=null,schemaNode=instanceNode?.schemaNode) {
 		if (!cellEl)
 			return state;
+		if (!schemaNode&&!instanceNode&&cellEl.parentElement?.parentElement===this._mainTbody)
+			schemaNode=this._colSchemaNodes[cellEl.cellIndex];
 		this._cellStates.set(cellEl,state);
 		if (instanceNode)
 			instanceNode.cellState=state;

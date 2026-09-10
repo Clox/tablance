@@ -392,6 +392,61 @@ try {
 	assert(fixedHeightTable._rowInnerHeights[0]!==fixedHeightTable._rowInnerHeights[1],
 		"each column derives its inner height from its own padding and borders");
 
+	const stateRebindHost=host();
+	stateRebindHost.style.height="160px";
+	const stateRebindRows=Array.from({length:80},(_entry,index)=>({value:`Row ${index}`,action:"Open"}));
+	const stateRebindTable=new Tablance(stateRebindHost,{main:{columns:[
+		{type:"expand",width:40},
+		{type:"select",width:40},
+		{title:"Action",dataKey:"action",onEnter:()=>{}},
+		{title:"Value",dataKey:"value",input:{type:"text"}},
+	]},details:{type:"list",entries:[{title:"Value",dataKey:"value"}]}},true,true,
+	{searchbar:false,ordering:false});
+	stateRebindTable.setData(stateRebindRows);
+	await tick();
+	assert(stateRebindTable._numRenderedRows<stateRebindRows.length,
+		"state rebinding regression uses a viewport with recycled rows");
+	const recycleSelectedColumn=async columnIndex=>{
+		const rowBefore=stateRebindTable._mainTbody.querySelector('[data-data-row-index="0"]:not(.details)');
+		stateRebindTable._selectMainTableCell(rowBefore.cells[columnIndex]);
+		stateRebindTable._scrollBody.scrollTop=stateRebindTable._scrollMarginPx+stateRebindTable._rowHeight+1;
+		stateRebindTable._scrollBody.dispatchEvent(new Event("scroll"));
+		stateRebindTable._scrollBody.scrollTop=0;
+		stateRebindTable._scrollBody.dispatchEvent(new Event("scroll"));
+		return stateRebindTable._mainTbody.querySelector('[data-data-row-index="0"]:not(.details)')
+			.cells[columnIndex];
+	};
+	const initialExpandCell=stateRebindTable._mainTbody
+		.querySelector('[data-data-row-index="0"]:not(.details)').cells[0];
+	const initialExpandAnchor=initialExpandCell.querySelector("a");
+	const initialExpandPadding=getComputedStyle(initialExpandCell).padding;
+	const initialExpandOffset=initialExpandAnchor.getBoundingClientRect().left
+		-initialExpandCell.getBoundingClientRect().left;
+	const reboundExpandCell=await recycleSelectedColumn(0);
+	const reboundExpandOffset=reboundExpandCell.querySelector("a").getBoundingClientRect().left
+		-reboundExpandCell.getBoundingClientRect().left;
+	assert(!reboundExpandCell.classList.contains("action-indicator")
+		&&getComputedStyle(reboundExpandCell).padding===initialExpandPadding
+		&&Math.abs(reboundExpandOffset-initialExpandOffset)<.01,
+		"recycling restores expand-cell state with its schema and preserves chevron padding and x-position");
+	stateRebindTable._expandRow(reboundExpandCell.parentElement,false);
+	const expandedExpandOffset=reboundExpandCell.querySelector("a").getBoundingClientRect().left
+		-reboundExpandCell.getBoundingClientRect().left;
+	assert(getComputedStyle(reboundExpandCell).padding===initialExpandPadding
+		&&Math.abs(expandedExpandOffset-initialExpandOffset)<.01,
+		"expanded and collapsed rows keep the same expand-chevron box geometry");
+	stateRebindTable._setCellState(reboundExpandCell,stateRebindTable._getCellState(reboundExpandCell));
+	assert(!reboundExpandCell.classList.contains("action-indicator"),
+		"main-cell state updates infer the structural column schema when callers omit it");
+	stateRebindTable._contractRow(reboundExpandCell.parentElement);
+	await new Promise(resolve=>setTimeout(resolve,200));
+	const reboundSelectCell=await recycleSelectedColumn(1);
+	assert(!reboundSelectCell.classList.contains("action-indicator"),
+		"recycling does not add a generic action indicator to structural select cells");
+	const reboundActionCell=await recycleSelectedColumn(2);
+	assert(reboundActionCell.classList.contains("action-indicator"),
+		"recycling retains the generic indicator on ordinary text-like action fields");
+
 	const assertVirtualCursorRecycling=async withDetails=>{
 		const virtualHost=host();
 		virtualHost.style.height="160px";
