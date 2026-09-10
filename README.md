@@ -57,6 +57,21 @@ The default palette can be themed by overriding CSS custom properties on a `.tab
 
 Text-like action cells and read-only cells display their native navigation and lock indicators on hover or selection. The indicators are non-interactive absolute overlays and do not affect cell content or geometry.
 
+## Contextual help
+
+Set `help` on a titled details entry to show a non-navigable `?` in the title's fixed help slot. Main columns may also
+have `help`, but do not display header icons: hovering their title briefly shows the column help, while F1 opens it for
+the selected cell. A string is always rendered as text. A callback receives the standard cell context and may return a
+string, a DOM `Node`, or a `DocumentFragment`; build rich help with DOM APIs rather than raw HTML. Detail-icon hover
+shows transient help, click pins it, and F1 pins help only when the selected cell has `help`. Escape or an outside click
+closes pinned help.
+
+The permanent help trigger at the right edge of the main header renders root-schema `help` followed by sections for
+main columns that have `help`; detail help is not included. Details containers without an existing visible title,
+including transparent repeated containers, do not gain a heading solely for help.
+
+Schema `title` values are rendered as text by default. Set `titleHtml: true` only for explicitly trusted title markup.
+
 ## Lineup variants
 
 Lineups support `variant: "auto" | "fields" | "metadata" | "controls"`. The default `auto` variant resolves from

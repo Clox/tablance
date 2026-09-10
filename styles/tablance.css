@@ -204,13 +204,105 @@
 .tablance > .toolbar .search {
   float: none;
 }
-.tablance > .toolbar .toolbar-left {
+.tablance > .toolbar .toolbar-left,
+.tablance > .toolbar .toolbar-right {
   display: inline-flex;
   gap: 8px;
   align-items: center;
 }
 .tablance > .toolbar .toolbar-insert-btn {
   cursor: pointer;
+}
+.tablance .tablance-help-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  margin: 0 0 0 4px;
+  padding: 0;
+  border: 1px solid #9AA8B8;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--tablance-muted-color);
+  font: 600 10px/1 var(--tablance-font-family);
+  vertical-align: 1px;
+  cursor: help;
+}
+.tablance .tablance-help-trigger:hover, .tablance .tablance-help-trigger[aria-expanded=true] {
+  border-color: #71839A;
+  background-color: rgba(148, 163, 184, 0.12);
+  color: var(--tablance-heading-color);
+}
+.tablance .tablance-help-trigger:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.45);
+  outline-offset: 2px;
+}
+.tablance .tablance-help-trigger.table-help-trigger {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  margin-left: 0;
+  font-size: 12px;
+  transform: translateY(-50%);
+}
+.tablance .tablance-help-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  margin-left: 4px;
+  vertical-align: -2px;
+}
+.tablance .tablance-help-slot > .tablance-help-trigger {
+  margin: 0;
+  vertical-align: initial;
+}
+.tablance .tablance-help-popover {
+  position: fixed;
+  z-index: 10000;
+  inset: auto;
+  box-sizing: border-box;
+  max-width: min(32rem, 100vw - 16px);
+  max-height: calc(100vh - 16px);
+  margin: 0;
+  padding: 12px 14px;
+  overflow: auto;
+  border: 1px solid var(--tablance-border-color);
+  border-radius: 8px;
+  background: var(--tablance-cell-background);
+  box-shadow: 0 8px 24px rgba(15, 43, 75, 0.18);
+  color: var(--tablance-cell-text-color);
+  font: 14px/1.45 var(--tablance-font-family);
+  white-space: pre-wrap;
+}
+.tablance .tablance-help-popover[hidden] {
+  display: none;
+}
+.tablance .tablance-help-popover img {
+  max-width: 100%;
+  height: auto;
+}
+.tablance .tablance-help-popover .tablance-table-help-introduction:not(:last-child) {
+  margin-bottom: 14px;
+}
+.tablance .tablance-help-popover .tablance-table-help-section {
+  padding-top: 10px;
+  border-top: 1px solid var(--tablance-border-color);
+}
+.tablance .tablance-help-popover .tablance-table-help-section + section {
+  margin-top: 10px;
+}
+.tablance .tablance-help-popover .tablance-table-help-section h3 {
+  margin: 0 0 4px;
+  font-size: inherit;
+  line-height: inherit;
 }
 .tablance > .table-area > .header-table {
   overflow: hidden;
@@ -247,7 +339,11 @@
   display: none;
 }
 .tablance > .table-area > .header-table th.scrollbar-spacer {
+  overflow: visible;
   padding: 0;
+}
+.tablance > .table-area > .header-table th.before-table-help {
+  padding-right: 34px;
 }
 .tablance > .table-area > .header-table th > .sortSymbol {
   position: absolute;

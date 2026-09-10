@@ -207,13 +207,106 @@
 		.search {
 			float: none;
 		}
-		.toolbar-left {
+		.toolbar-left,
+		.toolbar-right {
 			display: inline-flex;
 			gap: 8px;
 			align-items: center;
 		}
 		.toolbar-insert-btn {
 			cursor: pointer;
+		}
+	}
+	.tablance-help-trigger {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		box-sizing: border-box;
+		width: 14px;
+		height: 14px;
+		margin: 0 0 0 4px;
+		padding: 0;
+		border: 1px solid #9AA8B8;
+		border-radius: 50%;
+		background: transparent;
+		color: var(--tablance-muted-color);
+		font: 600 10px/1 var(--tablance-font-family);
+		vertical-align: 1px;
+		cursor: help;
+		&:hover,
+		&[aria-expanded="true"] {
+			border-color: #71839A;
+			background-color: rgba(148, 163, 184, .12);
+			color: var(--tablance-heading-color);
+		}
+		&:focus-visible {
+			outline: 2px solid rgba(37, 99, 235, .45);
+			outline-offset: 2px;
+		}
+		&.table-help-trigger {
+			position: absolute;
+			z-index: 2;
+			top: 50%;
+			right: 4px;
+			width: 20px;
+			height: 20px;
+			margin-left: 0;
+			font-size: 12px;
+			transform: translateY(-50%);
+		}
+	}
+	.tablance-help-slot {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		box-sizing: border-box;
+		width: 14px;
+		height: 14px;
+		margin-left: 4px;
+		vertical-align: -2px;
+		>.tablance-help-trigger {
+			margin: 0;
+			vertical-align: initial;
+		}
+	}
+	.tablance-help-popover {
+		position: fixed;
+		z-index: 10000;
+		inset: auto;
+		box-sizing: border-box;
+		max-width: min(32rem, calc(100vw - 16px));
+		max-height: calc(100vh - 16px);
+		margin: 0;
+		padding: 12px 14px;
+		overflow: auto;
+		border: 1px solid var(--tablance-border-color);
+		border-radius: 8px;
+		background: var(--tablance-cell-background);
+		box-shadow: 0 8px 24px rgba(15, 43, 75, .18);
+		color: var(--tablance-cell-text-color);
+		font: 14px/1.45 var(--tablance-font-family);
+		white-space: pre-wrap;
+		&[hidden] {
+			display: none;
+		}
+		img {
+			max-width: 100%;
+			height: auto;
+		}
+		.tablance-table-help-introduction:not(:last-child) {
+			margin-bottom: 14px;
+		}
+		.tablance-table-help-section {
+			padding-top: 10px;
+			border-top: 1px solid var(--tablance-border-color);
+			&+section {
+				margin-top: 10px;
+			}
+			h3 {
+				margin: 0 0 4px;
+				font-size: inherit;
+				line-height: inherit;
+			}
 		}
 	}
 	>.table-area>.header-table {
@@ -254,7 +347,12 @@
 			}
 
 			&.scrollbar-spacer {
+				overflow: visible;
 				padding: 0;
+			}
+
+			&.before-table-help {
+				padding-right: 34px;
 			}
 
 			>.sortSymbol {

@@ -4,6 +4,7 @@ const SCHEMA_WRAPPER_MARKER=Symbol("schemaWrapper");
 
 const TABLANCE_VERSION = typeof __TABLANCE_VERSION__!=="undefined"?__TABLANCE_VERSION__:"dev";
 const TABLANCE_BUILD = typeof __TABLANCE_BUILD__!=="undefined"?__TABLANCE_BUILD__:"dev";
+let helpPopoverId=0;
 
 // Shared prototype for instance-nodes so utility getters stay in sync after inserts/deletes.
 const INSTANCE_NODE_PROTOTYPE=Object.create(null);
@@ -73,6 +74,7 @@ const DEFAULT_LANG=Object.freeze({
 	creationValidationFailedCancelInfo:"\n Select Delete to cancel.",
 	fieldValidationFailedHint:"Press Esc to cancel.",
 	groupValidationFailedHint:"Press Ctrl+Esc to discard changes and back out.",
+	helpLabel:"Help",
 });
 let defaultLangOverrides=Object.create(null);
 
@@ -222,6 +224,11 @@ class TablanceBase {
 					// always be expanded. Method addData is still used to add the actual data but it will only use the
 					// last row sent. So adding multiple ones will cause it to discard all but the last.
 	_tooltip;//reference to html-element used as tooltip
+	_helpPopover;//single contextual-help popover reused by this Tablance instance
+	_helpState;//current help target/context and whether the popover is pinned
+	_helpOpenTimer;
+	_helpCloseTimer;
+	_helpResizeObserver;
 	_dropdownAlignmentContainer;
 	lang;//object holding strings used in the table for various purposes. See DEFAULT_LANG for default values					
 	_rowMeta;//tracks row metadata (isNew flags, expanded heights, etc.) keyed by row data objects
@@ -306,11 +313,16 @@ class TablanceBase {
 	 * 				opts.rowHeight; autoHeight now determines the default mode.
 	 * 	@param	{Boolean} spreadsheet If true then the table will work like a spreadsheet. Cells can be selected and the
 	 * 				keyboard can be used for navigating the cell-selection.
+	 * 	The root schema may set help to provide general table help at the right edge of the main header. The same
+	 * 		popover also collects help from main columns. Help accepts the safe content forms described below.
 	 * 	@param	{Object} details This allows for having rows that can be expanded to show more data. An "entry"-object
 	 * 			is expected and some of them can hold other entry-objects so that they can be nested.
 	 * 			Properties that are valid for all types of entries:
 	 * 				* title String displayed title if placed in a container which displays the title
 	 * 				* titleHtml Bool Defaults to false. If true, title is rendered as HTML instead of text.
+	 * 				* help String|Function Contextual help shown next to an already visible title. Strings are always
+	 * 					rendered as text. A callback receives the standard cell context and must return a string, Node,
+	 * 					or DocumentFragment. Repeated is a transparent container and receives no new heading for help.
 	 *
 	 
 	 //todo visibleIf should get payload. (I think it already does but is not reflected in the docs here) The payload should also get valueBundle
@@ -830,6 +842,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	/**Reset all per-dataset state to an empty baseline. */
 	_resetDataState({clearFilter=true}={}) {
+		this._closeHelp();
 		this._sourceData=[];
 		this._viewData=[];
 		this._filteredData=[];
@@ -2049,8 +2062,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (const schemaNode of toolbarItems)
 			this._generateButton(schemaNode,null,btnWrap,null).tabIndex=0;
 
+		const rightWrap=bar.appendChild(document.createElement("div"));
+		rightWrap.className="toolbar-right";
 		if (this._opts.searchbar!=false) {
-			this._searchInput=bar.appendChild(document.createElement("input"));
+			this._searchInput=rightWrap.appendChild(document.createElement("input"));
 			this._searchInput.type="search";
 			this._searchInput.className="search";
 			this._searchInput.placeholder=this.lang.filterPlaceholder;
@@ -2060,6 +2075,272 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_onSearchInput(_e) {
 		this._applyFilters(this._searchInput.value);
+	}
+
+	_hasHelp(schemaNode) {
+		const help=schemaNode?.help;
+		if (help==null)
+			return false;
+		if (typeof help!=="string"&&typeof help!=="function")
+			throw new TypeError("help must be a string or a callback.");
+		return true;
+	}
+
+	_hasTableHelp() {
+		return this._hasHelp(this._schema)
+			||this._schema.main?.columns?.some(schemaNode=>this._hasHelp(schemaNode))===true;
+	}
+
+	_populateSchemaTitle(container,schemaNode,instanceNode=null,
+		{fallback="",showHelp=true,reserveHelpSlot=false}={}) {
+		const title=schemaNode.title??fallback;
+		if (schemaNode.titleHtml===true)
+			container.innerHTML=String(title);
+		else
+			container.textContent=String(title);
+		const hasTitle=schemaNode.title!=null&&String(schemaNode.title)!=="";
+		if (hasTitle&&reserveHelpSlot) {
+			const slot=container.appendChild(document.createElement("span"));
+			slot.className="tablance-help-slot";
+			if (showHelp&&this._hasHelp(schemaNode))
+				slot.appendChild(this._createHelpTrigger(schemaNode,instanceNode));
+		} else if (hasTitle&&showHelp&&this._hasHelp(schemaNode))
+			container.appendChild(this._createHelpTrigger(schemaNode,instanceNode));
+		return container;
+	}
+
+	_createHelpTrigger(schemaNode,instanceNode=null,{table=false}={}) {
+		this._hasHelp(schemaNode);
+		const trigger=document.createElement("button");
+		trigger.type="button";
+		trigger.className=`tablance-help-trigger${table?" table-help-trigger":""}`;
+		trigger.tabIndex=-1;
+		trigger.textContent="?";
+		trigger.setAttribute("aria-label",this.lang.helpLabel);
+		trigger.setAttribute("aria-expanded","false");
+		trigger.addEventListener("mouseenter",()=>this._showHelp(trigger,schemaNode,instanceNode,false));
+		trigger.addEventListener("mouseleave",()=>this._scheduleHelpClose(trigger));
+		trigger.addEventListener("mousedown",e=>{
+			e.preventDefault();
+			e.stopPropagation();
+		});
+		trigger.addEventListener("click",e=>{
+			e.preventDefault();
+			e.stopPropagation();
+			if (this._helpState?.trigger===trigger&&this._helpState.pinned)
+				this._closeHelp();
+			else
+				this._showHelp(trigger,schemaNode,instanceNode,true);
+		});
+		if (instanceNode)
+			instanceNode.helpTriggerEl=trigger;
+		return trigger;
+	}
+
+	_setupMainHeaderHelp(trigger,schemaNode) {
+		trigger.classList.add("has-help");
+		trigger.addEventListener("mouseenter",()=>{
+			this._cancelHelpOpen();
+			this._helpOpenTimer=setTimeout(()=>{
+				this._helpOpenTimer=null;
+				this._showHelp(trigger,schemaNode,null,false);
+			},600);
+		});
+		trigger.addEventListener("mouseleave",()=>{
+			this._cancelHelpOpen();
+			this._scheduleHelpClose(trigger);
+		});
+		trigger.addEventListener("mousedown",()=>this._cancelHelpOpen());
+	}
+
+	_ensureHelpPopover() {
+		if (this._helpPopover)
+			return this._helpPopover;
+		const popover=this._helpPopover=this.rootEl.appendChild(document.createElement("div"));
+		popover.id=`tablance-help-${++helpPopoverId}`;
+		popover.className="tablance-help-popover";
+		popover.hidden=true;
+		popover.addEventListener("mouseenter",()=>this._cancelHelpClose());
+		popover.addEventListener("mouseleave",()=>this._scheduleHelpClose(this._helpState?.trigger));
+		this._helpResizeObserver=new ResizeObserver(()=>this._positionHelp());
+		return popover;
+	}
+
+	_getHelpPayload(schemaNode,instanceNode,context={}) {
+		let mainIndex=context.mainIndex;
+		if (mainIndex==null&&instanceNode) {
+			let root=instanceNode;
+			for (;root?.parent;root=root.parent);
+			mainIndex=Number.isInteger(root?.rowIndex)?root.rowIndex:null;
+		}
+		const mainRowData=Number.isInteger(mainIndex)?this._filteredData?.[mainIndex]:undefined;
+		const rowData=instanceNode?.dataObj??mainRowData;
+		const values=schemaNode?.type==="field"&&rowData
+			?this._getCellValueBundle(schemaNode,rowData,mainIndex,instanceNode):{};
+		return {tablance:this,schemaTree:this._schema,schemaNode,instanceNode,rowData,mainIndex,
+			bulkEdit:!!this.mainInstance,closestMeta:key=>this._closestMeta(schemaNode,key),...values};
+	}
+
+	_setHelpContent(schemaNode,instanceNode,context) {
+		if (schemaNode===this._schema)
+			return this._setTableHelpContent(context);
+		this._ensureHelpPopover().replaceChildren(this._resolveHelpContent(schemaNode,instanceNode,context));
+	}
+
+	_resolveHelpContent(schemaNode,instanceNode,context) {
+		const help=schemaNode.help;
+		const content=typeof help==="function"
+			?help(this._getHelpPayload(schemaNode,instanceNode,context)):help;
+		if (typeof content==="string")
+			return document.createTextNode(content);
+		if (content?.nodeType)
+			return content;
+		throw new TypeError("A help callback must return a string, Node, or DocumentFragment.");
+	}
+
+	_schemaTitleText(schemaNode) {
+		if (schemaNode.titleHtml!==true)
+			return String(schemaNode.title??"");
+		const title=document.createElement("span");
+		title.innerHTML=String(schemaNode.title??"");
+		return title.textContent;
+	}
+
+	_setTableHelpContent(context) {
+		const popover=this._ensureHelpPopover();
+		const content=document.createDocumentFragment();
+		if (this._hasHelp(this._schema)) {
+			const introduction=content.appendChild(document.createElement("div"));
+			introduction.className="tablance-table-help-introduction";
+			introduction.appendChild(this._resolveHelpContent(this._schema,null,context));
+		}
+		for (const schemaNode of this._schema.main?.columns??[]) {
+			if (!this._hasHelp(schemaNode))
+				continue;
+			const section=content.appendChild(document.createElement("section"));
+			section.className="tablance-table-help-section";
+			const heading=section.appendChild(document.createElement("h3"));
+			heading.textContent=this._schemaTitleText(schemaNode);
+			const body=section.appendChild(document.createElement("div"));
+			body.appendChild(this._resolveHelpContent(schemaNode,null,{}));
+		}
+		popover.replaceChildren(content);
+	}
+
+	_showHelp(trigger,schemaNode,instanceNode,pinned,context={}) {
+		if (!trigger?.isConnected
+			||!(schemaNode===this._schema?this._hasTableHelp():this._hasHelp(schemaNode)))
+			return false;
+		if (this._helpState?.pinned&&!pinned&&this._helpState.trigger!==trigger)
+			return false;
+		this._cancelHelpClose();
+		if (this._helpState?.trigger===trigger) {
+			this._helpState.pinned||=pinned;
+			this._helpState.context=context;
+			if (pinned)
+				this._setHelpContent(schemaNode,instanceNode,context);
+			this._positionHelp();
+			return true;
+		}
+		this._closeHelp();
+		this._setHelpContent(schemaNode,instanceNode,context);
+		const popover=this._ensureHelpPopover();
+		this._helpState={trigger,schemaNode,instanceNode,pinned,context};
+		trigger.setAttribute("aria-controls",popover.id);
+		trigger.setAttribute("aria-expanded","true");
+		popover.hidden=false;
+		if (typeof popover.showPopover==="function") {
+			popover.popover="manual";
+			if (!popover.matches(":popover-open"))
+				popover.showPopover();
+		}
+		this._helpResizeObserver.observe(popover);
+		this._attachHelpGlobalListeners();
+		this._positionHelp();
+		return true;
+	}
+
+	_positionHelp() {
+		const {trigger}=this._helpState??{};
+		if (!trigger?.isConnected||trigger.getClientRects().length===0)
+			return this._closeHelp();
+		this._alignDropdown(this._helpPopover,trigger,undefined,8);
+	}
+
+	_scheduleHelpClose(trigger) {
+		if (!trigger||this._helpState?.trigger!==trigger||this._helpState.pinned)
+			return;
+		this._cancelHelpClose();
+		this._helpCloseTimer=setTimeout(()=>this._closeHelp(),120);
+	}
+
+	_cancelHelpClose() {
+		clearTimeout(this._helpCloseTimer);
+		this._helpCloseTimer=null;
+	}
+
+	_cancelHelpOpen() {
+		clearTimeout(this._helpOpenTimer);
+		this._helpOpenTimer=null;
+	}
+
+	_attachHelpGlobalListeners() {
+		if (this._helpState?.outsideMouseDown)
+			return;
+		const state=this._helpState;
+		state.outsideMouseDown=e=>{
+			if (!state.trigger.contains(e.target)&&!this._helpPopover.contains(e.target))
+				this._closeHelp();
+		};
+		state.keyDown=e=>{
+			if (e.key!=="Escape")
+				return;
+			e.preventDefault();
+			e.stopPropagation();
+			this._closeHelp(true);
+		};
+		state.resize=()=>this._positionHelp();
+		state.scroll=e=>{
+			if (!this._helpPopover.contains(e.target))
+				this._positionHelp();
+		};
+		document.addEventListener("mousedown",state.outsideMouseDown,true);
+		document.addEventListener("keydown",state.keyDown,true);
+		document.addEventListener("scroll",state.scroll,true);
+		window.addEventListener("resize",state.resize);
+	}
+
+	_closeHelp(restoreFocus=false) {
+		this._cancelHelpOpen();
+		this._cancelHelpClose();
+		const state=this._helpState;
+		if (!state)
+			return false;
+		const restoreTableFocus=restoreFocus&&this._helpPopover.contains(document.activeElement);
+		document.removeEventListener("mousedown",state.outsideMouseDown,true);
+		document.removeEventListener("keydown",state.keyDown,true);
+		document.removeEventListener("scroll",state.scroll,true);
+		window.removeEventListener("resize",state.resize);
+		state.trigger?.setAttribute("aria-expanded","false");
+		state.trigger?.removeAttribute("aria-controls");
+		this._helpResizeObserver?.disconnect();
+		if (typeof this._helpPopover?.hidePopover==="function"&&this._helpPopover.matches(":popover-open"))
+			this._helpPopover.hidePopover();
+		this._helpPopover.hidden=true;
+		this._helpPopover.replaceChildren();
+		this._helpState=null;
+		if (restoreTableFocus)
+			this._focusEl?.focus({preventScroll:true});
+		return true;
+	}
+
+	_showSelectedCellHelp() {
+		const schemaNode=this._activeSchemaNode;
+		if (!this._selectedCell||!this._hasHelp(schemaNode))
+			return false;
+		const instanceNode=this._activeDetailsCell;
+		const trigger=instanceNode?.helpTriggerEl??this._selectedCell;
+		return this._showHelp(trigger,schemaNode,instanceNode,true,{mainIndex:this._mainRowIndex});
 	}
 
 	_setupSpreadsheet(onlyDetails) {
@@ -2553,6 +2834,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const searchPassthroughKeys=[];
 			if (!searchPassthroughKeys.includes(e.key))
 				return;
+		}
+		if (e.key==="F1"&&this._showSelectedCellHelp()) {
+			e.preventDefault();
+			e.stopPropagation();
+			return;
 		}
 		if (this._inReadOnlyMode)
 			return this._readOnlyPresentationKeyDown(e);
@@ -3361,9 +3647,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * 
 	 * Also sets special properties on itemObj for group items.
 	 */
-	_buildCollectionItemDOM(schemaNode,collection,itemObj,title) {
+	_buildCollectionItemDOM(schemaNode,collection,itemObj) {
 		let outerContainerEl,containerEl;
 		const type=collection.schemaNode.type;
+		const hasTitle=schemaNode.title!=null&&String(schemaNode.title)!=="";
 
 		// LIST: Each item is a <tr> with title cell optionally + value cell
 		if (type=="list") {
@@ -3371,16 +3658,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (collection.schemaNode.titlesColWidth!=false) {
 				const td=outerContainerEl.insertCell();
 				td.className="title";
-				if (schemaNode.titleHtml)
-					td.innerHTML=schemaNode.title??"";
-				else
-					td.innerText=schemaNode.title??"";
+				this._populateSchemaTitle(td,schemaNode,itemObj,{reserveHelpSlot:true});
 			}
 			containerEl=outerContainerEl.insertCell();
 		} else if (type=="lineup"||type==="grid") {// Flow/grid items use their outer box as the canonical cell.
 			outerContainerEl=document.createElement("span");
-			if (title)
-				outerContainerEl.appendChild(title);
+			if (hasTitle) {
+				const title=outerContainerEl.appendChild(document.createElement("span"));
+				title.className="title";
+				this._populateSchemaTitle(title,schemaNode,itemObj,{reserveHelpSlot:true});
+			}
 			itemObj.selEl=outerContainerEl;
 			containerEl=outerContainerEl.appendChild(document.createElement("div"));
 		} else if (type=="group") {//GROUP: More complex <tr> with special rules for empty/hiding and more
@@ -3393,8 +3680,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (schemaNode.type!="group")
 				td.appendChild(document.createElement("hr")).className="separator";
 
-			if (title)
-				td.appendChild(title);
+			if (hasTitle) {
+				const title=td.appendChild(document.createElement("span"));
+				title.className="title";
+				this._populateSchemaTitle(title,schemaNode,itemObj,{reserveHelpSlot:true});
+			}
 
 			containerEl=td.appendChild(document.createElement("div"));
 
@@ -3464,16 +3754,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (collectionOrRepeated.schemaNode.type==="repeated")
 			itemObj.dataArray=Array.isArray(collectionOrRepeated.dataObj)?collectionOrRepeated.dataObj:undefined;
 
-		// Optional title element
-		let title;
-		if (schemaNode.title) {
-			title=document.createElement("span");
-			title.className="title";
-			title.innerHTML=schemaNode.title;
-		}
-
 		// Build DOM structure for this item
-		const {outerContainerEl,containerEl}=this._buildCollectionItemDOM(schemaNode,collection,itemObj,title);
+		const {outerContainerEl,containerEl}=this._buildCollectionItemDOM(schemaNode,collection,itemObj);
 		if (collection.schemaNode.type==="lineup")
 			this._applyLineupCellSizing(schemaNode,outerContainerEl);
 
@@ -3754,7 +4036,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	/**Aligns dropdowns like select and date-picker correctly by the cellcursor or any other target-element specified */
-	_alignDropdown(dropdown,target=this._cellCursor,preferredVertical) {
+	_alignDropdown(dropdown,target=this._cellCursor,preferredVertical,viewportMargin=0) {
 		const isOpenPopover=typeof dropdown.showPopover==="function"&&dropdown.matches(":popover-open");
 		if (isOpenPopover) {
 			const targetRect=target.getBoundingClientRect();
@@ -3772,8 +4054,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			dropdown.style.position="fixed";
 			const desiredTop=placeAbove?targetRect.top-dropdown.offsetHeight:targetRect.bottom;
 			const desiredLeft=alignRight?targetRect.right-dropdown.offsetWidth:targetRect.left;
-			dropdown.style.top=Math.max(0,Math.min(desiredTop,viewportHeight-dropdown.offsetHeight))+"px";
-			dropdown.style.left=Math.max(0,Math.min(desiredLeft,viewportWidth-dropdown.offsetWidth))+"px";
+			dropdown.style.top=Math.max(viewportMargin,
+				Math.min(desiredTop,viewportHeight-dropdown.offsetHeight-viewportMargin))+"px";
+			dropdown.style.left=Math.max(viewportMargin,
+				Math.min(desiredLeft,viewportWidth-dropdown.offsetWidth-viewportMargin))+"px";
 			dropdown.classList.add(placeAbove?"above":"below",alignRight?"right":"left");
 			return;
 		}
@@ -5567,6 +5851,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_selectCell(cellEl,schemaNode,dataObj,adjustCursorPosSize=true,instanceNode=null,preserveGridPreferredColumn=false) {
+		this._closeHelp();
 		if (!preserveGridPreferredColumn)
 			this._resetGridPreferredColumn();
 		const cellState=this._getCellState(cellEl,instanceNode);
@@ -5715,9 +6000,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				expandDiv.classList.add("expand-div");//used to identify if expand-button was clicked in click-handler
 				//expandDiv.appendChild(this._createExpandContractButton());//functionality not fully implemented yet
 				th.classList.add("expand-col");
-			} else
-				th.innerText=col.title??"\xa0";//non breaking space if nothing else or else
-																	//sorting arrows wont be positioned correctly
+			} else {
+				const title=th.appendChild(document.createElement("span"));
+				title.className="tablance-main-header-title";
+				this._populateSchemaTitle(title,col,null,{fallback:"\xa0",showHelp:false});
+				if (this._hasHelp(col))
+					this._setupMainHeaderHelp(title,col);
+			}
 
 			if (this._opts.ordering!==false) {
 				//create the divs used for showing html for sorting-up/down-arrow or whatever has been configured
@@ -5726,7 +6015,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			} else
 				th.style.cursor="default";
 		}
-		this._headerTr.appendChild(document.createElement("th")).className="scrollbar-spacer";
+		const spacer=this._headerTr.appendChild(document.createElement("th"));
+		spacer.className="scrollbar-spacer";
+		if (this._hasTableHelp()) {
+			this._headerTable.classList.add("has-table-help");
+			this._headerTr.cells[this._colSchemaNodes.length-1].classList.add("before-table-help");
+			const helpTrigger=this._createHelpTrigger(this._schema,null,{table:true});
+			helpTrigger.tabIndex=0;
+			spacer.appendChild(helpTrigger);
+		}
 	}
 
 	_onThClick(e) {
@@ -6797,13 +7094,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (cellEl.matches("button,input,select,textarea"))
 			cellEl.disabled=state.kind==="disabled";
 		else if (instanceNode?.schemaNode.type==="group") {
-			for (const control of cellEl.querySelectorAll("button,input,select,textarea")) {
+			for (const control of cellEl.querySelectorAll("button:not(.tablance-help-trigger),input,select,textarea")) {
 				const controlCell=control.closest(".tablance-cell-state");
 				control.disabled=state.kind==="disabled"
 					||this._getCellState(controlCell??control)?.kind==="disabled";
 			}
 		} else if (instanceNode?.schemaNode.type!=="group") {
-			const button=cellEl.querySelector("button");
+			const button=cellEl.querySelector("button:not(.tablance-help-trigger)");
 			if (button)
 				button.disabled=state.kind==="disabled";
 		}

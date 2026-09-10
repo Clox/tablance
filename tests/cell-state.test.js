@@ -72,6 +72,221 @@ try {
 		&&localLangTable._searchInput.placeholder==="Local search",
 		"global language defaults apply to every table while per-instance language keeps priority");
 	Tablance.defaultLang={};
+	let richHelpPayload,repeatedHelpPayload;
+	const helpRows=[{plain:"Plain",rich:"Rich",without:"No help",detail:"Detail",
+		detailWithoutHelp:"No detail help",line:"Line",
+		items:[{name:"Repeated item"}]}];
+	const helpTable=new Tablance(host(),{
+		help:"General table help",
+		main:{toolbar:{items:[{input:{type:"button",text:"Action"}}]},columns:[
+			{dataKey:"plain",title:"<b>Plain title</b>",help:"<img src=x onerror=alert(1)>"},
+			{dataKey:"rich",title:"<em>Trusted title</em>",titleHtml:true,help:payload=>{
+				richHelpPayload=payload;
+				const fragment=document.createDocumentFragment();
+				const link=fragment.appendChild(document.createElement("a"));
+				link.href="#help-target";
+				link.textContent="Rich link";
+				fragment.appendChild(document.createElement("img")).alt="Help image";
+				return fragment;
+			}},
+			{dataKey:"without",title:"Without help"},
+		]},
+		details:{type:"list",entries:[
+			{title:"Detail help",dataKey:"detail",nodeId:"helpDetail",help:"Detail explanation"},
+			{title:"Detail without help",dataKey:"detailWithoutHelp",nodeId:"detailWithoutHelp"},
+			{type:"group",title:"Group help",nodeId:"helpGroup",help:"Group explanation",entries:[
+				{type:"lineup",entries:[
+					{title:"Line help",dataKey:"line",nodeId:"helpLine",help:"Line explanation",input:{type:"text"}},
+				]},
+				{type:"repeated",title:"Repeated help",help:"Repeated explanation",dataKey:"items",
+					entry:{type:"group",closedRender:item=>item.name,entries:[
+						{title:"Repeated field",dataKey:"name",nodeId:"helpRepeatedField",help:payload=>{
+							repeatedHelpPayload=payload;
+							return "Repeated field explanation";
+						}},
+					]}},
+			]},
+		]},
+	},true,true,{searchbar:false});
+	helpTable.setData(helpRows);
+	await tick();
+	const helpHeaders=[...helpTable._headerTr.cells];
+	const tableHelp=helpTable._headerTr.lastElementChild.querySelector(".table-help-trigger");
+	const plainHeaderTitle=helpHeaders[0].querySelector(".tablance-main-header-title");
+	assert(helpHeaders[0].textContent.includes("<b>Plain title</b>")&&!helpHeaders[0].querySelector("b")
+		&&helpHeaders[1].querySelector("em")?.textContent==="Trusted title",
+		"ordinary titles render as text while titleHtml remains an explicit trusted opt-in");
+	assert(!helpHeaders.slice(0,-1).some(header=>header.querySelector(".tablance-help-trigger"))
+		&&!helpTable._toolbar.querySelector(".tablance-help-trigger")&&tableHelp?.tabIndex===0,
+		"main columns have no help icon and common help occupies the right edge of the main header row");
+	const tableHelpRect=tableHelp.getBoundingClientRect();
+	const helpHeaderRect=helpTable._headerTable.getBoundingClientRect();
+	assert(tableHelpRect.width===20&&tableHelpRect.right<=helpHeaderRect.right
+		&&tableHelpRect.right>=helpHeaderRect.right-24,
+		"the common help trigger has a usable hitbox aligned to the main header's right edge");
+	tableHelp.dispatchEvent(new MouseEvent("mouseenter"));
+	const tableHelpSections=[...helpTable._helpPopover.querySelectorAll(".tablance-table-help-section")];
+	assert(helpTable._helpPopover.querySelector(".tablance-table-help-introduction")?.textContent
+		==="General table help"&&tableHelpSections.length===2
+		&&tableHelpSections[0].querySelector("h3").textContent==="<b>Plain title</b>"
+		&&tableHelpSections[0].textContent.includes("<img src=x onerror=alert(1)>")
+		&&!tableHelpSections[0].querySelector("img")
+		&&tableHelpSections[1].querySelector("h3").textContent==="Trusted title"
+		&&tableHelpSections[1].querySelector("a")?.textContent==="Rich link"
+		&&tableHelpSections[1].querySelector("img")?.alt==="Help image"
+		&&!helpTable._helpPopover.textContent.includes("Detail explanation")
+		&&richHelpPayload.instanceNode==null&&richHelpPayload.rowData===undefined
+		&&!helpTable._helpState.pinned,
+		"common header help safely combines schema.help and titled main-column help while excluding details");
+	const fittingHelpRect=helpTable._helpPopover.getBoundingClientRect();
+	assert(helpTable._helpPopover.scrollHeight<=helpTable._helpPopover.clientHeight+1
+		&&fittingHelpRect.height<innerHeight-16&&fittingHelpRect.top>=8
+		&&fittingHelpRect.bottom<=innerHeight-8,
+		"help content that fits uses its natural height without an internal scrollbar");
+	tableHelp.dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true}));
+	assert(helpTable._helpState.pinned&&tableHelp.getAttribute("aria-expanded")==="true"
+		&&!helpTable._sortingCols.length,
+		"clicking the main-header table-help trigger pins the shared popover without sorting");
+	document.body.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}));
+	assert(!helpTable._helpState&&tableHelp.getAttribute("aria-expanded")==="false",
+		"an outside click closes pinned help without adding a separate overlay interaction layer");
+	helpTable._schema.help=Array.from({length:100},(_,index)=>`Long help line ${index+1}`).join("\n");
+	tableHelp.dispatchEvent(new MouseEvent("mouseenter"));
+	const overflowingHelpRect=helpTable._helpPopover.getBoundingClientRect();
+	assert(helpTable._helpPopover.scrollHeight>helpTable._helpPopover.clientHeight
+		&&overflowingHelpRect.height<=innerHeight-16&&overflowingHelpRect.top>=8
+		&&overflowingHelpRect.bottom<=innerHeight-8,
+		"help content taller than the viewport is constrained with internal scrolling and edge margins");
+	helpTable._closeHelp();
+	helpTable._schema.help="General table help";
+	const noToolbarHelpTable=new Tablance(host(),{help:"Unavailable without a toolbar",
+		main:{columns:[{title:"Value",dataKey:"value",help:"Column help"}]}},true,true,{searchbar:false});
+	noToolbarHelpTable.setData([{value:"value"}]);
+	await tick();
+	assert(!noToolbarHelpTable._toolbar
+		&&noToolbarHelpTable._headerTr.lastElementChild.querySelector(".table-help-trigger"),
+		"table or column help uses the main header without creating an otherwise absent toolbar");
+	const columnsOnlyHelpTable=new Tablance(host(),{main:{columns:[
+		{title:"Column only",dataKey:"value",help:"Only column help"},
+		{title:"Excluded",dataKey:"other"},
+	]}},true,true,{ordering:false});
+	columnsOnlyHelpTable.setData([{value:"value",other:"other"}]);
+	await tick();
+	const columnsOnlyTableHelp=columnsOnlyHelpTable._headerTr.lastElementChild
+		.querySelector(".table-help-trigger");
+	columnsOnlyTableHelp.dispatchEvent(new MouseEvent("mouseenter"));
+	assert(!columnsOnlyHelpTable._helpPopover.querySelector(".tablance-table-help-introduction")
+		&&columnsOnlyHelpTable._helpPopover.querySelectorAll(".tablance-table-help-section").length===1
+		&&columnsOnlyHelpTable._helpPopover.querySelector("h3").textContent==="Column only"
+		&&columnsOnlyHelpTable._helpPopover.textContent.includes("Only column help")
+		&&!columnsOnlyHelpTable._helpPopover.textContent.includes("Excluded"),
+		"common header help aggregates main-column help even when schema.help is absent");
+	columnsOnlyHelpTable._closeHelp();
+	helpTable.selectCell(helpRows[0],"plain");
+	const helpF1=key(helpTable.rootEl,"F1","F1");
+	assert(helpF1.defaultPrevented&&helpTable._helpState?.pinned
+		&&helpTable._helpPopover.textContent==="<img src=x onerror=alert(1)>"
+		&&!helpTable._helpPopover.querySelector("img")
+		&&helpTable._helpState.trigger===helpTable._selectedCell,
+		"F1 pins the selected main cell's own safe column help without a header trigger");
+	const helpEscape=key(helpTable.rootEl,"Escape","Escape");
+	assert(helpEscape.defaultPrevented&&!helpTable._helpState,
+		"Escape closes pinned help before Tablance applies any ordinary Escape behavior");
+	helpTable.selectCell(helpRows[0],"without");
+	const noHelpF1=key(helpTable.rootEl,"F1","F1");
+	assert(!noHelpF1.defaultPrevented&&!helpTable._helpState,
+		"F1 is left completely unhandled when the selected cell has no help");
+	helpTable.selectCell(helpRows[0],"rich");
+	const richHelpF1=key(helpTable.rootEl,"F1","F1");
+	assert(helpTable._helpPopover.querySelector("a")?.textContent==="Rich link"
+		&&helpTable._helpPopover.querySelector("img")?.alt==="Help image"
+		&&richHelpPayload.instanceNode==null&&richHelpPayload.rowData===helpRows[0]
+		&&richHelpF1.defaultPrevented,
+		"main-cell F1 evaluates the same rich column help with selected-row context");
+	helpTable._closeHelp();
+	plainHeaderTitle.dispatchEvent(new MouseEvent("mouseenter"));
+	await new Promise(resolve=>setTimeout(resolve,480));
+	assert(!helpTable._helpState,
+		"main-column title hover does not open help before its short delay has elapsed");
+	await new Promise(resolve=>setTimeout(resolve,150));
+	assert(helpTable._helpPopover.textContent==="<img src=x onerror=alert(1)>"
+		&&!helpTable._helpState.pinned&&helpTable._helpState.trigger===plainHeaderTitle,
+		"main-column title hover opens the column's own safe help after about 600 ms");
+	plainHeaderTitle.dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true}));
+	assert(helpTable._sortingCols[0]?.index===0,
+		"column-title help listeners do not prevent or replace ordinary header sorting clicks");
+	plainHeaderTitle.dispatchEvent(new MouseEvent("mouseleave"));
+	helpTable._helpPopover.dispatchEvent(new MouseEvent("mouseenter"));
+	await new Promise(resolve=>setTimeout(resolve,140));
+	assert(!!helpTable._helpState,"moving from a column header into its popover keeps transient help open");
+	helpTable._helpPopover.dispatchEvent(new MouseEvent("mouseleave"));
+	await new Promise(resolve=>setTimeout(resolve,140));
+	assert(!helpTable._helpState,"transient help closes after leaving both trigger and popover");
+	const helpGroup=helpTable.getDetailCell(helpRows[0],"helpGroup");
+	const helpDetail=helpTable.getDetailCell(helpRows[0],"helpDetail");
+	const detailWithoutHelp=helpTable.getDetailCell(helpRows[0],"detailWithoutHelp");
+	const helpDetailSlot=helpDetail.helpTriggerEl?.closest(".tablance-help-slot");
+	const emptyDetailSlot=detailWithoutHelp.outerContainerEl.querySelector(".tablance-help-slot");
+	assert(helpDetailSlot?.closest("td.title")&&helpDetail.helpTriggerEl.tabIndex===-1
+		&&emptyDetailSlot&&!emptyDetailSlot.children.length
+		&&getComputedStyle(helpDetailSlot).width===getComputedStyle(emptyDetailSlot).width,
+		"detail titles reserve the same compact non-navigable help slot with or without help");
+	helpDetail.select();
+	const detailHelpF1=key(helpTable.rootEl,"F1","F1");
+	assert(detailHelpF1.defaultPrevented&&helpTable._helpPopover.textContent==="Detail explanation",
+		"F1 resolves help for an ordinary selected detail field");
+	helpTable._closeHelp();
+	const selectedBeforeGroupHelp=helpTable._activeDetailsCell;
+	assert(helpGroup.helpTriggerEl.closest(".tablance-help-slot"),
+		"group help uses the same reserved detail-title slot");
+	helpGroup.helpTriggerEl.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
+	helpGroup.helpTriggerEl.dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true}));
+	assert(helpTable._activeDetailsCell===selectedBeforeGroupHelp&&!helpGroup.el.classList.contains("open")
+		&&helpTable._helpState?.pinned,
+		"clicking group help neither selects nor opens the group and does not disturb the current cell");
+	helpTable._closeHelp();
+	helpGroup.select();
+	const groupHelpF1=key(helpTable.rootEl,"F1","F1");
+	assert(groupHelpF1.defaultPrevented&&helpTable._helpPopover.textContent==="Group explanation",
+		"F1 resolves help for a selected group instance");
+	helpTable._closeHelp();
+	const helpLine=helpTable.getDetailCell(helpRows[0],"helpLine");
+	helpLine.select();
+	const lineHelpF1=key(helpTable.rootEl,"F1","F1");
+	assert(lineHelpF1.defaultPrevented&&helpTable._helpPopover.textContent==="Line explanation"
+		&&helpLine.helpTriggerEl?.closest(".lineup")
+		&&helpLine.helpTriggerEl.closest(".tablance-help-slot"),
+		"Lineup fields expose contextual help through their ordinary title and selected instance");
+	helpTable._closeHelp();
+	const repeatedHelp=helpGroup.children.find(node=>node.schemaNode.type==="repeated");
+	assert(!repeatedHelp.helpTriggerEl&&!helpGroup.el.textContent.includes("Repeated help"),
+		"help does not introduce a new heading or navigable UI structure for transparent repeated containers");
+	const repeatedField=helpTable.getDetailCell(helpRows[0],"helpRepeatedField");
+	repeatedField.select();
+	const repeatedFieldF1=key(helpTable.rootEl,"F1","F1");
+	assert(repeatedFieldF1.defaultPrevented
+		&&helpTable._helpPopover.textContent==="Repeated field explanation",
+		"F1 exposes help for a field nested inside a repeated entry");
+	assert(repeatedHelpPayload.instanceNode===repeatedField,
+		"nested repeated help receives the stable selected instance");
+	assert(repeatedHelpPayload.rowData===repeatedField.dataObj
+		&&repeatedHelpPayload.rowData.name==="Repeated item",
+		"nested repeated help resolves against the repeated entry's current draft data object");
+	helpTable._closeHelp();
+	const separateHelpTable=new Tablance(host(),{main:{columns:[
+		{title:"Other",dataKey:"other",help:"Other table help"},
+	]}},true,true,{searchbar:false,ordering:false});
+	separateHelpTable.setData([{other:"other"}]);
+	await tick();
+	helpTable.selectCell(helpRows[0],"plain");
+	key(helpTable.rootEl,"F1","F1");
+	separateHelpTable.selectCell(0,"other");
+	key(separateHelpTable.rootEl,"F1","F1");
+	assert(helpTable._helpState?.pinned&&separateHelpTable._helpState?.pinned
+		&&helpTable._helpPopover!==separateHelpTable._helpPopover,
+		"multiple Tablance instances keep independent shared help popovers and context");
+	helpTable._closeHelp();
+	separateHelpTable._closeHelp();
 	let changes=0,commits=0,validations=0,actions=0,buttonActions=0;
 	const row={editable:"edit",computed:"source",explicit:"locked",conditional:"conditional",canEdit:true,
 		disabledValue:"unavailable",isDisabled:true,action:"act",button:"button",detail:"detail rendered",
