@@ -164,6 +164,9 @@ class TablanceBase {
 	//center it around the cell. It is also used in conjunction with cellCursorOutlineWidth to adjust margins of the
 	//main-table in order to reveal the outermost line when an outermost cell is selected
 	_inputVal;//the current val of the input when in edit-mode. Will be read and commited if cell is exited correctly
+	_inlineEditorHost;//value-scoped editor layer for details cells whose title shares the canonical cell box
+	_inlineEditorValueEl;
+	_inlineEditorValueHeight;
 	_highlightOnFocus=true;//when the spreadsheet is focused  we want focus-outline to appear but only if focused by
 				//keyboard-tabbing, and not when clicking or exiting out of edit-mode which again focuses the table.
 				//By setting this to true in mouseDownEvent we can 
@@ -3953,7 +3956,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		//then set size of cellcursor, and also the underlying cell in order to make details-height adjust to scroll-
 		//height of the textarea. Also add 1px because *sometimes* without logic the textarea would recieve a scrollbar
 		//which can scroll about 1 px. Not sure if 1px is actually sufficent but let's start there.
-		this._cellCursor.style.height=this._selectedCell.style.height=Math.min(maxHeight,e.target.scrollHeight+1)+"px";
+		const editorHeight=Math.min(maxHeight,e.target.scrollHeight+1);
+		if (this._inlineEditorValueEl) {
+			this._inlineEditorValueEl.style.height=editorHeight+"px";
+			this._adjustCursorPosSize(this._selectedCell);
+		} else
+			this._cellCursor.style.height=this._selectedCell.style.height=editorHeight+"px";
 		//now set height of textarea to 100% of cellcursor which height is set with above line. this line and the one
 		//setting it to auto "could" be skipped but that will result in the textarea not shrinking when needed.
 		e.target.style.height="100%";
@@ -3963,6 +3971,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_updateDetailsHeight(detailsTr) {
+		if (!detailsTr)
+			return;
 		const contentDiv=detailsTr.querySelector(".content");
 		const mainRowIndex=parseInt(detailsTr.dataset.dataRowIndex);
 		const rowData=this._filteredData[mainRowIndex];
@@ -4021,7 +4031,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			input.addEventListener("change",()=>this._inputVal=input.value);
 		}
 		
-		this._cellCursor.appendChild(input);
+		this._appendCellEditor(input);
 		input.value=this._selectedCellVal??"";
 		input.placeholder=this._activeSchemaNode.input.placeholder??this.lang.datePlaceholder;
 		input.focus();
@@ -4135,6 +4145,57 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				,file:this._openFileEdit}[this._activeSchemaNode.input.type]??this._openTextEdit).call(this,e);
 		} else if (this._activeSchemaNode.type==="group")
 			this._openGroup(this._activeDetailsCell);
+	}
+
+	_getInlineEditorValueEl() {
+		if (!this._cellCursor.classList.contains("inline-title-indicator"))
+			return null;
+		const instanceNode=this._activeDetailsCell;
+		return instanceNode?.el&&instanceNode.el!==(instanceNode.selEl??instanceNode.el)?instanceNode.el:null;
+	}
+
+	_getCellEditorHost() {
+		const valueEl=this._getInlineEditorValueEl();
+		if (!valueEl)
+			return this._cellCursor;
+		if (!this._inlineEditorHost) {
+			this._inlineEditorValueEl=valueEl;
+			this._inlineEditorValueHeight=valueEl.style.height;
+			this._inlineEditorHost=this._cellCursor.appendChild(document.createElement("div"));
+			this._inlineEditorHost.className="cell-value-editor";
+		}
+		this._syncInlineEditorGeometry();
+		return this._inlineEditorHost;
+	}
+
+	_appendCellEditor(editor) {
+		this._getCellEditorHost().appendChild(editor);
+		return editor;
+	}
+
+	_syncInlineEditorGeometry() {
+		if (!this._inlineEditorHost||!this._inlineEditorValueEl)
+			return;
+		const cursorRect=this._cellCursor.getBoundingClientRect();
+		const valueRect=this._inlineEditorValueEl.getBoundingClientRect();
+		Object.assign(this._inlineEditorHost.style,{
+			left:valueRect.left-cursorRect.left+"px",
+			top:valueRect.top-cursorRect.top+"px",
+			width:valueRect.width+"px",
+			height:valueRect.height+"px",
+		});
+	}
+
+	_restoreInlineEditorLayout() {
+		const valueEl=this._inlineEditorValueEl;
+		if (valueEl)
+			valueEl.style.height=this._inlineEditorValueHeight;
+		this._inlineEditorHost=this._inlineEditorValueEl=this._inlineEditorValueHeight=null;
+		if (valueEl) {
+			const detailsTr=this._selectedCell?.closest("tr.details");
+			if (detailsTr)
+				this._updateDetailsHeight(detailsTr);
+		}
 	}
 
 	_openReadOnlyPresentation(activationEvent=null) {
@@ -4803,7 +4864,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_openTextEdit() {
-		const input=this._cellCursor.appendChild(document.createElement("input"));
+		const input=this._appendCellEditor(document.createElement("input"));
 		input.className="text-editor";
 
 		//for when blurring by clicking outside of table etc. exit edit-mode and commit the change but keep the cell
@@ -4844,7 +4905,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_openFileEdit() {
 		window.getSelection().empty();
 	
-		const fileDiv = this._cellCursor.appendChild(document.createElement("div"));
+		const fileDiv = this._appendCellEditor(document.createElement("div"));
 		fileDiv.classList.add("file");
 		fileDiv.tabIndex = 0;
 		fileDiv.focus();
@@ -4965,11 +5026,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	
 
 	_openTextAreaEdit() {
-		const textarea=this._cellCursor.appendChild(document.createElement("textarea"));
+		const textarea=this._appendCellEditor(document.createElement("textarea"));
 		textarea.rows=1;
 		textarea.addEventListener('input', this._autoTextAreaResize.bind(this));
 
-		{	const {paddingLeft,paddingRight,paddingTop,paddingBottom}=window.getComputedStyle(this._selectedCell);
+		{	const {paddingLeft,paddingRight,paddingTop,paddingBottom}=window.getComputedStyle(
+				this._inlineEditorValueEl??this._selectedCell);
 			//add the padding of the cell to the textarea for consistency
 			Object.assign(textarea.style,{paddingLeft,paddingRight,paddingTop,paddingBottom});}
 		
@@ -5526,7 +5588,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (save&&inputValNorm!=selectedValNorm) {
 			this._doEditSave();
 		}
-		this._cellCursor.innerHTML="";
+		this._cellCursor.replaceChildren();
+		this._restoreInlineEditorLayout();
 		//if (this._activeSchemaNode.input.type==="textarea")//also needed for file..
 		this._adjustCursorPosSize(this._selectedCell);
 		this._highlightOnFocus=false;
@@ -5931,6 +5994,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (el===this._selectedCell)
 				this._updateStaticCellOverflowPreview();
 		}
+		this._syncInlineEditorGeometry?.();
 	}
 
 	_clearStaticCellOverflowPreview() {

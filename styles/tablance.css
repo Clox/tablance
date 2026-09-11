@@ -81,7 +81,11 @@
   box-shadow: 0 3px 10px rgba(15, 43, 75, 0.18);
   cursor: auto;
 }
-.tablance .cell-cursor.edit-mode > input.text-editor {
+.tablance .cell-cursor.edit-mode.inline-title-indicator {
+  background-color: transparent;
+}
+.tablance .cell-cursor.edit-mode > input.text-editor,
+.tablance .cell-cursor.edit-mode > .cell-value-editor > input.text-editor {
   padding-left: 4px;
 }
 .tablance .cell-cursor.has-static-row-overflow-preview {
@@ -111,16 +115,27 @@
   top: auto;
   bottom: 0;
 }
-.tablance .cell-cursor > input, .tablance .cell-cursor textarea {
+.tablance .cell-cursor > .cell-value-editor {
+  position: absolute;
+  box-sizing: border-box;
+  background-color: var(--tablance-cell-background);
+}
+.tablance .cell-cursor > input, .tablance .cell-cursor > textarea,
+.tablance .cell-cursor > .cell-value-editor > input,
+.tablance .cell-cursor > .cell-value-editor > textarea {
   box-sizing: border-box;
   width: 100%;
   height: 100%;
   border: none;
 }
-.tablance .cell-cursor > input:focus, .tablance .cell-cursor textarea:focus {
+.tablance .cell-cursor > input:focus, .tablance .cell-cursor > textarea:focus,
+.tablance .cell-cursor > .cell-value-editor > input:focus,
+.tablance .cell-cursor > .cell-value-editor > textarea:focus {
   outline: none;
 }
-.tablance .cell-cursor > input, .tablance .cell-cursor textarea {
+.tablance .cell-cursor > input, .tablance .cell-cursor > textarea,
+.tablance .cell-cursor > .cell-value-editor > input,
+.tablance .cell-cursor > .cell-value-editor > textarea {
   font-family: inherit;
   font-size: inherit;
   line-height: inherit;
@@ -130,22 +145,27 @@
   background: var(--tablance-read-only-active-background);
   caret-color: currentColor;
 }
-.tablance .cell-cursor > div.file, .tablance .cell-cursor > div.file > div.drop {
+.tablance .cell-cursor > div.file, .tablance .cell-cursor > div.file > div.drop,
+.tablance .cell-cursor > .cell-value-editor > div.file,
+.tablance .cell-cursor > .cell-value-editor > div.file > div.drop {
   position: absolute;
   top: 0;
   bottom: 0;
   left: 0;
   right: 0;
 }
-.tablance .cell-cursor > div.file {
+.tablance .cell-cursor > div.file,
+.tablance .cell-cursor > .cell-value-editor > div.file {
   padding: 5px;
   cursor: pointer;
   outline: none;
 }
-.tablance .cell-cursor > div.file > input {
+.tablance .cell-cursor > div.file > input,
+.tablance .cell-cursor > .cell-value-editor > div.file > input {
   display: none;
 }
-.tablance .cell-cursor > div.file > div.drop {
+.tablance .cell-cursor > div.file > div.drop,
+.tablance .cell-cursor > .cell-value-editor > div.file > div.drop {
   padding: 8px;
   text-align: center;
   display: none;
@@ -214,6 +234,8 @@
   cursor: pointer;
 }
 .tablance .tablance-help-trigger {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;

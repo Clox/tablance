@@ -96,7 +96,8 @@ try {
 			{title:"Detail without help",dataKey:"detailWithoutHelp",nodeId:"detailWithoutHelp"},
 			{type:"group",title:"Group help",nodeId:"helpGroup",help:"Group explanation",entries:[
 				{type:"lineup",entries:[
-					{title:"Line help",dataKey:"line",nodeId:"helpLine",help:"Line explanation",input:{type:"text"}},
+					{title:"Line help",dataKey:"line",nodeId:"helpLine",help:"Line explanation",
+						render:({value})=>`Displayed ${value}`,input:{type:"text"}},
 				]},
 				{type:"repeated",title:"Repeated help",help:"Repeated explanation",dataKey:"items",
 					entry:{type:"group",closedRender:item=>item.name,entries:[
@@ -252,12 +253,58 @@ try {
 	helpTable._closeHelp();
 	const helpLine=helpTable.getDetailCell(helpRows[0],"helpLine");
 	helpLine.select();
+	const selectedHelpTrigger=helpLine.helpTriggerEl;
+	selectedHelpTrigger.scrollIntoView({block:"center"});
+	await tick();
+	const selectedHelpRect=selectedHelpTrigger.getBoundingClientRect();
+	assert(document.elementFromPoint(selectedHelpRect.left+selectedHelpRect.width/2,
+		selectedHelpRect.top+selectedHelpRect.height/2)===selectedHelpTrigger,
+		"a selected inline-title detail cell keeps its help trigger above the pointer-active cell cursor");
+	selectedHelpTrigger.dispatchEvent(new MouseEvent("mouseenter"));
+	assert(helpTable._helpState?.trigger===selectedHelpTrigger&&!helpTable._helpState.pinned,
+		"hovering help in a selected detail cell opens the contextual popover");
+	const selectedBeforeHelpClick=helpTable._activeDetailsCell;
+	selectedHelpTrigger.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
+	selectedHelpTrigger.dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true}));
+	assert(helpTable._helpState?.pinned&&helpTable._activeDetailsCell===selectedBeforeHelpClick
+		&&!helpTable._inEditMode,
+		"clicking help in a selected detail cell pins it without changing selection or entering edit mode");
+	helpTable._closeHelp();
 	const lineHelpF1=key(helpTable.rootEl,"F1","F1");
 	assert(lineHelpF1.defaultPrevented&&helpTable._helpPopover.textContent==="Line explanation"
 		&&helpLine.helpTriggerEl?.closest(".lineup")
 		&&helpLine.helpTriggerEl.closest(".tablance-help-slot"),
 		"Lineup fields expose contextual help through their ordinary title and selected instance");
 	helpTable._closeHelp();
+	const lineTitle=helpLine.outerContainerEl.querySelector(":scope>span.title");
+	const lineTitleBefore=lineTitle.getBoundingClientRect();
+	const lineValueBefore=helpLine.el.getBoundingClientRect();
+	const lineCellBefore=helpLine.outerContainerEl.getBoundingClientRect();
+	key(helpTable.rootEl,"Enter","Enter");
+	const lineEditor=helpTable._cellCursor.querySelector("input.text-editor");
+	const lineEditorRect=lineEditor.getBoundingClientRect();
+	const lineCursorRect=helpTable._cellCursor.getBoundingClientRect();
+	const lineTitleDuring=lineTitle.getBoundingClientRect();
+	assert(lineEditor.value==="Line"&&helpLine.el.textContent==="Displayed Line"
+		&&Math.abs(lineCursorRect.top-lineCellBefore.top)<1
+		&&Math.abs(lineCursorRect.height-lineCellBefore.height)<1
+		&&Math.abs(lineTitleDuring.top-lineTitleBefore.top)<1
+		&&Math.abs(lineEditorRect.left-lineValueBefore.left)<1
+		&&Math.abs(lineEditorRect.top-lineValueBefore.top)<1
+		&&Math.abs(lineEditorRect.width-lineValueBefore.width)<1
+		&&lineEditorRect.top>=lineTitleDuring.bottom,
+		"Lineup edit keeps its title and formatted presentation stable while only the value box exposes the raw editor");
+	const helpDuringEditRect=selectedHelpTrigger.getBoundingClientRect();
+	assert(document.elementFromPoint(helpDuringEditRect.left+helpDuringEditRect.width/2,
+		helpDuringEditRect.top+helpDuringEditRect.height/2)===selectedHelpTrigger,
+		"Lineup help remains pointer-accessible in edit mode without overlapping the value editor");
+	selectedHelpTrigger.dispatchEvent(new MouseEvent("mouseenter"));
+	selectedHelpTrigger.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
+	selectedHelpTrigger.dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true}));
+	assert(helpTable._helpState?.pinned&&helpTable._inEditMode&&document.activeElement===lineEditor,
+		"clicking inline help during edit leaves the value editor and its focus intact");
+	helpTable._closeHelp();
+	helpTable._exitEditMode(false);
 	const repeatedHelp=helpGroup.children.find(node=>node.schemaNode.type==="repeated");
 	assert(!repeatedHelp.helpTriggerEl&&!helpGroup.el.textContent.includes("Repeated help"),
 		"help does not introduce a new heading or navigable UI structure for transparent repeated containers");
@@ -1486,7 +1533,7 @@ try {
 			{type:"field",title:"B1",dataKey:"b1",nodeId:"gridB1",input:{type:"text"}},
 			{type:"field",title:"Spanning",dataKey:"span",nodeId:"gridSpan",columnSpan:2,input:{type:"text"}},
 			{type:"field",title:"A2",dataKey:"a2",nodeId:"gridA2",input:{type:"text"}},
-			{type:"field",title:"B2",dataKey:"b2",nodeId:"gridB2",input:{type:"text"}},
+			{type:"field",title:"B2",dataKey:"b2",nodeId:"gridB2",input:{type:"textarea"}},
 			{type:"field",title:"Disabled",dataKey:"disabled",nodeId:"gridDisabled",disabled:true,input:{type:"text"}},
 			{type:"field",title:"Read only",dataKey:"readOnly",nodeId:"gridReadOnly",readOnly:true},
 		]},
@@ -1554,6 +1601,33 @@ try {
 	assert(gridTable._activeDetailsCell===gridB1,"Tab follows grid schema order");
 	key(gridTable.rootEl,"Tab","Tab",{shiftKey:true});
 	assert(gridTable._activeDetailsCell===gridA1,"Shift+Tab follows reverse grid schema order");
+	gridB2.select();
+	const gridTextareaTitle=gridB2.outerContainerEl.querySelector(":scope>span.title");
+	const gridTextareaTitleBefore=gridTextareaTitle.getBoundingClientRect();
+	const gridTextareaCellBefore=gridB2.outerContainerEl.getBoundingClientRect();
+	const gridTextareaHeightBefore=gridTextareaCellBefore.height;
+	const gridTextareaTitleOffsetBefore=gridTextareaTitleBefore.top-gridTextareaCellBefore.top;
+	key(gridTable.rootEl,"Enter","Enter");
+	const gridTextarea=gridTable._cellCursor.querySelector("textarea");
+	assert(gridTextarea?.parentElement.classList.contains("cell-value-editor")
+		&&gridB2.outerContainerEl.querySelector(".tablance-help-slot:empty")
+		&&gridTextarea.getBoundingClientRect().top>=gridTextareaTitle.getBoundingClientRect().bottom,
+		"Grid edit without help preserves the same inline title structure and confines its editor to the value box");
+	gridTextarea.value="A long Grid textarea value that grows onto several lines without replacing its title. ".repeat(6);
+	gridTextarea.dispatchEvent(new Event("input",{bubbles:true}));
+	const grownGridCell=gridB2.outerContainerEl.getBoundingClientRect();
+	const grownGridEditor=gridTextarea.getBoundingClientRect();
+	const grownGridCursor=gridTable._cellCursor.getBoundingClientRect();
+	const grownGridTitle=gridTextareaTitle.getBoundingClientRect();
+	assert(grownGridCell.height>gridTextareaHeightBefore
+		&&Math.abs((grownGridTitle.top-grownGridCell.top)-gridTextareaTitleOffsetBefore)<1
+		&&grownGridEditor.top>=grownGridTitle.bottom
+		&&grownGridEditor.bottom<=grownGridCursor.bottom+1
+		&&Math.abs(grownGridCursor.height-grownGridCell.height)<1,
+		"an inline Grid textarea grows the value region and canonical cell without moving or covering its title");
+	gridTable._exitEditMode(false);
+	assert(gridB2.el.style.height===""&&gridB2.outerContainerEl.contains(gridTextareaTitle),
+		"exiting Grid edit restores temporary value sizing while retaining the stable title DOM");
 
 	const explicitGridTable=new Tablance(host(),{details:{type:"grid",columns:["34ch","34ch"],entries:[
 		{type:"field",title:"Left",dataKey:"left",nodeId:"explicitGridLeft",input:{type:"text"}},
@@ -1948,13 +2022,21 @@ try {
 		"headerless auto-height tables receive a complete rounded native frame");
 
 	const detailsOnlyTable=new Tablance(host(),{details:{type:"list",entries:[
-		{title:"Only detail",dataKey:"value",input:{type:"text"}},
+		{title:"Only detail",dataKey:"value",nodeId:"onlyDetail",input:{type:"text"}},
 	]}},true,true,{searchbar:false});
 	detailsOnlyTable.setData([{value:"detail-only"}]);
 	await tick();
 	assert(detailsOnlyTable.rootEl.querySelector(".details .tablance-cell-state")
 		&&getComputedStyle(detailsOnlyTable.rootEl).fontFamily.includes("Inter"),
 		"details-only tables use the same native state hooks and default theme");
+	const onlyDetail=detailsOnlyTable.getDetailCell(0,"onlyDetail");
+	onlyDetail.select();
+	key(detailsOnlyTable.rootEl,"Enter","Enter");
+	const ordinaryListEditor=detailsOnlyTable._cellCursor.querySelector("input.text-editor");
+	assert(ordinaryListEditor?.parentElement===detailsOnlyTable._cellCursor
+		&&!detailsOnlyTable._cellCursor.querySelector(".cell-value-editor"),
+		"ordinary list-details with a separate title column retain the existing full-value-cell editor path");
+	detailsOnlyTable._exitEditMode(false);
 
 	const bulkRows=[{locked:"one"},{locked:"two"}];
 	const bulkTable=new Tablance(host(),{main:{columns:[

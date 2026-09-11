@@ -84,7 +84,11 @@
 			background-color: var(--tablance-cell-background);
 			box-shadow: 0 3px 10px rgba(15, 43, 75, .18);
 			cursor:auto;
-			>input.text-editor {
+			&.inline-title-indicator {
+				background-color: transparent;
+			}
+			>input.text-editor,
+			>.cell-value-editor>input.text-editor {
 				padding-left: 4px;
 			}
 		}
@@ -115,7 +119,14 @@
 				bottom: 0;
 			}
 		}
-		>input,textarea {
+		>.cell-value-editor {
+			position: absolute;
+			box-sizing: border-box;
+			background-color: var(--tablance-cell-background);
+		}
+		>input,>textarea,
+		>.cell-value-editor>input,
+		>.cell-value-editor>textarea {
 			box-sizing: border-box;
 			width:100%;
 			height: 100%;
@@ -132,7 +143,9 @@
 			background: var(--tablance-read-only-active-background);
 			caret-color: currentColor;
 		}
-		>div.file,>div.file>div.drop {
+		>div.file,>div.file>div.drop,
+		>.cell-value-editor>div.file,
+		>.cell-value-editor>div.file>div.drop {
 			//make it expand the whole cell-cursor so all of it is clickable
 			position: absolute;
 			top: 0;
@@ -140,7 +153,8 @@
 			left: 0;
 			right: 0;
 		}
-		>div.file{
+		>div.file,
+		>.cell-value-editor>div.file {
 			padding: 5px;
 			cursor: pointer;
 			outline: none;
@@ -218,6 +232,10 @@
 		}
 	}
 	.tablance-help-trigger {
+		// The selected-cell cursor is a later positioned sibling covering the canonical cell box. Keep contextual
+		// help as the actual pointer target without making the cursor itself click-through.
+		position: relative;
+		z-index: 1;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
