@@ -308,9 +308,9 @@ try {
 		"main columns have no help icon and common help occupies the right edge of the main header row");
 	const tableHelpRect=tableHelp.getBoundingClientRect();
 	const helpHeaderRect=helpTable._headerTable.getBoundingClientRect();
-	assert(tableHelpRect.width===20&&tableHelpRect.right<=helpHeaderRect.right
-		&&tableHelpRect.right>=helpHeaderRect.right-24,
-		"the common help trigger has a usable hitbox aligned to the main header's right edge");
+	const tableHelpRightInset=helpHeaderRect.right-tableHelpRect.right;
+	assert(tableHelpRect.width===20&&tableHelpRightInset>=9&&tableHelpRightInset<=11,
+		"the common help trigger has a usable hitbox with ten pixels of breathing room at the header edge");
 	tableHelp.dispatchEvent(new MouseEvent("mouseenter"));
 	const tableHelpSections=[...helpTable._helpPopover.querySelectorAll(".tablance-table-help-section")];
 	assert(helpTable._helpPopover.querySelector(".tablance-table-help-introduction")?.textContent
@@ -414,10 +414,37 @@ try {
 	const detailWithoutHelp=helpTable.getDetailCell(helpRows[0],"detailWithoutHelp");
 	const helpDetailSlot=helpDetail.helpTriggerEl?.closest(".tablance-help-slot");
 	const emptyDetailSlot=detailWithoutHelp.outerContainerEl.querySelector(".tablance-help-slot");
+	const helpDetailLayout=helpDetailSlot?.closest(".tablance-title-layout");
+	const helpDetailText=helpDetailLayout?.querySelector(".tablance-title-text");
+	const detailTextRect=helpDetailText?.getBoundingClientRect();
+	const detailLayoutRect=helpDetailLayout?.getBoundingClientRect();
+	const detailHelpRect=helpDetail.helpTriggerEl.getBoundingClientRect();
 	assert(helpDetailSlot?.closest("td.title")&&helpDetail.helpTriggerEl.tabIndex===-1
 		&&emptyDetailSlot&&!emptyDetailSlot.children.length
 		&&getComputedStyle(helpDetailSlot).width===getComputedStyle(emptyDetailSlot).width,
-		"detail titles reserve the same compact non-navigable help slot with or without help");
+		"detail titles retain the same compact non-navigable help slot with or without help");
+	assert(getComputedStyle(helpDetailSlot).position==="absolute"
+		&&Math.abs(detailLayoutRect.height-detailTextRect.height)<1,
+		"the help slot does not contribute to the one-line label block's natural height");
+	const helpDetailRowHeight=helpDetail.outerContainerEl.getBoundingClientRect().height;
+	helpDetailSlot.style.display="none";
+	const noHelpDetailRowHeight=helpDetail.outerContainerEl.getBoundingClientRect().height;
+	helpDetailSlot.style.removeProperty("display");
+	assert(Math.abs(helpDetailRowHeight-noHelpDetailRowHeight)<1,
+		"a detail row keeps exactly the same natural height when its out-of-flow help slot is present");
+	assert(Math.abs((detailTextRect.top+detailTextRect.bottom)/2-(detailHelpRect.top+detailHelpRect.bottom)/2)<1,
+		"one-line detail help remains centered against its label text");
+	const groupTitleLayout=helpGroup.helpTriggerEl.closest(".tablance-title-layout");
+	const groupTitleText=groupTitleLayout.querySelector(".tablance-title-text");
+	groupTitleText.style.width="42px";
+	groupTitleText.style.lineHeight="14px";
+	const groupTitleTextRect=groupTitleText.getBoundingClientRect();
+	const groupTitleLayoutRect=groupTitleLayout.getBoundingClientRect();
+	const groupHelpRect=helpGroup.helpTriggerEl.getBoundingClientRect();
+	assert(groupTitleTextRect.height>14
+		&&Math.abs(groupTitleLayoutRect.height-groupTitleTextRect.height)<1
+		&&Math.abs((groupTitleTextRect.top+groupTitleTextRect.bottom)/2-(groupHelpRect.top+groupHelpRect.bottom)/2)<1,
+		"wrapped detail help stays out of flow and centers against the complete rendered text block");
 	helpDetail.select();
 	const detailHelpF1=key(helpTable.rootEl,"F1","F1");
 	assert(detailHelpF1.defaultPrevented&&helpTable._helpPopover.textContent==="Detail explanation",

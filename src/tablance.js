@@ -2201,18 +2201,28 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_populateSchemaTitle(container,schemaNode,instanceNode=null,
 		{fallback="",showHelp=true,reserveHelpSlot=false}={}) {
 		const title=schemaNode.title??fallback;
-		if (schemaNode.titleHtml===true)
-			container.innerHTML=String(title);
-		else
-			container.textContent=String(title);
 		const hasTitle=schemaNode.title!=null&&String(schemaNode.title)!=="";
 		if (hasTitle&&reserveHelpSlot) {
-			const slot=container.appendChild(document.createElement("span"));
+			const layout=container.appendChild(document.createElement("span"));
+			layout.className="tablance-title-layout";
+			const text=layout.appendChild(document.createElement("span"));
+			text.className="tablance-title-text";
+			if (schemaNode.titleHtml===true)
+				text.innerHTML=String(title);
+			else
+				text.textContent=String(title);
+			const slot=layout.appendChild(document.createElement("span"));
 			slot.className="tablance-help-slot";
 			if (showHelp&&this._hasHelp(schemaNode))
 				slot.appendChild(this._createHelpTrigger(schemaNode,instanceNode));
-		} else if (hasTitle&&showHelp&&this._hasHelp(schemaNode))
-			container.appendChild(this._createHelpTrigger(schemaNode,instanceNode));
+		} else {
+			if (schemaNode.titleHtml===true)
+				container.innerHTML=String(title);
+			else
+				container.textContent=String(title);
+			if (hasTitle&&showHelp&&this._hasHelp(schemaNode))
+				container.appendChild(this._createHelpTrigger(schemaNode,instanceNode));
+		}
 		return container;
 	}
 

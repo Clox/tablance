@@ -265,22 +265,43 @@
   position: absolute;
   z-index: 2;
   top: 50%;
-  right: 4px;
+  right: 10px;
   width: 20px;
   height: 20px;
   margin-left: 0;
   font-size: 12px;
   transform: translateY(-50%);
 }
+.tablance .tablance-title-layout {
+  position: relative;
+  display: inline-block;
+  box-sizing: border-box;
+  max-width: 100%;
+  padding-right: 18px;
+}
+.tablance .tablance-title-layout > .tablance-title-text {
+  display: block;
+  min-width: 0;
+  text-align: inherit;
+}
+.tablance .tablance-title-layout > .tablance-help-slot {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: 0;
+  margin-left: 0;
+  transform: translateY(-50%);
+}
 .tablance .tablance-help-slot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 14px;
   box-sizing: border-box;
   width: 14px;
   height: 14px;
   margin-left: 4px;
-  vertical-align: -2px;
+  vertical-align: middle;
 }
 .tablance .tablance-help-slot > .tablance-help-trigger {
   margin: 0;

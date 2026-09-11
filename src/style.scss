@@ -265,7 +265,7 @@
 			position: absolute;
 			z-index: 2;
 			top: 50%;
-			right: 4px;
+			right: 10px;
 			width: 20px;
 			height: 20px;
 			margin-left: 0;
@@ -273,15 +273,36 @@
 			transform: translateY(-50%);
 		}
 	}
+	.tablance-title-layout {
+		position: relative;
+		display: inline-block;
+		box-sizing: border-box;
+		max-width: 100%;
+		padding-right: 18px;
+		>.tablance-title-text {
+			display: block;
+			min-width: 0;
+			text-align: inherit;
+		}
+		>.tablance-help-slot {
+			position: absolute;
+			z-index: 1;
+			top: 50%;
+			right: 0;
+			margin-left: 0;
+			transform: translateY(-50%);
+		}
+	}
 	.tablance-help-slot {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
+		flex: 0 0 14px;
 		box-sizing: border-box;
 		width: 14px;
 		height: 14px;
 		margin-left: 4px;
-		vertical-align: -2px;
+		vertical-align: middle;
 		>.tablance-help-trigger {
 			margin: 0;
 			vertical-align: initial;
