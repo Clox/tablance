@@ -75,6 +75,7 @@ const DEFAULT_LANG=Object.freeze({
 	fieldValidationFailedHint:"Press Esc to cancel.",
 	groupValidationFailedHint:"Press Ctrl+Esc to discard changes and back out.",
 	helpLabel:"Help",
+	viewsLabel:"Views",
 });
 let defaultLangOverrides=Object.create(null);
 
@@ -101,6 +102,8 @@ class TablanceBase {
 	_filteredData;//rows after applying search/filter pipeline to _viewData; rendering consumes this dataset
 	_currentViewModeKey="default";//active viewMode key
 	_viewDefinitions=Object.create(null);//lookup table of viewMode predicates keyed by view name
+	_viewSwitcher;//optional segmented toolbar control for schema.views
+	_refreshingView=false;//guards commit flushing while rebuilding the active view pipeline
 	_scrollRowIndex=0;//the index in the #data of the top row in the view
 	_scrollBody;//resides directly inside #container and is the element with the scrollbar. It contains #scrollingDiv
 	_toolbar;
@@ -318,6 +321,9 @@ class TablanceBase {
 	 * 				keyboard can be used for navigating the cell-selection.
 	 * 	The root schema may set help to provide general table help at the right edge of the main header. The same
 	 * 		popover also collects help from main columns. Help accepts the safe content forms described below.
+	 * 	The root schema may set views to an object keyed by view name. Each value may be a filter callback shorthand,
+	 * 		or {title, filter}. Rows for which filter(rowData) returns true belong to that view. An all-rows `default`
+	 * 		view is supplied when omitted. Set main.toolbar.viewSwitcher to true to render these views in the toolbar.
 	 * 	@param	{Object} details This allows for having rows that can be expanded to show more data. An "entry"-object
 	 * 			is expected and some of them can hold other entry-objects so that they can be nested.
 	 * 			Properties that are valid for all types of entries:
@@ -825,22 +831,55 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			for (const [key,viewDef] of Object.entries(schemaViews)) {
 				const filterFn=typeof viewDef==="function"?viewDef:viewDef?.filter;
 				if (typeof filterFn==="function")
-					views[key]={filter: filterFn};
+					views[key]={filter: filterFn,title:typeof viewDef?.title==="string"?viewDef.title:null};
 			}
 		if (!("default" in views))
-			views.default={filter:()=>true};
+			views.default={filter:()=>true,title:null};
 		return views;
 	}
 
+	_rowMatchesView(row,viewModeKey=this._currentViewModeKey) {
+		const rowMeta=row?this._rowMeta?.get(row):null;
+		if (rowMeta?.isNew&&rowMeta.draftViewModeKey===viewModeKey)
+			return true;
+		return !!this._viewDefinitions?.[viewModeKey]?.filter(row);
+	}
+
 	_rebuildViewData() {
-		const predicate=this._viewDefinitions?.[this._currentViewModeKey].filter;
 		const nextView=[];
 		for (let i=0;i<this._sourceData.length;i++) {
 			const row=this._sourceData[i];
-			if (predicate(row))
+			if (this._rowMatchesView(row))
 				nextView.push(row);
 		}
 		this._viewData=nextView;
+	}
+
+	_countCommittedRows(rows) {
+		let count=0;
+		for (const row of rows??[])
+			if (!this._rowMeta?.get(row)?.isNew)
+				count++;
+		return count;
+	}
+
+	getViewState() {
+		return {
+			viewModeKey:this._currentViewModeKey,
+			search:this._filter??"",
+			counts:{
+				source:this._countCommittedRows(this._sourceData),
+				view:this._countCommittedRows(this._viewData),
+				filtered:this._countCommittedRows(this._filteredData),
+			},
+		};
+	}
+
+	_emitViewStateChange(reason) {
+		this._updateViewSwitcher();
+		this.rootEl.dispatchEvent(new CustomEvent("viewstatechange",{
+			detail:{...this.getViewState(),reason},
+		}));
 	}
 
 	/**Reset all per-dataset state to an empty baseline. */
@@ -876,8 +915,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * @param {boolean} highlight If true, clear filter, highlight, and scroll to the first new row.
 	 * @param {boolean} prepend If true, insert rows at the start of the dataset instead of the end. */
 	addData(data, highlight=false, prepend=false) {
-		if (!this._sourceData?.length)
+		if (!this._sourceData?.length) {
+			const pendingMeta=data.map(row=>row?this._rowMeta?.get(row):undefined);
 			this._resetDataState({clearFilter:false});
+			for (let i=0;i<data.length;i++)
+				if (pendingMeta[i]&&data[i])
+					this._rowMeta.set(data[i],pendingMeta[i]);
+		}
 		if (this._onlyDetails)
 			return this._setDataForOnlyDetails(data)
 		const oldLen=this._filteredData.length;
@@ -892,7 +936,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._sourceData=this._sourceData.concat(data);
 		
 		// Fast path: slot only the new rows into the active view instead of rebuilding from scratch.
-		const viewMatches = data.filter(this._viewDefinitions[this._currentViewModeKey].filter);
+		const viewMatches = data.filter(row=>this._rowMatchesView(row));
 		const viewLenBefore=this._viewData.length;
 		this._viewData=prepend?viewMatches.concat(this._viewData):this._viewData.concat(viewMatches);
 		if (this._filter) {
@@ -927,6 +971,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (this._filteredData.indexOf(data[0])!==-1)
 				this.scrollToDataRow(data[0],false);//false for not highlighting, above line does the highlight anyway
 		}
+		this._emitViewStateChange("data");
 	}
 
 	/**Replace the full dataset with a new set of rows (pass an empty array to clear).
@@ -969,7 +1014,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		this._sourceData=nextData;
 		this._rebuildViewData();
-		this._applyFilters(this._filter??"");
+		this._applyFilters(this._filter??"",true,false,"data");
 
 		if (highlight&&this._filteredData.length) {
 			this._highlightRowIndex(0);
@@ -987,14 +1032,40 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		this._currentViewModeKey=viewModeKey;
 		this._rebuildViewData();
-		this._applyFilters(this._filter);
+		this._applyFilters(this._filter,true,false,"view");
+	}
+
+	refreshView(reason="refresh") {
+		if (this._onlyDetails)
+			return this.getViewState();
+		if (this._refreshingView)
+			return this.getViewState();
+		this._refreshingView=true;
+		try {
+			if (!this._flushValidatedEdits())
+				return this.getViewState();
+			const previousRows=[...(this._filteredData??[])];
+			this._rebuildViewData();
+			this._filterCurrentView(this._filter??"");
+			this._sortData();
+			const rowsChanged=previousRows.length!==this._filteredData.length
+				||previousRows.some((row,index)=>row!==this._filteredData[index]);
+			if (rowsChanged)
+				this._refreshAfterViewRowsChanged();
+			else
+				this._refreshRenderedViewRows();
+			this._emitViewStateChange(reason);
+			return this.getViewState();
+		} finally {
+			this._refreshingView=false;
+		}
 	}
 
 	/**Explicitly create and insert a new, uncommitted row. */
 	insertNewRow(rowData={}, options) {
 		const {highlight=true,prepend=true}=options??{};
 		const newRow=rowData?structuredClone(rowData):Object.assign(Object.create(null),{});
-		this._rowMeta.set(newRow,{isNew:true});
+		this._rowMeta.set(newRow,{isNew:true,draftViewModeKey:this._currentViewModeKey});
 		this.addData([newRow],highlight,prepend);
 		return newRow;
 	}
@@ -2053,7 +2124,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				input:{type:"button",text:this.lang.insertRow,onClick:()=>this.insertNewRow()},
 			});
 		}
-		if (!toolbarItems.length&&this._opts.searchbar==false)
+		if (!toolbarItems.length&&!toolbarCfg?.viewSwitcher&&this._opts.searchbar==false)
 			return;
 
 		const bar=this._toolbar=this.rootEl.appendChild(document.createElement("div"));
@@ -2061,6 +2132,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		const btnWrap=bar.appendChild(document.createElement("div"));
 		btnWrap.className="toolbar-left";
+		if (toolbarCfg?.viewSwitcher)
+			this._generateViewSwitcher(btnWrap);
 
 		for (const schemaNode of toolbarItems)
 			this._generateButton(schemaNode,null,btnWrap,null).tabIndex=0;
@@ -2077,7 +2150,31 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_onSearchInput(_e) {
-		this._applyFilters(this._searchInput.value);
+		this._applyFilters(this._searchInput.value,true,false,"search");
+	}
+
+	_generateViewSwitcher(parentEl) {
+		const switcher=this._viewSwitcher=parentEl.appendChild(document.createElement("div"));
+		switcher.className="tablance-view-switcher";
+		switcher.setAttribute("role","group");
+		switcher.setAttribute("aria-label",this.lang.viewsLabel);
+		for (const [key,definition] of Object.entries(this._viewDefinitions)) {
+			const button=switcher.appendChild(document.createElement("button"));
+			button.type="button";
+			button.className="tablance-view-option";
+			button.dataset.viewMode=key;
+			button.textContent=definition.title?.trim()||key;
+			button.addEventListener("click",()=>this.setViewMode(key));
+		}
+		this._updateViewSwitcher();
+	}
+
+	_updateViewSwitcher() {
+		for (const button of this._viewSwitcher?.querySelectorAll(".tablance-view-option")??[]) {
+			const active=button.dataset.viewMode===this._currentViewModeKey;
+			button.classList.toggle("active",active);
+			button.setAttribute("aria-pressed",String(active));
+		}
 	}
 
 	_hasHelp(schemaNode) {
@@ -4514,6 +4611,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				if (rowData)
 					this._rowFilterCache?.delete(rowData);
 				rowMeta.isNew=false;
+				delete rowMeta.draftViewModeKey;
 				// If this payload is the row itself, skip it; child commits still emit after the row create.
 				if (payload.data===rowData)
 					continue;
@@ -4526,6 +4624,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			delete group?._openSnapshot;
 		txn.intents.length=0;
 		this._editTransaction=null;
+		this.refreshView("commit");
 	}
 
 	_closeGroup(groupObject,targetCell=null,suppressTooltip=false) {
@@ -6452,16 +6551,26 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * @param {boolean} includeDetails Whether to include details entries when matching.
 	 * @param {boolean} caseSensitive Whether text matching should be case sensitive.
 	 */
-	_applyFilters(filterString, includeDetails=true,caseSensitive=false) {
-		if (!this._flushValidatedEdits())
-			this._editTransaction=null;
+	_filterCurrentView(filterString,includeDetails=true,caseSensitive=false) {
+		this._filter=filterString;
+		const viewData=this._viewData??[];
+		if (filterString) {
+			const selectOptsCache=this._createSelectOptsCache();
+			const nextData=[];
+			for (let dataIndex=0; dataIndex<viewData.length; dataIndex++) {
+				const dataRow=viewData[dataIndex];
+				if (this._rowSatisfiesFilters(filterString,dataRow,dataIndex,selectOptsCache,
+					includeDetails,caseSensitive))
+					nextData.push(dataRow);
+			}
+			this._filteredData=nextData;
+		} else
+			this._filteredData=viewData;
+	}
 
-		//currently all of the rows will have to be closed. This is because Tablance doesn't have the logic needed now
-		//to recalculate the virtualization based on artibrary rows that are expanded with variable heights. It only
-		//has the logic to recalculate when expanding rows one by one, which are currently in view. This is mostly
-		//it actually needs to generate and render the dom to calculate height. I think in the future it should guess
-		//height of expansions(details) based on the knowledge it already has, and then adjust accordingly when
-		//scrolling. This will also allow for a button in the titlebar that expands all.
+	_refreshAfterViewRowsChanged() {
+		const selectedData=this._cellCursorDataObj;
+		const selectedRowIndex=selectedData?this._filteredData.indexOf(selectedData):-1;
 		this._openDetailsPanes={};
 
 		for (const row of this._sourceData) {
@@ -6473,24 +6582,48 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 		}
 		for (const tr of this._mainTbody.querySelectorAll("tr.details"))
-		 	tr.remove();
-		this._filter=filterString;
-		const viewData=this._viewData??[];
-		if (filterString) {
-			const selectOptsCache=this._createSelectOptsCache();
-			const nextData=[];
-			for (let dataIndex=0; dataIndex<viewData.length; dataIndex++) {
-				const dataRow=viewData[dataIndex];
-				if (this._rowSatisfiesFilters(filterString,dataRow,dataIndex,selectOptsCache))
-					nextData.push(dataRow);
-			}
-			this._filteredData=nextData;
-		} else
-			this._filteredData=viewData;
-		this._sortData();
+			tr.remove();
+
+		if (selectedRowIndex<0) {
+			this._mainRowIndex=this._mainColIndex=null;
+			this._activeDetailsCell=null;
+			this._cellCursorDataObj=null;
+			this._selectedCellState=null;
+			this._setSelectedCellElement(null);
+		} else {
+			this._mainRowIndex=selectedRowIndex;
+			// View changes close details panes. Preserve the selected row and return to its main-table anchor column.
+			this._activeDetailsCell=null;
+		}
 		this._scrollRowIndex=0;
 		this._refreshTable();
 		this._refreshTableSizerNoDetails();
+	}
+
+	_refreshRenderedViewRows() {
+		for (const tr of this._mainTbody.querySelectorAll(":scope>tr:not(.details)")) {
+			const mainIndex=Number(tr.dataset.dataRowIndex);
+			if (!Number.isInteger(mainIndex)||!this._filteredData[mainIndex])
+				continue;
+			this._updateRowValues(tr,mainIndex);
+			this._lookForActiveCellInRow(tr);
+		}
+	}
+
+	_applyFilters(filterString, includeDetails=true,caseSensitive=false,reason="search") {
+		if (!this._flushValidatedEdits())
+			this._editTransaction=null;
+
+		//currently all of the rows will have to be closed. This is because Tablance doesn't have the logic needed now
+		//to recalculate the virtualization based on artibrary rows that are expanded with variable heights. It only
+		//has the logic to recalculate when expanding rows one by one, which are currently in view. This is mostly
+		//it actually needs to generate and render the dom to calculate height. I think in the future it should guess
+		//height of expansions(details) based on the knowledge it already has, and then adjust accordingly when
+		//scrolling. This will also allow for a button in the titlebar that expands all.
+		this._filterCurrentView(filterString,includeDetails,caseSensitive);
+		this._sortData();
+		this._refreshAfterViewRowsChanged();
+		this._emitViewStateChange(reason);
 	}
 
 	/**

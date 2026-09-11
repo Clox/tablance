@@ -72,6 +72,186 @@ try {
 		&&localLangTable._searchInput.placeholder==="Local search",
 		"global language defaults apply to every table while per-instance language keeps priority");
 	Tablance.defaultLang={};
+
+	const implicitViewTable=new Tablance(host(),{
+		views:{flagged:row=>row.flagged},
+		main:{columns:[{dataKey:"name"}]},
+	},true,true,{searchbar:false,ordering:false});
+	implicitViewTable.setData([{name:"plain",flagged:false},{name:"flagged",flagged:true}]);
+	assert(Object.keys(implicitViewTable._viewDefinitions).join(",")==="flagged,default"
+		&&implicitViewTable._viewDefinitions.flagged.title===null
+		&&implicitViewTable.getViewState().counts.view===2,
+		"function-shorthand views retain declaration order and receive an implicit all-rows default view");
+	implicitViewTable.setViewMode("flagged");
+	assert(implicitViewTable.getViewState().counts.view===1,
+		"the existing function-shorthand predicate remains usable through setViewMode");
+
+	const viewRows=[
+		{name:"Beta",active:true},
+		{name:"Alpha",active:true},
+		{name:"Archived",active:false},
+	];
+	const viewCommits=[];
+	let viewNameRenders=0;
+	const viewTable=new Tablance(host(),{
+		views:{
+			default:{title:"Aktiva",filter:row=>row.active===true},
+			all:{title:"Alla",filter:()=>true},
+			archived:row=>row.active===false,
+		},
+		onDataCommit:payload=>viewCommits.push(payload),
+		main:{toolbar:{defaultInsert:true,viewSwitcher:true},columns:[
+			{dataKey:"name",render:({value})=>{ viewNameRenders++; return value; },input:{type:"text"}},
+			{dataKey:"active",input:{type:"text"}},
+		]},
+	},true,true,{ordering:true,lang:{viewsLabel:"Datavyer"}});
+	const viewStateEvents=[];
+	viewTable.rootEl.addEventListener("viewstatechange",event=>viewStateEvents.push(event.detail));
+	viewTable.setData(viewRows);
+	await tick();
+	const viewButtons=[...viewTable._viewSwitcher.querySelectorAll("button")];
+	assert(viewButtons.map(button=>button.textContent).join(",")==="Aktiva,Alla,archived"
+		&&viewTable._viewSwitcher.getAttribute("role")==="group"
+		&&viewTable._viewSwitcher.getAttribute("aria-label")==="Datavyer"
+		&&viewButtons[0].getAttribute("aria-pressed")==="true"
+		&&viewButtons.slice(1).every(button=>button.getAttribute("aria-pressed")==="false")
+		&&viewTable._viewSwitcher.parentElement.classList.contains("toolbar-left")
+		&&viewTable._searchInput.parentElement.classList.contains("toolbar-right"),
+		"viewSwitcher renders titled views in declaration order as an ARIA segmented control on toolbar-left");
+	assert(JSON.stringify(viewTable.getViewState())===JSON.stringify({
+		viewModeKey:"default",search:"",counts:{source:3,view:2,filtered:2},
+	})&&viewStateEvents.at(-1).reason==="data",
+		"getViewState and viewstatechange expose committed source, view, filtered, view-key, and search state");
+	viewTable._searchInput.value="Beta";
+	viewTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
+	assert(viewTable._filteredData.length===1&&viewTable._filteredData[0]===viewRows[0]
+		&&viewTable.getViewState().search==="Beta"&&viewTable.getViewState().counts.filtered===1,
+		"native text search filters within the active view and is represented in public view state");
+	viewButtons[1].click();
+	assert(viewTable._currentViewModeKey==="all"&&viewTable._filteredData.length===1
+		&&viewTable._filteredData[0]===viewRows[0]
+		&&viewButtons[1].getAttribute("aria-pressed")==="true",
+		"switching views reapplies the active text search and updates the segmented control state");
+	const rendersBeforeExplicitRefresh=viewNameRenders;
+	const explicitlyRefreshedState=viewTable.refreshView();
+	assert(explicitlyRefreshedState.viewModeKey==="all"&&explicitlyRefreshedState.search==="Beta"
+		&&viewTable._filteredData[0]===viewRows[0]&&viewNameRenders>rendersBeforeExplicitRefresh
+		&&viewStateEvents.at(-1).reason==="refresh",
+		"refreshView preserves the active key and search while re-sorting and re-rendering the current view");
+	viewTable._searchInput.value="";
+	viewTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
+	viewButtons[0].click();
+	viewTable._headerTr.cells[0].dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true}));
+	assert(viewTable._filteredData.map(row=>row.name).join(",")==="Alpha,Beta",
+		"ordinary main sorting applies to the selected view");
+	viewTable.selectCell(viewRows[0],"name");
+	viewRows[1].active=false;
+	viewTable._queueDataCommit(viewTable._makeCallbackPayload(null,{
+		data:viewRows[1],changes:{active:false},mode:"update",
+	},{schemaNode:viewTable._colSchemaNodes[1],rowData:viewRows[1],mainIndex:0}),null);
+	assert(viewTable._filteredData.length===1&&viewTable._filteredData[0]===viewRows[0]
+		&&viewTable._sortingCols[0]?.index===0&&viewTable._cellCursorDataObj===viewRows[0]
+		&&viewStateEvents.at(-1).reason==="commit",
+		"an accepted main commit refreshes membership while preserving sorting and a surviving logical selection");
+	const draft=viewTable.insertNewRow({name:"Draft",active:false},{highlight:false,prepend:true});
+	assert(viewTable._viewData.includes(draft)&&viewTable._filteredData.includes(draft)
+		&&viewTable.getViewState().counts.source===3&&viewTable.getViewState().counts.view===1
+		&&viewTable.getViewState().counts.filtered===1,
+		"a main-row draft stays editable in its creation view but is excluded from every public count");
+	viewTable.setViewMode("all");
+	viewTable.setViewMode("default");
+	assert(viewTable._filteredData.includes(draft),
+		"an uncommitted row remains in the view where it was created after switching away and back");
+	viewTable._queueDataCommit(viewTable._makeCallbackPayload(null,{
+		data:draft,changes:null,mode:"create",
+	},{schemaNode:viewTable._colSchemaNodes[0],rowData:draft,
+		mainIndex:viewTable._filteredData.indexOf(draft)}),null);
+	assert(!viewTable._filteredData.includes(draft)&&viewTable.getViewState().counts.source===4
+		&&viewTable.getViewState().counts.view===1
+		&&viewCommits.some(payload=>payload.mode==="create"&&payload.data===draft),
+		"committing a draft starts counting it and removes it when it no longer belongs to its creation view");
+	const emptyDraftTable=new Tablance(host(),{
+		views:{default:{title:"Matching",filter:row=>row.matches===true}},
+		main:{toolbar:{defaultInsert:true},columns:[{dataKey:"name",input:{type:"text"}}]},
+	},true,true,{searchbar:false,ordering:false});
+	const firstDraft=emptyDraftTable.insertNewRow({name:"First",matches:false},{highlight:false});
+	assert(emptyDraftTable._filteredData[0]===firstDraft&&emptyDraftTable._rowMeta.get(firstDraft)?.isNew
+		&&emptyDraftTable.getViewState().counts.source===0,
+		"the first draft in an empty dataset retains its creation-view metadata and remains uncounted");
+
+	const nestedRow={name:"Nested",profile:{enabled:true}};
+	const nestedViewTable=new Tablance(host(),{
+		views:{default:{title:"Enabled",filter:row=>row.profile.enabled},all:{title:"All",filter:()=>true}},
+		main:{toolbar:{viewSwitcher:true},columns:[{dataKey:"name"}]},
+		details:{type:"list",entries:[{type:"group",nodeId:"profileGroup",dataPath:"profile",entries:[
+			{dataKey:"enabled",nodeId:"profileEnabled",input:{type:"text"}},
+		]}]},
+	},true,true,{searchbar:false,ordering:false});
+	nestedViewTable.setData([nestedRow]);
+	await tick();
+	const profileGroup=nestedViewTable.getDetailCell(0,"profileGroup");
+	nestedViewTable._openGroup(profileGroup);
+	const profileEnabled=profileGroup.children[0];
+	nestedRow.profile.enabled=false;
+	nestedViewTable._markDirtyField(profileEnabled);
+	assert(nestedViewTable._closeGroup(profileGroup)&&nestedViewTable._filteredData.length===0,
+		"an accepted nested group update automatically refreshes root-row view membership");
+
+	const repeatedCreateRow={name:"Create",items:[{value:"existing"}]};
+	const repeatedCreateTable=new Tablance(host(),{
+		views:{default:{title:"One item",filter:row=>row.items.length===1},all:{title:"All",filter:()=>true}},
+		main:{columns:[{dataKey:"name"}]},details:{type:"list",entries:[
+			{type:"repeated",dataKey:"items",nodeId:"viewItems",create:true,
+				createData:()=>({value:"new"}),entry:{type:"group",entries:[
+					{dataKey:"value",input:{type:"text"}},
+				]}},
+		]},
+	},true,true,{searchbar:false,ordering:false});
+	repeatedCreateTable.setData([repeatedCreateRow]);
+	await tick();
+	const repeatedCreate=repeatedCreateTable.getDetailCell(0,"viewItems");
+	repeatedCreate.createNewEntry();
+	const pendingViewEntry=repeatedCreate.children.find(child=>child.creating);
+	assert(repeatedCreateTable._closeGroup(pendingViewEntry)
+		&&repeatedCreateRow.items.length===2&&repeatedCreateTable._filteredData.length===0,
+		"an accepted repeated creation automatically refreshes root-row view membership");
+
+	const repeatedUpdateRow={name:"Update",items:[{enabled:true}]};
+	const repeatedUpdateTable=new Tablance(host(),{
+		views:{default:{title:"Enabled item",filter:row=>row.items.some(item=>item.enabled)},
+			all:{title:"All",filter:()=>true}},
+		main:{columns:[{dataKey:"name"}]},details:{type:"list",entries:[
+			{type:"repeated",dataKey:"items",nodeId:"updateViewItems",entry:{type:"group",entries:[
+				{dataKey:"enabled",nodeId:"itemEnabled",input:{type:"text"}},
+			]}},
+		]},
+	},true,true,{searchbar:false,ordering:false});
+	repeatedUpdateTable.setData([repeatedUpdateRow]);
+	await tick();
+	const repeatedUpdate=repeatedUpdateTable.getDetailCell(0,"updateViewItems");
+	const updatedViewEntry=repeatedUpdate.children[0];
+	repeatedUpdateTable._openGroup(updatedViewEntry);
+	repeatedUpdateRow.items[0].enabled=false;
+	repeatedUpdateTable._markDirtyField(updatedViewEntry.children[0]);
+	assert(repeatedUpdateTable._closeGroup(updatedViewEntry)&&repeatedUpdateTable._filteredData.length===0,
+		"an accepted update inside repeated data automatically refreshes root-row view membership");
+
+	const repeatedDeleteRow={name:"Delete",items:[{value:"one"},{value:"two"}]};
+	const repeatedDeleteTable=new Tablance(host(),{
+		views:{default:{title:"Two items",filter:row=>row.items.length===2},all:{title:"All",filter:()=>true}},
+		main:{columns:[{dataKey:"name"}]},details:{type:"list",entries:[
+			{type:"repeated",dataKey:"items",nodeId:"deleteViewItems",create:true,
+				entry:{type:"group",entries:[{dataKey:"value",input:{type:"text"}}]}},
+		]},
+	},true,true,{searchbar:false,ordering:false});
+	repeatedDeleteTable.setData([repeatedDeleteRow]);
+	await tick();
+	const repeatedDelete=repeatedDeleteTable.getDetailCell(0,"deleteViewItems");
+	const deletedViewEntry=repeatedDelete.children.find(child=>!child.schemaNode.creator);
+	assert(repeatedDeleteTable._repeatedOnDelete({instanceNode:{parent:{parent:deletedViewEntry}}})===true
+		&&repeatedDeleteRow.items.length===1&&repeatedDeleteTable._filteredData.length===0,
+		"an accepted repeated deletion automatically refreshes root-row view membership");
+
 	let richHelpPayload,repeatedHelpPayload;
 	const helpRows=[{plain:"Plain",rich:"Rich",without:"No help",detail:"Detail",
 		detailWithoutHelp:"No detail help",line:"Line",
