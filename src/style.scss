@@ -899,6 +899,7 @@
 		padding: 4px;
 		>table {
 			box-sizing: border-box;
+			overflow: hidden;
 			&:not(:last-of-type) {
 				margin-bottom: 4px;
 			}

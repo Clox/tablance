@@ -1074,9 +1074,11 @@ try {
 		&&getComputedStyle(historyEntries[0].el).backgroundColor==="rgba(0, 0, 0, 0)"
 		&&getComputedStyle(historyGroup.el).borderTopLeftRadius==="8px"
 		&&getComputedStyle(historyEntries[0].el).borderTopLeftRadius==="8px"
+		&&getComputedStyle(historyGroup.el).overflow==="hidden"
+		&&getComputedStyle(historyEntries[0].el).overflow==="hidden"
 		&&getComputedStyle(historyGroup.el).borderCollapse==="separate"
 		&&getComputedStyle(historyEntries[0].el).borderSpacing==="0px 0px",
-		"details groups use the finalized transparent, solid-border custom inset design at every nesting level");
+		"details groups use the finalized transparent inset design and clip child hover to their rounded shape");
 	const nestedGroupChevron=historyEntries[0].groupChevronEl;
 	const nestedClosedRender=historyEntries[0].el.querySelector("tbody>tr.group-render>td");
 	assert(nestedGroupChevron?.classList.contains("group-chevron")

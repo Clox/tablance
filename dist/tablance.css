@@ -831,6 +831,7 @@
 }
 .tablance .group-cell > table {
   box-sizing: border-box;
+  overflow: hidden;
 }
 .tablance .group-cell > table:not(:last-of-type) {
   margin-bottom: 4px;
