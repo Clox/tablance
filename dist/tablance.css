@@ -1090,31 +1090,40 @@
   display: inline-flex;
   align-items: stretch;
   padding: 2px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #d9e2ef;
   border-radius: 7px;
-  background: #f1f5f9;
+  background: #fff;
 }
 
 .tablance-view-option {
+  display: inline-grid;
   margin: 0;
   padding: 5px 9px;
   border: 0;
   border-radius: 5px;
   background: transparent;
-  color: #475569;
+  color: #334155;
   font: inherit;
   line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
 }
+.tablance-view-option > .tablance-view-option-width,
+.tablance-view-option > .tablance-view-option-label {
+  grid-area: 1/1;
+}
+.tablance-view-option > .tablance-view-option-width {
+  visibility: hidden;
+  font-weight: 600;
+}
 .tablance-view-option:hover {
-  background: rgba(255, 255, 255, 0.65);
-  color: #1e293b;
+  background: #f3f7fc;
+  color: #263b57;
 }
 .tablance-view-option.active {
-  background: #fff;
-  color: #172033;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+  background: #eaf2ff;
+  color: #2563eb;
+  box-shadow: none;
   font-weight: 600;
 }
 .tablance-view-option:focus-visible {

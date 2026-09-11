@@ -110,7 +110,11 @@ try {
 	viewTable.setData(viewRows);
 	await tick();
 	const viewButtons=[...viewTable._viewSwitcher.querySelectorAll("button")];
-	assert(viewButtons.map(button=>button.textContent).join(",")==="Aktiva,Alla,archived"
+	const viewButtonWidths=viewButtons.map(button=>button.getBoundingClientRect().width);
+	assert(viewButtons.map(button=>button.querySelector(".tablance-view-option-label").textContent).join(",")
+		==="Aktiva,Alla,archived"
+		&&viewButtons.every(button=>button.querySelector(".tablance-view-option-width")
+			?.getAttribute("aria-hidden")==="true")
 		&&viewTable._viewSwitcher.getAttribute("role")==="group"
 		&&viewTable._viewSwitcher.getAttribute("aria-label")==="Datavyer"
 		&&viewButtons[0].getAttribute("aria-pressed")==="true"
@@ -130,7 +134,9 @@ try {
 	viewButtons[1].click();
 	assert(viewTable._currentViewModeKey==="all"&&viewTable._filteredData.length===1
 		&&viewTable._filteredData[0]===viewRows[0]
-		&&viewButtons[1].getAttribute("aria-pressed")==="true",
+		&&viewButtons[1].getAttribute("aria-pressed")==="true"
+		&&viewButtons.every((button,index)=>Math.abs(button.getBoundingClientRect().width-viewButtonWidths[index])<.1)
+		&&new Set(viewButtonWidths.map(width=>Math.round(width))).size>1,
 		"switching views reapplies the active text search and updates the segmented control state");
 	const rendersBeforeExplicitRefresh=viewNameRenders;
 	const explicitlyRefreshedState=viewTable.refreshView();

@@ -2163,7 +2163,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			button.type="button";
 			button.className="tablance-view-option";
 			button.dataset.viewMode=key;
-			button.textContent=definition.title?.trim()||key;
+			const title=definition.title?.trim()||key;
+			const widthLabel=button.appendChild(document.createElement("span"));
+			widthLabel.className="tablance-view-option-width";
+			widthLabel.setAttribute("aria-hidden","true");
+			widthLabel.textContent=title;
+			const label=button.appendChild(document.createElement("span"));
+			label.className="tablance-view-option-label";
+			label.textContent=title;
 			button.addEventListener("click",()=>this.setViewMode(key));
 		}
 		this._updateViewSwitcher();
