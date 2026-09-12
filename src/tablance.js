@@ -238,7 +238,6 @@ class TablanceBase {
 	_lineupResizeObserver;
 	_readOnlyFeedbackTarget;
 	_readOnlyFeedbackTimer;
-	_readOnlyFeedbackSizeTimer;
 	_dropdownAlignmentContainer;
 	lang;//object holding strings used in the table for various purposes. See DEFAULT_LANG for default values					
 	_rowMeta;//tracks row metadata (isNew flags, expanded heights, etc.) keyed by row data objects
@@ -4363,16 +4362,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!target)
 			return false;
 		this._clearReadOnlyActivationFeedback();
-		target.classList.remove("read-only-activation-feedback","read-only-activation-feedback-small");
+		target.classList.remove("read-only-activation-feedback");
 		void target.offsetWidth;//Restart one short animation instead of queueing repeated activation attempts.
 		target.classList.add("read-only-activation-feedback");
 		this._readOnlyFeedbackTarget=target;
-		this._readOnlyFeedbackSizeTimer=setTimeout(()=>{
-			if (this._readOnlyFeedbackTarget===target)
-				target.classList.add("read-only-activation-feedback-small");
-		},540);
 		this._readOnlyFeedbackTimer=setTimeout(()=>{
-			target.classList.remove("read-only-activation-feedback","read-only-activation-feedback-small");
+			target.classList.remove("read-only-activation-feedback");
 			if (this._readOnlyFeedbackTarget===target)
 				this._readOnlyFeedbackTarget=null;
 		},640);
@@ -4381,9 +4376,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_clearReadOnlyActivationFeedback() {
 		clearTimeout(this._readOnlyFeedbackTimer);
-		clearTimeout(this._readOnlyFeedbackSizeTimer);
-		this._readOnlyFeedbackTarget?.classList.remove(
-			"read-only-activation-feedback","read-only-activation-feedback-small");
+		this._readOnlyFeedbackTarget?.classList.remove("read-only-activation-feedback");
 		this._readOnlyFeedbackTarget=null;
 	}
 

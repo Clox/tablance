@@ -1113,10 +1113,10 @@ try {
 	assert(lockedPresentationTable._cellCursor.classList.contains("read-only-activation-feedback")
 		&&mainLockFeedback.animationName==="tablance-read-only-lock-feedback"
 		&&mainLockFeedback.animationDuration==="0.62s"
-		&&mainLockFeedback.width==="13px"&&mainLockFeedback.height==="13px"
-		&&Math.abs(lockPivotX-6.5)<.01&&Math.abs(lockPivotY-1.625)<.01
-		&&Math.abs(parseFloat(mainLockFeedback.left)-3.5)<.01
-		&&Math.abs(parseFloat(mainLockFeedback.top)-1.875)<.01
+		&&mainLockFeedback.width==="12px"&&mainLockFeedback.height==="12px"
+		&&Math.abs(lockPivotX-6)<.01&&Math.abs(lockPivotY-1.5)<.01
+		&&Math.abs(parseFloat(mainLockFeedback.left)-4)<.01
+		&&Math.abs(parseFloat(mainLockFeedback.top)-2)<.01
 		&&!lockedPresentationTable._inEditMode&&!lockedPresentationTable._inReadOnlyMode,
 		"blocked main-cell activation animates only its existing lock while remaining non-activatable");
 	const lockAnimation=document.getAnimations().find(animation=>
@@ -1125,15 +1125,6 @@ try {
 		"0deg","28deg","28deg","-28deg","-28deg","28deg","28deg",
 		"-18deg","12deg","-8deg","4deg","0deg",
 	]),"Chrome receives three forceful mechanical stops before the diminishing return swings");
-	lockedPresentationTable._cellCursor.classList.add("read-only-activation-feedback-small");
-	const settledMainLockFeedback=getComputedStyle(lockedPresentationTable._cellCursor,"::before");
-	assert(lockedPresentationTable._cellCursor.classList.contains("read-only-activation-feedback")
-		&&lockedPresentationTable._cellCursor.classList.contains("read-only-activation-feedback-small")
-		&&settledMainLockFeedback.width==="12px"&&settledMainLockFeedback.height==="12px"
-		&&Math.abs(parseFloat(settledMainLockFeedback.left)-4)<.01
-		&&Math.abs(parseFloat(settledMainLockFeedback.top)-2)<.01,
-		"the native lock returns to 12px while its final rotation is still running");
-	lockedPresentationTable._cellCursor.classList.remove("read-only-activation-feedback-small");
 	doubleClickLockedCursor();
 	assert(lockedPresentationTable._cellCursor.classList.contains("read-only-activation-feedback"),
 		"double-click restarts the same main-cell lock feedback without opening a presentation");
@@ -1154,8 +1145,8 @@ try {
 	const lockedDetailFeedback=getComputedStyle(lockedDetailTitle,"::after");
 	assert(lockedDetail.selEl.classList.contains("read-only-activation-feedback")
 		&&lockedDetailFeedback.animationName==="tablance-read-only-lock-feedback"
-		&&lockedDetailFeedback.width==="13px"&&lockedDetailFeedback.height==="13px"
-		&&Math.abs(parseFloat(lockedDetailFeedback.marginLeft)-3.5)<.01
+		&&lockedDetailFeedback.width==="12px"&&lockedDetailFeedback.height==="12px"
+		&&Math.abs(parseFloat(lockedDetailFeedback.marginLeft)-4)<.01
 		&&lockedDetailFeedback.transform==="none",
 		"a blocked titled group field animates its inline lock rather than its cell");
 	for (const activate of [

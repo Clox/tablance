@@ -216,35 +216,12 @@
 }
 .tablance .cell-cursor.read-only.read-only-activation-feedback::before,
 .tablance .tablance-cell-state.read-only.read-only-activation-feedback > span.title::after {
-  width: 13px;
-  height: 13px;
   animation: tablance-read-only-lock-feedback 620ms linear;
-  transform-origin: 6.5px 1.625px;
-}
-.tablance .cell-cursor.read-only.read-only-activation-feedback::before {
-  top: 1.875px;
-  left: 3.5px;
-}
-.tablance .tablance-cell-state.read-only.read-only-activation-feedback > span.title::after {
-  width: 13px !important;
-  height: 13px !important;
-  top: calc(50% - 6.125px) !important;
-  margin-left: 3.5px !important;
-  transform: none !important;
-  transform-origin: 6.5px 1.625px !important;
-}
-.tablance .cell-cursor.read-only.read-only-activation-feedback-small::before {
-  width: 12px;
-  height: 12px;
-  top: 2px;
-  left: 4px;
   transform-origin: 6px 1.5px;
 }
-.tablance .tablance-cell-state.read-only.read-only-activation-feedback-small > span.title::after {
-  width: 12px !important;
-  height: 12px !important;
+.tablance .tablance-cell-state.read-only.read-only-activation-feedback > span.title::after {
   top: calc(50% - 6px) !important;
-  margin-left: 4px !important;
+  transform: none !important;
   transform-origin: 6px 1.5px !important;
 }
 @keyframes tablance-read-only-lock-feedback {
@@ -299,21 +276,7 @@
 @media (prefers-reduced-motion: reduce) {
   .tablance .cell-cursor.read-only.read-only-activation-feedback::before,
   .tablance .tablance-cell-state.read-only.read-only-activation-feedback > span.title::after {
-    width: 12px;
-    height: 12px;
     animation: none;
-    transform-origin: 6px 1.5px;
-  }
-  .tablance .cell-cursor.read-only.read-only-activation-feedback::before {
-    top: 2px;
-    left: 4px;
-  }
-  .tablance .tablance-cell-state.read-only.read-only-activation-feedback > span.title::after {
-    width: 12px !important;
-    height: 12px !important;
-    top: calc(50% - 6px) !important;
-    margin-left: 4px !important;
-    transform-origin: 6px 1.5px !important;
   }
 }
 .tablance .search {
