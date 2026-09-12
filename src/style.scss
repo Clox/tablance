@@ -245,6 +245,43 @@
 	.cell-cursor.details.inline-title-indicator.action-indicator::before {
 		content: none;
 	}
+	.cell-cursor.read-only.read-only-activation-feedback::before,
+	.tablance-cell-state.read-only.read-only-activation-feedback>span.title::after {
+		animation: tablance-read-only-lock-feedback 500ms ease-out;
+		transform-origin: center;
+	}
+	@keyframes tablance-read-only-lock-feedback {
+		0%,100% {
+			scale: 1;
+			rotate: 0deg;
+		}
+		18% {
+			scale: 1.15;
+			rotate: 0deg;
+		}
+		36% {
+			scale: 1.11;
+			rotate: -8deg;
+		}
+		52% {
+			scale: 1.07;
+			rotate: 8deg;
+		}
+		68% {
+			scale: 1.04;
+			rotate: -5deg;
+		}
+		84% {
+			scale: 1.02;
+			rotate: 3deg;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.cell-cursor.read-only.read-only-activation-feedback::before,
+		.tablance-cell-state.read-only.read-only-activation-feedback>span.title::after {
+			animation: none;
+		}
+	}
 	.search {
 		float: right;
 	}

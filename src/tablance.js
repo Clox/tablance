@@ -236,6 +236,8 @@ class TablanceBase {
 	_helpCloseTimer;
 	_helpResizeObserver;
 	_lineupResizeObserver;
+	_readOnlyFeedbackTarget;
+	_readOnlyFeedbackTimer;
 	_dropdownAlignmentContainer;
 	lang;//object holding strings used in the table for various purposes. See DEFAULT_LANG for default values					
 	_rowMeta;//tracks row metadata (isNew flags, expanded heights, etc.) keyed by row data objects
@@ -4313,8 +4315,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_enterCell(e) {
 		this._resetGridPreferredColumn();
-		if (this._inEditMode||this._inReadOnlyMode||!this._selectedCellState?.activatable)
+		if (this._inEditMode||this._inReadOnlyMode)
 			return;
+		if (!this._selectedCellState?.activatable) {
+			if (this._selectedCellState?.kind==="readOnly")
+				this._showReadOnlyActivationFeedback();
+			return;
+		}
 		const selBefore=this._selectedCell;
 		const schemaBefore=this._activeSchemaNode;
 		let doEnter=true;
@@ -4347,6 +4354,30 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				,file:this._openFileEdit}[this._activeSchemaNode.input.type]??this._openTextEdit).call(this,e);
 		} else if (this._activeSchemaNode.type==="group")
 			this._openGroup(this._activeDetailsCell);
+	}
+
+	_showReadOnlyActivationFeedback() {
+		const inlineTitle=this._selectedCell?.querySelector(":scope>span.title");
+		const target=inlineTitle?this._selectedCell:this._cellCursor;
+		if (!target)
+			return false;
+		this._clearReadOnlyActivationFeedback();
+		target.classList.remove("read-only-activation-feedback");
+		void target.offsetWidth;//Restart one short animation instead of queueing repeated activation attempts.
+		target.classList.add("read-only-activation-feedback");
+		this._readOnlyFeedbackTarget=target;
+		this._readOnlyFeedbackTimer=setTimeout(()=>{
+			target.classList.remove("read-only-activation-feedback");
+			if (this._readOnlyFeedbackTarget===target)
+				this._readOnlyFeedbackTarget=null;
+		},550);
+		return true;
+	}
+
+	_clearReadOnlyActivationFeedback() {
+		clearTimeout(this._readOnlyFeedbackTimer);
+		this._readOnlyFeedbackTarget?.classList.remove("read-only-activation-feedback");
+		this._readOnlyFeedbackTarget=null;
 	}
 
 	_getInlineEditorValueEl() {
@@ -6119,6 +6150,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_selectCell(cellEl,schemaNode,dataObj,adjustCursorPosSize=true,instanceNode=null,preserveGridPreferredColumn=false) {
 		this._closeHelp();
+		this._clearReadOnlyActivationFeedback();
 		if (!preserveGridPreferredColumn)
 			this._resetGridPreferredColumn();
 		const cellState=this._getCellState(cellEl,instanceNode);

@@ -1088,13 +1088,16 @@ try {
 		"a selected readOnly cell shows Tablance's native lock without the action indicator");
 	let copied="";
 	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:text=>{copied=text;return Promise.resolve();}}});
-	const lockedPresentationRow={summary:"Ratsit",nested:{source:"Register",synced:"2026-09-01 10:15"}};
+	const lockedPresentationRow={summary:"Ratsit",nested:{source:"Register",synced:"2026-09-01 10:15",
+		gridSource:"Grid register"}};
 	const lockedPresentationTable=new Tablance(host(),{
 		main:{columns:[{title:"Source",dataKey:"summary",nodeId:"lockedMain",render:({value})=>value}]},
 		details:{type:"list",entries:[{type:"group",title:"Metadata",nodeId:"metadataGroup",dataPath:"nested",
 			entries:[{title:"Source",dataKey:"source",nodeId:"lockedDetail",render:({value})=>value},
 				{type:"lineup",entries:[{type:"field",title:"Last synced",dataKey:"synced",
-					nodeId:"lockedLineupDetail",readOnly:true,render:({value})=>value}]}]}]},
+					nodeId:"lockedLineupDetail",readOnly:true,render:({value})=>value}]},
+				{type:"grid",columns:1,entries:[{type:"field",title:"Grid source",dataKey:"gridSource",
+					nodeId:"lockedGridDetail",readOnly:true,render:({value})=>value}]}]}]},
 	},true,true,{searchbar:false});
 	lockedPresentationTable.setData([lockedPresentationRow]);
 	await tick();
@@ -1104,6 +1107,16 @@ try {
 	assert(copied==="Ratsit","whole-cell Ctrl+C remains available for an implicit read-only main cell");
 	const doubleClickLockedCursor=()=>lockedPresentationTable._cellCursor.dispatchEvent(
 		new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
+	key(lockedPresentationTable.rootEl,"Enter","Enter");
+	const mainLockFeedback=getComputedStyle(lockedPresentationTable._cellCursor,"::before");
+	assert(lockedPresentationTable._cellCursor.classList.contains("read-only-activation-feedback")
+		&&mainLockFeedback.animationName==="tablance-read-only-lock-feedback"
+		&&mainLockFeedback.animationDuration==="0.5s"
+		&&!lockedPresentationTable._inEditMode&&!lockedPresentationTable._inReadOnlyMode,
+		"blocked main-cell activation animates only its existing lock while remaining non-activatable");
+	doubleClickLockedCursor();
+	assert(lockedPresentationTable._cellCursor.classList.contains("read-only-activation-feedback"),
+		"double-click restarts the same main-cell lock feedback without opening a presentation");
 	for (const activate of [
 		()=>key(lockedPresentationTable.rootEl,"Enter","Enter"),
 		doubleClickLockedCursor,
@@ -1116,6 +1129,11 @@ try {
 	}
 	const lockedDetail=lockedPresentationTable.getDetailCell(lockedPresentationRow,"lockedDetail");
 	lockedDetail.select();
+	key(lockedPresentationTable.rootEl,"Enter","Enter");
+	assert(lockedDetail.selEl.classList.contains("read-only-activation-feedback")
+		&&getComputedStyle(lockedDetail.selEl.querySelector(":scope>span.title"),"::after").animationName
+			==="tablance-read-only-lock-feedback",
+		"a blocked titled group field animates its inline lock rather than its cell");
 	for (const activate of [
 		()=>key(lockedPresentationTable.rootEl,"Enter","Enter"),
 		doubleClickLockedCursor,
@@ -1129,6 +1147,11 @@ try {
 	}
 	const lockedLineupDetail=lockedPresentationTable.getDetailCell(lockedPresentationRow,"lockedLineupDetail");
 	lockedLineupDetail.select();
+	key(lockedPresentationTable.rootEl,"Enter","Enter");
+	assert(lockedLineupDetail.selEl.classList.contains("read-only-activation-feedback")
+		&&getComputedStyle(lockedLineupDetail.selEl.querySelector(":scope>span.title"),"::after").animationName
+			==="tablance-read-only-lock-feedback",
+		"a blocked Lineup field applies feedback to the inline lock on its canonical cell");
 	for (const activate of [
 		()=>key(lockedPresentationTable.rootEl,"Enter","Enter"),
 		doubleClickLockedCursor,
@@ -1140,6 +1163,14 @@ try {
 			&&lockedLineupDetail.dataObj.synced==="2026-09-01 10:15",
 			"explicit read-only fields inside lineups reject every normal activation path");
 	}
+	const lockedGridDetail=lockedPresentationTable.getDetailCell(lockedPresentationRow,"lockedGridDetail");
+	lockedGridDetail.select();
+	key(lockedPresentationTable.rootEl,"Enter","Enter");
+	assert(lockedGridDetail.selEl.classList.contains("read-only-activation-feedback")
+		&&getComputedStyle(lockedGridDetail.selEl.querySelector(":scope>span.title"),"::after").animationName
+			==="tablance-read-only-lock-feedback"
+		&&!lockedPresentationTable._inEditMode&&!lockedPresentationTable._inReadOnlyMode,
+		"a blocked Grid field receives identical lock-only feedback without changing activation state");
 
 	key(table.rootEl,"c","KeyC",{ctrlKey:true});
 	await Promise.resolve();
@@ -1240,12 +1271,14 @@ try {
 
 	table.selectCell(row,"action");
 	key(table.rootEl,"Enter","Enter");
-	assert(actions===1,"onEnter action activates without an editor");
+	assert(actions===1&&!table._cellCursor.classList.contains("read-only-activation-feedback"),
+		"onEnter action activates without an editor or read-only feedback");
 	table._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
 	assert(actions===2,"double-click preserves the existing text-action activation behavior");
 	table.selectCell(row,"button");
 	key(table.rootEl,"Enter","Enter");
-	assert(buttonActions===1,"button control activates as an action");
+	assert(buttonActions===1&&!table._cellCursor.classList.contains("read-only-activation-feedback"),
+		"button control activates as an action without lock feedback");
 
 	table.selectCell(row,"conditional");
 	row.canEdit=false;
