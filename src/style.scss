@@ -247,39 +247,106 @@
 	}
 	.cell-cursor.read-only.read-only-activation-feedback::before,
 	.tablance-cell-state.read-only.read-only-activation-feedback>span.title::after {
-		animation: tablance-read-only-lock-feedback 560ms ease-out;
-		transform-origin: 6px 1.5px;
+		width: 13px;
+		height: 13px;
+		animation: tablance-read-only-lock-feedback 620ms linear;
+		transform-origin: 6.5px 1.625px;
+	}
+	.cell-cursor.read-only.read-only-activation-feedback::before {
+		top: 1.875px;
+		left: 3.5px;
 	}
 	.tablance-cell-state.read-only.read-only-activation-feedback>span.title::after {
 		// Keep vertical centering out of the glyph's transform pipeline while it rotates. Combining the base
 		// translateY(-50%) with individual rotate moves the visible pivot even when transform-origin is correct.
-		top: calc(50% - 6px) !important;
+		width: 13px !important;
+		height: 13px !important;
+		top: calc(50% - 6.125px) !important;
+		margin-left: 3.5px !important;
 		transform: none !important;
+		transform-origin: 6.5px 1.625px !important;
+	}
+	.cell-cursor.read-only.read-only-activation-feedback-small::before {
+		width: 12px;
+		height: 12px;
+		top: 2px;
+		left: 4px;
+		transform-origin: 6px 1.5px;
+	}
+	.tablance-cell-state.read-only.read-only-activation-feedback-small>span.title::after {
+		width: 12px !important;
+		height: 12px !important;
+		top: calc(50% - 6px) !important;
+		margin-left: 4px !important;
+		transform-origin: 6px 1.5px !important;
 	}
 	@keyframes tablance-read-only-lock-feedback {
-		0%,100% {
+		0% {
 			rotate: 0deg;
+			animation-timing-function: linear;
 		}
-		17% {
+		7% {
+			rotate: 28deg;
+			animation-timing-function: linear;
+		}
+		22% {
+			rotate: 28deg;
+			animation-timing-function: linear;
+		}
+		31% {
+			rotate: -28deg;
+			animation-timing-function: linear;
+		}
+		45% {
+			rotate: -28deg;
+			animation-timing-function: linear;
+		}
+		54% {
+			rotate: 28deg;
+			animation-timing-function: linear;
+		}
+		67% {
+			rotate: 28deg;
+			animation-timing-function: linear;
+		}
+		74% {
 			rotate: -18deg;
+			animation-timing-function: linear;
 		}
-		34% {
-			rotate: 18deg;
+		81% {
+			rotate: 12deg;
+			animation-timing-function: linear;
 		}
-		52% {
-			rotate: -14deg;
+		87% {
+			rotate: -8deg;
+			animation-timing-function: linear;
 		}
-		69% {
-			rotate: 10deg;
+		93% {
+			rotate: 4deg;
+			animation-timing-function: linear;
 		}
-		84% {
-			rotate: -5deg;
+		100% {
+			rotate: 0deg;
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.cell-cursor.read-only.read-only-activation-feedback::before,
 		.tablance-cell-state.read-only.read-only-activation-feedback>span.title::after {
+			width: 12px;
+			height: 12px;
 			animation: none;
+			transform-origin: 6px 1.5px;
+		}
+		.cell-cursor.read-only.read-only-activation-feedback::before {
+			top: 2px;
+			left: 4px;
+		}
+		.tablance-cell-state.read-only.read-only-activation-feedback>span.title::after {
+			width: 12px !important;
+			height: 12px !important;
+			top: calc(50% - 6px) !important;
+			margin-left: 4px !important;
+			transform-origin: 6px 1.5px !important;
 		}
 	}
 	.search {
