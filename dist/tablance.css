@@ -216,33 +216,31 @@
 }
 .tablance .cell-cursor.read-only.read-only-activation-feedback::before,
 .tablance .tablance-cell-state.read-only.read-only-activation-feedback > span.title::after {
-  animation: tablance-read-only-lock-feedback 500ms ease-out;
-  transform-origin: center;
+  animation: tablance-read-only-lock-feedback 560ms ease-out;
+  transform-origin: 6px 1.5px;
+}
+.tablance .tablance-cell-state.read-only.read-only-activation-feedback > span.title::after {
+  top: calc(50% - 6px) !important;
+  transform: none !important;
 }
 @keyframes tablance-read-only-lock-feedback {
   0%, 100% {
-    scale: 1;
     rotate: 0deg;
   }
-  18% {
-    scale: 1.15;
-    rotate: 0deg;
+  17% {
+    rotate: -18deg;
   }
-  36% {
-    scale: 1.11;
-    rotate: -8deg;
+  34% {
+    rotate: 18deg;
   }
   52% {
-    scale: 1.07;
-    rotate: 8deg;
+    rotate: -14deg;
   }
-  68% {
-    scale: 1.04;
-    rotate: -5deg;
+  69% {
+    rotate: 10deg;
   }
   84% {
-    scale: 1.02;
-    rotate: 3deg;
+    rotate: -5deg;
   }
 }
 @media (prefers-reduced-motion: reduce) {

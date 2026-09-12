@@ -1109,9 +1109,11 @@ try {
 		new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
 	key(lockedPresentationTable.rootEl,"Enter","Enter");
 	const mainLockFeedback=getComputedStyle(lockedPresentationTable._cellCursor,"::before");
+	const [lockPivotX,lockPivotY]=mainLockFeedback.transformOrigin.split(" ").map(parseFloat);
 	assert(lockedPresentationTable._cellCursor.classList.contains("read-only-activation-feedback")
 		&&mainLockFeedback.animationName==="tablance-read-only-lock-feedback"
-		&&mainLockFeedback.animationDuration==="0.5s"
+		&&mainLockFeedback.animationDuration==="0.56s"
+		&&Math.abs(lockPivotX-6)<.01&&Math.abs(lockPivotY-1.5)<.01
 		&&!lockedPresentationTable._inEditMode&&!lockedPresentationTable._inReadOnlyMode,
 		"blocked main-cell activation animates only its existing lock while remaining non-activatable");
 	doubleClickLockedCursor();
@@ -1130,9 +1132,11 @@ try {
 	const lockedDetail=lockedPresentationTable.getDetailCell(lockedPresentationRow,"lockedDetail");
 	lockedDetail.select();
 	key(lockedPresentationTable.rootEl,"Enter","Enter");
+	const lockedDetailTitle=lockedDetail.selEl.querySelector(":scope>span.title");
+	const lockedDetailFeedback=getComputedStyle(lockedDetailTitle,"::after");
 	assert(lockedDetail.selEl.classList.contains("read-only-activation-feedback")
-		&&getComputedStyle(lockedDetail.selEl.querySelector(":scope>span.title"),"::after").animationName
-			==="tablance-read-only-lock-feedback",
+		&&lockedDetailFeedback.animationName==="tablance-read-only-lock-feedback"
+		&&lockedDetailFeedback.transform==="none",
 		"a blocked titled group field animates its inline lock rather than its cell");
 	for (const activate of [
 		()=>key(lockedPresentationTable.rootEl,"Enter","Enter"),
