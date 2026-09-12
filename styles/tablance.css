@@ -73,6 +73,9 @@
 .tablance .cell-cursor.details.group-cell-cursor {
   outline-offset: -1px;
 }
+.tablance .cell-cursor.delete-confirmation-action {
+  outline: none;
+}
 .tablance .cell-cursor.read-only-mode {
   cursor: text;
 }
@@ -749,17 +752,88 @@
 .tablance .details .lineup.lineup-metadata > span > div.value {
   font-size: 0.94em;
 }
+.tablance .details .lineup.delete-controls {
+  align-items: center;
+  gap: 4px;
+}
+.tablance .details .lineup.delete-controls > span {
+  min-width: 0;
+  padding: 2px;
+}
+.tablance .details .lineup.delete-controls > span > div {
+  padding: 0;
+}
+.tablance .details .lineup.delete-controls button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  min-height: 31px;
+  padding: 4px 10px;
+  border: 1px solid #CBD5E1;
+  border-radius: 5px;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.tablance .details .lineup.delete-controls .delete button::before {
+  display: block;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  content: "";
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M8 6V4h8v2'/%3E%3Cpath d='M19 6l-1 14H6L5 6'/%3E%3Cpath d='M10 11v5'/%3E%3Cpath d='M14 11v5'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M8 6V4h8v2'/%3E%3Cpath d='M19 6l-1 14H6L5 6'/%3E%3Cpath d='M10 11v5'/%3E%3Cpath d='M14 11v5'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+.tablance .details .lineup.delete-controls .delete button:hover, .tablance .details .lineup.delete-controls .delete button:focus-visible {
+  border-color: #DC2626;
+  background: #FEF2F2;
+  color: #B91C1C;
+}
 .tablance .details .lineup.delete-controls:not(.delete-confirming) > .yes, .tablance .details .lineup.delete-controls:not(.delete-confirming) > .no {
   display: none;
 }
-.tablance .details .lineup.delete-controls.delete-confirming > :not(.yes):not(.no) {
+.tablance .details .lineup.delete-controls.delete-confirming > :not(.yes):not(.no):not(.delete-confirmation-prompt) {
   display: none;
 }
-.tablance .details .lineup.delete-controls .no {
-  margin-right: -2em;
+.tablance .details .lineup.delete-controls > .delete-confirmation-prompt {
+  display: none;
 }
-.tablance .details .lineup.delete-controls .no span.title {
-  color: red;
+.tablance .details .lineup.delete-controls.delete-confirming {
+  gap: 6px;
+}
+.tablance .details .lineup.delete-controls.delete-confirming > .delete-confirmation-prompt {
+  display: block;
+  align-self: center;
+  box-sizing: border-box;
+  padding: 2px;
+  color: var(--tablance-text-color);
+  font-weight: 500;
+  line-height: 1.2;
+}
+.tablance .details .lineup.delete-controls.delete-confirming > .no {
+  display: block;
+}
+.tablance .details .lineup.delete-controls.delete-confirming > .no.tablance-active-cell button,
+.tablance .details .lineup.delete-controls.delete-confirming > .yes.tablance-active-cell button {
+  outline: 2px solid var(--tablance-accent-color);
+  outline-offset: 1px;
+}
+.tablance .details .lineup.delete-controls.delete-confirming > .yes button {
+  border-color: #DC2626;
+  background: #DC2626;
+  color: #FFFFFF;
+  font-weight: 600;
+}
+.tablance .details .lineup.delete-controls.delete-confirming > .yes button:hover, .tablance .details .lineup.delete-controls.delete-confirming > .yes button:focus-visible {
+  border-color: #B91C1C;
+  background: #B91C1C;
 }
 .tablance .details table.details-group > tbody > tr > td {
   padding: 2px 0 2px 4px;

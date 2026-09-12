@@ -60,9 +60,9 @@ const DEFAULT_LANG=Object.freeze({
 	fileDropToUpload:"Drop to upload",
 	filterPlaceholder:"Search",
 	delete:"Delete",
-	deleteAreYouSure:"Are you sure?",
-	deleteAreYouSureYes:"Yes",
-	deleteAreYouSureNo:"No",
+	deleteAreYouSure:"Delete this entry?",
+	deleteAreYouSureYes:"Delete",
+	deleteAreYouSureNo:"Cancel",
 	datePlaceholder:"YYYY-MM-DD",
 	selectNoResultsFound:"No results found",
 	selectEmpty:"<None>",
@@ -633,11 +633,11 @@ class TablanceBase {
 	 * 					May also be set via opts->lang->insertEntry
 	 * 				deleteText String used if "create" is true. the text of the deletion-button. Default is "Delete"
 	 * 					can also be set via param opts->lang->delete
-	 * 				deleteAreYouSureText String Used if "create" is true. Text above yes/no-btns.
-	 * 					Default is "Are you sure?". Can also be set via param opts->lang->deleteAreYouSure
+	 * 				deleteAreYouSureText String Used if "create" is true. Text in the inline delete confirmation.
+	 * 					Default is "Delete this entry?". Can also be set via param opts->lang->deleteAreYouSure
 	 * 				areYouSureYesText String Used if "create" is true. Text of confirm-button for delete.
-	 * 					Default is "Yes". Can also be set via param opts->lang->deleteAreYouSureYes
-	 * 				areYouSureNoText String Used if "create" is true. Text of cancel-button for delete. Default is "No"
+	 * 					Default is "Delete". Can also be set via param opts->lang->deleteAreYouSureYes
+	 * 				areYouSureNoText String Used if "create" is true. Text of cancel-button for delete. Default is "Cancel"
 	 * 					Can also be set via param opts->lang->deleteAreYouSureNo
 	 * 				bulkEdit Bool If set to true then this will appear in the bulk-edit-area which allows editing
 	 * 					repeated data for multiple data-rows at once. Applying the data does not append the data but it
@@ -3310,18 +3310,19 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	/** Build the delete controls schema snippet for repeated/file entries. */
-	_buildDeleteControls(schemaNode) {
+	_buildDeleteControls(schemaNode,fallbackSchemaNode=null) {
+		const setting=key=>schemaNode?.[key]??fallbackSchemaNode?.[key];
 		return {type:"lineup",variant:"controls",cssClass:"delete-controls"
+			,deleteConfirmationText:setting("deleteAreYouSureText")??this.lang.deleteAreYouSure
 			,onBlur:cel=>cel.selEl.querySelector(".lineup").classList.remove("delete-confirming")
 			,entries:[{type:"field",input:{type:"button",
-				text:schemaNode.deleteText??this.lang.delete
+				text:setting("deleteText")??this.lang.delete
 				,onClick:this._beginDeleteRepeated.bind(this)},cssClass:"delete"},
 			{type:"field",input:{type:"button"
-				,text:schemaNode.areYouSureNoText??this.lang.deleteAreYouSureNo
-				,onClick:this._cancelDelete.bind(this)},cssClass:"no"
-				,title:schemaNode.deleteAreYouSureText??this.lang.deleteAreYouSure},
+				,text:setting("areYouSureNoText")??this.lang.deleteAreYouSureNo
+				,onClick:this._cancelDelete.bind(this)},cssClass:"no"},
 			{type:"field",input:{type:"button"
-				,text:schemaNode.areYouSureYesText??this.lang.deleteAreYouSureYes
+				,text:setting("areYouSureYesText")??this.lang.deleteAreYouSureYes
 				,onClick:this._fileOnDelete},cssClass:"yes"}]};
 	}
 
@@ -3390,14 +3391,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._selectDetailsCell(instanceNode.parent.children[0]);
 	}
 
-	_wrapRepeatedEntryForDeletion(entrySchemaNode) {
+	_wrapRepeatedEntryForDeletion(entrySchemaNode,repeatedSchemaNode=null) {
 		if (entrySchemaNode?.creator)
 			return entrySchemaNode;
 		if (entrySchemaNode?.type==="group")
-			return this._schemaCopyWithDeleteButton(entrySchemaNode,this._repeatedOnDelete);
+			return this._schemaCopyWithDeleteButton(entrySchemaNode,this._repeatedOnDelete,repeatedSchemaNode);
 		const rawEntry=entrySchemaNode?.[SCHEMA_WRAPPER_MARKER]?entrySchemaNode.raw:entrySchemaNode;
 		const rawGroup={type:"group",entries:[rawEntry],origin:"internal",isImplicit:true,entryAutoGroup:true};
-		const wrappedGroup=this._schemaCopyWithDeleteButton(rawGroup,this._repeatedOnDelete);
+		const wrappedGroup=this._schemaCopyWithDeleteButton(rawGroup,this._repeatedOnDelete,repeatedSchemaNode);
 		wrappedGroup.isImplicit=true;
 		if (!wrappedGroup.parent&&entrySchemaNode?.parent)
 			wrappedGroup.parent=entrySchemaNode.parent;
@@ -3408,8 +3409,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return wrappedGroup;
 	}
 
-	_schemaCopyWithDeleteButton(schemaNode,deleteHandler) {
-		const deleteControls=this._buildDeleteControls(schemaNode);
+	_schemaCopyWithDeleteButton(schemaNode,deleteHandler,deleteConfigSchemaNode=null) {
+		const deleteControls=this._buildDeleteControls(deleteConfigSchemaNode??schemaNode,schemaNode);
 		deleteControls.entries[2].input.onClick=deleteHandler;
 		const rawNode=schemaNode?.[SCHEMA_WRAPPER_MARKER]?schemaNode.raw:schemaNode;
 		const parentWrapped=schemaNode?.[SCHEMA_WRAPPER_MARKER]?schemaNode.parent:null;
@@ -3574,6 +3575,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		instanceNode.lineupVariant=variant;
 		instanceNode.containerEl.classList.add("lineup",`lineup-${variant}`,wrap?"lineup-wrap":"lineup-nowrap","collection",
 			...lineupSchemaNode.cssClass?.split(" ")??[]);
+		if (lineupSchemaNode.deleteConfirmationText!=null) {
+			const prompt=instanceNode.containerEl.appendChild(document.createElement("span"));
+			prompt.className="delete-confirmation-prompt";
+			prompt.textContent=String(lineupSchemaNode.deleteConfirmationText);
+		}
 		return this._generateDetailsCollection(lineupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
 	}
 
@@ -4807,7 +4813,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (let root=repeated.parent; root.parent; root=root.parent,rowIndex=root.rowIndex);//get main-index
 		let entryNode=entrySchemaNode;
 		if (repeated.schemaNode.create&&!entrySchemaNode.creator)
-			entryNode=this._wrapRepeatedEntryForDeletion(entrySchemaNode);
+			entryNode=this._wrapRepeatedEntryForDeletion(entrySchemaNode,repeated.schemaNode);
 		const newObj=this._generateCollectionItem(entryNode,rowIndex,repeated,repeated.path,data,indexOfNew,creating);
 		if (creating) {
 			newObj.creating=true;//creating means it hasn't been commited yet.
@@ -6049,6 +6055,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._cellCursor.classList.toggle("read-only",cellState?.kind==="readOnly");
 		this._cellCursor.classList.toggle("disabled",cellState?.kind==="disabled");
 		this._cellCursor.classList.toggle("action-cell",cellState?.kind==="action");
+		this._cellCursor.classList.toggle("delete-confirmation-action",
+			["no","yes"].includes(schemaNode.cssClass));
 		this._cellCursor.classList.toggle("action-indicator",this._showsActionIndicator(cellState,schemaNode));
 		(this._scrollingContent??this.rootEl).appendChild(this._cellCursor);
 		this._setSelectedCellElement(cellEl);

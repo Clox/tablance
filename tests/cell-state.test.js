@@ -764,6 +764,7 @@ try {
 	const guardedDeleteTable=new Tablance(host(),{
 		onDataCommit:({mode})=>mode==="delete"&&deleteCommits++,
 		details:{type:"list",entries:[{type:"repeated",dataKey:"items",nodeId:"items",create:true,
+			deleteAreYouSureText:"Remove this candidate?",
 			beforeDelete:({deletedDataItem,remainingData,preventDelete})=>{
 				beforeDeleteCalls++;
 				assert(deletedDataItem===repeatedRows[1]&&remainingData.length===1&&remainingData[0]===repeatedRows[0],
@@ -780,6 +781,56 @@ try {
 	await tick();
 	const guardedRepeated=guardedDeleteTable.getDetailCell(0,"items");
 	const guardedEntry=guardedRepeated.children.find(child=>child.dataObj===repeatedRows[1]);
+	guardedDeleteTable._openGroup(guardedEntry);
+	const renderedDeleteButton=guardedEntry.el.querySelector(".delete-controls .delete button");
+	const guardedDeleteInstance=guardedDeleteTable._resolvePointerDetailsInstance(
+		renderedDeleteButton.closest("[data-path]"));
+	const guardedDeleteControls=guardedDeleteInstance.parent.containerEl;
+	const guardedDeleteButton=guardedDeleteControls.querySelector(".delete button");
+	const guardedCancelButton=guardedDeleteControls.querySelector(".no button");
+	const guardedConfirmButton=guardedDeleteControls.querySelector(".yes button");
+	const guardedDeleteButtonStyle=getComputedStyle(guardedDeleteButton);
+	const guardedDeleteIconStyle=getComputedStyle(guardedDeleteButton,"::before");
+	assert(guardedDeleteButton.textContent==="Delete"
+		&&guardedDeleteButtonStyle.appearance==="none"
+		&&guardedDeleteButtonStyle.minHeight==="31px"
+		&&guardedDeleteButtonStyle.paddingLeft==="10px"
+		&&guardedDeleteButtonStyle.paddingRight==="10px"
+		&&guardedDeleteButtonStyle.gap==="6px"
+		&&guardedDeleteIconStyle.width==="16px"&&guardedDeleteIconStyle.height==="16px"
+		&&(guardedDeleteIconStyle.maskImage!=="none"||guardedDeleteIconStyle.webkitMaskImage!=="none")
+		&&getComputedStyle(guardedDeleteControls.querySelector(".no")).display==="none"
+		&&getComputedStyle(guardedDeleteControls.querySelector(".yes")).display==="none",
+		"repeated entries expose a compact neutral delete action with an outline trash icon");
+	assert(guardedDeleteInstance?.schemaNode.cssClass==="delete",
+		"the rendered delete action remains bound to its logical field instance");
+	guardedDeleteTable._beginDeleteRepeated({instanceNode:guardedDeleteInstance});
+	assert(guardedDeleteInstance.parent.containerEl.classList.contains("delete-confirming"),
+		"the restyled delete action enters the existing confirmation state");
+	const guardedDeletePrompt=guardedDeleteControls.querySelector(":scope>.delete-confirmation-prompt");
+	const guardedDeleteCopy=[guardedDeletePrompt.textContent,
+		guardedCancelButton.textContent,guardedConfirmButton.textContent];
+	assert(guardedDeleteTable.lang.deleteAreYouSure==="Delete this entry?"
+		&&guardedDeleteCopy.join("|")==="Remove this candidate?|Cancel|Delete",
+		`delete confirmation uses its repeated-level question override and generic action labels (${guardedDeleteCopy.join("|")})`);
+	assert(getComputedStyle(guardedDeleteControls).flexWrap==="wrap"
+		&&getComputedStyle(guardedDeletePrompt).display==="block"
+		&&!guardedDeletePrompt.hasAttribute("data-path")
+		&&getComputedStyle(guardedDeleteControls.querySelector(".no")).display==="block"
+		&&getComputedStyle(guardedDeleteControls.querySelector(".no")).marginRight==="0px",
+		"delete confirmation forms one responsive row with a non-navigable prompt and no positional offsets");
+	assert(guardedDeleteTable._activeDetailsCell?.schemaNode.cssClass==="no"
+		&&guardedDeleteTable._cellCursor.classList.contains("delete-confirmation-action")
+		&&getComputedStyle(guardedDeleteTable._cellCursor).outlineStyle==="none"
+		&&getComputedStyle(guardedCancelButton).outlineStyle==="solid",
+		"confirmation selection belongs to the action button rather than outlining the prompt as a cell");
+	assert(getComputedStyle(guardedConfirmButton).backgroundColor==="rgb(220, 38, 38)",
+		"the compact confirming delete action receives explicit destructive styling");
+	const guardedCancelInstance=guardedDeleteTable._resolvePointerDetailsInstance(
+		guardedCancelButton.closest("[data-path]"));
+	guardedDeleteTable._cancelDelete({instanceNode:guardedCancelInstance});
+	assert(!guardedDeleteControls.classList.contains("delete-confirming"),
+		"the restyled cancel action retains the existing confirmation semantics");
 	guardedEntry.select();
 	const deleteControl={parent:{parent:guardedEntry}};
 	assert(guardedDeleteTable._repeatedOnDelete({instanceNode:deleteControl})===false
