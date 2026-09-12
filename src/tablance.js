@@ -3053,6 +3053,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				e.preventDefault();
 				this._moveCellCursor(e.shiftKey?-1:1,0,e);
 			break; case "Escape":
+				if (this._cancelActiveDeleteConfirmation()) {
+					e.preventDefault();
+					e.stopPropagation();
+					return;
+				}
 				if (e.ctrlKey) {
 					e.preventDefault();
 					e.stopPropagation();
@@ -3389,6 +3394,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_cancelDelete({instanceNode}) {
 			instanceNode.parent.containerEl.classList.remove("delete-confirming");
 			this._selectDetailsCell(instanceNode.parent.children[0]);
+	}
+
+	_cancelActiveDeleteConfirmation() {
+		const controls=this._activeDetailsCell?.parent;
+		if (!controls?.containerEl?.classList.contains("delete-confirming")
+			||!controls.containerEl.classList.contains("delete-controls"))
+			return false;
+		this._cancelDelete({instanceNode:this._activeDetailsCell});
+		return true;
 	}
 
 	_wrapRepeatedEntryForDeletion(entrySchemaNode,repeatedSchemaNode=null) {

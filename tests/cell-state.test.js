@@ -826,11 +826,28 @@ try {
 		"confirmation selection belongs to the action button rather than outlining the prompt as a cell");
 	assert(getComputedStyle(guardedConfirmButton).backgroundColor==="rgb(220, 38, 38)",
 		"the compact confirming delete action receives explicit destructive styling");
-	const guardedCancelInstance=guardedDeleteTable._resolvePointerDetailsInstance(
-		guardedCancelButton.closest("[data-path]"));
-	guardedDeleteTable._cancelDelete({instanceNode:guardedCancelInstance});
-	assert(!guardedDeleteControls.classList.contains("delete-confirming"),
-		"the restyled cancel action retains the existing confirmation semantics");
+	const guardedConfirmInstance=guardedDeleteTable._resolvePointerDetailsInstance(
+		guardedConfirmButton.closest("[data-path]"));
+	let escapedDeleteKeyBubbled=false;
+	const observeEscapedDeleteKey=()=>escapedDeleteKeyBubbled=true;
+	document.addEventListener("keydown",observeEscapedDeleteKey);
+	const cancelSelectedEscape=key(guardedDeleteTable.rootEl,"Escape","Escape");
+	document.removeEventListener("keydown",observeEscapedDeleteKey);
+	assert(cancelSelectedEscape.defaultPrevented&&!escapedDeleteKeyBubbled
+		&&!guardedDeleteControls.classList.contains("delete-confirming")
+		&&guardedEntry.el.classList.contains("open"),
+		"Escape on the selected cancel action consumes the key and cancels only delete confirmation");
+	guardedDeleteTable._beginDeleteRepeated({instanceNode:guardedDeleteInstance});
+	guardedDeleteTable._selectDetailsCell(guardedConfirmInstance);
+	const confirmSelectedEscape=key(guardedDeleteTable.rootEl,"Escape","Escape");
+	assert(confirmSelectedEscape.defaultPrevented
+		&&!guardedDeleteControls.classList.contains("delete-confirming")
+		&&guardedEntry.el.classList.contains("open")
+		&&guardedDeleteTable._activeDetailsCell===guardedDeleteInstance,
+		"Escape on the selected confirming action has the same cancel semantics and leaves the entry open");
+	key(guardedDeleteTable.rootEl,"Escape","Escape");
+	assert(!guardedEntry.el.classList.contains("open")&&guardedDeleteTable._activeDetailsCell===guardedEntry,
+		"a separate subsequent Escape resumes the existing group-close behavior");
 	guardedEntry.select();
 	const deleteControl={parent:{parent:guardedEntry}};
 	assert(guardedDeleteTable._repeatedOnDelete({instanceNode:deleteControl})===false
