@@ -797,7 +797,7 @@ try {
 		&&guardedDeleteButtonStyle.paddingLeft==="10px"
 		&&guardedDeleteButtonStyle.paddingRight==="10px"
 		&&guardedDeleteButtonStyle.gap==="6px"
-		&&guardedDeleteIconStyle.width==="16px"&&guardedDeleteIconStyle.height==="16px"
+		&&guardedDeleteIconStyle.width==="18px"&&guardedDeleteIconStyle.height==="18px"
 		&&(guardedDeleteIconStyle.maskImage!=="none"||guardedDeleteIconStyle.webkitMaskImage!=="none")
 		&&getComputedStyle(guardedDeleteControls.querySelector(".no")).display==="none"
 		&&getComputedStyle(guardedDeleteControls.querySelector(".yes")).display==="none",
@@ -1163,10 +1163,14 @@ try {
 	const lockedLineupDetail=lockedPresentationTable.getDetailCell(lockedPresentationRow,"lockedLineupDetail");
 	lockedLineupDetail.select();
 	key(lockedPresentationTable.rootEl,"Enter","Enter");
+	const lockedLineupTitle=lockedLineupDetail.selEl.querySelector(":scope>span.title");
 	assert(lockedLineupDetail.selEl.classList.contains("read-only-activation-feedback")
-		&&getComputedStyle(lockedLineupDetail.selEl.querySelector(":scope>span.title"),"::after").animationName
+		&&getComputedStyle(lockedLineupTitle,"::after").animationName
 			==="tablance-read-only-lock-feedback",
 		"a blocked Lineup field applies feedback to the inline lock on its canonical cell");
+	assert(getComputedStyle(lockedLineupTitle).paddingRight==="16px"
+		&&!lockedLineupTitle.querySelector(".tablance-help-trigger"),
+		"a Lineup label without help still reserves its lock inside the title box");
 	for (const activate of [
 		()=>key(lockedPresentationTable.rootEl,"Enter","Enter"),
 		doubleClickLockedCursor,
@@ -1639,6 +1643,8 @@ try {
 			{type:"field",title:"Forced field one",dataKey:"source",nodeId:"forcedFieldOne"},
 			{type:"field",title:"Forced field two",dataKey:"synced",nodeId:"forcedFieldTwo"},
 			{type:"field",title:"Forced action",dataKey:"source",nodeId:"forcedAction",onEnter:()=>{}},
+			{type:"field",title:"Help action",help:"Action help",dataKey:"source",
+				nodeId:"forcedHelpAction",onEnter:()=>{}},
 		]},
 		{type:"lineup",variant:"metadata",entries:[
 			{type:"field",title:"Forced metadata",dataKey:"street",nodeId:"forcedMetadata",
@@ -1656,6 +1662,7 @@ try {
 	const forcedFieldOne=lineupVariantTable.getDetailCell(0,"forcedFieldOne");
 	const forcedFieldTwo=lineupVariantTable.getDetailCell(0,"forcedFieldTwo");
 	const forcedAction=lineupVariantTable.getDetailCell(0,"forcedAction");
+	const forcedHelpAction=lineupVariantTable.getDetailCell(0,"forcedHelpAction");
 	const forcedMetadata=lineupVariantTable.getDetailCell(0,"forcedMetadata");
 	assert(variantStreet.parent.containerEl.classList.contains("lineup-fields")
 		&&variantSource.parent.containerEl.classList.contains("lineup-metadata")
@@ -1686,6 +1693,11 @@ try {
 		&&streetTitleRect.top>=streetCursorRect.top&&streetTitleRect.bottom<=streetCursorRect.bottom,
 		"a lineup cursor covers the entire logical cell including its title and padding");
 	const sourceTitle=variantSource.outerContainerEl.querySelector(":scope>span.title");
+	const sourceTitleStyle=getComputedStyle(sourceTitle);
+	assert(sourceTitleStyle.paddingRight==="16px"
+		&&getComputedStyle(sourceTitle,"::after").right==="0px"
+		&&variantSource.helpTriggerEl?.closest(".tablance-title-layout"),
+		"a Lineup title with help permanently reserves its inline lock inside its own cellbox");
 	const sourceLayoutBefore={
 		cellHeight:variantSource.outerContainerEl.getBoundingClientRect().height,
 		titleLeft:sourceTitle.getBoundingClientRect().left,
@@ -1703,18 +1715,28 @@ try {
 		titleHeight:sourceTitle.getBoundingClientRect().height,
 	};
 	assert(selectedSourceIndicator.content==='""'&&selectedSourceIndicator.position==="absolute"
-		&&Math.abs(parseFloat(selectedSourceIndicator.left)-sourceTitle.getBoundingClientRect().width)<1
+		&&selectedSourceIndicator.right==="0px"
+		&&sourceTitle.getBoundingClientRect().right
+			<=variantSource.outerContainerEl.getBoundingClientRect().right+.5
 		&&getComputedStyle(lineupVariantTable._cellCursor,"::before").content==="none"
 		&&JSON.stringify(sourceLayoutSelected)===JSON.stringify(sourceLayoutBefore),
-		"a selected Lineup lock sits directly after the stable title structure without moving the label or cell");
+		"a selected Lineup lock sits inside the stable title structure without moving the label or cell");
 	key(lineupVariantTable.rootEl,"Enter","Enter");
 	assert(lineupVariantTable._inReadOnlyMode&&getComputedStyle(sourceTitle,"::after").content==='""',
 		"the inline Lineup lock remains visible during an active read-only presentation");
 	key(lineupVariantTable.rootEl,"Escape","Escape");
 	forcedAction.select();
-	assert(getComputedStyle(forcedAction.outerContainerEl.querySelector(":scope>span.title"),"::after").content==='""'
+	const forcedActionTitle=forcedAction.outerContainerEl.querySelector(":scope>span.title");
+	const forcedHelpActionTitle=forcedHelpAction.outerContainerEl.querySelector(":scope>span.title");
+	assert(getComputedStyle(forcedActionTitle,"::after").content==='""'
+		&&getComputedStyle(forcedActionTitle).paddingRight==="16px"
 		&&getComputedStyle(lineupVariantTable._cellCursor,"::before").content==="none",
-		"a selected textlike Lineup action uses the same inline title indicator presentation");
+		"a label-only Lineup action reserves and uses the same inline indicator presentation");
+	forcedHelpAction.select();
+	assert(getComputedStyle(forcedHelpActionTitle,"::after").content==='""'
+		&&getComputedStyle(forcedHelpActionTitle).paddingRight==="16px"
+		&&forcedHelpAction.helpTriggerEl?.closest(".tablance-title-layout"),
+		"a Lineup action with help keeps both affordances inside its stable title width");
 	variantSource.select();
 	variantStreet.outerContainerEl.querySelector(":scope>span.title").dispatchEvent(
 		new MouseEvent("mousedown",{bubbles:true,button:0}));

@@ -865,6 +865,15 @@
 			}
 			>span:has(>div.value:not(.group-cell)) {
 				@include inline-title-state-indicators;
+				&:is(.read-only,.action-indicator)>span.title {
+					box-sizing: border-box;
+					padding-right: 16px;
+					&::after {
+						right: 0;
+						left: auto;
+						margin-left: 0;
+					}
+				}
 			}
 			>.lineup-row-extension {
 				position: absolute;
@@ -956,9 +965,9 @@
 				.delete button {
 					&::before {
 						display: block;
-						flex: 0 0 16px;
-						width: 16px;
-						height: 16px;
+						flex: 0 0 18px;
+						width: 18px;
+						height: 18px;
 						background-color: currentColor;
 						content: "";
 						-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M8 6V4h8v2'/%3E%3Cpath d='M19 6l-1 14H6L5 6'/%3E%3Cpath d='M10 11v5'/%3E%3Cpath d='M14 11v5'/%3E%3C/svg%3E") center / contain no-repeat;
