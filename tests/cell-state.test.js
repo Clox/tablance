@@ -218,6 +218,8 @@ try {
 	const repeatedCreate=repeatedCreateTable.getDetailCell(0,"viewItems");
 	repeatedCreate.createNewEntry();
 	const pendingViewEntry=repeatedCreate.children.find(child=>child.creating);
+	pendingViewEntry.dataObj.value="created";
+	repeatedCreateTable._markDirtyField(pendingViewEntry.children[0]);
 	assert(repeatedCreateTable._closeGroup(pendingViewEntry)
 		&&repeatedCreateRow.items.length===2&&repeatedCreateTable._filteredData.length===0,
 		"an accepted repeated creation automatically refreshes root-row view membership");
@@ -938,6 +940,8 @@ try {
 	sortedRepeated.createNewEntry();
 	const pendingSortedEntry=sortedRepeated.children.find(entry=>entry.creating);
 	const pendingSortedElement=pendingSortedEntry.outerContainerEl;
+	pendingSortedEntry.dataObj.label="created";
+	sortedIdentityTable._markDirtyField(pendingSortedEntry.children[1]);
 	assert(!collectionState.hidden&&collectionEdit.cellState.kind==="editable"
 		&&JSON.stringify(sortedBacking.map(entry=>entry.id))===JSON.stringify([1,2]),
 		"an open repeated draft neither mutates backing data nor invalidates committed collection dependents");
@@ -962,6 +966,8 @@ try {
 	cancelSortedCreate=true;
 	sortedRepeated.createNewEntry();
 	const cancelledSortedEntry=sortedRepeated.children.find(entry=>entry.creating);
+	cancelledSortedEntry.dataObj.label="cancelled";
+	sortedIdentityTable._markDirtyField(cancelledSortedEntry.children[1]);
 	assert(sortedIdentityTable._closeGroup(cancelledSortedEntry)===false
 		&&!sortedRepeated.children.includes(cancelledSortedEntry)&&sortedCreateCancelCalls===1
 		&&sortedCommits.filter(payload=>payload.mode==="create").length===createCommitsBeforeCancel
@@ -2613,38 +2619,74 @@ try {
 			.some(button=>button.querySelector("button")),
 		"refreshSubtree reuses repeated-entry controls without nesting new buttons inside them");
 
-	let untouchedCreateClosePayload,untouchedCreateCommits=0;
+	let untouchedCreateClosePayload,untouchedCreateCloseCalls=0,untouchedCreateCommits=0;
 	const untouchedCreateRows=[];
 	const untouchedCreateTable=new Tablance(host(),{
 		onDataCommit:()=>untouchedCreateCommits++,details:{type:"list",entries:[
 			{type:"repeated",dataKey:"history",nodeId:"untouchedCreateHistory",create:true,
-				createData:()=>({event:"change",scope:null}),entry:{type:"group",
+				createData:()=>({event:"change",scope:null,capacities:["none","none"]}),entry:{type:"group",
 					closedRender:data=>`${data.event}:${data.scope??"missing"}`,onClose:payload=>{
+						untouchedCreateCloseCalls++;
 						untouchedCreateClosePayload=payload;
 						if (!payload.data.scope)
 							payload.preventClose("A scope is required");
 					},entries:[
 						{title:"Event",dataKey:"event",input:{type:"text"}},
 						{title:"Scope",dataKey:"scope",input:{type:"text"}},
+						{type:"group",dataPath:"renderDefaults",entries:[
+							{title:"Generated",dataKey:"value",input:{type:"text"}},
+						]},
 					]},
 			},
+			{type:"field",dataKey:"after",nodeId:"afterUntouchedCreate",input:{type:"text"}},
 		]},
 	},true,true,{searchbar:false});
-	untouchedCreateTable.setData([{history:untouchedCreateRows}]);
+	untouchedCreateTable.setData([{history:untouchedCreateRows,after:"next"}]);
 	await tick();
 	const untouchedRepeated=untouchedCreateTable.getDetailCell(0,"untouchedCreateHistory");
 	untouchedRepeated.createNewEntry();
-	const untouchedEntry=untouchedRepeated.children.find(child=>child.creating);
-	assert(untouchedCreateTable._closeGroup(untouchedEntry)===false
-		&&untouchedCreateClosePayload.mode==="create"&&untouchedCreateClosePayload.changed===true
-		&&untouchedCreateRows.length===0&&untouchedEntry.creating&&untouchedEntry.el.classList.contains("open")
-		&&untouchedCreateCommits===0,
-		"an untouched non-empty createData draft must pass onClose validation before array insertion or persistence");
-	untouchedEntry.dataObj.scope="legacy";
-	assert(untouchedCreateTable._closeGroup(untouchedEntry)===true&&untouchedCreateRows.length===1
-		&&untouchedCreateRows[0]===untouchedEntry.dataObj&&!untouchedEntry.creating&&untouchedCreateCommits===1
-		&&untouchedEntry.el.querySelector("tr.group-render")?.textContent==="change:legacy",
-		"a validated untouched createData draft commits once and receives its real closed render immediately");
+	let untouchedEntry=untouchedRepeated.children.find(child=>child.creating);
+	assert(Object.keys(untouchedEntry.dataObj.renderDefaults).length===0
+		&&untouchedCreateTable._isUntouchedCreatingGroup(untouchedEntry)
+		&&untouchedCreateTable._buildGroupPayload(untouchedEntry).changed===false,
+		"createData values and nested defaults form the canonical untouched draft baseline");
+	key(untouchedCreateTable.rootEl,"Escape","Escape");
+	assert(untouchedCreateRows.length===0&&!untouchedRepeated.children.includes(untouchedEntry)
+		&&untouchedCreateCloseCalls===0&&untouchedCreateCommits===0,
+		"Escape discards an untouched default-valued creation without running blocking group validation");
+
+	untouchedRepeated.createNewEntry();
+	let editedEntry=untouchedRepeated.children.find(child=>child.creating);
+	editedEntry.dataObj.event="edited";
+	untouchedCreateTable._markDirtyField(editedEntry.children[0]);
+	const afterUntouchedCreate=untouchedCreateTable.getDetailCell(0,"afterUntouchedCreate");
+	afterUntouchedCreate.select();
+	assert(untouchedCreateCloseCalls===1&&untouchedCreateClosePayload.mode==="create"
+		&&untouchedCreateClosePayload.changed===true&&editedEntry.creating
+		&&untouchedRepeated.children.includes(editedEntry)&&untouchedCreateRows.length===0,
+		"a real change from the creation baseline still runs validation and blocks ordinary navigation");
+	editedEntry.dataObj.event="change";
+	afterUntouchedCreate.select();
+	assert(untouchedCreateCloseCalls===1&&!untouchedRepeated.children.includes(editedEntry)
+		&&untouchedCreateRows.length===0&&untouchedCreateTable._activeDetailsCell===afterUntouchedCreate,
+		"restoring the complete initial state makes the draft untouched again and navigation discards it");
+
+	untouchedRepeated.createNewEntry();
+	const validEntry=untouchedRepeated.children.find(child=>child.creating);
+	validEntry.dataObj.scope="legacy";
+	untouchedCreateTable._markDirtyField(validEntry.children[1]);
+	assert(untouchedCreateTable._closeGroup(validEntry)===true&&untouchedCreateRows.length===1
+		&&untouchedCreateRows[0]===validEntry.dataObj&&!validEntry.creating&&untouchedCreateCommits===1
+		&&validEntry.el.querySelector("tr.group-render")?.textContent==="change:legacy",
+		"a changed and validated createData draft commits once and receives its real closed render immediately");
+	untouchedRepeated.createNewEntry();
+	const forcedEntry=untouchedRepeated.children.find(child=>child.creating);
+	forcedEntry.dataObj.event="forced-discard";
+	untouchedCreateTable._markDirtyField(forcedEntry.children[0]);
+	key(untouchedCreateTable.rootEl,"Escape","Escape",{ctrlKey:true});
+	assert(!untouchedRepeated.children.includes(forcedEntry)&&untouchedCreateRows.length===1
+		&&untouchedCreateClosePayload.reason==="discard"&&untouchedCreateCommits===1,
+		"Ctrl+Escape retains its force-discard behavior for a changed creation draft");
 
 	const guardedActionEditorTable=new Tablance(host(),{main:{columns:[
 		{type:"group",dataKey:"invalid",input:{type:"text"}},

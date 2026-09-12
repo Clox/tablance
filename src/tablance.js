@@ -694,8 +694,8 @@ class TablanceBase {
 	 * 					- instanceNode: instance-node of the group
 	 * 					- mainIndex: index of the main row
 	 * 					- mode: "create"|"update", whether the group was being created or already existed
-	 * 					- changed: true for dirty existing groups and for non-empty pending creations, including values
-	 * 						provided entirely by repeated.createData
+	 * 					- changed: true for dirty existing groups and for pending creations whose current data differs
+	 * 						from the initial draft produced by repeated.createData/render-time initialization
 	 * 					- preventClose(message?): cancel closing/committing, optional tooltip message
 	 *					- closestMeta: function(key) to read meta data closest to the schema node. In the schema
 	 * 								objects may be specified via "meta" propert and this object may contain any custom
@@ -3159,8 +3159,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_groupEscape() {
 		for (let instanceNode=this._activeDetailsCell; instanceNode=instanceNode?.parent;)
-			if (instanceNode.schemaNode.type==="group")
+			if (instanceNode.schemaNode.type==="group") {
+				if (this._isUntouchedCreatingGroup(instanceNode))
+					return this._deleteCell(instanceNode);
 				return this._selectDetailsCell(instanceNode);
+			}
 	}
 
 	_copySelectedCellText() {
@@ -4550,10 +4553,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (root.rowIndex!=null)
 				mainIndex=root.rowIndex;
 		const {changed:fieldsChanged,changes}=this._collectGroupChanges(groupObject);
-		// A non-empty pending repeated entry is itself a change, even when every value came from createData and the
-		// user closes it without editing a field. onClose validators must be able to distinguish that commit attempt
-		// from merely opening and closing an unchanged existing group.
-		const changed=fieldsChanged||(groupObject.creating&&this._objectHasData(groupObject.dataObj));
+		// Creation defaults form the draft baseline rather than a user change. Compare the complete current object so
+		// editing and then restoring every value also returns the creation to its untouched state.
+		const changed=groupObject.creating
+			?!this._isUntouchedCreatingGroup(groupObject):fieldsChanged;
 		const closeState={doClose:true,preventMessage:undefined};
 		const mode=groupObject.creating?"create":"update";
 		const normalizedChanges=groupObject.creating?null:changes;
@@ -4764,6 +4767,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_closeGroup(groupObject,targetCell=null,suppressTooltip=false) {
+		// An untouched creation is a disposable draft, not a commit attempt. Remove it before onClose/creation
+		// validation; ordinary navigation can then continue to its requested target.
+		if (this._isUntouchedCreatingGroup(groupObject)) {
+			this._deleteCell(groupObject,false,false);
+			return true;
+		}
 		this._enterEditTransaction(groupObject);
 		const {payload,closePayload,closeState,changed}=this._buildGroupPayload(groupObject);
 		const commitPayload={...payload};
@@ -4936,6 +4945,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				newObj.updateRenderOnClose=true;
 			this._selectFirstSelectableDetailsCell(newObj,true,true);
 			repeated.schemaNode.onCreateOpen?.(repeated);
+			// Capture the canonical draft baseline after the complete creation lifecycle, so createData values, objects
+			// initialized declaratively while rendering, and synchronous onCreateOpen defaults are all untouched state.
+			newObj._openSnapshot=this._cloneGroupData(newObj.dataObj);
 		}
 		return newObj.el;
 	}
@@ -5040,7 +5052,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 	}
 
-	_deleteCell(instanceNode,programatically=false) {
+	_deleteCell(instanceNode,programatically=false,selectNext=true) {
 		const parent=instanceNode.parent;
 		const visualIndex=instanceNode.index;
 		const dataArray=parent?.dataObj;
@@ -5092,7 +5104,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		// Select next cell
 		let newSelectedCell=parent.children[visualIndex]??parent.children[visualIndex-1];
-		if (!programatically)
+		if (!programatically&&selectNext)
 			this._selectDetailsCell(newSelectedCell??parent.parent);
 		instanceNode.creating&&parent.schemaNode.onCreateCancel?.(parent);
 		return {deletedDataItem:deletedData,itemIndex:dataIndex,visualIndex,wasCreating};
@@ -5856,13 +5868,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				return group;
 	}
 
-	_objectHasData(obj) {
-		for (const val of Object.values(obj))
-			if (val != null && !(Array.isArray(val) && val.length === 0))
-				return true;
-		return false;
-	}
-
 	/**
 	 * Marks a details instance-node as dirty within its nearest open group so that discard
 	 * can efficiently repaint only touched nodes. Dirty nodes are re-rendered in
@@ -5906,6 +5911,35 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			try {return structuredClone(dataObj);} catch(_e){}
 		}
 		return JSON.parse(JSON.stringify(dataObj));
+	}
+
+	/** Compare live group data with a snapshot without depending on property insertion order. */
+	_groupDataEquals(left,right,seen=new WeakMap()) {
+		if (Object.is(left,right))
+			return true;
+		if (left==null||right==null||typeof left!=="object"||typeof right!=="object")
+			return false;
+		if (left instanceof Date||right instanceof Date)
+			return left instanceof Date&&right instanceof Date&&left.getTime()===right.getTime();
+		if (Array.isArray(left)!==Array.isArray(right))
+			return false;
+		if (seen.has(left))
+			return seen.get(left)===right;
+		seen.set(left,right);
+		const leftKeys=Object.keys(left);
+		const rightKeys=Object.keys(right);
+		if (leftKeys.length!==rightKeys.length)
+			return false;
+		for (const key of leftKeys)
+			if (!Object.prototype.hasOwnProperty.call(right,key)
+				||!this._groupDataEquals(left[key],right[key],seen))
+				return false;
+		return true;
+	}
+
+	_isUntouchedCreatingGroup(group) {
+		return !!group?.creating&&Object.prototype.hasOwnProperty.call(group,"_openSnapshot")
+			&&this._groupDataEquals(group.dataObj,group._openSnapshot);
 	}
 
 	/**
@@ -5995,60 +6029,55 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_scrollElementIntoView(){}//default is to do nothing. Tablance (main) overrides this.
 
 	_closeRepeatedInsertion(repeatEntry) {
-		if (this._objectHasData(repeatEntry.dataObj)) {
-			let message=this.lang.creationValidationFailed;//message to show to the user if creation was unsucessful
-			for (var root=repeatEntry; root.parent; root=root.parent);//get root-object in order to retrieve rowIndex
-			const creationContainer=repeatEntry.schemaNode.type=="group"?repeatEntry:repeatEntry.parent;
-			const repeatedContainer=creationContainer.parent;
-			const parentDataContext=repeatedContainer?.parent?.dataObj??this._filteredData[root.rowIndex];
-			let doCreate=true;
-			if (repeatEntry.schemaNode.creationValidation) {
-				const payload=this._makeCallbackPayload(repeatEntry,{
-					newDataItem:repeatEntry.dataObj
-				},{
-					mainIndex: root.rowIndex
-					});
-					const res=repeatEntry.schemaNode.creationValidation(payload);
-					if (typeof res==="boolean")
-						doCreate=res;
-					else {
-					doCreate=!!res.valid;
-					message=res.message??message;
-				}
+		let message=this.lang.creationValidationFailed;//message to show to the user if creation was unsucessful
+		for (var root=repeatEntry; root.parent; root=root.parent);//get root-object in order to retrieve rowIndex
+		const creationContainer=repeatEntry.schemaNode.type=="group"?repeatEntry:repeatEntry.parent;
+		const repeatedContainer=creationContainer.parent;
+		const parentDataContext=repeatedContainer?.parent?.dataObj??this._filteredData[root.rowIndex];
+		let doCreate=true;
+		if (repeatEntry.schemaNode.creationValidation) {
+			const payload=this._makeCallbackPayload(repeatEntry,{
+				newDataItem:repeatEntry.dataObj
+			},{
+				mainIndex: root.rowIndex
+			});
+			const res=repeatEntry.schemaNode.creationValidation(payload);
+			if (typeof res==="boolean")
+				doCreate=res;
+			else {
+				doCreate=!!res.valid;
+				message=res.message??message;
 			}
-			if (!doCreate) {
-				message+=this.lang.creationValidationFailedCancelInfo
-				this._showTooltip(message,repeatEntry.el);
-				return false;//prevent commiting/closing the group
-			}
-				this._ensureRepeatedEntryInsertion(repeatEntry);
-				const insertedIndex=this._getRepeatedDataIndex(repeatEntry);
-				const payload=this._makeCallbackPayload(repeatEntry,{
-					newDataItem: repeatEntry.dataObj,
-					itemIndex: insertedIndex,
-					visualIndex: repeatEntry.index,
-					repeatedSchemaNode: repeatedContainer?.schemaNode,
-					entrySchemaNode: creationContainer.schemaNode,
-					newInstanceNode: repeatEntry,
-					cancelCreate: ()=>doCreate=false,
-					dataArray: repeatedContainer?.dataObj,
-					dataKey: repeatedContainer?.schemaNode?.dataKey
-				},{
-					mainIndex: root.rowIndex,
-					rowData: parentDataContext,
-					bulkEdit: false
-				});
-				repeatEntry.creating=false;
-				repeatedContainer.schemaNode.onCreate?.(payload);
-				if (!doCreate) {
-					if (insertedIndex>-1)
-						repeatedContainer.dataObj.splice(insertedIndex,1);
-					repeatEntry.creating=true;
-					this._deleteCell(repeatEntry,true);
-					return false;
-			}
-		} else {
-			this._deleteCell(repeatEntry);
+		}
+		if (!doCreate) {
+			message+=this.lang.creationValidationFailedCancelInfo
+			this._showTooltip(message,repeatEntry.el);
+			return false;//prevent commiting/closing the group
+		}
+		this._ensureRepeatedEntryInsertion(repeatEntry);
+		const insertedIndex=this._getRepeatedDataIndex(repeatEntry);
+		const payload=this._makeCallbackPayload(repeatEntry,{
+			newDataItem: repeatEntry.dataObj,
+			itemIndex: insertedIndex,
+			visualIndex: repeatEntry.index,
+			repeatedSchemaNode: repeatedContainer?.schemaNode,
+			entrySchemaNode: creationContainer.schemaNode,
+			newInstanceNode: repeatEntry,
+			cancelCreate: ()=>doCreate=false,
+			dataArray: repeatedContainer?.dataObj,
+			dataKey: repeatedContainer?.schemaNode?.dataKey
+		},{
+			mainIndex: root.rowIndex,
+			rowData: parentDataContext,
+			bulkEdit: false
+		});
+		repeatEntry.creating=false;
+		repeatedContainer.schemaNode.onCreate?.(payload);
+		if (!doCreate) {
+			if (insertedIndex>-1)
+				repeatedContainer.dataObj.splice(insertedIndex,1);
+			repeatEntry.creating=true;
+			this._deleteCell(repeatEntry,true);
 			return false;
 		}
 		return true;
@@ -7871,7 +7900,7 @@ export default class Tablance extends TablanceBase {
 		if (hasOpenDetails) {
 			this._exitEditMode(false);//cancel out of edit-mode so field-validation doesn't cause problems
 			const openGroup=this._getOpenGroupAncestor(this._activeDetailsCell);
-			if (openGroup?.creating&&!this._objectHasData(openGroup.dataObj))
+			if (this._isUntouchedCreatingGroup(openGroup))
 				this._discardActiveGroupEdits();//remove empty creator before contracting
 		}
 		const rowMeta=this._rowMeta.get(this._filteredData[dataRowIndex]);
