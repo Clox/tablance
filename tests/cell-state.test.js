@@ -1580,7 +1580,8 @@ try {
 			{type:"field",title:"Apartment",dataKey:"apartment",nodeId:"variantApartment",input:{type:"text"}},
 		]},
 		{type:"lineup",entries:[
-			{type:"field",title:"Source",dataKey:"source",nodeId:"variantSource"},
+			{type:"field",title:"Source",dataKey:"source",nodeId:"variantSource",
+				help:"Source help",readOnlyPresentation:true},
 			{type:"field",title:"Synced",dataKey:"synced",nodeId:"variantSynced"},
 		]},
 		{type:"lineup",entries:[
@@ -1589,6 +1590,7 @@ try {
 		{type:"lineup",variant:"fields",entries:[
 			{type:"field",title:"Forced field one",dataKey:"source",nodeId:"forcedFieldOne"},
 			{type:"field",title:"Forced field two",dataKey:"synced",nodeId:"forcedFieldTwo"},
+			{type:"field",title:"Forced action",dataKey:"source",nodeId:"forcedAction",onEnter:()=>{}},
 		]},
 		{type:"lineup",variant:"metadata",entries:[
 			{type:"field",title:"Forced metadata",dataKey:"street",nodeId:"forcedMetadata",
@@ -1605,6 +1607,7 @@ try {
 	const variantControl=lineupVariantTable.getDetailCell(0,"variantControl");
 	const forcedFieldOne=lineupVariantTable.getDetailCell(0,"forcedFieldOne");
 	const forcedFieldTwo=lineupVariantTable.getDetailCell(0,"forcedFieldTwo");
+	const forcedAction=lineupVariantTable.getDetailCell(0,"forcedAction");
 	const forcedMetadata=lineupVariantTable.getDetailCell(0,"forcedMetadata");
 	assert(variantStreet.parent.containerEl.classList.contains("lineup-fields")
 		&&variantSource.parent.containerEl.classList.contains("lineup-metadata")
@@ -1634,6 +1637,36 @@ try {
 		&&Math.abs(streetCursorRect.width-streetRect.width)<1&&Math.abs(streetCursorRect.height-streetRect.height)<1
 		&&streetTitleRect.top>=streetCursorRect.top&&streetTitleRect.bottom<=streetCursorRect.bottom,
 		"a lineup cursor covers the entire logical cell including its title and padding");
+	const sourceTitle=variantSource.outerContainerEl.querySelector(":scope>span.title");
+	const sourceLayoutBefore={
+		cellHeight:variantSource.outerContainerEl.getBoundingClientRect().height,
+		titleLeft:sourceTitle.getBoundingClientRect().left,
+		titleTop:sourceTitle.getBoundingClientRect().top,
+		titleHeight:sourceTitle.getBoundingClientRect().height,
+	};
+	assert(getComputedStyle(sourceTitle,"::after").content==="none",
+		"an inactive textlike read-only Lineup cell does not show a state icon");
+	variantSource.select();
+	const selectedSourceIndicator=getComputedStyle(sourceTitle,"::after");
+	const sourceLayoutSelected={
+		cellHeight:variantSource.outerContainerEl.getBoundingClientRect().height,
+		titleLeft:sourceTitle.getBoundingClientRect().left,
+		titleTop:sourceTitle.getBoundingClientRect().top,
+		titleHeight:sourceTitle.getBoundingClientRect().height,
+	};
+	assert(selectedSourceIndicator.content==='""'&&selectedSourceIndicator.position==="absolute"
+		&&Math.abs(parseFloat(selectedSourceIndicator.left)-sourceTitle.getBoundingClientRect().width)<1
+		&&getComputedStyle(lineupVariantTable._cellCursor,"::before").content==="none"
+		&&JSON.stringify(sourceLayoutSelected)===JSON.stringify(sourceLayoutBefore),
+		"a selected Lineup lock sits directly after the stable title structure without moving the label or cell");
+	key(lineupVariantTable.rootEl,"Enter","Enter");
+	assert(lineupVariantTable._inReadOnlyMode&&getComputedStyle(sourceTitle,"::after").content==='""',
+		"the inline Lineup lock remains visible during an active read-only presentation");
+	key(lineupVariantTable.rootEl,"Escape","Escape");
+	forcedAction.select();
+	assert(getComputedStyle(forcedAction.outerContainerEl.querySelector(":scope>span.title"),"::after").content==='""'
+		&&getComputedStyle(lineupVariantTable._cellCursor,"::before").content==="none",
+		"a selected textlike Lineup action uses the same inline title indicator presentation");
 	variantSource.select();
 	variantStreet.outerContainerEl.querySelector(":scope>span.title").dispatchEvent(
 		new MouseEvent("mousedown",{bubbles:true,button:0}));
@@ -1692,6 +1725,45 @@ try {
 		&&wrappedSeparator.borderInlineStartWidth==="1px"
 		&&parseFloat(wrappedSeparator.insetInlineStart||wrappedSeparator.left)===-1,
 		"a wrapped row's leading separator is clipped while same-row cell boundaries remain visible");
+	const wrappingLineupInstance=wrapWide.parent;
+	let [wrappingFirstExtension,wrappingSecondExtension]=wrappingLineupInstance.lineupRowExtensions;
+	const wrappingLineupRect=wrappingLineup.getBoundingClientRect();
+	const wrappingMiddleRect=wrapMiddle.outerContainerEl.getBoundingClientRect();
+	const wrappingFirstExtensionRect=wrappingFirstExtension.getBoundingClientRect();
+	assert(wrappingLineupInstance.lineupRowExtensions.length===2
+		&&wrappingFirstExtension._tablanceLineupTarget===wrapMiddle
+		&&wrappingSecondExtension._tablanceLineupTarget===wrapLast
+		&&Math.abs(wrappingFirstExtensionRect.left-wrappingMiddleRect.right)<1
+		&&Math.abs(wrappingFirstExtensionRect.right-wrappingLineupRect.right)<1,
+		"each actual wrapped Lineup row extends from its rightmost cell to the Lineup interaction edge");
+	wrappingFirstExtension.dispatchEvent(new MouseEvent("mouseenter"));
+	await new Promise(resolve=>setTimeout(resolve,140));
+	assert(wrappingFirstExtension.classList.contains("lineup-extension-hover")
+		&&wrapMiddle.outerContainerEl.classList.contains("lineup-extension-target-hover")
+		&&getComputedStyle(wrappingFirstExtension).backgroundColor!==getComputedStyle(wrapMiddle.outerContainerEl).backgroundColor,
+		"Lineup empty-space hover combines ordinary target hover with a distinct weaker extension tone");
+	wrappingFirstExtension.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	const wrappingMiddleCursor=wrappingTable._cellCursor.getBoundingClientRect();
+	assert(wrappingTable._activeDetailsCell===wrapMiddle
+		&&wrappingTable._selectedCell===wrapMiddle.outerContainerEl
+		&&Math.abs(wrappingMiddleCursor.right-wrappingMiddleRect.right)<1
+		&&!wrappingFirstExtension.classList.contains("tablance-active-cell"),
+		"clicking a Lineup extension selects and outlines only its canonical real cell");
+	wrappingFirstExtension.dispatchEvent(new MouseEvent("mouseleave"));
+	wrappingHost.style.width="230px";
+	await tick();
+	[wrappingFirstExtension,wrappingSecondExtension]=wrappingLineupInstance.lineupRowExtensions;
+	assert(wrappingLineupInstance.lineupRowExtensions.length===2
+		&&wrappingFirstExtension._tablanceLineupTarget===wrapWide
+		&&wrappingSecondExtension._tablanceLineupTarget===wrapLast
+		&&wrapWide.outerContainerEl.offsetTop<wrapMiddle.outerContainerEl.offsetTop
+		&&wrapMiddle.outerContainerEl.offsetTop===wrapLast.outerContainerEl.offsetTop,
+		"Lineup extension ownership follows fresh DOM wrapping after resize rather than stale schema rows");
+	wrappingHost.style.width="420px";
+	await tick();
+	assert(wrappingLineupInstance.lineupRowExtensions.length===1
+		&&wrappingLineupInstance.lineupRowExtensions[0]._tablanceLineupTarget===wrapLast,
+		"Lineup extensions recompute when reflow combines all cells onto one visual row");
 
 	const nowrapHost=host();
 	nowrapHost.style.width="240px";
@@ -1708,6 +1780,35 @@ try {
 		&&nowrapOne.outerContainerEl.getBoundingClientRect().width<180
 		&&nowrapTwo.outerContainerEl.getBoundingClientRect().width<180,
 		"wrap false keeps one row and permits cells to shrink from their preferred basis");
+
+	const statefulLineupHost=host();
+	statefulLineupHost.style.width="420px";
+	const statefulLineupRow={a:"A",b:"B",conditional:"Conditional",disabled:"Disabled",showConditional:true};
+	const statefulLineupTable=new Tablance(statefulLineupHost,{details:{type:"lineup",entries:[
+		{type:"field",dataKey:"a",nodeId:"statefulLineupA",width:80,input:{type:"text"}},
+		{type:"field",dataKey:"b",nodeId:"statefulLineupB",width:80,input:{type:"text"}},
+		{type:"field",dataKey:"conditional",nodeId:"statefulLineupConditional",width:80,
+			visibleIf:({rowData})=>rowData.showConditional,input:{type:"text"}},
+		{type:"field",dataKey:"disabled",nodeId:"statefulLineupDisabled",width:80,disabled:true,input:{type:"text"}},
+	]}},true,true,{searchbar:false});
+	statefulLineupTable.setData([statefulLineupRow]);
+	await tick();
+	const statefulLineupB=statefulLineupTable.getDetailCell(0,"statefulLineupB");
+	const statefulConditional=statefulLineupTable.getDetailCell(0,"statefulLineupConditional");
+	const statefulDisabled=statefulLineupTable.getDetailCell(0,"statefulLineupDisabled");
+	const statefulLineup=statefulLineupB.parent;
+	let statefulExtension=statefulLineup.lineupRowExtensions[0];
+	assert(statefulExtension.parentElement===statefulLineup.containerEl
+		&&statefulExtension._tablanceLineupTarget===statefulConditional
+		&&Math.abs(parseFloat(statefulExtension.style.left)
+			-(statefulDisabled.outerContainerEl.getBoundingClientRect().right
+				-statefulLineup.containerEl.getBoundingClientRect().left))<1,
+		"a disabled rightmost Lineup cell bounds empty space while the last selectable cell owns interaction");
+	statefulLineupRow.showConditional=false;
+	statefulLineupTable._applyVisibleIf(statefulConditional,0);
+	statefulExtension=statefulLineup.lineupRowExtensions[0];
+	assert(statefulConditional.hidden&&statefulExtension._tablanceLineupTarget===statefulLineupB,
+		"hidden Lineup cells immediately update extended hit-area ownership without becoming candidates");
 
 	const textWrapHost=host();
 	textWrapHost.style.width="420px";

@@ -235,6 +235,7 @@ class TablanceBase {
 	_helpOpenTimer;
 	_helpCloseTimer;
 	_helpResizeObserver;
+	_lineupResizeObserver;
 	_dropdownAlignmentContainer;
 	lang;//object holding strings used in the table for various purposes. See DEFAULT_LANG for default values					
 	_rowMeta;//tracks row metadata (isNew flags, expanded heights, etc.) keyed by row data objects
@@ -2476,7 +2477,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		focusEl.tabIndex=0;//so that the table can be tabbed to
 		this.rootEl.addEventListener("keydown",e=>this._spreadsheetKeyDown(e));
 		this.rootEl.addEventListener("mousedown",e=>this._spreadsheetMouseDown(e));
-		this.rootEl.addEventListener("dblclick",e=>this._gridRowExtensionDoubleClick(e));
+		this.rootEl.addEventListener("dblclick",e=>this._detailsRowExtensionDoubleClick(e));
 		this._cellCursor.addEventListener("dblclick",e=>this._enterCell(e));
 
 		this._tooltip=document.createElement("div");
@@ -2603,11 +2604,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	/**Build visual rows only for one lineup. Geometry is ephemeral; instance nodes remain navigation identity.*/
-	_getLineupVisualRows(lineup) {
+	_getLineupVisualRows(lineup,navigableOnly=true) {
 		const geometries=[];
 		for (let logicalOrder=0;logicalOrder<(lineup?.children?.length??0);logicalOrder++) {
 			const instanceNode=lineup.children[logicalOrder];
-			if (instanceNode.hidden||!this._isNavigableDetailsInstance(instanceNode))
+			if (instanceNode.hidden||(navigableOnly&&!this._isNavigableDetailsInstance(instanceNode)))
 				continue;
 			const rect=this._getDetailsCellRect(instanceNode);
 			if (!rect)
@@ -2622,15 +2623,79 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const overlap=row
 				?Math.min(row.overlapBottom,geometry.bottom)-Math.max(row.overlapTop,geometry.top):0;
 			if (!row||overlap<=overlapEpsilon) {
-				rows.push({items:[geometry],overlapTop:geometry.top,overlapBottom:geometry.bottom});
+				rows.push({items:[geometry],overlapTop:geometry.top,overlapBottom:geometry.bottom,
+					top:geometry.top,bottom:geometry.bottom});
 				continue;
 			}
 			row.items.push(geometry);
 			// Keeping the common intersection prevents partial/transitive overlaps from joining separate visual rows.
 			row.overlapTop=Math.max(row.overlapTop,geometry.top);
 			row.overlapBottom=Math.min(row.overlapBottom,geometry.bottom);
+			row.top=Math.min(row.top,geometry.top);
+			row.bottom=Math.max(row.bottom,geometry.bottom);
 		}
 		return rows;
+	}
+
+	_refreshLineupRowExtensions(lineup) {
+		if (lineup?.schemaNode?.type!=="lineup")
+			return;
+		for (const extension of lineup.lineupRowExtensions??[])
+			this._removeLineupRowExtension(extension);
+		lineup.lineupRowExtensions=[];
+		this._syncLineupResizeObservation(lineup);
+		const containerRect=lineup.containerEl.getBoundingClientRect();
+		if (!lineup.containerEl.isConnected||containerRect.right<=containerRect.left)
+			return;
+		for (const row of this._getLineupVisualRows(lineup,false)) {
+			const rightmostOccupied=row.items.reduce((rightmost,item)=>!rightmost||item.right>rightmost.right?item:rightmost,null);
+			const target=row.items.filter(item=>this._isNavigableDetailsInstance(item.instanceNode))
+				.reduce((rightmost,item)=>!rightmost||item.right>rightmost.right?item:rightmost,null);
+			if (!rightmostOccupied||!target||rightmostOccupied.right>=containerRect.right-.5)
+				continue;
+			const extension=lineup.containerEl.appendChild(document.createElement("span"));
+			extension.className="lineup-row-extension";
+			extension.setAttribute("aria-hidden","true");
+			extension.style.left=`${rightmostOccupied.right-containerRect.left}px`;
+			extension.style.top=`${row.top-containerRect.top}px`;
+			extension.style.height=`${row.bottom-row.top}px`;
+			extension._tablanceLineupTarget=target.instanceNode;
+			extension._tablanceLineupHoverEl=target.instanceNode.schemaNode.type==="group"
+				?target.instanceNode.el:(target.instanceNode.selEl??target.instanceNode.el);
+			extension.addEventListener("mouseenter",()=>this._setLineupRowExtensionHover(extension,true));
+			extension.addEventListener("mouseleave",()=>this._setLineupRowExtensionHover(extension,false));
+			lineup.lineupRowExtensions.push(extension);
+		}
+	}
+
+	_syncLineupResizeObservation(lineup) {
+		this._lineupResizeObserver??=new ResizeObserver(entries=>{
+			const changedLineups=new Set(entries.map(entry=>entry.target._tablanceLineupOwner).filter(Boolean));
+			for (const changedLineup of changedLineups)
+				this._refreshLineupRowExtensions(changedLineup);
+		});
+		const current=new Set([lineup.containerEl,...(lineup.children??[]).map(child=>child.outerContainerEl).filter(Boolean)]);
+		for (const oldElement of lineup.lineupObservedElements??[])
+			if (!current.has(oldElement)) {
+				this._lineupResizeObserver.unobserve(oldElement);
+				delete oldElement._tablanceLineupOwner;
+			}
+		for (const element of current)
+			if (!lineup.lineupObservedElements?.has(element)) {
+				element._tablanceLineupOwner=lineup;
+				this._lineupResizeObserver.observe(element);
+			}
+		lineup.lineupObservedElements=current;
+	}
+
+	_setLineupRowExtensionHover(extension,hovered) {
+		extension?.classList.toggle("lineup-extension-hover",hovered);
+		extension?._tablanceLineupHoverEl?.classList.toggle("lineup-extension-target-hover",hovered);
+	}
+
+	_removeLineupRowExtension(extension) {
+		this._setLineupRowExtensionHover(extension,false);
+		extension?.remove();
 	}
 
 	_pickLineupRowTarget(row,sourceRect) {
@@ -3594,7 +3659,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			prompt.className="delete-confirmation-prompt";
 			prompt.textContent=String(lineupSchemaNode.deleteConfirmationText);
 		}
-		return this._generateDetailsCollection(lineupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
+		const generated=this._generateDetailsCollection(lineupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
+		this._refreshLineupRowExtensions(instanceNode);
+		return generated;
 	}
 
 	_generateDetailsGrid(gridSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
@@ -3960,8 +4027,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return;
 		const mainTr=e.target.closest(".main-table>tbody>tr");
 		if (this._onlyDetails||mainTr?.classList.contains("details")) {//in details
-			const extension=e.target.closest(".grid-row-extension");
-			const extensionTarget=extension?._tablanceGridTarget;
+			const extension=e.target.closest(".grid-row-extension,.lineup-row-extension");
+			const extensionTarget=extension?._tablanceGridTarget??extension?._tablanceLineupTarget;
 			const interactiveEl=extensionTarget?.selEl??extensionTarget?.el??e.target.closest('[data-path]');
 			if (!interactiveEl)
 				return;
@@ -4000,12 +4067,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return instanceNode;
 	}
 
-	_gridRowExtensionDoubleClick(e) {
-		const extension=e.target.closest(".grid-row-extension");
+	_detailsRowExtensionDoubleClick(e) {
+		const extension=e.target.closest(".grid-row-extension,.lineup-row-extension");
 		if (!extension)
 			return;
 		const mainTr=extension.closest(".main-table>tbody>tr.details");
-		const targetEl=extension._tablanceGridTarget?.selEl??extension._tablanceGridTarget?.el;
+		const target=extension._tablanceGridTarget??extension._tablanceLineupTarget;
+		const targetEl=target?.selEl??target?.el;
 		const pointerTarget=this._resolvePointerDetailsInstance(targetEl,mainTr);
 		if (pointerTarget&&pointerTarget===this._activeDetailsCell)
 			this._enterCell(e);
@@ -7833,6 +7901,9 @@ export default class Tablance extends TablanceBase {
 			if (instanceNode.parent?.schemaNode?.type==="grid"
 				&&instanceNode.parent.children?.includes(instanceNode))
 				this._refreshGridLayout(instanceNode.parent);
+			else if (instanceNode.parent?.schemaNode?.type==="lineup"
+				&&instanceNode.parent.children?.includes(instanceNode))
+				this._refreshLineupRowExtensions(instanceNode.parent);
 		}
 
 		return !instanceNode.hidden;

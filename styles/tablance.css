@@ -647,6 +647,9 @@
 .tablance .details .grid-extension-target-hover:not(.disabled) {
   background-color: var(--tablance-hover-background);
 }
+.tablance .details .lineup-extension-target-hover:not(.disabled) {
+  background-color: var(--tablance-hover-background);
+}
 .tablance .details .read-only {
   background-color: transparent;
 }
@@ -694,6 +697,7 @@
   font-size: 1em;
 }
 .tablance .details .lineup {
+  position: relative;
   display: flex;
   align-items: stretch;
 }
@@ -716,6 +720,53 @@
 }
 .tablance .details .lineup > span > div {
   padding: 6px 4px 2px;
+}
+.tablance .details .lineup > span:has(> div.value:not(.group-cell)) > span.title {
+  position: relative;
+  width: fit-content;
+}
+.tablance .details .lineup > span:has(> div.value:not(.group-cell)) > span.title::after {
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  display: block;
+  width: 12px;
+  height: 12px;
+  margin-left: 4px;
+  background-color: var(--tablance-indicator-color);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.tablance .details .lineup > span:has(> div.value:not(.group-cell)).read-only:is(:hover, .tablance-active-cell) > span.title::after {
+  content: "";
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+.tablance .details .lineup > span:has(> div.value:not(.group-cell)).action-indicator:is(:hover, .tablance-active-cell) > span.title::after {
+  content: "";
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+.tablance .details .lineup > span:has(> div.value:not(.group-cell)).read-only:hover::before, .tablance .details .lineup > span:has(> div.value:not(.group-cell)).action-indicator:hover::before {
+  content: none;
+}
+.tablance .details .lineup > .lineup-row-extension {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  background-color: transparent;
+  cursor: cell;
+  transition: background-color 120ms ease;
+}
+.tablance .details .lineup > .lineup-row-extension.lineup-extension-hover {
+  background-color: color-mix(in srgb, var(--tablance-hover-background) 35%, transparent);
+}
+.tablance .details .lineup.details-affordances-suppressed > .lineup-row-extension {
+  display: none;
 }
 .tablance .details .lineup.lineup-fields {
   overflow: hidden;
