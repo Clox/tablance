@@ -1017,12 +1017,12 @@ try {
 		===JSON.stringify(["Alpha","Beta","y","x"])
 		&&groupedHeadings().every(heading=>heading.getAttribute("aria-hidden")==="true"
 			&&!heading.hasAttribute("data-path")
-			&&heading.querySelector(":scope>td>.repeated-group-frame>.repeated-group-frame-top>.repeated-group-title")),
+			&&heading.querySelector(":scope>td>.repeated-group-title")
+			&&!heading.querySelector(".repeated-group-frame")),
 		"declared and first-seen undeclared groups render non-navigable headings while empty groups stay hidden");
 	await tick();
-	const initialGroupFrames=groupedHeadings().map(heading=>heading.querySelector(".repeated-group-frame"));
 	const groupedCollectionRect=groupedRepeated.parent.containerEl.getBoundingClientRect();
-	const initialGroupFrameRects=initialGroupFrames.map(frame=>frame.getBoundingClientRect());
+	const initialGroupHeadingRects=groupedHeadings().map(heading=>heading.getBoundingClientRect());
 	const initialVisibleGroupedEntries=groupedEntries().filter(entry=>!entry.hidden);
 	assert(initialVisibleGroupedEntries.every(entry=>entry.outerContainerEl.classList.contains("repeated-group-entry"))
 		&&groupedEntries().find(entry=>entry.dataObj.id==="a-1").outerContainerEl.classList.contains("repeated-group-first")
@@ -1030,31 +1030,23 @@ try {
 		&&groupedEntries().find(entry=>entry.dataObj.id==="b-2").outerContainerEl.classList.contains("repeated-group-first")
 		&&groupedEntries().find(entry=>entry.dataObj.id==="b-2").outerContainerEl.classList.contains("repeated-group-last")
 		&&!groupedEntries().find(entry=>entry.dataObj.id==="b-hidden").outerContainerEl.classList.contains("repeated-group-entry")
-		&&initialGroupFrames.every(frame=>getComputedStyle(frame).borderLeftStyle==="solid"
-			&&getComputedStyle(frame).borderRightStyle==="solid"
-			&&getComputedStyle(frame).borderBottomStyle==="solid"
-			&&getComputedStyle(frame.querySelector(".repeated-group-frame-top"),"::before").borderTopStyle==="solid"
-			&&!frame.style.width)
-		&&initialGroupFrameRects.every(rect=>rect.left>groupedCollectionRect.left
-			&&rect.right<groupedCollectionRect.right)
-		&&initialGroupFrameRects.every(rect=>Math.abs(rect.width-initialGroupFrameRects[0].width)<.5)
-		&&initialGroupFrameRects.slice(1).every((rect,index)=>rect.top>initialGroupFrameRects[index].bottom),
-		"each visible group receives an independent equal-width inset frame while hidden entries do not participate");
+		&&initialVisibleGroupedEntries.every(entry=>parseFloat(getComputedStyle(entry.outerContainerEl.cells[0]).paddingLeft)===24)
+		&&initialGroupHeadingRects.every(rect=>rect.left===groupedCollectionRect.left),
+		"each visible group keeps its heading at the repeated baseline while its entries receive layout indentation");
 	assert(initialGroupedCreator.outerContainerEl.classList.contains("grouped-repeated-creator")
 		&&parseFloat(getComputedStyle(initialGroupedCreator.outerContainerEl.cells[0]).paddingTop)>0
-		&&initialGroupedCreator.outerContainerEl.getBoundingClientRect().top>=initialGroupFrameRects.at(-1).bottom,
-		"a grouped creator is subtly separated after the final visible group without a wrapper");
+		&&parseFloat(getComputedStyle(initialGroupedCreator.outerContainerEl.cells[0]).paddingLeft)===10
+		&&parseFloat(getComputedStyle(initialGroupedCreator.outerContainerEl.cells[0]).paddingBottom)>0,
+		"a grouped creator remains at the repeated baseline with breathing room below it");
 	const groupedIdentity=groupedEntries().find(entry=>entry.dataObj.id==="a-3");
 	const groupedIdentityElement=groupedIdentity.outerContainerEl;
 	const groupedKind=groupedIdentity.children[0];
 	groupedTable._openGroup(groupedIdentity);
 	await tick();
-	const openAlphaFrame=groupedHeadings()[0].querySelector(".repeated-group-frame").getBoundingClientRect();
 	const openGroupedEntry=groupedIdentity.el.getBoundingClientRect();
-	assert(openGroupedEntry.left>openAlphaFrame.left&&openGroupedEntry.right<openAlphaFrame.right,
-		"an open grouped entry lays out inside the frame's horizontal inset");
-	assert(openGroupedEntry.bottom<openAlphaFrame.bottom,
-		"the final grouped entry leaves real layout padding above the frame's bottom edge");
+	assert(openGroupedEntry.left>groupedCollectionRect.left
+		&&parseFloat(getComputedStyle(groupedIdentity.outerContainerEl.cells[0]).paddingBottom)===8,
+		"an open grouped entry uses the indented content width and leaves real layout spacing after its group");
 	groupedIdentity.dataObj.kind="b";
 	groupedTable._markDirtyField(groupedKind);
 	assert(groupedTable._closeGroup(groupedIdentity)
@@ -1113,29 +1105,53 @@ try {
 	const groupingOuter=nestedGroupedTable.getDetailCell(0,"groupingOuter");
 	const groupingInner=nestedGroupedTable.getDetailCell(0,"groupingInner");
 	const nestedGroupedRepeated=nestedGroupedTable.getDetailCell(0,"nestedGroupedItems");
-	const nestedGroupFrame=nestedGroupedRepeated.groupHeadings[0].querySelector(".repeated-group-frame");
-	const nestedGroupTitle=nestedGroupFrame.querySelector(".repeated-group-title");
+	const nestedGroupTitle=nestedGroupedRepeated.groupHeadings[0].querySelector(".repeated-group-title");
 	const nestedGroupedEntry=nestedGroupedRepeated.children.find(child=>!child.schemaNode.creator);
 	const nestedGroupedEntryCell=nestedGroupedEntry.outerContainerEl.cells[0];
-	const frameIsSuppressed=()=>getComputedStyle(nestedGroupFrame).borderLeftColor==="rgba(0, 0, 0, 0)"
-		&&getComputedStyle(nestedGroupFrame.querySelector(".repeated-group-frame-top"),"::after")
-			.borderTopColor==="rgba(0, 0, 0, 0)";
-	assert(frameIsSuppressed()&&nestedGroupTitle.getBoundingClientRect().width>0
-		&&parseFloat(getComputedStyle(nestedGroupedEntryCell).paddingLeft)<16,
-		"grouped repeated under a closed parent keeps its compact heading but suppresses the frame");
+	assert(!nestedGroupedRepeated.groupHeadings[0].querySelector(".repeated-group-frame")
+		&&nestedGroupTitle.getBoundingClientRect().width>0
+		&&parseFloat(getComputedStyle(nestedGroupedEntryCell).paddingLeft)<24,
+		"grouped repeated under a closed parent keeps its compact heading without adding indentation");
 	nestedGroupedTable._openGroup(groupingOuter);
 	await tick();
-	assert(frameIsSuppressed(),
-		"opening a grandparent does not expose a grouped repeated while its direct parent remains closed");
+	assert(parseFloat(getComputedStyle(nestedGroupedEntryCell).paddingLeft)<24,
+		"opening a grandparent does not indent grouped entries while their direct parent remains closed");
 	nestedGroupedTable._openGroup(groupingInner);
 	await tick();
-	assert(!frameIsSuppressed()&&getComputedStyle(nestedGroupFrame).borderLeftStyle==="solid"
-		&&parseFloat(getComputedStyle(nestedGroupedEntryCell).paddingLeft)===16,
-		"the existing ancestor affordance state exposes the group frame in the normal editable context");
+	assert(parseFloat(getComputedStyle(nestedGroupedEntryCell).paddingLeft)===24,
+		"the existing ancestor affordance state indents entries in the normal editable context");
+	nestedGroupedEntry.select();
+	await tick();
+	const groupedSelectionRect=nestedGroupedEntry.selEl.getBoundingClientRect();
+	const groupedVisualRect=nestedGroupedEntry.el.getBoundingClientRect();
+	const groupedCursorRect=nestedGroupedTable._cellCursor.getBoundingClientRect();
+	const sameRect=(a,b)=>["left","right","top","bottom"].every(edge=>Math.abs(a[edge]-b[edge])<.5);
+	assert(nestedGroupedEntry.cursorEl===nestedGroupedEntry.el
+		&&nestedGroupedTable._selectedCell===nestedGroupedEntry.selEl
+		&&nestedGroupedEntry.selEl.classList.contains("tablance-active-cell")
+		&&sameRect(groupedCursorRect,groupedVisualRect)
+		&&!sameRect(groupedCursorRect,groupedSelectionRect)
+		&&nestedGroupedTable._resolvePointerDetailsInstance(nestedGroupedEntry.el)===nestedGroupedEntry
+		&&nestedGroupedTable._getDetailsCellRect(nestedGroupedEntry).left===groupedSelectionRect.left,
+		"a grouped entry can use separate cursor geometry without changing selection, hit testing, or navigation geometry");
+	const nestedGroupedCreator=nestedGroupedRepeated.children.find(child=>child.schemaNode.creator);
+	nestedGroupedCreator.select();
+	await tick();
+	const groupedCreatorSelectionRect=nestedGroupedCreator.selEl.getBoundingClientRect();
+	const groupedCreatorVisualRect=nestedGroupedCreator.el.getBoundingClientRect();
+	const groupedCreatorCursorRect=nestedGroupedTable._cellCursor.getBoundingClientRect();
+	assert(nestedGroupedCreator.cursorEl===nestedGroupedCreator.el
+		&&nestedGroupedTable._selectedCell===nestedGroupedCreator.selEl
+		&&nestedGroupedCreator.selEl.classList.contains("tablance-active-cell")
+		&&sameRect(groupedCreatorCursorRect,groupedCreatorVisualRect)
+		&&!sameRect(groupedCreatorCursorRect,groupedCreatorSelectionRect)
+		&&nestedGroupedTable._resolvePointerDetailsInstance(nestedGroupedCreator.el)===nestedGroupedCreator,
+		"a repeated creator uses the same semantic group cursor box without changing its canonical selection or hit target");
 	nestedGroupedTable._finalizeGroupClose(groupingOuter);
 	await tick();
-	assert(frameIsSuppressed()&&nestedGroupTitle.getBoundingClientRect().width>0,
-		"closing a grandparent suppresses nested repeated frames without hiding their headings");
+	assert(parseFloat(getComputedStyle(nestedGroupedEntryCell).paddingLeft)<24
+		&&nestedGroupTitle.getBoundingClientRect().width>0,
+		"closing a grandparent removes nested indentation without hiding group headings");
 
 	const nestedDependencyRenders={};
 	const countNestedRender=(kind,rowData,value)=>{

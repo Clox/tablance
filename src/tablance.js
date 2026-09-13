@@ -196,6 +196,8 @@ class TablanceBase {
 						//if expanded again or scrolled into view.
 						//keys are rowDataindex and the values are instanceTrees rooted at an instance-node shaped as:
 						//	el: HTMLElement the cell-element itself
+						//	selEl: optional canonical selection/state/hit-test element when it differs from el
+						//	cursorEl: optional visual geometry element used only for drawing the cell cursor
 						//	children: Array May be null but groups can have children which would be put in here
 						//  				each element would be another instance-node
 						//	parent: points to the parent instance-node. for non nested cells this would point to a
@@ -238,7 +240,6 @@ class TablanceBase {
 	_helpCloseTimer;
 	_helpResizeObserver;
 	_lineupResizeObserver;
-	_repeatedGroupingResizeObserver;
 	_readOnlyFeedbackTarget;
 	_readOnlyFeedbackTimer;
 	_dropdownAlignmentContainer;
@@ -3589,6 +3590,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		groupTable.dataset.path=path.join("-");
 		parentEl.classList.add("group-cell");
 		instanceNode.el=groupTable;
+		// A group instance is visually represented by its own table even when its canonical selection/state surface is
+		// an enclosing cell. Keep cursor geometry at that semantic group level for every group, including repeated
+		// entries and repeated creators; presentation containers such as repeated.grouping must not decide this.
+		instanceNode.cursorEl=groupTable;
 		//A group directly inside a list is visually a full value cell, including the cell's padding. Use that cell as
 		//the hit target so an empty group does not shrink the clickable area to the height of its inner table.
 		if (instanceNode.parent?.schemaNode.type==="list") {
@@ -4906,23 +4911,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_syncGroupChevronVisibility(groupObject) {
 		// Kept as the compatibility entry point for existing callers; chevron, border and dividers now share state.
 		this._syncDetailsPresentation(groupObject);
-		for (const repeated of this._getRepeatedAncestors(groupObject))
-			if (repeated.schemaNode?.grouping)
-				this._scheduleRepeatedGroupFrames(repeated);
 	}
 
 	_setClosedRender(groupObject,renderText,path=groupObject.path,tbody=groupObject.el.tBodies?.[0]) {
-		const refreshGroupedFrame=()=>{
-			for (const repeated of this._getRepeatedAncestors(groupObject))
-				if (repeated.schemaNode?.grouping)
-					this._scheduleRepeatedGroupFrames(repeated);
-		};
 		const renderRow=groupObject.el.querySelector("tbody>tr.group-render");
 		if (renderText==null) {
 			groupObject.el.classList.remove("closed-render");
 			renderRow?.remove();
 			this._placeGroupChevron(groupObject);
-			refreshGroupedFrame();
 			return;
 		}
 		groupObject.el.classList.add("closed-render");
@@ -4940,7 +4936,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			content.innerText=renderText;
 		cell.replaceChildren(content);
 		this._placeGroupChevron(groupObject);
-		refreshGroupedFrame();
 	}
 
 	_repeatInsert(repeated,creating,data,entrySchemaNode=null) {
@@ -5036,66 +5031,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			heading=document.createElement("span");
 		}
 		const headingContent=heading.cells?.[0]??heading;
-		const frame=headingContent.appendChild(document.createElement("span"));
-		frame.className="repeated-group-frame";
-		const top=frame.appendChild(document.createElement("span"));
-		top.className="repeated-group-frame-top";
-		const titleEl=top.appendChild(document.createElement("span"));
+		const titleEl=headingContent.appendChild(document.createElement("span"));
 		titleEl.className="repeated-group-title";
 		titleEl.textContent=title;
 		heading.className="repeated-group-heading";
 		heading.dataset.groupKey=String(key??"");
 		heading.setAttribute("aria-hidden","true");
 		return heading;
-	}
-
-	_refreshRepeatedGroupFrames(repeated) {
-		const collectionEl=repeated?.parent?.containerEl;
-		if (!collectionEl?.isConnected)
-			return;
-		for (const heading of repeated.groupHeadings??[]) {
-			const frame=heading.querySelector(".repeated-group-frame");
-			const entries=heading._tablanceRepeatedGroupEntries??[];
-			const entryRects=entries.map(entry=>entry.outerContainerEl?.getBoundingClientRect())
-				.filter(rect=>rect?.width>0&&rect.height>0);
-			if (!frame||!entryRects.length)
-				continue;
-			const top=frame.getBoundingClientRect().top;
-			const bottom=Math.max(...entryRects.map(rect=>rect.bottom));
-			frame.style.height=`${Math.max(0,bottom-top)}px`;
-		}
-	}
-
-	_scheduleRepeatedGroupFrames(repeated) {
-		if (!repeated||repeated._groupFrameRefreshPending)
-			return;
-		repeated._groupFrameRefreshPending=true;
-		setTimeout(()=>{
-			repeated._groupFrameRefreshPending=false;
-			this._refreshRepeatedGroupFrames(repeated);
-		},0);
-	}
-
-	_syncRepeatedGroupingResizeObservation(repeated,entries=[]) {
-		this._repeatedGroupingResizeObserver??=new ResizeObserver(records=>{
-			const repeatedContainers=new Set(records.map(record=>record.target._tablanceRepeatedGroupingOwner)
-				.filter(Boolean));
-			for (const owner of repeatedContainers)
-				this._scheduleRepeatedGroupFrames(owner);
-		});
-		const collectionEl=repeated?.parent?.containerEl;
-		const current=new Set([collectionEl,...entries.map(entry=>entry.outerContainerEl)].filter(Boolean));
-		for (const oldElement of repeated.groupingObservedElements??[])
-			if (!current.has(oldElement)) {
-				this._repeatedGroupingResizeObserver.unobserve(oldElement);
-				delete oldElement._tablanceRepeatedGroupingOwner;
-			}
-		for (const element of current)
-			if (!repeated.groupingObservedElements?.has(element)) {
-				element._tablanceRepeatedGroupingOwner=repeated;
-				this._repeatedGroupingResizeObserver.observe(element);
-			}
-		repeated.groupingObservedElements=current;
 	}
 
 	_arrangeRepeatedInstances(repeated) {
@@ -5176,7 +5118,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				visibleEntries.at(-1)?.outerContainerEl?.classList.add("repeated-group-last");
 				if (group.title&&visibleEntries.length) {
 					const heading=this._createRepeatedGroupHeading(repeated,group.title,group.key);
-					heading._tablanceRepeatedGroupEntries=visibleEntries;
 					collectionEl.insertBefore(heading,repeated.insertionPoint);
 					repeated.groupHeadings.push(heading);
 				}
@@ -5193,9 +5134,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		for (let index=0;index<repeated.children.length;index++)
 			this._changeInstanceNodeIndex(repeated.children[index],index);
-		this._syncRepeatedGroupingResizeObservation(repeated,grouping?sorted.filter(entry=>!entry.hidden):[]);
-		this._refreshRepeatedGroupFrames(repeated);
-		this._scheduleRepeatedGroupFrames(repeated);
 		this._adjustCursorPosSize?.(this._selectedCell,true);
 		return orderChanged;
 	}
@@ -6380,8 +6318,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (openedPresentationRoot)
 			this._syncDetailsPresentation(openedPresentationRoot);
 
-		this._adjustCursorPosSize(instanceNode.selEl??instanceNode.el);
 		this._activeDetailsCell=instanceNode;
+		this._adjustCursorPosSize(this._getCursorGeometryEl(instanceNode));
 		return instanceNode;
 	}
 
@@ -6396,7 +6334,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._focusEl.focus({preventScroll:true});
 		this._clearStaticCellOverflowPreview();
 		if (adjustCursorPosSize)
-			this._adjustCursorPosSize(cellEl);
+			this._adjustCursorPosSize(instanceNode?this._getCursorGeometryEl(instanceNode):cellEl);
 		this._cellCursor.classList.toggle("details",cellEl.closest(".details"));
 		this._cellCursor.classList.toggle("group-cell-cursor",schemaNode.type==="group");
 		this._cellCursor.classList.toggle("inline-title-indicator",Boolean(
@@ -6430,6 +6368,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		cellEl?.classList.add("tablance-active-cell");
 	}
 
+	_getCursorGeometryEl(instanceNode=this._activeDetailsCell) {
+		return instanceNode?.cursorEl??instanceNode?.selEl??instanceNode?.el;
+	}
+
 	_cellElementRepresentsLogicalCursor(cellEl,instanceNode=null) {
 		if (!cellEl)
 			return false;
@@ -6457,6 +6399,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_adjustCursorPosSize(el,onlyPos=false) {
+		if (this._activeDetailsCell&&el===this._selectedCell)
+			el=this._getCursorGeometryEl(this._activeDetailsCell);
 		if (!el)
 			return;
 		const elPos=this._getElPos(el);
@@ -6464,8 +6408,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._cellCursor.style.left=elPos.x+"px";
 		this._cellCursor.style.display="block";//it starts at display none since #setupSpreadsheet, so make visible now
 		if (!onlyPos) {
-			this._cellCursor.style.height=el.offsetHeight+"px";
-			this._cellCursor.style.width=el.offsetWidth+"px";
+			const explicitCursorRect=this._activeDetailsCell?.cursorEl===el?el.getBoundingClientRect():null;
+			this._cellCursor.style.height=(explicitCursorRect?.height??el.offsetHeight)+"px";
+			this._cellCursor.style.width=(explicitCursorRect?.width??el.offsetWidth)+"px";
 			if (el===this._selectedCell)
 				this._updateStaticCellOverflowPreview();
 		}
