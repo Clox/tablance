@@ -1067,6 +1067,153 @@
 .tablance .details table.details-group > tbody > tr.repeated-group-entry:not(.details-affordances-suppressed) > td:first-child {
   padding-left: 24px;
 }
+.tablance .details tr.repeated-reorder-entry:not(.details-affordances-suppressed) > .repeated-reorder-column,
+.tablance .details table.details-group > tbody > tr.repeated-reorder-entry:not(.details-affordances-suppressed) > .repeated-reorder-column,
+.tablance .details table.details-group > tbody > tr.repeated-group-entry.repeated-reorder-entry:not(.details-affordances-suppressed) > .repeated-reorder-column {
+  position: relative;
+  box-sizing: border-box;
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+  vertical-align: middle;
+}
+.tablance .details tr.repeated-group-entry.repeated-reorder-entry:not(.details-affordances-suppressed) > td:nth-child(2),
+.tablance .details table.details-group > tbody > tr.repeated-group-entry.repeated-reorder-entry:not(.details-affordances-suppressed) > td:nth-child(2) {
+  padding-left: 0;
+}
+.tablance .details span.repeated-reorder-column {
+  position: relative;
+  align-self: stretch;
+  box-sizing: border-box;
+  width: 36px;
+  min-width: 36px;
+}
+.tablance .details .repeated-reorder-column[hidden] {
+  display: none;
+}
+.tablance .details .repeated-reorder-column,
+.tablance .details .repeated-reorder-cell {
+  user-select: none;
+}
+.tablance .details .repeated-reorder-cell {
+  position: absolute;
+  z-index: 1;
+  inset: 3px 3px 3px 7px;
+  box-sizing: border-box;
+  border-radius: 5px;
+  color: #64748b;
+  cursor: cell;
+}
+.tablance .details .repeated-reorder-cell:hover > .repeated-reorder-surface {
+  background: rgba(226, 232, 240, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(100, 116, 139, 0.5);
+}
+.tablance .details .repeated-reorder-cell:hover {
+  color: var(--tablance-heading-color);
+}
+.tablance .details .repeated-reorder-cell[hidden] {
+  display: none;
+}
+.tablance .details .repeated-reorder-cell.repeated-reorder-peer-suppressed > .repeated-reorder-surface {
+  opacity: var(--tablance-reorder-peer-opacity, 0.3);
+}
+.tablance .details .repeated-reorder-cell.repeated-reorder-peer-suppressed:hover {
+  color: #64748b;
+}
+.tablance .details .repeated-reorder-cell.repeated-reorder-peer-suppressed:hover > .repeated-reorder-surface {
+  background: rgba(248, 250, 252, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.42);
+}
+.tablance .details .repeated-reorder-surface {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-radius: inherit;
+  background: rgba(248, 250, 252, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.42);
+  pointer-events: none;
+}
+.tablance .details .repeated-reorder-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+.tablance .details .repeated-reorder-handle .repeated-reorder-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  overflow: visible;
+  fill: currentColor;
+  opacity: 0.78;
+}
+.tablance .details .repeated-reorder-handle .repeated-reorder-icon-bars {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.45;
+  stroke-linecap: round;
+}
+.tablance .details.cell-cursor.repeated-reorder-editor {
+  z-index: 6;
+  box-sizing: border-box;
+  padding: 0;
+  background: #f8fbff;
+  overflow: visible;
+  user-select: none;
+}
+.tablance .details.cell-cursor.repeated-reorder-editor > .repeated-reorder-control {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.tablance .details.cell-cursor.repeated-reorder-editor > .repeated-reorder-control > .repeated-reorder-handle {
+  color: var(--tablance-accent-color);
+}
+.tablance .details.cell-cursor.repeated-reorder-editor button {
+  position: absolute;
+  left: 50%;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: 4px;
+  background: #f8fafc;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.13);
+  color: #475569;
+  font: 600 15px/1 var(--tablance-font-family);
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translateX(-50%);
+}
+.tablance .details.cell-cursor.repeated-reorder-editor button:hover {
+  background: color-mix(in srgb, var(--tablance-accent-color) 10%, #f8fafc);
+  color: var(--tablance-accent-color);
+}
+.tablance .details.cell-cursor.repeated-reorder-editor button:focus-visible {
+  outline: none;
+}
+.tablance .details.cell-cursor.repeated-reorder-editor button[hidden] {
+  display: none;
+}
+.tablance .details.cell-cursor.repeated-reorder-editor .repeated-reorder-up {
+  bottom: calc(100% + 3px);
+}
+.tablance .details.cell-cursor.repeated-reorder-editor .repeated-reorder-down {
+  top: calc(100% + 3px);
+}
 .tablance .details tr.repeated-group-last > td,
 .tablance .details table.details-group > tbody > tr.repeated-group-last > td {
   padding-bottom: var(--tablance-repeated-group-entry-bottom-padding, 8px);

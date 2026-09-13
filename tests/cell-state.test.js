@@ -1166,6 +1166,242 @@ try {
 		&&nestedGroupedTable._activeDetailsCell?.parent===nestedGroupedRepeated,
 		"a containing group remains activatable after its repeated entries are rebound");
 
+	const reorderBacking=[
+		{id:"old",position:1,label:"Old"},
+		{id:"middle",position:2,label:"Middle"},
+		{id:"new",position:3,label:"New"},
+	];
+	const reorderCommits=[];
+	const reorderTable=new Tablance(host(),{details:{type:"list",entries:[
+		{type:"repeated",dataKey:"items",nodeId:"reorderItems",create:true,
+			 sortCompare:(a,b)=>b.position-a.position,
+			reorder:{
+				canMove:(_direction,{target})=>!!target,
+				onCommit:payload=>reorderCommits.push(payload),
+			},
+			entry:{type:"group",closedRender:data=>data.label,entries:[
+				{title:"Label",dataKey:"label",input:{type:"text"}},
+			]}},
+	]}},true,true,{searchbar:false});
+	reorderTable.setData([{items:reorderBacking}]);
+	await tick();
+	const reorderRepeated=reorderTable.getDetailCell(0,"reorderItems");
+	const reorderEntries=()=>reorderRepeated.children.filter(child=>!child.schemaNode.creator&&!child.creating);
+	const entry=id=>reorderEntries().find(item=>item.dataObj.id===id);
+	const middleReorderEntry=entry("middle");
+	const middleClosedRender=middleReorderEntry.el.textContent;
+	const reorderCreatorCells=reorderRepeated.children.find(child=>child.schemaNode.creator).outerContainerEl.cells;
+	assert(middleReorderEntry.reorderCell?.schemaNode.type==="reorder"
+		&&!middleReorderEntry.reorderCell.hidden
+		&&middleReorderEntry.reorderCell.parent===reorderRepeated
+		&&middleReorderEntry.reorderCell.ownerEntry===middleReorderEntry
+		&&middleReorderEntry.reorderColumnEl.matches("td.repeated-reorder-column")
+		&&middleReorderEntry.reorderCell.el.matches("td.repeated-reorder-column > span.repeated-reorder-cell")
+		&&middleReorderEntry.reorderCell.el.querySelector(":scope>.repeated-reorder-surface")
+		&&middleReorderEntry.reorderCell.el.querySelector("svg.repeated-reorder-icon")
+		&&middleReorderEntry.reorderCell.el.querySelectorAll(".repeated-reorder-icon-bars").length===1
+		&&(middleReorderEntry.reorderCell.el.querySelector(".repeated-reorder-icon-bars")
+			.getAttribute("d").match(/M/g)??[]).length===2
+		&&middleReorderEntry.reorderCell.el.querySelectorAll(".repeated-reorder-icon-up, .repeated-reorder-icon-down").length===2
+		&&getComputedStyle(middleReorderEntry.reorderCell.el.querySelector("svg.repeated-reorder-icon")).width==="18px"
+		&&getComputedStyle(middleReorderEntry.reorderCell.el).userSelect==="none"
+		&&middleReorderEntry.reorderCell.el.querySelectorAll("button").length===0
+		&&reorderCreatorCells[reorderCreatorCells.length-1].colSpan===2
+		&&reorderRepeated.children.filter(child=>!child.schemaNode.creator).length===3,
+		"a closed reorderable entry owns a real auxiliary Tablance cell without changing repeated entry identity");
+	middleReorderEntry.select();
+	key(reorderTable.rootEl,"ArrowDown","ArrowDown");
+	assert(reorderTable._activeDetailsCell.dataObj.id==="old"&&!reorderTable._activeRepeatedReorderEntry,
+		"ordinary vertical navigation skips the reorder handle and remains entry-to-entry");
+	key(reorderTable.rootEl,"ArrowUp","ArrowUp");
+	assert(reorderTable._activeDetailsCell===middleReorderEntry,
+		"ArrowUp in the repeated entry column stays in the entry column");
+	middleReorderEntry.select();
+	key(reorderTable.rootEl,"ArrowLeft","ArrowLeft");
+	const reorderCursorRect=reorderTable._cellCursor.getBoundingClientRect();
+	const reorderCellRect=middleReorderEntry.reorderCell.el.getBoundingClientRect();
+	const reorderColumnRect=middleReorderEntry.reorderColumnEl.getBoundingClientRect();
+	const middleNormalRowHeight=middleReorderEntry.outerContainerEl.getBoundingClientRect().height;
+	assert(reorderTable._activeDetailsCell===middleReorderEntry.reorderCell
+		&&reorderTable._selectedCell===middleReorderEntry.reorderCell.el
+		&&!reorderTable._activeRepeatedReorderEntry
+		&&middleReorderEntry.el.textContent===middleClosedRender
+		&&Math.abs(reorderCursorRect.left-reorderCellRect.left)<.1
+		&&Math.abs(reorderCursorRect.width-reorderCellRect.width)<.1
+		&&reorderCellRect.left>reorderColumnRect.left
+		&&reorderCellRect.right<reorderColumnRect.right
+		&&reorderCellRect.top>reorderColumnRect.top
+		&&reorderCellRect.bottom<reorderColumnRect.bottom
+		&&Math.abs((reorderCellRect.left-reorderColumnRect.left)-7)<.1
+		&&Math.abs((reorderColumnRect.right-reorderCellRect.right)-3)<.1,
+		"ArrowLeft selects only the inset real reorder cell while preserving the entry's closed render");
+	key(reorderTable.rootEl,"ArrowDown","ArrowDown");
+	assert(reorderTable._activeDetailsCell===entry("old").reorderCell,
+		"ArrowDown in the reorder column stays in the reorder column");
+	key(reorderTable.rootEl,"ArrowUp","ArrowUp");
+	assert(reorderTable._activeDetailsCell===middleReorderEntry.reorderCell,
+		"ArrowUp in the reorder column stays in the reorder column");
+	key(reorderTable.rootEl,"ArrowRight","ArrowRight");
+	assert(reorderTable._activeDetailsCell===middleReorderEntry,
+		"ArrowRight returns from the reorder cell to its owning entry");
+	key(reorderTable.rootEl,"ArrowLeft","ArrowLeft");
+	key(reorderTable.rootEl,"Enter","Enter");
+	const reorderControl=reorderTable._cellCursor.querySelector(".repeated-reorder-control");
+	assert(reorderTable._activeRepeatedReorderEntry===middleReorderEntry
+		&&reorderTable._inEditMode
+		&&reorderTable._cellCursor.classList.contains("repeated-reorder-editor")
+		&&Math.abs(middleReorderEntry.outerContainerEl.getBoundingClientRect().height-middleNormalRowHeight)<.1
+		&&getComputedStyle(reorderControl).position==="absolute"
+		&&getComputedStyle(reorderControl.querySelector(".repeated-reorder-up")).position==="absolute"
+		&&getComputedStyle(reorderControl.querySelector(".repeated-reorder-down")).position==="absolute"
+		&&getComputedStyle(reorderControl.querySelector(".repeated-reorder-up")).backgroundColor!=="rgba(0, 0, 0, 0)"
+		&&Math.abs(reorderControl.querySelector(".repeated-reorder-up").getBoundingClientRect().width
+			-middleReorderEntry.reorderCell.el.getBoundingClientRect().width)<.1
+		&&Math.abs((middleReorderEntry.reorderCell.el.getBoundingClientRect().top
+			-reorderControl.querySelector(".repeated-reorder-up").getBoundingClientRect().bottom)-3)<.1
+		&&Math.abs((reorderControl.querySelector(".repeated-reorder-down").getBoundingClientRect().top
+			-middleReorderEntry.reorderCell.el.getBoundingClientRect().bottom)-3)<.1
+		&&!middleReorderEntry.reorderCell.el.classList.contains("repeated-reorder-peer-suppressed")
+		&&reorderEntries().filter(item=>item!==middleReorderEntry).every(item=>
+			item.reorderCell.el.classList.contains("repeated-reorder-peer-suppressed")
+			&&getComputedStyle(item.reorderCell.el).opacity==="1"
+			&&getComputedStyle(item.reorderCell.el.querySelector(".repeated-reorder-surface")).opacity==="0.3"
+			&&getComputedStyle(item.reorderCell.el).pointerEvents!=="none")
+		&&[...reorderControl.children].map(child=>child.className).join(",")==="repeated-reorder-up,repeated-reorder-handle,repeated-reorder-down"
+		&&middleReorderEntry.el.textContent===middleClosedRender,
+		"Enter overlays a vertical up-handle-down editor without changing row geometry or hiding closedRender");
+	key(reorderTable.rootEl,"ArrowDown","ArrowDown");
+	key(reorderTable.rootEl,"ArrowUp","ArrowUp");
+	assert(reorderCommits.length===0&&reorderBacking[1].position===2
+		&&reorderTable._activeDetailsCell===middleReorderEntry.reorderCell
+		&&reorderTable._activeRepeatedReorderEntry===middleReorderEntry
+		&&reorderEntries()[1]===middleReorderEntry
+		&&reorderBacking[1]===middleReorderEntry.dataObj
+		&&!reorderTable._cellCursor.querySelector(".repeated-reorder-up").hidden
+		&&!reorderTable._cellCursor.querySelector(".repeated-reorder-down").hidden
+		&&reorderEntries().filter(item=>item!==middleReorderEntry).every(item=>
+			item.reorderCell.el.classList.contains("repeated-reorder-peer-suppressed")),
+		"multiple arrow moves stay local, retain object identity, and immediately update available controls");
+	key(reorderTable.rootEl,"ArrowDown","ArrowDown");
+	key(reorderTable.rootEl,"Escape","Escape");
+	assert(!reorderTable._activeRepeatedReorderEntry&&!reorderTable._inEditMode
+		&&!middleReorderEntry.el.classList.contains("open")
+		&&!middleReorderEntry.reorderCell.el.classList.contains("editing")
+		&&reorderTable._activeDetailsCell===middleReorderEntry.reorderCell
+		&&reorderEntries().map(item=>item.dataObj.id).join(",")==="new,middle,old"
+		&&reorderEntries().every(item=>!item.reorderCell.el.classList.contains("repeated-reorder-peer-suppressed")
+			&&getComputedStyle(item.reorderCell.el).opacity==="1"
+			&&getComputedStyle(item.reorderCell.el).pointerEvents!=="none")
+		&&reorderCommits.length===0,
+		"Escape cancels the reorder editor and restores its complete entry-order baseline");
+
+	const oldReorderEntry=entry("old");
+	oldReorderEntry.select();
+	key(reorderTable.rootEl,"ArrowLeft","ArrowLeft");
+	key(reorderTable.rootEl,"Enter","Enter");
+	key(reorderTable.rootEl,"ArrowUp","ArrowUp");
+	key(reorderTable.rootEl,"ArrowUp","ArrowUp");
+	assert(reorderTable._cellCursor.querySelector(".repeated-reorder-up").hidden
+		&&!reorderTable._cellCursor.querySelector(".repeated-reorder-down").hidden,
+		"the active vertical control displays only directions that remain possible after a move");
+	key(reorderTable.rootEl,"Enter","Enter");
+	assert(reorderCommits.length===1
+		&&reorderCommits[0].baselineOrder.map(item=>item.id).join(",")==="new,middle,old"
+		&&reorderCommits[0].order.map(item=>item.id).join(",")==="old,new,middle"
+		&&reorderTable._activeDetailsCell===oldReorderEntry.reorderCell&&!reorderTable._inEditMode,
+		"Enter commits several local moves once and retains the cursor on the moved entry's reorder cell");
+	reorderTable._finalizeRepeatedMutation(reorderRepeated);
+
+	entry("middle").select();
+	key(reorderTable.rootEl,"ArrowLeft","ArrowLeft");
+	key(reorderTable.rootEl,"Enter","Enter");
+	key(reorderTable.rootEl,"ArrowUp","ArrowUp");
+	key(reorderTable.rootEl,"Tab","Tab");
+	assert(reorderCommits.length===2&&reorderTable._activeDetailsCell.dataObj.id==="new"
+		&&!reorderTable._inEditMode,
+		"Tab commits reorder and moves forward using normal editor navigation");
+	reorderTable._finalizeRepeatedMutation(reorderRepeated);
+	entry("middle").select();
+	key(reorderTable.rootEl,"ArrowLeft","ArrowLeft");
+	key(reorderTable.rootEl,"Enter","Enter");
+	key(reorderTable.rootEl,"ArrowDown","ArrowDown");
+	key(reorderTable.rootEl,"Tab","Tab",{shiftKey:true});
+	assert(reorderCommits.length===3&&reorderTable._activeDetailsCell.dataObj.id==="old"
+		&&!reorderTable._inEditMode,
+		"Shift+Tab commits reorder and moves backward using normal editor navigation");
+	reorderTable._finalizeRepeatedMutation(reorderRepeated);
+	entry("middle").select();
+	key(reorderTable.rootEl,"ArrowLeft","ArrowLeft");
+	key(reorderTable.rootEl,"Enter","Enter");
+	key(reorderTable.rootEl,"ArrowUp","ArrowUp");
+	entry("old").el.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,cancelable:true,button:0}));
+	assert(reorderCommits.length===4&&reorderTable._activeDetailsCell.dataObj.id==="old"
+		&&!reorderTable._inEditMode,
+		"clicking another cell commits the reorder through the ordinary editor exit path");
+	reorderTable._finalizeRepeatedMutation(reorderRepeated);
+	const pointerReorderEntry=entry("middle");
+	pointerReorderEntry.reorderCell.el.dispatchEvent(new MouseEvent("mousedown",{
+		bubbles:true,cancelable:true,button:0,
+	}));
+	assert(reorderTable._activeDetailsCell===pointerReorderEntry.reorderCell
+		&&!reorderTable._activeRepeatedReorderEntry,
+		"pointer selection resolves directly to the real reorder cell");
+	const reorderDoubleClick=new MouseEvent("dblclick",{bubbles:true,cancelable:true});
+	reorderTable._cellCursor.dispatchEvent(reorderDoubleClick);
+	assert(reorderTable._activeRepeatedReorderEntry===pointerReorderEntry&&reorderTable._inEditMode,
+		"double-click activates the selected reorder cell through the shared cell cursor");
+	assert(reorderDoubleClick.defaultPrevented
+		&&getComputedStyle(reorderTable._cellCursor).userSelect==="none",
+		"reorder double-click and its editor overlay suppress native text selection");
+	const activeReorderClick=new MouseEvent("click",{bubbles:true,cancelable:true});
+	reorderTable._cellCursor.dispatchEvent(activeReorderClick);
+	assert(activeReorderClick.defaultPrevented&&reorderTable._inEditMode
+		&&reorderTable._activeRepeatedReorderEntry===pointerReorderEntry&&reorderCommits.length===4,
+		"a click on the active reorder cell keeps its editor and local session active");
+	const dimmedPeerEntry=entry("old");
+	dimmedPeerEntry.reorderCell.el.dispatchEvent(new MouseEvent("mousedown",{
+		bubbles:true,cancelable:true,button:0,
+	}));
+	assert(!reorderTable._inEditMode&&!reorderTable._activeRepeatedReorderEntry
+		&&reorderTable._activeDetailsCell===dimmedPeerEntry.reorderCell
+		&&reorderTable._selectedCell===dimmedPeerEntry.reorderCell.el
+		&&!dimmedPeerEntry.el.classList.contains("open")
+		&&reorderEntries().every(item=>!item.reorderCell.el.classList.contains("repeated-reorder-peer-suppressed")),
+		"clicking a dimmed canonical peer commits the active editor and selects that peer without opening entries");
+	pointerReorderEntry.reorderCell.select();
+	reorderTable._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
+	const activeReorderDoubleClick=new MouseEvent("dblclick",{bubbles:true,cancelable:true});
+	reorderTable._cellCursor.dispatchEvent(activeReorderDoubleClick);
+	assert(activeReorderDoubleClick.defaultPrevented&&!reorderTable._inEditMode
+		&&reorderTable._activeDetailsCell===pointerReorderEntry.reorderCell
+		&&reorderEntries().every(item=>!item.reorderCell.el.classList.contains("repeated-reorder-peer-suppressed")),
+		"double-clicking the active reorder cell accepts and closes its editor");
+	reorderTable._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
+	key(reorderTable.rootEl,"Enter","Enter",{shiftKey:true});
+	assert(reorderTable._activeDetailsCell===pointerReorderEntry.reorderCell&&!reorderTable._inEditMode,
+		"Shift+Enter accepts reorder and stays on the same stable reorder cell like Enter");
+	reorderTable._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
+	key(reorderTable.rootEl,"Escape","Escape");
+	const missingReorderEntry=entry("middle");
+	missingReorderEntry.reorderCell.hidden=missingReorderEntry.reorderCell.el.hidden=
+		missingReorderEntry.reorderColumnEl.hidden=true;
+	entry("new").reorderCell.select();
+	key(reorderTable.rootEl,"ArrowDown","ArrowDown");
+	assert(reorderTable._activeDetailsCell===missingReorderEntry,
+		"a missing reorder cell uses the shared logical-grid fallback for that row");
+	key(reorderTable.rootEl,"ArrowDown","ArrowDown");
+	assert(reorderTable._activeDetailsCell===entry("old").reorderCell,
+		"the preferred reorder column survives a row whose reorder cell is missing");
+	missingReorderEntry.reorderCell.hidden=missingReorderEntry.reorderCell.el.hidden=
+		missingReorderEntry.reorderColumnEl.hidden=false;
+	reorderTable._openGroup(middleReorderEntry);
+	assert(middleReorderEntry.reorderCell.hidden,
+		"an open repeated entry has no reorder UI");
+	reorderRepeated.createNewEntry();
+	const reorderDraft=reorderRepeated.children.find(child=>child.creating);
+	assert(reorderDraft.reorderCell?.hidden!==false,
+		"an uncommitted create draft cannot expose or enter repeated reorder mode");
+
 	const nestedDependencyRenders={};
 	const countNestedRender=(kind,rowData,value)=>{
 		const key=`${kind}:${rowData.id}`;

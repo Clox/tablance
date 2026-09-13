@@ -28,6 +28,7 @@ const SELECTABLE_DETAILS_NODE_PROTOTYPE=Object.assign(Object.create(INSTANCE_NOD
 });
 const FIELD_INSTANCE_NODE_PROTOTYPE=Object.create(SELECTABLE_DETAILS_NODE_PROTOTYPE);
 const GROUP_INSTANCE_NODE_PROTOTYPE=Object.create(SELECTABLE_DETAILS_NODE_PROTOTYPE);
+const REORDER_INSTANCE_NODE_PROTOTYPE=Object.create(SELECTABLE_DETAILS_NODE_PROTOTYPE);
 const REPEATED_INSTANCE_NODE_PROTOTYPE=Object.create(INSTANCE_NODE_PROTOTYPE);
 REPEATED_INSTANCE_NODE_PROTOTYPE.createNewEntry=function(e,_groupObject) {
 	e?.preventDefault?.();
@@ -78,6 +79,9 @@ const DEFAULT_LANG=Object.freeze({
 	groupValidationFailedHint:"Press Ctrl+Esc to discard changes and back out.",
 	helpLabel:"Help",
 	viewsLabel:"Views",
+	reorder:"Change order",
+	reorderUp:"Move up",
+	reorderDown:"Move down",
 });
 let defaultLangOverrides=Object.create(null);
 
@@ -161,8 +165,10 @@ class TablanceBase {
 	_selectedCell;//the HTML-element of the cell-cursor. probably TD's most of the time.
 	_cellStates=new WeakMap();//canonical functional state for every currently rendered cell element
 	_selectedCellState;//canonical state for the selected cell; DOM classes are styling hooks only
-	_activeVerticalGrid=null;//grid instance whose logical preferred column is active during vertical grid navigation
+	_activeVerticalLayout=null;//logical layout whose preferred column is active during vertical navigation
+	_activeVerticalLayoutColumnKey=null;
 	_inEditMode;//whether the user is currently in edit-mode
+	_editModeController;//optional non-field editor participating in the ordinary commit/cancel/navigation lifecycle
 	_inReadOnlyMode=false;//whether a read-only presentation textarea is currently open
 	_readOnlyDisplayedText;//immutable displayed text used while read-only presentation mode is open
 	//and values are px as ints. This is used to offset the position and adjust position of #cellCursor in order to
@@ -646,6 +652,12 @@ class TablanceBase {
 	 * 						keys follow in stable first-occurrence order. Empty groups are not rendered.
 	 * 					Grouping only changes presentation. Entry instances and backing-array identity remain flat,
 	 * 					and sortCompare is applied only between entries in the same group.
+	 * 				reorder Object Optional reorder editor for closed repeated entries.
+	 * 					canMove(direction, payload) decides whether "up" or "down" is available.
+	 * 					onCommit(payload) persists the accepted order. payload.baselineOrder and payload.order
+	 * 					contain data objects; payload.refresh() reapplies canonical sorting after persistence.
+	 * 					The handle is an internal auxiliary cell reached spatially from its entry. It is intentionally
+	 * 					excluded from the repeated entry list and therefore from ordinary Tab/vertical navigation.
 	 * 				creationText String Used if "create" is true. the text of the creation-cell. Default is "Insert new"
 	 * 					May also be set via opts->lang->insertEntry
 	 * 				deleteText String used if "create" is true. the text of the deletion-button. Default is "Delete"
@@ -2494,7 +2506,24 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this.rootEl.addEventListener("keydown",e=>this._spreadsheetKeyDown(e));
 		this.rootEl.addEventListener("mousedown",e=>this._spreadsheetMouseDown(e));
 		this.rootEl.addEventListener("dblclick",e=>this._detailsRowExtensionDoubleClick(e));
-		this._cellCursor.addEventListener("dblclick",e=>this._enterCell(e));
+		this._cellCursor.addEventListener("click",e=>{
+			if (!this._activeRepeatedReorderEntry||e.target.closest("button"))
+				return;
+			// A click on the active editor surface keeps the edit session alive. Deliberately leave pointerdown/
+			// mousedown untouched so the handle can gain drag semantics later without another lifecycle exception.
+			e.preventDefault();
+			e.stopPropagation();
+			this._focusEl.focus({preventScroll:true});
+		});
+		this._cellCursor.addEventListener("dblclick",e=>{
+			if (this._activeDetailsCell?.schemaNode?.type==="reorder") {
+				e.preventDefault();
+				e.stopPropagation();
+			if (this._activeRepeatedReorderEntry===this._activeDetailsCell.ownerEntry)
+				return this._exitEditMode(true);
+			}
+			this._enterCell(e);
+		});
 
 		this._tooltip=document.createElement("div");
 		this._tooltip.classList.add("tooltip");
@@ -2550,9 +2579,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const isVerticalArrow=vSign!==0&&(e?.key==="ArrowUp"||e?.key==="ArrowDown"
 			||e?.code==="ArrowUp"||e?.code==="ArrowDown");
 		if (!isVerticalArrow)
-			this._resetGridPreferredColumn();
+			this._resetVerticalLayoutPreferredColumn();
 		if ((e?.key==="Tab"||e?.code==="Tab")&&this._activeDetailsCell)
 			this._moveDetailsTab(hSign<0?-1:1);
+		else if (this._getActiveRepeatedReorderLayout())
+			this._moveInsideRepeatedReorder(hSign,vSign);
 		else if (this._activeDetailsCell?.parent?.schemaNode.type==="grid")
 			this._moveInsideGrid(hSign,vSign);
 		else if (this._activeDetailsCell?.parent?.schemaNode.type==="lineup")
@@ -2595,17 +2626,20 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return false;
 		const cells=[];
 		this._collectLogicalDetailsCells(root,cells);
-		const currentIndex=cells.indexOf(this._activeDetailsCell);
+		const logicalCurrent=this._activeDetailsCell.schemaNode?.type==="reorder"
+			?this._activeDetailsCell.ownerEntry:this._activeDetailsCell;
+		const currentIndex=cells.indexOf(logicalCurrent);
 		const target=currentIndex<0?null:cells[currentIndex+direction];
 		if (target)
 			return this._selectDetailsCell(target);
 		return this._leaveDetailsByTab(direction);
 	}
 
-	_resetGridPreferredColumn() {
-		if (this._activeVerticalGrid)
-			this._activeVerticalGrid.gridPreferredColumn=null;
-		this._activeVerticalGrid=null;
+	_resetVerticalLayoutPreferredColumn() {
+		if (this._activeVerticalLayout&&this._activeVerticalLayoutColumnKey)
+			this._activeVerticalLayout[this._activeVerticalLayoutColumnKey]=null;
+		this._activeVerticalLayout=null;
+		this._activeVerticalLayoutColumnKey=null;
 	}
 
 	_getDetailsCellRect(instanceNode) {
@@ -2829,54 +2863,88 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 	}
 
+	_getActiveRepeatedReorderLayout() {
+		const active=this._activeDetailsCell;
+		const repeated=active?.schemaNode?.type==="reorder"?active.parent
+			:active?.parent?.schemaNode?.type==="repeated"?active.parent:null;
+		return repeated?.schemaNode?.reorder==null?null:repeated;
+	}
+
+	_getRepeatedReorderRows(repeated) {
+		return (repeated?.children??[]).filter(entry=>this._isNavigableDetailsInstance(entry)).map(entry=>[
+			entry.reorderCell&&!entry.reorderCell.hidden
+				&&this._isNavigableDetailsInstance(entry.reorderCell)?entry.reorderCell:null,
+			entry,
+		]);
+	}
+
+	_moveInsideRepeatedReorder(numCols,numRows) {
+		const repeated=this._getActiveRepeatedReorderLayout();
+		if (!repeated)
+			return false;
+		return this._moveInsideLogicalRows(repeated,this._getRepeatedReorderRows(repeated),
+			this._activeDetailsCell,numCols,numRows,"reorderPreferredColumn",repeated);
+	}
+
 	_moveInsideGrid(numCols,numRows) {
 		const current=this._activeDetailsCell;
 		const grid=current?.parent;
 		if (!grid||grid.schemaNode.type!=="grid")
 			return false;
 		this._refreshGridLayout(grid);
+		return this._moveInsideLogicalRows(grid,grid.gridRows,current,numCols,numRows,
+			"gridPreferredColumn",grid);
+	}
+
+	_moveInsideLogicalRows(layout,rows,current,numCols,numRows,preferredColumnKey,boundaryNode) {
+		const currentRow=rows.findIndex(row=>row.includes(current));
+		if (currentRow<0)
+			return false;
+		const row=rows[currentRow];
+		const currentStart=row.indexOf(current);
+		const currentEnd=row.lastIndexOf(current);
 		if (numCols) {
-			this._resetGridPreferredColumn();
-			const row=grid.gridRows[current.gridRow]??[];
+			this._resetVerticalLayoutPreferredColumn();
 			const candidates=[...new Set(row)].filter(candidate=>candidate&&candidate!==current
 				&&this._isNavigableDetailsInstance(candidate));
-			const currentStart=current.gridColumn;
-			const currentEnd=currentStart+current.gridColumnSpan-1;
+			const start=candidate=>row.indexOf(candidate);
+			const end=candidate=>row.lastIndexOf(candidate);
 			const target=candidates.filter(candidate=>numCols>0
-				?candidate.gridColumn>currentEnd
-				:candidate.gridColumn+candidate.gridColumnSpan-1<currentStart)
-				.sort((a,b)=>numCols>0?a.gridColumn-b.gridColumn:b.gridColumn-a.gridColumn)[0];
+				?start(candidate)>currentEnd:end(candidate)<currentStart)
+				.sort((a,b)=>numCols>0?start(a)-start(b):end(b)-end(a))[0];
 			return target?this._selectDetailsCell(target):false;
 		}
 		if (!numRows)
 			return false;
-		if (this._activeVerticalGrid!==grid) {
-			this._resetGridPreferredColumn();
-			this._activeVerticalGrid=grid;
+		if (this._activeVerticalLayout!==layout
+				||this._activeVerticalLayoutColumnKey!==preferredColumnKey) {
+			this._resetVerticalLayoutPreferredColumn();
+			this._activeVerticalLayout=layout;
+			this._activeVerticalLayoutColumnKey=preferredColumnKey;
 		}
-		grid.gridPreferredColumn??=current.gridColumn;
-		const preferred=grid.gridPreferredColumn;
+		layout[preferredColumnKey]??=currentStart;
+		const preferred=layout[preferredColumnKey];
 		const direction=numRows>0?1:-1;
-		for (let rowIndex=current.gridRow+direction;rowIndex>=0&&rowIndex<grid.gridRows.length;
+		for (let rowIndex=currentRow+direction;rowIndex>=0&&rowIndex<rows.length;
 			rowIndex+=direction) {
-			const row=grid.gridRows[rowIndex]??[];
-			const exact=row[preferred];
+			const candidateRow=rows[rowIndex]??[];
+			const exact=candidateRow[preferred];
 			if (exact&&exact!==current&&this._isNavigableDetailsInstance(exact))
 				return this._selectDetailsCell(exact,true);
-			const candidates=[...new Set(row)].filter(candidate=>candidate&&candidate!==current
+			const candidates=[...new Set(candidateRow)].filter(candidate=>candidate&&candidate!==current
 				&&this._isNavigableDetailsInstance(candidate));
 			if (!candidates.length)
 				continue;
-			const distance=candidate=>preferred<candidate.gridColumn
-				?candidate.gridColumn-preferred
-				:preferred>=candidate.gridColumn+candidate.gridColumnSpan
-					?preferred-(candidate.gridColumn+candidate.gridColumnSpan-1):0;
+			const start=candidate=>candidateRow.indexOf(candidate);
+			const end=candidate=>candidateRow.lastIndexOf(candidate);
+			const distance=candidate=>preferred<start(candidate)
+				?start(candidate)-preferred:preferred>end(candidate)?preferred-end(candidate):0;
 			const target=candidates.reduce((best,candidate)=>distance(candidate)<distance(best)
-				||(distance(candidate)===distance(best)&&candidate.gridColumn<best.gridColumn)?candidate:best);
+				||(distance(candidate)===distance(best)&&start(candidate)<start(best))?candidate:best);
 			return this._selectDetailsCell(target,true);
 		}
-		this._resetGridPreferredColumn();
-		return this._selectAdjacentDetailsCell(grid,direction>0);
+		this._resetVerticalLayoutPreferredColumn();
+		return this._selectAdjacentDetailsCell(boundaryNode,direction>0);
 	}
 
 	_moveInsideLineup(numCols,numRows,isVerticalArrow=false) {
@@ -3040,6 +3108,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		if (this._inReadOnlyMode)
 			return this._readOnlyPresentationKeyDown(e);
+		if (this._handleRepeatedReorderKey(e))
+			return;
 		this._tooltip.style.visibility="hidden";
 		const keysThatEnterFromOutline=["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Escape",
 								"NumpadAdd","NumpadSubtract","Enter","NumpadEnter","Space"];
@@ -3064,7 +3134,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._focusEl.classList.remove("show-focus-ring");
 		this._focusEl.style.outline="none";//see #spreadsheetOnFocus
 
-		if (this._inEditMode&&this._activeSchemaNode.input.type==="date") {
+		if (this._inEditMode&&this._activeSchemaNode.input?.type==="date") {
 			if (e.key.slice(0,5)==="Arrow") {
 				if (e.ctrlKey)
 					e.stopPropagation();//allow moving textcursor if ctrl is held so prevent date-change then
@@ -3621,6 +3691,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			schemaNode:groupSchemaNode,mainIndex,rowData
 		});
 		this._setCellState(groupTable,this._resolveCellState(groupSchemaNode,statePayload),instanceNode);
+		this._setupRepeatedReorderEntry(instanceNode);
 		return true;
 	}
 
@@ -3850,6 +3921,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				childSchemaNode.create&&this._generateRepeatedCreator(rptCelObj);
 				repeatData?.forEach(repeatData=>this._repeatInsert(rptCelObj,false,repeatData));
 				this._arrangeRepeatedInstances(rptCelObj);
+				for (const entry of rptCelObj.children)
+					this._syncRepeatedReorderEntry(entry);
 			} else
 				this._generateCollectionItem(childSchemaNode,mainIndex,collectionObj,path,rowData);
 		}
@@ -4041,7 +4114,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 	
 	_spreadsheetMouseDown(e) {
-		this._resetGridPreferredColumn();
+		this._resetVerticalLayoutPreferredColumn();
 		this._highlightOnFocus=false;//see decleration
 		this._focusEl.classList.remove("show-focus-ring");
 		this._focusEl.style.outline="none";//see #spreadsheetOnFocus
@@ -4054,10 +4127,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (this._onlyDetails||mainTr?.classList.contains("details")) {//in details
 			const extension=e.target.closest(".grid-row-extension,.lineup-row-extension");
 			const extensionTarget=extension?._tablanceGridTarget??extension?._tablanceLineupTarget;
+			const directInstance=e.target.closest(".repeated-reorder-cell")?._tablanceInstanceNode;
 			const interactiveEl=extensionTarget?.selEl??extensionTarget?.el??e.target.closest('[data-path]');
 			if (!interactiveEl)
-				return;
-			const instanceNode=this._resolvePointerDetailsInstance(interactiveEl,mainTr);
+				return directInstance?this._selectDetailsCell(directInstance):undefined;
+			const instanceNode=directInstance??this._resolvePointerDetailsInstance(interactiveEl,mainTr);
 			this._selectDetailsCell(instanceNode);
 		} else {//not in details
 			const td=e.target.closest(".main-table>tbody>tr>td");
@@ -4337,7 +4411,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_enterCell(e) {
-		this._resetGridPreferredColumn();
+		this._resetVerticalLayoutPreferredColumn();
 		if (this._inEditMode||this._inReadOnlyMode)
 			return;
 		if (!this._selectedCellState?.activatable) {
@@ -4363,6 +4437,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return;
 		if (this._selectedCellState.kind==="readOnly")
 			return this._openReadOnlyPresentation(e);
+		if (this._activeSchemaNode.type==="reorder") {
+			e.preventDefault();
+			return this._enterRepeatedReorderMode(this._activeDetailsCell.ownerEntry);
+		}
 		if (this._activeSchemaNode.input) {
 			e.preventDefault();//prevent text selection upon entering editmode
 			if (this._activeSchemaNode.input.type==="button")
@@ -4861,6 +4939,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._setClosedRender(groupObject,groupObject.schemaNode.closedRender(groupObject.dataObj));
 		}
 		this._syncGroupChevronVisibility(groupObject);
+		this._syncRepeatedReorderEntry(groupObject);
 		delete groupObject._dirtyFields;
 	}
 
@@ -4895,6 +4974,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const closed=!instanceNode.el.classList.contains("open");
 			instanceNode.groupChevronEl.hidden=!exposed||!closed||instanceNode.cellState?.activatable!==true;
 		}
+		this._syncRepeatedReorderEntry(instanceNode);
 	}
 
 	_syncDetailsPresentation(instanceNode) {
@@ -4987,6 +5067,286 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return repeatedAncestors;
 	}
 
+	_getRepeatedReorderConfig(entry) {
+		const repeated=entry?.parent;
+		const config=repeated?.schemaNode?.reorder;
+		if (repeated?.schemaNode?.type!=="repeated"||config==null)
+			return null;
+		if (!config||typeof config!=="object"||Array.isArray(config)
+			||typeof config.canMove!=="function"||typeof config.onCommit!=="function")
+			throw new TypeError("Repeated reorder requires canMove and onCommit callbacks.");
+		return config;
+	}
+
+	_getRepeatedReorderEntries(repeated) {
+		return (repeated?.children??[]).filter(child=>!child.schemaNode?.creator&&!child.creating&&!child.hidden);
+	}
+
+	_makeRepeatedReorderPayload(entry,direction=null) {
+		const repeated=entry.parent;
+		const entries=this._getRepeatedReorderEntries(repeated);
+		const visualIndex=entries.indexOf(entry);
+		const target=direction?entries[visualIndex+(direction==="up"?-1:1)]:null;
+		const session=this._editModeController?.kind==="repeated-reorder"
+			&&this._editModeController.entry===entry?this._editModeController:null;
+		return this._makeCallbackPayload(entry,{
+			data:entry.dataObj,
+			dataArray:repeated.dataObj,
+			dataKey:repeated.schemaNode.dataKey,
+			itemIndex:this._getRepeatedDataIndex(entry),
+			visualIndex,
+			direction,
+			target:target?.dataObj??null,
+			order:entries.map(item=>item.dataObj),
+			baselineOrder:(session?.baselineEntries??entries).filter(item=>entries.includes(item))
+				.map(item=>item.dataObj),
+			repeatedSchemaNode:repeated.schemaNode,
+			refresh:()=>{
+				this._finalizeRepeatedMutation(repeated);
+				if (this._activeRepeatedReorderEntry===entry)
+					this._syncRepeatedReorderEntry(entry);
+			}
+		},{schemaNode:repeated.schemaNode,mainIndex:entry.rowIndex,
+			rowData:repeated.parent?.dataObj});
+	}
+
+	_repeatedReorderDirections(entry) {
+		const config=this._getRepeatedReorderConfig(entry);
+		if (!config||entry.creating||entry.schemaNode?.creator||entry.el?.classList.contains("open")
+			||!this._canExposeDetailsAffordances(entry))
+			return {up:false,down:false};
+		const canMove=direction=>config.canMove(direction,this._makeRepeatedReorderPayload(entry,direction))===true;
+		return {up:canMove("up"),down:canMove("down")};
+	}
+
+	_setupRepeatedReorderEntry(entry) {
+		if (!this._getRepeatedReorderConfig(entry)||entry.reorderCell)
+			return;
+		const outer=entry.outerContainerEl;
+		if (!outer)
+			return;
+		let column;
+		if (outer.cells?.length) {
+			entry.reorderContentEl=outer.cells[outer.cells.length-1];
+			column=outer.insertCell(entry.reorderContentEl.cellIndex);
+		} else {
+			column=document.createElement("span");
+			entry.el?.parentElement?.insertBefore(column,entry.el);
+		}
+		column.className="repeated-reorder-column";
+		const cell=column.appendChild(document.createElement("span"));
+		cell.className="repeated-reorder-cell";
+		cell.setAttribute("aria-label",this.lang.reorder);
+		const surface=cell.appendChild(document.createElement("span"));
+		surface.className="repeated-reorder-surface";
+		const handle=surface.appendChild(document.createElement("span"));
+		handle.className="repeated-reorder-handle";
+		handle.setAttribute("aria-hidden","true");
+		handle.appendChild(this._createRepeatedReorderIcon());
+		const reorderCell=this._createInstanceNode(entry.parent,null,REORDER_INSTANCE_NODE_PROTOTYPE);
+		Object.assign(reorderCell,{
+			schemaNode:{type:"reorder"},dataObj:entry.dataObj,rowIndex:entry.rowIndex,
+			el:cell,selEl:cell,cursorEl:cell,outerContainerEl:cell,ownerEntry:entry,
+		});
+		cell._tablanceInstanceNode=reorderCell;
+		entry.reorderColumnEl=column;
+		entry.reorderCell=reorderCell;
+		entry.outerContainerEl.classList.add("repeated-reorder-entry");
+		this._setCellState(cell,this._resolveCellState(reorderCell.schemaNode),reorderCell);
+		this._syncRepeatedReorderEntry(entry);
+		this._syncRepeatedReorderColumns(entry.parent);
+	}
+
+	_createRepeatedReorderIcon() {
+		const ns="http://www.w3.org/2000/svg";
+		const icon=document.createElementNS(ns,"svg");
+		icon.classList.add("repeated-reorder-icon");
+		icon.setAttribute("viewBox","0 0 16 16");
+		icon.setAttribute("focusable","false");
+		icon.setAttribute("aria-hidden","true");
+		const up=icon.appendChild(document.createElementNS(ns,"path"));
+		up.classList.add("repeated-reorder-icon-up");
+		up.setAttribute("d","M8 .2 4.5 4.35h7Z");
+		const bars=icon.appendChild(document.createElementNS(ns,"path"));
+		bars.classList.add("repeated-reorder-icon-bars");
+		bars.setAttribute("d","M3.8 6.7h8.4M3.8 9.3h8.4");
+		const down=icon.appendChild(document.createElementNS(ns,"path"));
+		down.classList.add("repeated-reorder-icon-down");
+		down.setAttribute("d","M8 15.8 4.5 11.65h7Z");
+		return icon;
+	}
+
+	_syncRepeatedReorderColumns(repeated) {
+		if (repeated?.parent?.containerEl?.tagName!=="TBODY"
+				||repeated.schemaNode?.reorder==null)
+			return;
+		for (const entry of repeated.children) {
+			const row=entry.outerContainerEl;
+			if (entry.reorderContentEl)
+				entry.reorderContentEl.colSpan=entry.reorderCell.hidden?2:1;
+			else if (row?.cells?.length)
+				row.cells[row.cells.length-1].colSpan=2;
+		}
+	}
+
+	_syncRepeatedReorderEntry(entry) {
+		const reorderCell=entry?.reorderCell;
+		if (!reorderCell)
+			return;
+		const possible=this._repeatedReorderDirections(entry);
+		const hidden=!possible.up&&!possible.down;
+		reorderCell.hidden=reorderCell.el.hidden=entry.reorderColumnEl.hidden=hidden;
+		if (entry.reorderContentEl)
+			entry.reorderContentEl.colSpan=hidden?2:1;
+		if (this._activeRepeatedReorderEntry===entry) {
+			this._cellCursor.querySelector(".repeated-reorder-up").hidden=!possible.up;
+			this._cellCursor.querySelector(".repeated-reorder-down").hidden=!possible.down;
+		}
+		if (hidden&&this._activeRepeatedReorderEntry===entry)
+			this._exitEditMode(false);
+	}
+
+	_setRepeatedReorderPeerPresentation(repeated,activeEntry=null) {
+		for (const entry of repeated?.children??[])
+			entry.reorderCell?.el.classList.toggle("repeated-reorder-peer-suppressed",
+				!!activeEntry&&entry!==activeEntry);
+	}
+
+	_enterRepeatedReorderMode(entry) {
+		if (!entry?.reorderCell||entry.reorderCell.hidden
+			||this._activeDetailsCell!==entry.reorderCell)
+			return false;
+		if (!this._exitEditMode(true))
+			return false;
+		const baselineEntries=[...entry.parent.children];
+		this._activeRepeatedReorderEntry=entry;
+		this._editModeController={
+			kind:"repeated-reorder",entry,repeated:entry.parent,baselineEntries,
+			finish:save=>this._finishRepeatedReorderEdit(save),
+		};
+		this._inEditMode=true;
+		this._setRepeatedReorderPeerPresentation(entry.parent,entry);
+		this._cellCursor.classList.add("edit-mode","repeated-reorder-editor");
+		const control=this._cellCursor.appendChild(document.createElement("span"));
+		control.className="repeated-reorder-control";
+		const addDirection=(direction,symbol,label)=>{
+			const button=control.appendChild(document.createElement("button"));
+			button.type="button";
+			button.tabIndex=-1;
+			button.className=`repeated-reorder-${direction}`;
+			button.textContent=symbol;
+			button.setAttribute("aria-label",label);
+			button.addEventListener("mousedown",e=>{
+				e.preventDefault();
+				e.stopPropagation();
+			});
+			button.addEventListener("click",e=>{
+				e.preventDefault();
+				e.stopPropagation();
+				this._performRepeatedReorder(entry,direction);
+			});
+			return button;
+		};
+		addDirection("up","↑",this.lang.reorderUp);
+		control.appendChild(entry.reorderCell.el.querySelector(".repeated-reorder-handle").cloneNode(true));
+		addDirection("down","↓",this.lang.reorderDown);
+		this._syncRepeatedReorderEntry(entry);
+		return true;
+	}
+
+	_exitRepeatedReorderMode() {
+		const entry=this._activeRepeatedReorderEntry;
+		if (!entry)
+			return false;
+		this._activeRepeatedReorderEntry=null;
+		return true;
+	}
+
+	_finishRepeatedReorderEdit(save) {
+		const session=this._editModeController;
+		if (session?.kind!=="repeated-reorder")
+			return true;
+		const {entry,repeated,baselineEntries}=session;
+		const changed=baselineEntries.length!==repeated.children.length
+			||baselineEntries.some((item,index)=>repeated.children[index]!==item);
+		if (!save&&changed) {
+			repeated.children=[...baselineEntries];
+			this._arrangeRepeatedInstances(repeated,true);
+		}
+		const payload=save&&changed?this._makeRepeatedReorderPayload(entry):null;
+		const config=this._getRepeatedReorderConfig(entry);
+		this._exitRepeatedReorderMode();
+		this._editModeController=null;
+		this._inEditMode=false;
+		this._cellCursor.classList.remove("edit-mode","repeated-reorder-editor");
+		this._cellCursor.replaceChildren();
+		this._setRepeatedReorderPeerPresentation(repeated);
+		for (const item of repeated.children)
+			this._syncRepeatedReorderEntry(item);
+		this._focusEl.focus({preventScroll:true});
+		this._adjustCursorPosSize(this._selectedCell);
+		this._highlightOnFocus=false;
+		if (payload)
+			config.onCommit(payload);
+		return true;
+	}
+
+	_performRepeatedReorder(entry,direction) {
+		const possible=this._repeatedReorderDirections(entry);
+		if (!possible[direction])
+			return false;
+		const repeated=entry.parent;
+		const payload=this._makeRepeatedReorderPayload(entry,direction);
+		const targetEntry=this._getRepeatedReorderEntries(repeated)
+			.find(item=>item.dataObj===payload.target);
+		const from=repeated.children.indexOf(entry);
+		const to=repeated.children.indexOf(targetEntry);
+		if (from<0||to<0)
+			return false;
+		repeated.children.splice(from,1);
+		repeated.children.splice(to,0,entry);
+		this._arrangeRepeatedInstances(repeated,true);
+		for (const item of repeated.children)
+			this._syncRepeatedReorderEntry(item);
+		return true;
+	}
+
+	_handleRepeatedReorderKey(e) {
+		const entry=this._activeRepeatedReorderEntry;
+		if (entry) {
+			if (e.key==="Escape") {
+				e.preventDefault();
+				e.stopPropagation();
+				this._exitEditMode(false);
+				return true;
+			}
+			if (e.key==="ArrowRight") {
+				e.preventDefault();
+				this._exitEditMode(true);
+				this._selectDetailsCell(entry);
+				return true;
+			}
+			if (e.key==="ArrowUp"||e.key==="ArrowDown") {
+				e.preventDefault();
+				e.stopPropagation();
+				this._performRepeatedReorder(entry,e.key==="ArrowUp"?"up":"down");
+				return true;
+			}
+			if (e.key==="Enter"||e.code==="NumpadEnter") {
+				e.preventDefault();
+				e.stopPropagation();
+				this._exitEditMode(true);
+				return true;
+			}
+			if (e.code==="Space") {
+				e.preventDefault();
+				return true;
+			}
+			return false;
+		}
+		return false;
+	}
+
 	_getRepeatedGrouping(repeated) {
 		const grouping=repeated?.schemaNode?.grouping;
 		if (grouping==null)
@@ -5040,7 +5400,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return heading;
 	}
 
-	_arrangeRepeatedInstances(repeated) {
+	_arrangeRepeatedInstances(repeated,preserveEntryOrder=false) {
 		const compare=repeated?.schemaNode?.sortCompare;
 		const grouping=this._getRepeatedGrouping(repeated);
 		if (!grouping&&typeof compare!=="function")
@@ -5088,13 +5448,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const definitionByKey=new Map(grouping.definitions.map(definition=>[definition.key,definition]));
 			groups=orderedKeys.map(key=>{
 				const groupEntries=buckets.get(key);
-				if (typeof compare==="function")
+				if (typeof compare==="function"&&!preserveEntryOrder)
 					groupEntries.sort((a,b)=>compare(a.dataObj,b.dataObj,rowData,repeated)
 						||(previousOrder.get(a)-previousOrder.get(b)));
 				return {key,title:definitionByKey.get(key)?.title??String(key??""),entries:groupEntries};
 			});
 			sorted=groups.flatMap(group=>group.entries);
-		} else
+		} else if (preserveEntryOrder)
+			sorted=[...entries];
+		else
 			sorted=[...entries].sort((a,b)=>compare(a.dataObj,b.dataObj,rowData,repeated)
 				||(previousOrder.get(a)-previousOrder.get(b)));
 
@@ -5134,6 +5496,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		for (let index=0;index<repeated.children.length;index++)
 			this._changeInstanceNodeIndex(repeated.children[index],index);
+		this._syncRepeatedReorderColumns(repeated);
 		this._adjustCursorPosSize?.(this._selectedCell,true);
 		return orderChanged;
 	}
@@ -5142,6 +5505,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!repeated?.schemaNode||repeated.schemaNode.type!=="repeated")
 			return;
 		this._arrangeRepeatedInstances(repeated);
+		for (const entry of repeated.children??[])
+			this._syncRepeatedReorderEntry(entry);
 		this._updateDependentCells(repeated.schemaNode,repeated);
 		const detailsTr=repeated.outerContainerEl?.closest?.("tr.details")
 			??repeated.parent?.containerEl?.closest?.("tr.details");
@@ -5970,6 +6335,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return this._exitReadOnlyMode();
 		if (!this._inEditMode)
 			return true;
+		if (this._editModeController)
+			return this._editModeController.finish(save);
 		if (!this._selectedCellState?.mutable)
 			save=false;
 		const input=this._cellCursor.querySelector("input,textarea");
@@ -6274,7 +6641,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 	}
 
-	_selectDetailsCell(instanceNode,preserveGridPreferredColumn=false) {
+	_selectDetailsCell(instanceNode,preserveVerticalPreferredColumn=false) {
 		if (!instanceNode)
 			return false;
 		let root=instanceNode;
@@ -6310,7 +6677,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					}
 				}
 		this._selectCell(instanceNode.selEl??instanceNode.el,instanceNode.schemaNode,instanceNode.dataObj,false,
-			instanceNode,preserveGridPreferredColumn);
+			instanceNode,preserveVerticalPreferredColumn);
 		this._mainRowIndex=mainRowIndex;
 
 		//in case this was called via instanceNode.select() it might be necessary to make sure parent-groups are open
@@ -6330,11 +6697,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return instanceNode;
 	}
 
-	_selectCell(cellEl,schemaNode,dataObj,adjustCursorPosSize=true,instanceNode=null,preserveGridPreferredColumn=false) {
+	_selectCell(cellEl,schemaNode,dataObj,adjustCursorPosSize=true,instanceNode=null,
+		preserveVerticalPreferredColumn=false) {
 		this._closeHelp();
 		this._clearReadOnlyActivationFeedback();
-		if (!preserveGridPreferredColumn)
-			this._resetGridPreferredColumn();
+		if (!preserveVerticalPreferredColumn)
+			this._resetVerticalLayoutPreferredColumn();
 		const cellState=this._getCellState(cellEl,instanceNode);
 		if (cellState?.selectable===false)
 			return false;
@@ -6353,6 +6721,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._cellCursor.classList.toggle("action-cell",cellState?.kind==="action");
 		this._cellCursor.classList.toggle("delete-confirmation-action",
 			["no","yes"].includes(schemaNode.cssClass));
+		this._cellCursor.classList.toggle("repeated-reorder-cell-cursor",schemaNode.type==="reorder");
 		this._cellCursor.classList.toggle("action-indicator",this._showsActionIndicator(cellState,schemaNode));
 		(this._scrollingContent??this.rootEl).appendChild(this._cellCursor);
 		this._setSelectedCellElement(cellEl);
@@ -6393,7 +6762,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_showsActionIndicator(cellState,schemaNode) {
-		return cellState?.kind==="action"&&!["expand","select","group"].includes(schemaNode?.type)
+		return cellState?.kind==="action"&&!["expand","select","group","reorder"].includes(schemaNode?.type)
 			&&schemaNode?.input?.type!=="button";
 	}
 
@@ -7607,7 +7976,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				message:disabledResult?.message};
 
 		const isAction=schemaNode.type==="expand"||schemaNode.type==="select"||schemaNode.type==="group"
-			||schemaNode.input?.type==="button"||(!schemaNode.input&&!!schemaNode.onEnter);
+			||schemaNode.type==="reorder"||schemaNode.input?.type==="button"||(!schemaNode.input&&!!schemaNode.onEnter);
 		if (isAction)
 			return {kind:"action",selectable:true,activatable:true,mutable:false,activation:"action"};
 
