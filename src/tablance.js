@@ -5225,7 +5225,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			instanceNode.el.parentElement.parentElement.remove();
 		else
 			instanceNode.el.parentElement.remove();
-		this._activeDetailsCell=null;//causes problem otherwise when #selectDetailsCell checks old cell
+		// Replacing repeated data programmatically removes and rebuilds its entry instances. Clear the logical cursor
+		// only when the selected instance is actually part of the removed subtree. A selected ancestor (for example the
+		// group containing the repeated) remains the same connected canonical instance and must stay activatable.
+		for (let active=this._activeDetailsCell;active;active=active.parent)
+			if (active===instanceNode) {
+				this._activeDetailsCell=null;
+				break;
+			}
 		if (instanceNode.schemaNode?.type==="group")
 			this._removeGroupFromTransaction(instanceNode,true);
 

@@ -1152,6 +1152,19 @@ try {
 	assert(parseFloat(getComputedStyle(nestedGroupedEntryCell).paddingLeft)<24
 		&&nestedGroupTitle.getBoundingClientRect().width>0,
 		"closing a grandparent removes nested indentation without hiding group headings");
+	nestedGroupedTable._finalizeGroupClose(groupingInner);
+	groupingInner.select();
+	const groupingInnerSelectionEl=groupingInner.selEl;
+	const nestedRowData=nestedGroupedTable._filteredData[0];
+	nestedGroupedTable.updateData(nestedRowData,"items",null,false,true);
+	assert(nestedGroupedTable._activeDetailsCell===groupingInner
+		&&nestedGroupedTable._selectedCell===groupingInnerSelectionEl
+		&&groupingInnerSelectionEl.isConnected,
+		"programmatic repeated replacement preserves a selected containing group instance");
+	nestedGroupedTable._enterCell(new Event("enter",{cancelable:true}));
+	assert(groupingInner.el.classList.contains("open")
+		&&nestedGroupedTable._activeDetailsCell?.parent===nestedGroupedRepeated,
+		"a containing group remains activatable after its repeated entries are rebound");
 
 	const nestedDependencyRenders={};
 	const countNestedRender=(kind,rowData,value)=>{
