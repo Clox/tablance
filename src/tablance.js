@@ -67,6 +67,8 @@ const DEFAULT_LANG=Object.freeze({
 	selectNoResultsFound:"No results found",
 	selectEmpty:"<None>",
 	selectCreateOption:"Create [{text}]",
+	booleanTrue:"Yes",
+	booleanFalse:"No",
 	copiedToClipboard:"Copied to clipboard!",
 	insertEntry:"Insert new",
 	insertRow:"Insert new",
@@ -236,6 +238,7 @@ class TablanceBase {
 	_helpCloseTimer;
 	_helpResizeObserver;
 	_lineupResizeObserver;
+	_repeatedGroupingResizeObserver;
 	_readOnlyFeedbackTarget;
 	_readOnlyFeedbackTimer;
 	_dropdownAlignmentContainer;
@@ -538,6 +541,9 @@ class TablanceBase {
 	 * 					----Properties specific to input "select"----
 	 * 						minOptsFilter Integer - The minimum number of options required for the filter-input to
 	 * 							appear. Can also be set via param opts->defaultMinOptsFilter
+	 * 						boolean Bool When true, Tablance supplies localized true/false options and presents them
+	 * 							with checkbox visuals. Stored and committed values remain booleans. Editing still uses
+	 * 							the normal select editor and its keyboard semantics.
 	 * 						noResultsText String A string which is displayed when a user filters the 
 	 * 							options in a select and there are no results. 
 	 * 							Can also be set globally via param opts->lang->selectNoResultsFound
@@ -632,6 +638,13 @@ class TablanceBase {
 	 * 					Sorting affects only rendered instances; backing-array order and object identity are unchanged.
 	 * 					It gets 4 arguments: 1: object A, 2: object B, 3: rowData, 4: instanceNode
 	 * 					Return >0 to sort A after B, <0 to sort B after A, or ===0 to keep original order of A and B
+	 * 				grouping Object Optional presentational grouping of repeated entries:
+	 * 					by String|Function Data-key or callback used to obtain each entry's group key. A callback
+	 * 						receives 1: entry data, 2: rowData, 3: repeated instanceNode.
+	 * 					order Array Optional explicit group order. Each item is {key:*,title:String}. Undeclared
+	 * 						keys follow in stable first-occurrence order. Empty groups are not rendered.
+	 * 					Grouping only changes presentation. Entry instances and backing-array identity remain flat,
+	 * 					and sortCompare is applied only between entries in the same group.
 	 * 				creationText String Used if "create" is true. the text of the creation-cell. Default is "Insert new"
 	 * 					May also be set via opts->lang->insertEntry
 	 * 				deleteText String used if "create" is true. the text of the deletion-button. Default is "Delete"
@@ -3429,6 +3442,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		instanceNode.insertionPoint=parentEl.appendChild(document.createComment("repeated-insert"));
 		repeatedSchemaNode.create&&this._generateRepeatedCreator(instanceNode);
 		repeatData?.forEach(repeatData=>this._repeatInsert(instanceNode,false,repeatData));
+		this._arrangeRepeatedInstances(instanceNode);
 		return !!repeatData?.length||repeatedSchemaNode.create;
 	}
 
@@ -3830,6 +3844,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				rptCelObj.insertionPoint=collectionObj.containerEl.appendChild(document.createComment("repeat-insert"));
 				childSchemaNode.create&&this._generateRepeatedCreator(rptCelObj);
 				repeatData?.forEach(repeatData=>this._repeatInsert(rptCelObj,false,repeatData));
+				this._arrangeRepeatedInstances(rptCelObj);
 			} else
 				this._generateCollectionItem(childSchemaNode,mainIndex,collectionObj,path,rowData);
 		}
@@ -4891,14 +4906,23 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_syncGroupChevronVisibility(groupObject) {
 		// Kept as the compatibility entry point for existing callers; chevron, border and dividers now share state.
 		this._syncDetailsPresentation(groupObject);
+		for (const repeated of this._getRepeatedAncestors(groupObject))
+			if (repeated.schemaNode?.grouping)
+				this._scheduleRepeatedGroupFrames(repeated);
 	}
 
 	_setClosedRender(groupObject,renderText,path=groupObject.path,tbody=groupObject.el.tBodies?.[0]) {
+		const refreshGroupedFrame=()=>{
+			for (const repeated of this._getRepeatedAncestors(groupObject))
+				if (repeated.schemaNode?.grouping)
+					this._scheduleRepeatedGroupFrames(repeated);
+		};
 		const renderRow=groupObject.el.querySelector("tbody>tr.group-render");
 		if (renderText==null) {
 			groupObject.el.classList.remove("closed-render");
 			renderRow?.remove();
 			this._placeGroupChevron(groupObject);
+			refreshGroupedFrame();
 			return;
 		}
 		groupObject.el.classList.add("closed-render");
@@ -4916,6 +4940,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			content.innerText=renderText;
 		cell.replaceChildren(content);
 		this._placeGroupChevron(groupObject);
+		refreshGroupedFrame();
 	}
 
 	_repeatInsert(repeated,creating,data,entrySchemaNode=null) {
@@ -4924,7 +4949,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		entrySchemaNode??=repeated.schemaNode.entry;
 
 		let indexOfNew,rowIndex;
-		if (!creating&&repeated.schemaNode.sortCompare&&!entrySchemaNode.creator) {
+		if (!creating&&repeated.schemaNode.sortCompare&&!repeated.schemaNode.grouping&&!entrySchemaNode.creator) {
 			const rowData=repeated.parent?.dataObj;
 			for (indexOfNew=0;indexOfNew<repeated.children.length-!!repeated.schemaNode.create; indexOfNew++)
 				if (repeated.schemaNode.sortCompare(
@@ -4967,36 +4992,218 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return repeatedAncestors;
 	}
 
-	_sortRepeatedInstances(repeated) {
+	_getRepeatedGrouping(repeated) {
+		const grouping=repeated?.schemaNode?.grouping;
+		if (grouping==null)
+			return null;
+		if (!grouping||typeof grouping!=="object"||Array.isArray(grouping)
+				||!(typeof grouping.by==="function"
+					||typeof grouping.by==="string"&&grouping.by.trim()))
+			throw new TypeError("Repeated grouping.by must be a dataKey or callback.");
+		if (grouping.order!=null&&!Array.isArray(grouping.order))
+			throw new TypeError("Repeated grouping.order must be an array.");
+		const definitions=[];
+		const keys=new Set;
+		for (const definition of grouping.order??[]) {
+			if (!definition||typeof definition!=="object"||Array.isArray(definition)
+					||!("key" in definition)||typeof definition.title!=="string"||!definition.title.trim())
+				throw new TypeError("Every repeated grouping.order item must have a key and non-empty title.");
+			if (keys.has(definition.key))
+				throw new TypeError("Repeated grouping.order cannot contain duplicate keys.");
+			keys.add(definition.key);
+			definitions.push(definition);
+		}
+		return {by:grouping.by,definitions};
+	}
+
+	_getRepeatedGroupKey(grouping,entry,rowData,repeated) {
+		return typeof grouping.by==="function"
+			?grouping.by(entry.dataObj,rowData,repeated)
+			:entry.dataObj?.[grouping.by];
+	}
+
+	_createRepeatedGroupHeading(repeated,title,key) {
+		const collectionEl=repeated.parent?.containerEl;
+		if (!collectionEl)
+			return null;
+		let heading;
+		if (collectionEl.tagName==="TBODY") {
+			heading=document.createElement("tr");
+			const cell=heading.insertCell();
+			const sample=repeated.children?.find(child=>!child.schemaNode?.creator)?.outerContainerEl;
+			cell.colSpan=Math.max(1,sample?.cells?.length??1);
+		} else {
+			heading=document.createElement("span");
+		}
+		const headingContent=heading.cells?.[0]??heading;
+		const frame=headingContent.appendChild(document.createElement("span"));
+		frame.className="repeated-group-frame";
+		const top=frame.appendChild(document.createElement("span"));
+		top.className="repeated-group-frame-top";
+		const titleEl=top.appendChild(document.createElement("span"));
+		titleEl.className="repeated-group-title";
+		titleEl.textContent=title;
+		heading.className="repeated-group-heading";
+		heading.dataset.groupKey=String(key??"");
+		heading.setAttribute("aria-hidden","true");
+		return heading;
+	}
+
+	_refreshRepeatedGroupFrames(repeated) {
+		const collectionEl=repeated?.parent?.containerEl;
+		if (!collectionEl?.isConnected)
+			return;
+		for (const heading of repeated.groupHeadings??[]) {
+			const frame=heading.querySelector(".repeated-group-frame");
+			const entries=heading._tablanceRepeatedGroupEntries??[];
+			const entryRects=entries.map(entry=>entry.outerContainerEl?.getBoundingClientRect())
+				.filter(rect=>rect?.width>0&&rect.height>0);
+			if (!frame||!entryRects.length)
+				continue;
+			const top=frame.getBoundingClientRect().top;
+			const bottom=Math.max(...entryRects.map(rect=>rect.bottom));
+			frame.style.height=`${Math.max(0,bottom-top)}px`;
+		}
+	}
+
+	_scheduleRepeatedGroupFrames(repeated) {
+		if (!repeated||repeated._groupFrameRefreshPending)
+			return;
+		repeated._groupFrameRefreshPending=true;
+		setTimeout(()=>{
+			repeated._groupFrameRefreshPending=false;
+			this._refreshRepeatedGroupFrames(repeated);
+		},0);
+	}
+
+	_syncRepeatedGroupingResizeObservation(repeated,entries=[]) {
+		this._repeatedGroupingResizeObserver??=new ResizeObserver(records=>{
+			const repeatedContainers=new Set(records.map(record=>record.target._tablanceRepeatedGroupingOwner)
+				.filter(Boolean));
+			for (const owner of repeatedContainers)
+				this._scheduleRepeatedGroupFrames(owner);
+		});
+		const collectionEl=repeated?.parent?.containerEl;
+		const current=new Set([collectionEl,...entries.map(entry=>entry.outerContainerEl)].filter(Boolean));
+		for (const oldElement of repeated.groupingObservedElements??[])
+			if (!current.has(oldElement)) {
+				this._repeatedGroupingResizeObserver.unobserve(oldElement);
+				delete oldElement._tablanceRepeatedGroupingOwner;
+			}
+		for (const element of current)
+			if (!repeated.groupingObservedElements?.has(element)) {
+				element._tablanceRepeatedGroupingOwner=repeated;
+				this._repeatedGroupingResizeObserver.observe(element);
+			}
+		repeated.groupingObservedElements=current;
+	}
+
+	_arrangeRepeatedInstances(repeated) {
 		const compare=repeated?.schemaNode?.sortCompare;
-		if (typeof compare!=="function")
+		const grouping=this._getRepeatedGrouping(repeated);
+		if (!grouping&&typeof compare!=="function")
 			return false;
 		const creators=[];
+		const drafts=[];
 		const entries=[];
 		for (const child of repeated.children??[])
-			(child.schemaNode?.creator?creators:entries).push(child);
-		const previousOrder=new Map(entries.map((entry,index)=>[entry,index]));
+			(child.schemaNode?.creator?creators:child.creating?drafts:entries).push(child);
 		const rowData=repeated.parent?.dataObj;
-		const sorted=[...entries].sort((a,b)=>compare(a.dataObj,b.dataObj,rowData,repeated)
-			||(previousOrder.get(a)-previousOrder.get(b)));
-		if (sorted.every((entry,index)=>entry===entries[index]))
-			return false;
-		repeated.children=[...sorted,...creators];
+		const previousOrder=new Map(entries.map((entry,index)=>[entry,index]));
+		let sorted,groups=[];
+		if (grouping) {
+			const buckets=new Map;
+			const keyByEntry=new Map;
+			for (const entry of entries) {
+				const key=this._getRepeatedGroupKey(grouping,entry,rowData,repeated);
+				keyByEntry.set(entry,key);
+				if (!buckets.has(key))
+					buckets.set(key,[]);
+				buckets.get(key).push(entry);
+			}
+			const orderedKeys=[];
+			const includedKeys=new Set;
+			for (const definition of grouping.definitions)
+				if (buckets.has(definition.key)) {
+					orderedKeys.push(definition.key);
+					includedKeys.add(definition.key);
+				}
+			const backingOrder=new Map(Array.isArray(repeated.dataObj)
+				?repeated.dataObj.map((data,index)=>[data,index]):[]);
+			const occurrenceEntries=[...entries].sort((a,b)=>{
+				const aIndex=backingOrder.get(a.dataObj)??-1;
+				const bIndex=backingOrder.get(b.dataObj)??-1;
+				return (aIndex<0?Number.MAX_SAFE_INTEGER:aIndex)-(bIndex<0?Number.MAX_SAFE_INTEGER:bIndex)
+					||(previousOrder.get(a)-previousOrder.get(b));
+			});
+			for (const entry of occurrenceEntries) {
+				const key=keyByEntry.get(entry);
+				if (!includedKeys.has(key)) {
+					orderedKeys.push(key);
+					includedKeys.add(key);
+				}
+			}
+			const definitionByKey=new Map(grouping.definitions.map(definition=>[definition.key,definition]));
+			groups=orderedKeys.map(key=>{
+				const groupEntries=buckets.get(key);
+				if (typeof compare==="function")
+					groupEntries.sort((a,b)=>compare(a.dataObj,b.dataObj,rowData,repeated)
+						||(previousOrder.get(a)-previousOrder.get(b)));
+				return {key,title:definitionByKey.get(key)?.title??String(key??""),entries:groupEntries};
+			});
+			sorted=groups.flatMap(group=>group.entries);
+		} else
+			sorted=[...entries].sort((a,b)=>compare(a.dataObj,b.dataObj,rowData,repeated)
+				||(previousOrder.get(a)-previousOrder.get(b)));
+
+		const orderChanged=!sorted.every((entry,index)=>entry===entries[index]);
+		repeated.children=[...sorted,...drafts,...creators];
 		const collectionEl=repeated.parent?.containerEl;
-		for (const entry of repeated.children) {
+		const hasVisibleGroupedEntries=!!grouping&&groups.some(group=>group.entries.some(entry=>!entry.hidden));
+		for (const entry of entries)
+			entry.outerContainerEl?.classList.remove("repeated-group-entry","repeated-group-first","repeated-group-last");
+		for (const creator of creators)
+			creator.outerContainerEl?.classList.toggle("grouped-repeated-creator",hasVisibleGroupedEntries);
+		for (const heading of repeated.groupHeadings??[])
+			heading.remove();
+		repeated.groupHeadings=[];
+		if (collectionEl&&grouping) {
+			for (const group of groups) {
+				const visibleEntries=group.entries.filter(entry=>!entry.hidden);
+				for (const entry of visibleEntries)
+					entry.outerContainerEl?.classList.add("repeated-group-entry");
+				visibleEntries[0]?.outerContainerEl?.classList.add("repeated-group-first");
+				visibleEntries.at(-1)?.outerContainerEl?.classList.add("repeated-group-last");
+				if (group.title&&visibleEntries.length) {
+					const heading=this._createRepeatedGroupHeading(repeated,group.title,group.key);
+					heading._tablanceRepeatedGroupEntries=visibleEntries;
+					collectionEl.insertBefore(heading,repeated.insertionPoint);
+					repeated.groupHeadings.push(heading);
+				}
+				for (const entry of group.entries)
+					if (entry.outerContainerEl)
+						collectionEl.insertBefore(entry.outerContainerEl,repeated.insertionPoint);
+			}
+			for (const pinned of [...drafts,...creators])
+				if (pinned.outerContainerEl)
+					collectionEl.insertBefore(pinned.outerContainerEl,repeated.insertionPoint);
+		} else for (const entry of repeated.children) {
 			if (entry.outerContainerEl&&collectionEl)
 				collectionEl.insertBefore(entry.outerContainerEl,repeated.insertionPoint);
 		}
 		for (let index=0;index<repeated.children.length;index++)
 			this._changeInstanceNodeIndex(repeated.children[index],index);
+		this._syncRepeatedGroupingResizeObservation(repeated,grouping?sorted.filter(entry=>!entry.hidden):[]);
+		this._refreshRepeatedGroupFrames(repeated);
+		this._scheduleRepeatedGroupFrames(repeated);
 		this._adjustCursorPosSize?.(this._selectedCell,true);
-		return true;
+		return orderChanged;
 	}
 
 	_finalizeRepeatedMutation(repeated) {
 		if (!repeated?.schemaNode||repeated.schemaNode.type!=="repeated")
 			return;
-		this._sortRepeatedInstances(repeated);
+		this._arrangeRepeatedInstances(repeated);
 		this._updateDependentCells(repeated.schemaNode,repeated);
 		const detailsTr=repeated.outerContainerEl?.closest?.("tr.details")
 			??repeated.parent?.containerEl?.closest?.("tr.details");
@@ -5309,7 +5516,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * @param {Object} ctx
 	 * @returns {boolean} true if the selected option was found among opts
 	 */
-		_renderSelectOptions(ul,opts,selectedVal,ctx) {
+	_renderSelectOptions(ul,opts,selectedVal,ctx) {
 			let foundSelected=false;
 			const selectedValNorm=this._getSelectValue(selectedVal);
 			ul.innerHTML="";
@@ -5317,6 +5524,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				const li=ul.appendChild(document.createElement("li"));
 				if (opt.cssClass)
 					li.className=opt.cssClass;
+			if (ctx.strctInp.boolean)
+				this._renderBooleanSelectValue(li,this._getSelectValue(opt),opt.text);
+			else
 				li.innerText=opt.text;
 				const optVal=this._getSelectValue(opt);
 				if (selectedVal==opt||selectedValNorm==optVal) {
@@ -5828,10 +6038,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		this._inEditMode=false;
 		this._cellCursor.classList.remove("edit-mode");
-		const inputValNorm=this._activeSchemaNode.input?.type==="select"
-			?this._getSelectValue(this._inputVal):this._inputVal;
-		const selectedValNorm=this._activeSchemaNode.input?.type==="select"
-			?this._getSelectValue(this._selectedCellVal):this._selectedCellVal;
+		const inputValNorm=this._normalizeCommitValue(this._activeSchemaNode,this._inputVal);
+		const selectedValNorm=this._normalizeCommitValue(this._activeSchemaNode,this._selectedCellVal);
 		if (save&&inputValNorm!=selectedValNorm) {
 			this._doEditSave();
 		}
@@ -6540,7 +6748,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	//TODO why optionS (plural)? shouldn't always be singular?
 	_getSelectOptions(inputOpts,schemaNode=null,rowData=null,mainIndex=null,instanceNode=null) {
-		const resolvedOptions=typeof inputOpts.options==="function"
+		const resolvedOptions=inputOpts.boolean
+			?[{text:this.lang.booleanFalse,value:false},{text:this.lang.booleanTrue,value:true}]
+			:typeof inputOpts.options==="function"
 			?inputOpts.options(this._makeCallbackPayload(instanceNode??null,{rowData,value: rowData?.[schemaNode?.dataKey]},{
 				schemaNode,
 				mainIndex,
@@ -6560,6 +6770,22 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 		}
 		return opts;
+	}
+
+	_renderBooleanSelectValue(parent,value,text) {
+		parent.replaceChildren();
+		const presentation=parent.appendChild(document.createElement("span"));
+		presentation.className="boolean-select-value";
+		const checkbox=presentation.appendChild(document.createElement("input"));
+		checkbox.type="checkbox";
+		checkbox.className="boolean-select-checkbox";
+		checkbox.tabIndex=-1;
+		checkbox.setAttribute("aria-hidden","true");
+		checkbox.checked=value===true;
+		const label=presentation.appendChild(document.createElement("span"));
+		label.className="boolean-select-label";
+		label.innerText=text??(value===true?this.lang.booleanTrue:this.lang.booleanFalse);
+		return presentation;
 	}
 
 	_formatCreateOptionText(strctInp,text) {
@@ -6824,6 +7050,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				return false;
 			if (schemaNode.input?.type=="select"&&!schemaNode.render) {
 				const cellVal=dataObj?.[schemaNode.dataKey];
+				if (schemaNode.input.boolean) {
+					const option=this._getSelectOptions(schemaNode.input,schemaNode,dataObj,mainIndex)
+						.find(opt=>this._getSelectValue(opt)===this._getSelectValue(cellVal));
+					return option?matchesFilter(option.text):false;
+				}
 				const optionsSrc=schemaNode.input.options;
 				if (typeof optionsSrc==="function")
 					return false;
@@ -7524,6 +7755,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			(selEl??el).className=instanceNode.baseCss;
 		if (schemaNode.input?.type==="button") {
 			this._generateButton(schemaNode,mainIndex,el,scopedData,instanceNode);
+		} else if (schemaNode.input?.type==="select"&&schemaNode.input.boolean&&!schemaNode.render) {
+			const rawVal=scopedData[schemaNode.dataKey];
+			const option=this._getSelectOptions(schemaNode.input,schemaNode,scopedData,mainIndex,instanceNode)
+				.find(opt=>this._getSelectValue(opt)===this._getSelectValue(rawVal));
+			this._renderBooleanSelectValue(el,this._getSelectValue(rawVal),option?.text);
 		} else {
 			let newCellContent;
 			if (schemaNode.render||schemaNode.input?.type!="select") {
@@ -7965,6 +8201,9 @@ export default class Tablance extends TablanceBase {
 			else if (instanceNode.parent?.schemaNode?.type==="lineup"
 				&&instanceNode.parent.children?.includes(instanceNode))
 				this._refreshLineupRowExtensions(instanceNode.parent);
+			else if (instanceNode.parent?.schemaNode?.type==="repeated"
+				&&instanceNode.parent.children?.includes(instanceNode))
+				this._arrangeRepeatedInstances(instanceNode.parent);
 		}
 
 		return !instanceNode.hidden;

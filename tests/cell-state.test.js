@@ -906,6 +906,9 @@ try {
 	assert(JSON.stringify(visualEntries().map(entry=>entry.dataObj.id))===JSON.stringify([2,3,1])
 		&&JSON.stringify(sortedBacking.map(entry=>entry.id))===JSON.stringify([1,2,3])&&compareContextValid,
 		"sortCompare creates a visual order without mutating backing-array order and receives full context");
+	assert(!sortedRepeated.children.find(entry=>entry.schemaNode.creator).outerContainerEl
+		.classList.contains("grouped-repeated-creator"),
+		"an ungrouped repeated creator does not receive grouped separation styling");
 	const sortedCandidate=visualEntries()[1];
 	assert(sortedCandidate.dataObj.id===3&&sortedCandidate.index===1,
 		"the deletion candidate can have a visual index different from its backing-array index");
@@ -973,6 +976,166 @@ try {
 		&&sortedCommits.filter(payload=>payload.mode==="create").length===createCommitsBeforeCancel
 		&&JSON.stringify(sortedBacking.map(entry=>entry.id??"new"))===JSON.stringify([1,2,"new"]),
 		"cancelCreate removes the pending object and instance without persistence or backing-array residue");
+
+	const groupedBacking=[
+		{id:"b-2",kind:"b",order:2,label:"B two"},
+		{id:"a-3",kind:"a",order:3,label:"A three"},
+		{id:"y-1",kind:"y",order:1,label:"Y one"},
+		{id:"x-1",kind:"x",order:1,label:"X one"},
+		{id:"a-1",kind:"a",order:1,label:"A one"},
+		{id:"b-hidden",kind:"b",order:1,label:"Hidden",visible:false},
+	];
+	let groupedCompareOnlyWithinGroups=true;
+	const groupedTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},details:{type:"list",entries:[
+		{type:"repeated",dataKey:"items",nodeId:"groupedItems",create:true,
+			createData:()=>({kind:"a",order:0,label:"Draft"}),
+			grouping:{by:"kind",order:[{key:"a",title:"Alpha"},{key:"b",title:"Beta"},
+				{key:"empty",title:"Empty"}]},
+			sortCompare:(a,b)=>{
+				groupedCompareOnlyWithinGroups&&=a.kind===b.kind;
+				return a.order-b.order;
+			},entry:{type:"group",visibleIf:({rowData})=>rowData.visible!==false,
+				closedRender:({label})=>label,entries:[
+					{title:"Kind",dataKey:"kind",input:{type:"text"}},
+					{title:"Order",dataKey:"order",input:{type:"text"}},
+					{title:"Label",dataKey:"label",input:{type:"text"}},
+				]}},
+	]}},true,true,{searchbar:false});
+	groupedTable.setData([{title:"Grouped",items:groupedBacking}]);
+	await tick();
+	const groupedRepeated=groupedTable.getDetailCell(0,"groupedItems");
+	const groupedEntries=()=>groupedRepeated.children.filter(child=>!child.schemaNode.creator);
+	const groupedHeadings=()=>[...groupedRepeated.parent.containerEl.querySelectorAll(":scope>.repeated-group-heading")];
+	const initialGroupedCreator=groupedRepeated.children.find(entry=>entry.schemaNode.creator);
+	assert(JSON.stringify(groupedEntries().map(entry=>entry.dataObj.id))
+		===JSON.stringify(["a-1","a-3","b-hidden","b-2","y-1","x-1"])
+		&&JSON.stringify(groupedBacking.map(entry=>entry.id))
+		===JSON.stringify(["b-2","a-3","y-1","x-1","a-1","b-hidden"])
+		&&groupedCompareOnlyWithinGroups,
+		"grouping orders groups independently from within-group sorting without mutating backing identity");
+	assert(JSON.stringify(groupedHeadings().map(heading=>heading.textContent))
+		===JSON.stringify(["Alpha","Beta","y","x"])
+		&&groupedHeadings().every(heading=>heading.getAttribute("aria-hidden")==="true"
+			&&!heading.hasAttribute("data-path")
+			&&heading.querySelector(":scope>td>.repeated-group-frame>.repeated-group-frame-top>.repeated-group-title")),
+		"declared and first-seen undeclared groups render non-navigable headings while empty groups stay hidden");
+	await tick();
+	const initialGroupFrames=groupedHeadings().map(heading=>heading.querySelector(".repeated-group-frame"));
+	const groupedCollectionRect=groupedRepeated.parent.containerEl.getBoundingClientRect();
+	const initialGroupFrameRects=initialGroupFrames.map(frame=>frame.getBoundingClientRect());
+	const initialVisibleGroupedEntries=groupedEntries().filter(entry=>!entry.hidden);
+	assert(initialVisibleGroupedEntries.every(entry=>entry.outerContainerEl.classList.contains("repeated-group-entry"))
+		&&groupedEntries().find(entry=>entry.dataObj.id==="a-1").outerContainerEl.classList.contains("repeated-group-first")
+		&&groupedEntries().find(entry=>entry.dataObj.id==="a-3").outerContainerEl.classList.contains("repeated-group-last")
+		&&groupedEntries().find(entry=>entry.dataObj.id==="b-2").outerContainerEl.classList.contains("repeated-group-first")
+		&&groupedEntries().find(entry=>entry.dataObj.id==="b-2").outerContainerEl.classList.contains("repeated-group-last")
+		&&!groupedEntries().find(entry=>entry.dataObj.id==="b-hidden").outerContainerEl.classList.contains("repeated-group-entry")
+		&&initialGroupFrames.every(frame=>getComputedStyle(frame).borderLeftStyle==="solid"
+			&&getComputedStyle(frame).borderRightStyle==="solid"
+			&&getComputedStyle(frame).borderBottomStyle==="solid"
+			&&getComputedStyle(frame.querySelector(".repeated-group-frame-top"),"::before").borderTopStyle==="solid"
+			&&!frame.style.width)
+		&&initialGroupFrameRects.every(rect=>rect.left>groupedCollectionRect.left
+			&&rect.right<groupedCollectionRect.right)
+		&&initialGroupFrameRects.every(rect=>Math.abs(rect.width-initialGroupFrameRects[0].width)<.5)
+		&&initialGroupFrameRects.slice(1).every((rect,index)=>rect.top>initialGroupFrameRects[index].bottom),
+		"each visible group receives an independent equal-width inset frame while hidden entries do not participate");
+	assert(initialGroupedCreator.outerContainerEl.classList.contains("grouped-repeated-creator")
+		&&parseFloat(getComputedStyle(initialGroupedCreator.outerContainerEl.cells[0]).paddingTop)>0
+		&&initialGroupedCreator.outerContainerEl.getBoundingClientRect().top>=initialGroupFrameRects.at(-1).bottom,
+		"a grouped creator is subtly separated after the final visible group without a wrapper");
+	const groupedIdentity=groupedEntries().find(entry=>entry.dataObj.id==="a-3");
+	const groupedIdentityElement=groupedIdentity.outerContainerEl;
+	const groupedKind=groupedIdentity.children[0];
+	groupedTable._openGroup(groupedIdentity);
+	await tick();
+	const openAlphaFrame=groupedHeadings()[0].querySelector(".repeated-group-frame").getBoundingClientRect();
+	const openGroupedEntry=groupedIdentity.el.getBoundingClientRect();
+	assert(openGroupedEntry.left>openAlphaFrame.left&&openGroupedEntry.right<openAlphaFrame.right,
+		"an open grouped entry lays out inside the frame's horizontal inset");
+	assert(openGroupedEntry.bottom<openAlphaFrame.bottom,
+		"the final grouped entry leaves real layout padding above the frame's bottom edge");
+	groupedIdentity.dataObj.kind="b";
+	groupedTable._markDirtyField(groupedKind);
+	assert(groupedTable._closeGroup(groupedIdentity)
+		&&groupedIdentity.outerContainerEl===groupedIdentityElement
+		&&JSON.stringify(groupedEntries().map(entry=>entry.dataObj.id))
+			===JSON.stringify(["a-1","b-hidden","b-2","a-3","y-1","x-1"]),
+		"committing a changed group key moves the existing instance and DOM without replacing its identity");
+	const externalGroupedIdentity=groupedEntries().find(entry=>entry.dataObj.id==="b-2");
+	const externalGroupedElement=externalGroupedIdentity.outerContainerEl;
+	groupedTable.updateData(groupedTable._filteredData[0],"items[0].kind","a");
+	assert(externalGroupedIdentity.outerContainerEl===externalGroupedElement
+		&&JSON.stringify(groupedEntries().map(entry=>entry.dataObj.id))
+			===JSON.stringify(["a-1","b-2","b-hidden","a-3","y-1","x-1"]),
+		"updateData regroups the existing instance by backing-array identity");
+	groupedIdentity.dataObj.visible=false;
+	groupedTable._applyVisibleIf(groupedIdentity,0);
+	assert(!groupedHeadings().some(heading=>heading.textContent==="Beta"),
+		"a group with only hidden entries has no heading");
+	groupedIdentity.dataObj.visible=true;
+	groupedTable._applyVisibleIf(groupedIdentity,0);
+	assert(groupedHeadings().some(heading=>heading.textContent==="Beta"),
+		"a heading returns when a grouped entry becomes visible again");
+	groupedRepeated.createNewEntry();
+	const groupedDraft=groupedRepeated.children.find(entry=>entry.creating);
+	const groupedCreator=groupedRepeated.children.find(entry=>entry.schemaNode.creator);
+	groupedTable._finalizeRepeatedMutation(groupedRepeated);
+	assert(groupedRepeated.children.indexOf(groupedDraft)===groupedRepeated.children.indexOf(groupedCreator)-1,
+		"an open create draft stays at the creation position through refresh instead of jumping into its eventual group");
+	groupedDraft.dataObj.label="Created";
+	groupedTable._markDirtyField(groupedDraft.children[2]);
+	assert(groupedTable._closeGroup(groupedDraft)&&groupedEntries()[0]===groupedDraft
+		&&groupedBacking.at(-1)===groupedDraft.dataObj,
+		"a committed draft joins its group and sorts visually while remaining appended in backing data");
+	const callbackGrouping=groupedTable._getRepeatedGrouping({schemaNode:{grouping:{
+		by:(data,rowData,instanceNode)=>`${rowData.title}:${data.kind}:${instanceNode.schemaNode.nodeId}`,
+	}}});
+	assert(groupedTable._getRepeatedGroupKey(callbackGrouping,groupedEntries()[0],
+		{title:"row"},groupedRepeated)==="row:a:groupedItems",
+		"grouping.by callbacks receive entry data, root row data, and the stable repeated instance");
+	const unknownEntry=groupedEntries().find(entry=>entry.dataObj.id==="x-1");
+	assert(groupedTable._repeatedOnDelete({instanceNode:{parent:{parent:unknownEntry}}})===true
+		&&!groupedHeadings().some(heading=>heading.textContent==="x"),
+		"deleting the final visible entry removes its now-empty group heading");
+
+	const nestedGroupedTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},details:{type:"list",entries:[
+		{type:"group",nodeId:"groupingOuter",entries:[
+			{type:"group",nodeId:"groupingInner",entries:[
+				{type:"repeated",dataKey:"items",nodeId:"nestedGroupedItems",create:true,
+					grouping:{by:"kind",order:[{key:"a",title:"Alpha"}]},entry:{type:"group",
+						closedRender:({label})=>label,entries:[{title:"Label",dataKey:"label",input:{type:"text"}}]}},
+			]},
+		]},
+	]}},true,true,{searchbar:false});
+	nestedGroupedTable.setData([{title:"Nested",items:[{kind:"a",label:"Entry"}]}]);
+	await tick();
+	const groupingOuter=nestedGroupedTable.getDetailCell(0,"groupingOuter");
+	const groupingInner=nestedGroupedTable.getDetailCell(0,"groupingInner");
+	const nestedGroupedRepeated=nestedGroupedTable.getDetailCell(0,"nestedGroupedItems");
+	const nestedGroupFrame=nestedGroupedRepeated.groupHeadings[0].querySelector(".repeated-group-frame");
+	const nestedGroupTitle=nestedGroupFrame.querySelector(".repeated-group-title");
+	const nestedGroupedEntry=nestedGroupedRepeated.children.find(child=>!child.schemaNode.creator);
+	const nestedGroupedEntryCell=nestedGroupedEntry.outerContainerEl.cells[0];
+	const frameIsSuppressed=()=>getComputedStyle(nestedGroupFrame).borderLeftColor==="rgba(0, 0, 0, 0)"
+		&&getComputedStyle(nestedGroupFrame.querySelector(".repeated-group-frame-top"),"::after")
+			.borderTopColor==="rgba(0, 0, 0, 0)";
+	assert(frameIsSuppressed()&&nestedGroupTitle.getBoundingClientRect().width>0
+		&&parseFloat(getComputedStyle(nestedGroupedEntryCell).paddingLeft)<16,
+		"grouped repeated under a closed parent keeps its compact heading but suppresses the frame");
+	nestedGroupedTable._openGroup(groupingOuter);
+	await tick();
+	assert(frameIsSuppressed(),
+		"opening a grandparent does not expose a grouped repeated while its direct parent remains closed");
+	nestedGroupedTable._openGroup(groupingInner);
+	await tick();
+	assert(!frameIsSuppressed()&&getComputedStyle(nestedGroupFrame).borderLeftStyle==="solid"
+		&&parseFloat(getComputedStyle(nestedGroupedEntryCell).paddingLeft)===16,
+		"the existing ancestor affordance state exposes the group frame in the normal editable context");
+	nestedGroupedTable._finalizeGroupClose(groupingOuter);
+	await tick();
+	assert(frameIsSuppressed()&&nestedGroupTitle.getBoundingClientRect().width>0,
+		"closing a grandparent suppresses nested repeated frames without hiding their headings");
 
 	const nestedDependencyRenders={};
 	const countNestedRender=(kind,rowData,value)=>{
@@ -2722,6 +2885,83 @@ try {
 	assert(selectDropdown.querySelector("ul.main>li.highlighted")?.textContent==="Current",
 		"an existing select value remains highlighted instead of defaulting to the first option");
 	key(selectDropdown.querySelector("input"),"Escape","Escape");
+
+	let booleanSelectCommit;
+	const booleanSelectRows=[{enabled:false,name:"First"},{enabled:true,name:"Second"}];
+	const booleanSelectTable=new Tablance(host(),{
+		onDataCommit:payload=>booleanSelectCommit=payload,
+		main:{columns:[
+			{dataKey:"enabled",input:{type:"select",boolean:true}},
+			{dataKey:"name",input:{type:"text"}},
+		]},
+	},true,true,{searchbar:false,ordering:false,lang:{booleanTrue:"Ja",booleanFalse:"Nej"}});
+	booleanSelectTable.setData(booleanSelectRows);
+	await tick();
+	const falsePresentation=booleanSelectTable._mainTbody.rows[0].cells[0].querySelector(".boolean-select-value");
+	const truePresentation=booleanSelectTable._mainTbody.rows[1].cells[0].querySelector(".boolean-select-value");
+	assert(falsePresentation?.textContent==="Nej"
+		&&!falsePresentation.querySelector('input[type="checkbox"].boolean-select-checkbox').checked
+		&&truePresentation?.textContent==="Ja"
+		&&truePresentation.querySelector('input[type="checkbox"].boolean-select-checkbox').checked,
+		"boolean selects generate localized checkbox presentations without caller-supplied options");
+	booleanSelectTable.selectCell(booleanSelectRows[0],"enabled");
+	key(booleanSelectTable.rootEl,"Enter","Enter");
+	let booleanDropdown=booleanSelectTable.rootEl.querySelector(".tablance-select-container");
+	let booleanInput=booleanDropdown.querySelector("input");
+	const booleanOptions=booleanDropdown.querySelectorAll("ul.main>li");
+	assert(booleanDropdown&&document.activeElement===booleanInput&&booleanOptions.length===2
+		&&booleanOptions[0].textContent==="Nej"&&booleanOptions[1].textContent==="Ja"
+		&&booleanOptions[0].querySelector('input[type="checkbox"].boolean-select-checkbox')
+		&&[...booleanSelectTable.rootEl.querySelectorAll('input[type="checkbox"].boolean-select-checkbox')]
+			.every(checkbox=>checkbox.tabIndex===-1&&checkbox.getAttribute("aria-hidden")==="true"
+				&&getComputedStyle(checkbox).pointerEvents==="none"&&!checkbox.disabled),
+		"Enter opens the ordinary select editor with checkbox-presented boolean options");
+	key(booleanInput,"ArrowDown","ArrowDown");
+	key(booleanInput,"Tab","Tab");
+	assert(booleanSelectRows[0].enabled===true&&typeof booleanSelectRows[0].enabled==="boolean"
+		&&booleanSelectCommit?.changes?.enabled===true&&booleanSelectTable._mainColIndex===1,
+		"the ordinary select flow commits a canonical boolean and keeps its Tab navigation");
+	booleanSelectTable.selectCell(booleanSelectRows[0],"enabled");
+	key(booleanSelectTable.rootEl,"Enter","Enter");
+	booleanDropdown=booleanSelectTable.rootEl.querySelector(".tablance-select-container");
+	booleanInput=booleanDropdown.querySelector("input");
+	key(booleanInput,"ArrowUp","ArrowUp");
+	key(booleanInput,"Escape","Escape");
+	assert(booleanSelectRows[0].enabled===true&&!booleanSelectTable._inEditMode,
+		"Escape cancels a boolean select without changing its canonical value");
+
+	const booleanDetailRows=[{settings:[{enabled:false,note:"Next"}]}];
+	const booleanDetailTable=new Tablance(host(),{main:{columns:[{type:"expand"}]},details:{type:"list",entries:[
+		{type:"repeated",dataKey:"settings",nodeId:"booleanRepeated",entry:{type:"group",entries:[
+			{type:"grid",columns:2,entries:[
+				{title:"Enabled",dataKey:"enabled",nodeId:"detailBoolean",help:"Boolean help",
+					input:{type:"select",boolean:true}},
+				{title:"Note",dataKey:"note",nodeId:"booleanNote",input:{type:"text"}},
+			]},
+		]}},
+	]}},true,true,{searchbar:false,ordering:false});
+	booleanDetailTable.setData(booleanDetailRows);
+	await tick();
+	const booleanGroup=booleanDetailTable.getDetailCell(0,"booleanRepeated").children[0];
+	booleanGroup.select();
+	key(booleanDetailTable.rootEl,"Enter","Enter");
+	const detailBoolean=booleanDetailTable.getDetailCell(0,"detailBoolean");
+	detailBoolean.select();
+	key(booleanDetailTable.rootEl,"Enter","Enter");
+	booleanDropdown=booleanDetailTable.rootEl.querySelector(".tablance-select-container");
+	booleanInput=booleanDropdown.querySelector("input");
+	assert(booleanDropdown&&detailBoolean.outerContainerEl.querySelector(":scope>span.title .tablance-title-text")
+		?.textContent==="Enabled"
+		&&detailBoolean.helpTriggerEl?.isConnected,
+		"a Grid boolean select preserves its stable title and help structure while editing");
+	key(booleanInput,"ArrowDown","ArrowDown");
+	key(booleanInput,"Tab","Tab");
+	const booleanGroupPayload=booleanDetailTable._buildGroupPayload(booleanGroup);
+	assert(booleanDetailRows[0].settings[0].enabled===true
+		&&booleanDetailTable._activeDetailsCell.schemaNode.nodeId==="booleanNote"
+		&&booleanGroupPayload.changed===true
+		&&Object.values(booleanGroupPayload.payload.changes).includes(true),
+		"Grid boolean selects participate in dirty-state and existing Tab navigation");
 
 	result.textContent=`${assertions.length} cell-state assertions passed`;
 	result.dataset.status="passed";
