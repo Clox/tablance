@@ -113,6 +113,22 @@ try {
 	await press("Home","Home",36);
 	await send("Input.insertText",{text:"X"},sessionId);
 	await press("Escape","Escape",27);
+	await waitForStatus(["awaiting-native-sorting"]);
+	const headerPoint=await evaluate(`(()=>{const rect=window.nativeSortingHeader.getBoundingClientRect();return {
+		x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
+	await send("Input.dispatchMouseEvent",{type:"mousePressed",x:headerPoint.x,y:headerPoint.y,
+		button:"left",buttons:1,clickCount:1,modifiers:8},sessionId);
+	await send("Input.dispatchMouseEvent",{type:"mouseReleased",x:headerPoint.x,y:headerPoint.y,
+		button:"left",buttons:0,clickCount:1,modifiers:8},sessionId);
+	await waitForStatus(["awaiting-native-double-sorting"]);
+	const doubleHeaderPoint=await evaluate(`(()=>{const rect=window.nativeDoubleSortingHeader.getBoundingClientRect();return {
+		x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
+	for (const clickCount of [1,2]) {
+		await send("Input.dispatchMouseEvent",{type:"mousePressed",x:doubleHeaderPoint.x,y:doubleHeaderPoint.y,
+			button:"left",buttons:1,clickCount},sessionId);
+		await send("Input.dispatchMouseEvent",{type:"mouseReleased",x:doubleHeaderPoint.x,y:doubleHeaderPoint.y,
+			button:"left",buttons:0,clickCount},sessionId);
+	}
 	const finalResult=await waitForStatus(["passed"]);
 	console.log(finalResult.text);
 	await send("Target.closeTarget",{targetId});

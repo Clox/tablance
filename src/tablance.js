@@ -7101,6 +7101,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._headerTr=thead.insertRow();
 		for (let col of this._colSchemaNodes) {
 			let th=this._headerTr.appendChild(document.createElement("th"));
+			th.addEventListener("mousedown",e=>this._onThMouseDown(e));
 			th.addEventListener("click",e=>this._onThClick(e));
 			if (col.type=="select") {
 				th.appendChild(this._createCheckbox());
@@ -7134,6 +7135,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			helpTrigger.tabIndex=0;
 			spacer.appendChild(helpTrigger);
 		}
+	}
+
+	_onThMouseDown(e) {
+		if ((!e.shiftKey&&e.detail<2)||e.button!==0||this._opts.ordering===false
+			||e.target.closest(".tablance-help-trigger"))
+			return;
+		const clickedIndex=e.currentTarget.cellIndex;
+		if (this._colSchemaNodes[clickedIndex]?.type==="select"&&e.target.matches("input"))
+			return;
+		e.preventDefault();
 	}
 
 	_onThClick(e) {
@@ -7174,11 +7185,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (let [thIndex,th] of Object.entries(this._headerTr.cells)) {
 			if (thIndex==this._headerTr.cells.length-1)
 				break;
-			let order=null;
+			let order=null,priority=null;
 			let sortDiv=this._colSchemaNodes[thIndex].sortDiv;
-			for (let sortingCol of this._sortingCols) {
+			for (let sortingColIndex=0;sortingColIndex<this._sortingCols.length;sortingColIndex++) {
+				const sortingCol=this._sortingCols[sortingColIndex];
 				if (sortingCol.index==thIndex) {
 					order=sortingCol.order;
+					priority=sortingColIndex+1;
 					break;
 				}
 			}
@@ -7187,6 +7200,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (order) {
 				th.classList.add(order);
 				sortDiv.innerHTML=(order=="asc"?this._opts?.sortAscHtml:this._opts?.sortDescHtml)??"";
+				if (this._sortingCols.length>1) {
+					const priorityEl=sortDiv.appendChild(document.createElement("span"));
+					priorityEl.className="tablance-sort-priority";
+					priorityEl.innerText=priority;
+				}
 			} else
 				sortDiv.innerHTML=this._opts?.sortNoneHtml??"";
 		}

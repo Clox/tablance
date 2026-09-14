@@ -513,6 +513,18 @@
 					fill: none;
 					stroke: currentColor;
 				}
+
+				>.tablance-sort-priority {
+					position: absolute;
+					top: -4px;
+					left: 12px;
+					min-width: 9px;
+					color: var(--tablance-muted-color);
+					font-size: 9px;
+					font-weight: 600;
+					line-height: 1;
+					text-align: center;
+				}
 			}
 
 			&.asc>.sortSymbol,

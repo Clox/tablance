@@ -3466,6 +3466,96 @@ try {
 		&&Object.values(booleanGroupPayload.payload.changes).includes(true),
 		"Grid boolean selects participate in dirty-state and existing Tab navigation");
 
+	const sortingRows=[
+		{account:"Beta",amount:2,date:"2026-09-02"},
+		{account:"Alpha",amount:2,date:"2026-09-03"},
+		{account:"Alpha",amount:1,date:"2026-09-01"},
+	];
+	const sortingTable=new Tablance(host(),{main:{columns:[
+		{title:"Account",dataKey:"account"},
+		{title:"Amount",dataKey:"amount"},
+		{title:"Date",dataKey:"date"},
+	]}},true,true,{searchbar:false});
+	sortingTable.setData(sortingRows);
+	await tick();
+	const sortingHeaders=sortingTable._headerTr.cells;
+	const normalMouseDown=new MouseEvent("mousedown",{bubbles:true,cancelable:true,button:0});
+	sortingHeaders[0].dispatchEvent(normalMouseDown);
+	assert(!normalMouseDown.defaultPrevented,"ordinary header mousedown keeps native text selection available");
+	const shiftMouseDown=new MouseEvent("mousedown",{bubbles:true,cancelable:true,button:0,shiftKey:true});
+	sortingHeaders[0].dispatchEvent(shiftMouseDown);
+	assert(shiftMouseDown.defaultPrevented,"Shift+mousedown on a sortable header suppresses native range extension");
+	const doubleMouseDown=new MouseEvent("mousedown",{bubbles:true,cancelable:true,button:0,detail:2});
+	sortingHeaders[0].dispatchEvent(doubleMouseDown);
+	assert(doubleMouseDown.defaultPrevented,"a second sortable-header mousedown suppresses native word selection");
+	sortingHeaders[0].dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true}));
+	assert(sortingTable._sortingCols.length===1
+		&&!sortingHeaders[0].querySelector(".tablance-sort-priority"),
+		"single-column sorting retains its existing icon without a priority number");
+	const selection=getSelection();
+	const anchor=sortingHeaders[0].querySelector(".tablance-main-header-title").firstChild;
+	const range=document.createRange();
+	range.setStart(anchor,1);
+	range.collapse(true);
+	selection.removeAllRanges();
+	selection.addRange(range);
+	const nativeSortDone=new Promise((resolve,reject)=>{
+		const timeout=setTimeout(()=>reject(new Error("Timed out waiting for trusted Shift+click sorting")),5000);
+		sortingHeaders[1].addEventListener("click",event=>{
+			if (!event.shiftKey)
+				return;
+			clearTimeout(timeout);
+			setTimeout(resolve);
+		},{once:true});
+	});
+	window.nativeSortingHeader=sortingHeaders[1];
+	sortingHeaders[1].scrollIntoView({block:"center"});
+	result.textContent="awaiting trusted Shift+click sorting";
+	result.dataset.status="awaiting-native-sorting";
+	await nativeSortDone;
+	assert(selection.isCollapsed&&selection.toString()==="",
+		"trusted Shift+click sorting does not extend the browser text selection");
+	assert(sortingTable._sortingCols.map(col=>`${col.dataKey}:${col.order}`).join(",")==="account:asc,amount:asc"
+		&&sortingTable._filteredData.map(row=>`${row.account}:${row.amount}`).join(",")==="Alpha:1,Alpha:2,Beta:2",
+		"trusted Shift+click adds a secondary sort and applies it after the primary sort");
+	assert(sortingHeaders[0].querySelector(".tablance-sort-priority")?.textContent==="1"
+		&&sortingHeaders[1].querySelector(".tablance-sort-priority")?.textContent==="2",
+		"multi-sort icons show their actual primary and secondary priorities");
+	sortingHeaders[1].dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true,shiftKey:true}));
+	sortingHeaders[2].dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true,shiftKey:true}));
+	const priorities=[...sortingHeaders].slice(0,3)
+		.map(th=>th.querySelector(".tablance-sort-priority")?.textContent).join(",");
+	assert(priorities==="1,2,3",
+		"priority numbers remain ordered when another sort column is appended");
+	sortingHeaders[1].dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true,shiftKey:true}));
+	assert(sortingTable._sortingCols.map(col=>col.dataKey).join(",")==="account,date"
+		&&sortingHeaders[0].querySelector(".tablance-sort-priority")?.textContent==="1"
+		&&!sortingHeaders[1].querySelector(".tablance-sort-priority")
+		&&sortingHeaders[2].querySelector(".tablance-sort-priority")?.textContent==="2",
+		"removing a Shift-sorted column immediately compacts the remaining priorities");
+	sortingHeaders[2].dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true}));
+	assert(sortingTable._sortingCols.length===1&&sortingTable._sortingCols[0].dataKey==="date"
+		&&![...sortingHeaders].slice(0,3).some(th=>th.querySelector(".tablance-sort-priority")),
+		"returning to a single sort removes every secondary priority number");
+	const doubleClickRange=document.createRange();
+	doubleClickRange.setStart(sortingHeaders[2].querySelector(".tablance-main-header-title").firstChild,1);
+	doubleClickRange.collapse(true);
+	selection.removeAllRanges();
+	selection.addRange(doubleClickRange);
+	const nativeDoubleSortDone=new Promise((resolve,reject)=>{
+		const timeout=setTimeout(()=>reject(new Error("Timed out waiting for trusted double-click sorting")),5000);
+		sortingHeaders[2].addEventListener("dblclick",()=>{
+			clearTimeout(timeout);
+			setTimeout(resolve);
+		},{once:true});
+	});
+	window.nativeDoubleSortingHeader=sortingHeaders[2];
+	result.textContent="awaiting trusted double-click sorting";
+	result.dataset.status="awaiting-native-double-sorting";
+	await nativeDoubleSortDone;
+	assert(selection.isCollapsed&&selection.toString()==="",
+		"trusted double-click sorting does not select header text");
+
 	result.textContent=`${assertions.length} cell-state assertions passed`;
 	result.dataset.status="passed";
 } catch (error) {

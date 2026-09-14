@@ -472,6 +472,17 @@
   fill: none;
   stroke: currentColor;
 }
+.tablance > .table-area > .header-table th > .sortSymbol > .tablance-sort-priority {
+  position: absolute;
+  top: -4px;
+  left: 12px;
+  min-width: 9px;
+  color: var(--tablance-muted-color);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: center;
+}
 .tablance > .table-area > .header-table th.asc > .sortSymbol, .tablance > .table-area > .header-table th.desc > .sortSymbol {
   color: var(--tablance-accent-color);
 }
