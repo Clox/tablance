@@ -1077,9 +1077,10 @@
 			box-sizing: border-box;
 		}
 		.repeated-group-heading {
-			color: #64748b;
+			color: var(--tablance-heading-color);
 			font-size: 12px;
 			font-weight: 600;
+			line-height: 1.25;
 			letter-spacing: .01em;
 			pointer-events: none;
 			user-select: none;
@@ -1088,8 +1089,20 @@
 				padding: 9px 0 2px;
 			}
 			.repeated-group-title {
+				display: block;
 				margin-left: 6px;
 				white-space: nowrap;
+			}
+			.repeated-group-description {
+				display: block;
+				margin: 2px 0 0 6px;
+				color: var(--tablance-muted-color);
+				font-weight: 400;
+				letter-spacing: 0;
+				white-space: normal;
+			}
+			&.details-affordances-suppressed .repeated-group-description {
+				display: none;
 			}
 		}
 		span.repeated-group-heading {
@@ -1098,6 +1111,11 @@
 			height: 25px;
 			padding: 9px 0 2px 6px;
 			box-sizing: border-box;
+		}
+		span.repeated-group-heading-with-description {
+			height: auto;
+			min-height: 25px;
+			padding-bottom: 4px;
 		}
 		tr.repeated-group-entry:not(.details-affordances-suppressed)>td:first-child,
 		table.details-group>tbody>tr.repeated-group-entry:not(.details-affordances-suppressed)>td:first-child {

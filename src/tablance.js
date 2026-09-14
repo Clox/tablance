@@ -648,14 +648,19 @@ class TablanceBase {
 	 * 				grouping Object Optional presentational grouping of repeated entries:
 	 * 					by String|Function Data-key or callback used to obtain each entry's group key. A callback
 	 * 						receives 1: entry data, 2: rowData, 3: repeated instanceNode.
-	 * 					order Array Optional explicit group order. Each item is {key:*,title:String}. Undeclared
+	 * 					order Array Optional explicit group order. Each item is
+	 * 						{key:*,title:String,description?:String}. Undeclared
 	 * 						keys follow in stable first-occurrence order. Empty groups are not rendered.
+	 * 						Descriptions are compact presentational guidance shown beneath the heading while the
+	 * 						repeated is in its normal open ancestor context.
 	 * 					Grouping only changes presentation. Entry instances and backing-array identity remain flat,
 	 * 					and sortCompare is applied only between entries in the same group.
 	 * 				reorder Object Optional reorder editor for closed repeated entries.
 	 * 					canMove(direction, payload) decides whether "up" or "down" is available.
-	 * 					onCommit(payload) persists the accepted order. payload.baselineOrder and payload.order
-	 * 					contain data objects; payload.refresh() reapplies canonical sorting after persistence.
+	 * 					onCommit(payload) receives the accepted order. While an ancestor group transaction is open,
+	 * 					this callback is buffered until that transaction commits and discarded if it is cancelled.
+	 * 					payload.baselineOrder and payload.order contain data objects; payload.refresh() reapplies
+	 * 					canonical sorting after the callback updates canonical data.
 	 * 					The handle is an internal auxiliary cell reached spatially from its entry. It is intentionally
 	 * 					excluded from the repeated entry list and therefore from ordinary Tab/vertical navigation.
 	 * 				creationText String Used if "create" is true. the text of the creation-cell. Default is "Insert new"
@@ -1169,17 +1174,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				if (i==dataPath.length-1) {//final array-index not specified. replace all of the data in repeated
 					const replacement=nodeToUpdate.parent.dataObj[nodeToUpdate.schemaNode.dataKey];
 					this._validateRepeatedDataArray(replacement);
-
-					//remove all the current entries. Do it backwards so that the remaining entries doesn't have to
-					//have their index&path updates each time
-					const children=nodeToUpdate.children;
-					for (let entryI=children.length-!!nodeToUpdate.schemaNode.create,entry; entry=children[--entryI];)
-						this._deleteCell(entry,true);
-
-					//insert all the new data
-					nodeToUpdate.dataObj=replacement;
-					nodeToUpdate.dataObj.forEach(
-									dataEntry=>updatedEls.push(this._repeatInsert(nodeToUpdate,false,dataEntry)));
+					this._reconcileRepeatedData(nodeToUpdate,replacement,updatedEls);
 					break;
 				} else if (arrayIndex!==undefined&&arrayIndex!=="") {//backing-array index pointing at an entry
 					const dataEntry=nodeToUpdate.dataObj[Number(arrayIndex)];
@@ -1203,7 +1198,31 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			(nodeToUpdate.selEl??nodeToUpdate.el).scrollIntoView({behavior:'smooth',block:"center"});
 			updatedEls.forEach(el=>this._highlightElements([el,...el.getElementsByTagName('*')]));
 		}
-		this._adjustCursorPosSize(this._selectedCell,true);
+		this._adjustCursorPosSize(this._activeDetailsCell
+			?this._getCursorGeometryEl(this._activeDetailsCell):this._selectedCell);
+	}
+
+	/**Reconcile a complete repeated refresh by backing-object identity.
+	 * Existing entry instances remain canonical, so an externally refreshed/sorted collection does not lose its
+	 * selection, open state, cursor target, or auxiliary cells such as reorder handles. */
+	_reconcileRepeatedData(repeated,replacement,updatedEls=[]) {
+		const wanted=new Set(replacement);
+		for (const entry of [...repeated.children])
+			if (!entry.schemaNode?.creator&&!entry.creating&&!wanted.has(entry.dataObj))
+				this._deleteCell(entry,true,false);
+		const existing=new Set(repeated.children.filter(entry=>!entry.schemaNode?.creator)
+			.map(entry=>entry.dataObj));
+		repeated.dataObj=replacement;
+		for (const entry of repeated.children)
+			if (!entry.schemaNode?.creator)
+				entry.dataArray=replacement;
+		for (const dataEntry of replacement)
+			if (!existing.has(dataEntry))
+				updatedEls.push(this._repeatInsert(repeated,false,dataEntry));
+		for (const entry of repeated.children)
+			if (!entry.schemaNode?.creator&&!entry.creating)
+				this.refreshSubtree(entry);
+		return updatedEls;
 	}
 
 	/**
@@ -1499,7 +1518,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			??instanceNode.el?.closest?.("tr.details");
 		if (detailsTr&&!this._onlyDetails)
 			this._updateDetailsHeight(detailsTr);
-		this._adjustCursorPosSize?.(this._selectedCell,true);
+		this._adjustCursorPosSize?.(this._activeDetailsCell
+			?this._getCursorGeometryEl(this._activeDetailsCell):this._selectedCell);
 		return refreshed;
 	}
 
@@ -2844,6 +2864,43 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return true;
 	}
 
+	_selectMainDataBoundaryCell(toEnd,preferredColIndex) {
+		const targetIndex=toEnd?this._filteredData.length-1:0;
+		const dataRow=this._filteredData[targetIndex];
+		if (!dataRow)
+			return false;
+		const findRenderedRow=()=>this._mainTbody.querySelector(
+			`[data-data-row-index="${targetIndex}"]:not(.details)`);
+		const selectRenderedRow=()=>{
+			const row=findRenderedRow();
+			const selectable=[...(row?.cells??[])]
+				.filter(cell=>this._getCellState(cell)?.selectable!==false);
+			if (!selectable.length)
+				return false;
+			const target=selectable.reduce((closest,cell)=>Math.abs(cell.cellIndex-preferredColIndex)
+				<Math.abs(closest.cellIndex-preferredColIndex)?cell:closest);
+			const selected=this._selectMainTableCell(target);
+			if (selected)
+				this._scrollToCursor();
+			return selected;
+		};
+		if (findRenderedRow())
+			return selectRenderedRow();
+		const destination=toEnd?Math.max(0,this._scrollBody.scrollHeight-this._scrollBody.clientHeight):0;
+		const direction=toEnd?1:-1;
+		const step=Math.max(this._rowHeight,
+			Math.max(1,this._numRenderedRows-2)*this._rowHeight);
+		for (let guard=0;guard<this._filteredData.length&&!findRenderedRow();guard++) {
+			const current=this._scrollBody.scrollTop;
+			const next=direction>0?Math.min(destination,current+step):Math.max(destination,current-step);
+			if (next===current)
+				break;
+			this._scrollBody.scrollTop=next;
+			this._scrollMethod?.();
+		}
+		return selectRenderedRow();
+	}
+
 	_getAdjacentSelectableMainCell(cell,direction) {
 		for (let candidate=cell?.[direction>0?"nextElementSibling":"previousElementSibling"];
 			candidate;candidate=candidate[direction>0?"nextElementSibling":"previousElementSibling"])
@@ -2894,6 +2951,58 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._refreshGridLayout(grid);
 		return this._moveInsideLogicalRows(grid,grid.gridRows,current,numCols,numRows,
 			"gridPreferredColumn",grid);
+	}
+
+	_selectVisualRowBoundary(row,toEnd) {
+		const cells=[...new Set(row??[])].filter(cell=>cell&&this._isNavigableDetailsInstance(cell));
+		const target=toEnd?cells.at(-1):cells[0];
+		return this._selectDetailsHomeEndTarget(target);
+	}
+
+	_selectDetailsHomeEndTarget(target) {
+		if (!target)
+			return false;
+		const selected=this._selectDetailsCell(target);
+		if (selected)
+			this._scrollToCursor();
+		return selected;
+	}
+
+	_moveCellCursorHomeEnd(toEnd,ctrlKey=false,e=null) {
+		if (this._mainRowIndex==null&&this._mainColIndex==null)
+			return false;
+		e?.preventDefault();
+		this._resetVerticalLayoutPreferredColumn();
+		if (!this._activeDetailsCell) {
+			if (ctrlKey)
+				return this._selectMainDataBoundaryCell(toEnd,this._mainColIndex);
+			const cells=[...this._selectedCell?.parentElement?.cells??[]]
+				.filter(cell=>this._getCellState(cell)?.selectable!==false);
+			const target=toEnd?cells.at(-1):cells[0];
+			return target?this._selectMainTableCell(target):false;
+		}
+		if (ctrlKey) {
+			const root=this._openDetailsPanes[this._mainRowIndex];
+			const target=root?this._getFirstSelectableDetailsCell(root,!toEnd,true):null;
+			return this._selectDetailsHomeEndTarget(target);
+		}
+		const parent=this._activeDetailsCell.parent;
+		if (parent?.schemaNode.type==="grid") {
+			this._refreshGridLayout(parent);
+			const row=parent.gridRows.find(candidate=>candidate.includes(this._activeDetailsCell));
+			return this._selectVisualRowBoundary(row,toEnd);
+		}
+		if (parent?.schemaNode.type==="lineup") {
+			const row=this._getLineupVisualRows(parent).find(candidate=>candidate.items.some(
+				item=>item.instanceNode===this._activeDetailsCell));
+			const target=toEnd?row?.items.at(-1)?.instanceNode:row?.items[0]?.instanceNode;
+			return this._selectDetailsHomeEndTarget(target);
+		}
+		if (parent?.schemaNode.type==="list") {
+			const target=this._getFirstSelectableDetailsCell(parent,!toEnd,true);
+			return this._selectDetailsHomeEndTarget(target);
+		}
+		return false;
 	}
 
 	_moveInsideLogicalRows(layout,rows,current,numCols,numRows,preferredColumnKey,boundaryNode) {
@@ -3111,7 +3220,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (this._handleRepeatedReorderKey(e))
 			return;
 		this._tooltip.style.visibility="hidden";
-		const keysThatEnterFromOutline=["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Escape",
+		const keysThatEnterFromOutline=["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Home","End","Escape",
 								"NumpadAdd","NumpadSubtract","Enter","NumpadEnter","Space"];
 
 		if (!this._inEditMode&&this._mainRowIndex==null&&this._mainColIndex==null) {
@@ -3187,7 +3296,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const code=this._expansionShortcutCode(e);
 		if (code!==e.code&&e.altKey)
 			e.preventDefault();
-		const scrollKeys=["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Escape",
+		const scrollKeys=["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Home","End","Escape",
 							"NumpadAdd","NumpadSubtract","Enter","NumpadEnter"];
 		if (scrollKeys.includes(code))
 			this._scrollToCursor();
@@ -3200,6 +3309,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._moveCellCursor(-1,0,e);
 			break; case "ArrowRight":
 				this._moveCellCursor(1,0,e);
+			break; case "Home":
+				this._moveCellCursorHomeEnd(false,e.ctrlKey,e);
+			break; case "End":
+				this._moveCellCursorHomeEnd(true,e.ctrlKey,e);
 			break; case "Tab":
 				e.preventDefault();
 				this._moveCellCursor(e.shiftKey?-1:1,0,e);
@@ -4608,14 +4721,21 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!doOpen)
 			return;
 		this._enterEditTransaction(groupObj);
-		// Capture data snapshot on first open so cancel can restore in-place without breaking references.
-		if (!groupObj._openSnapshot)
-			groupObj._openSnapshot=this._cloneGroupData(groupObj.dataObj);
+		this._ensureGroupTransactionBaseline(groupObj);
 		groupObj.el.classList.add("open");
 		this._syncGroupChevronVisibility(groupObj);
 		this._selectDetailsCell(this._getFirstSelectableDetailsCell(groupObj,true,true));
 		groupObj.schemaNode.onOpenAfter?.(groupObj);
 		
+	}
+
+	_ensureGroupTransactionBaseline(group) {
+		// A group can also be opened implicitly when a descendant is selected programmatically. Both entry paths need
+		// the same rollback baseline before any child mutation is accepted into the parent transaction.
+		if (!Object.prototype.hasOwnProperty.call(group,"_openSnapshot"))
+			group._openSnapshot=this._cloneGroupData(group.dataObj);
+		if (!Object.prototype.hasOwnProperty.call(group,"_openRepeatedBaselines"))
+			group._openRepeatedBaselines=this._captureRepeatedBaselines(group);
 	}
 
 	_getCommitChangeKey(schemaNode) {
@@ -4759,6 +4879,17 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._flushBufferedGroupCommits();
 	}
 
+	_queueTransactionEffect(callback,instanceNode) {
+		const group=this._getOpenGroupAncestor(instanceNode?.parent);
+		const txn=this._editTransaction;
+		if (!group||!txn?.stack.length) {
+			callback();
+			return;
+		}
+		txn.intents.push({kind:"effect",effect:callback,group,instanceNode,
+			depth:instanceNode?.path?.length??group.path?.length??0,seq:txn.seq++});
+	}
+
 	_removeGroupFromTransaction(groupObject,discardIntents=false) {
 		// Remove a group (and optionally its descendants) from the open stack and buffered intents.
 		const txn=this._editTransaction;
@@ -4773,13 +4904,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_flushBufferedGroupCommits() {
 		// Emit commits in root->leaf order once no open groups remain; repeated nodes are structural only.
-		// Persistence is centralized here;
+		// Commit emission is centralized here.
 		const txn=this._editTransaction;
 		if (!txn?.intents.length)
 			return;
 		// Flush only after the outermost group commits so parents fire before children and cancels can discard safely.
-		const commits=txn.intents.filter(({schemaNode})=>schemaNode?.type!=="repeated")
+		// Deferred effects (for example an accepted repeated reorder) run after all create/update/delete intents,
+		// allowing the consumer to map stable local object identities to any canonical identities it assigns.
+		const commits=txn.intents.filter(intent=>intent.kind!=="effect"&&intent.schemaNode?.type!=="repeated")
 			.sort((a,b)=>a.depth-b.depth||a.seq-b.seq);
+		const effects=txn.intents.filter(intent=>intent.kind==="effect").sort((a,b)=>a.seq-b.seq);
 		const groupsTouched=new Set(commits.map(({group})=>group).filter(Boolean));
 		const isRevertedUpdate=intent=>{
 			const {group,payload}=intent;
@@ -4791,7 +4925,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				return false;
 			}
 		};
-		const hasAnyRealCommit=commits.some(intent=>{
+		const hasAnyRealCommit=effects.length>0||commits.some(intent=>{
 			const {payload}=intent;
 			if (!payload)
 				return false;
@@ -4803,6 +4937,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return !isRevertedUpdate(intent);
 		});
 		if (!hasAnyRealCommit) {
+			for (const group of groupsTouched) {
+				delete group?._openSnapshot;
+				delete group?._openRepeatedBaselines;
+			}
 			txn.intents.length=0;
 			this._editTransaction=null;
 			return;
@@ -4857,8 +4995,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (rowData)
 				this._rowFilterCache?.delete(rowData);
 		}
-		for (const group of groupsTouched)
+		for (const {effect} of effects)
+			effect();
+		for (const group of groupsTouched) {
 			delete group?._openSnapshot;
+			delete group?._openRepeatedBaselines;
+		}
 		txn.intents.length=0;
 		this._editTransaction=null;
 		this.refreshView("commit");
@@ -4970,6 +5112,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			instanceNode.containerEl].filter(Boolean));
 		for (const target of targets)
 			target.classList.toggle("details-affordances-suppressed",!exposed);
+		for (const heading of instanceNode.groupHeadings??[])
+			heading.classList.toggle("details-affordances-suppressed",!exposed);
 		if (instanceNode.schemaNode?.type==="group"&&instanceNode.groupChevronEl) {
 			const closed=!instanceNode.el.classList.contains("open");
 			instanceNode.groupChevronEl.hidden=!exposed||!closed||instanceNode.cellState?.activatable!==true;
@@ -5287,7 +5431,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._adjustCursorPosSize(this._selectedCell);
 		this._highlightOnFocus=false;
 		if (payload)
-			config.onCommit(payload);
+			this._queueTransactionEffect(()=>config.onCommit(payload),entry);
 		return true;
 	}
 
@@ -5363,6 +5507,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (!definition||typeof definition!=="object"||Array.isArray(definition)
 					||!("key" in definition)||typeof definition.title!=="string"||!definition.title.trim())
 				throw new TypeError("Every repeated grouping.order item must have a key and non-empty title.");
+			if (definition.description!=null&&typeof definition.description!=="string")
+				throw new TypeError("Repeated grouping descriptions must be strings.");
 			if (keys.has(definition.key))
 				throw new TypeError("Repeated grouping.order cannot contain duplicate keys.");
 			keys.add(definition.key);
@@ -5377,7 +5523,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			:entry.dataObj?.[grouping.by];
 	}
 
-	_createRepeatedGroupHeading(repeated,title,key) {
+	_createRepeatedGroupHeading(repeated,title,key,description=null) {
 		const collectionEl=repeated.parent?.containerEl;
 		if (!collectionEl)
 			return null;
@@ -5390,11 +5536,17 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		} else {
 			heading=document.createElement("span");
 		}
+		heading.className="repeated-group-heading";
 		const headingContent=heading.cells?.[0]??heading;
 		const titleEl=headingContent.appendChild(document.createElement("span"));
 		titleEl.className="repeated-group-title";
 		titleEl.textContent=title;
-		heading.className="repeated-group-heading";
+		if (description) {
+			const descriptionEl=headingContent.appendChild(document.createElement("span"));
+			descriptionEl.className="repeated-group-description";
+			descriptionEl.textContent=description;
+			heading.classList.add("repeated-group-heading-with-description");
+		}
 		heading.dataset.groupKey=String(key??"");
 		heading.setAttribute("aria-hidden","true");
 		return heading;
@@ -5403,7 +5555,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_arrangeRepeatedInstances(repeated,preserveEntryOrder=false) {
 		const compare=repeated?.schemaNode?.sortCompare;
 		const grouping=this._getRepeatedGrouping(repeated);
-		if (!grouping&&typeof compare!=="function")
+		if (!grouping&&typeof compare!=="function"&&!preserveEntryOrder)
 			return false;
 		const creators=[];
 		const drafts=[];
@@ -5448,10 +5600,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const definitionByKey=new Map(grouping.definitions.map(definition=>[definition.key,definition]));
 			groups=orderedKeys.map(key=>{
 				const groupEntries=buckets.get(key);
+				const definition=definitionByKey.get(key);
 				if (typeof compare==="function"&&!preserveEntryOrder)
 					groupEntries.sort((a,b)=>compare(a.dataObj,b.dataObj,rowData,repeated)
 						||(previousOrder.get(a)-previousOrder.get(b)));
-				return {key,title:definitionByKey.get(key)?.title??String(key??""),entries:groupEntries};
+				return {key,title:definition?.title??String(key??""),description:definition?.description,
+					entries:groupEntries};
 			});
 			sorted=groups.flatMap(group=>group.entries);
 		} else if (preserveEntryOrder)
@@ -5479,7 +5633,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				visibleEntries[0]?.outerContainerEl?.classList.add("repeated-group-first");
 				visibleEntries.at(-1)?.outerContainerEl?.classList.add("repeated-group-last");
 				if (group.title&&visibleEntries.length) {
-					const heading=this._createRepeatedGroupHeading(repeated,group.title,group.key);
+					const heading=this._createRepeatedGroupHeading(repeated,group.title,group.key,group.description);
+					heading.classList.toggle("details-affordances-suppressed",
+						!this._canExposeDetailsAffordances(repeated));
 					collectionEl.insertBefore(heading,repeated.insertionPoint);
 					repeated.groupHeadings.push(heading);
 				}
@@ -5497,7 +5653,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (let index=0;index<repeated.children.length;index++)
 			this._changeInstanceNodeIndex(repeated.children[index],index);
 		this._syncRepeatedReorderColumns(repeated);
-		this._adjustCursorPosSize?.(this._selectedCell,true);
+		this._adjustCursorPosSize?.(this._activeDetailsCell
+			?this._getCursorGeometryEl(this._activeDetailsCell):this._selectedCell);
 		return orderChanged;
 	}
 
@@ -6433,6 +6590,46 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return JSON.parse(JSON.stringify(dataObj));
 	}
 
+	_captureRepeatedBaselines(group) {
+		const baselines=[];
+		const visit=node=>{
+			for (const child of node.children??[]) {
+				if (child.schemaNode?.type==="repeated") {
+					const entries=child.children.filter(entry=>!entry.schemaNode?.creator);
+					baselines.push({repeated:child,dataArray:child.dataObj,
+						items:child.dataObj.map(data=>({data,snapshot:this._cloneGroupData(data)})),
+						instanceOrder:[...entries]});
+				}
+				visit(child);
+			}
+		};
+		visit(group);
+		return baselines;
+	}
+
+	_restoreRepeatedBaselines(group) {
+		const baselines=group?._openRepeatedBaselines??[];
+		for (const {repeated,dataArray,items} of baselines) {
+			dataArray.splice(0,dataArray.length,...items.map(({data})=>data));
+			for (const {data,snapshot} of items)
+				this._restoreGroupSnapshot(data,snapshot);
+			const parentData=repeated.parent?.dataObj;
+			if (parentData&&repeated.schemaNode?.dataKey!=null)
+				parentData[repeated.schemaNode.dataKey]=dataArray;
+			repeated.dataObj=dataArray;
+		}
+		for (const {repeated,dataArray,instanceOrder} of baselines) {
+			this._reconcileRepeatedData(repeated,dataArray);
+			const creator=repeated.children.filter(entry=>entry.schemaNode?.creator);
+			const restored=instanceOrder.filter(entry=>repeated.children.includes(entry));
+			const remaining=repeated.children.filter(entry=>!entry.schemaNode?.creator&&!restored.includes(entry));
+			repeated.children=[...restored,...remaining,...creator];
+			this._arrangeRepeatedInstances(repeated,true);
+			for (const entry of repeated.children)
+				this._syncRepeatedReorderEntry(entry);
+		}
+	}
+
 	/** Compare live group data with a snapshot without depending on property insertion order. */
 	_groupDataEquals(left,right,seen=new WeakMap()) {
 		if (Object.is(left,right))
@@ -6522,12 +6719,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		// a condition together with  _rerenderDirtyFields. But running it just in case and it's cheap anyway
 		if (group._openSnapshot)
 			this._restoreGroupSnapshot(group.dataObj,group._openSnapshot);
+		this._restoreRepeatedBaselines(group);
 		
 		this._rerenderDirtyFields(group);
 		group.schemaNode.onClose?.(closePayload);
 		this._finalizeGroupClose(group);
 		this._selectCell(group.el,group.schemaNode,group.dataObj);
 		this._activeDetailsCell=group;
+		delete group._openRepeatedBaselines;
 		if (!this._editTransaction?.stack?.length)
 			this._flushBufferedGroupCommits();
 	}
@@ -6688,6 +6887,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					openedPresentationRoot=parentCell;
 				parentCell.el.classList.add("open");
 				this._enterEditTransaction(parentCell);
+				this._ensureGroupTransactionBaseline(parentCell);
 			}
 		if (openedPresentationRoot)
 			this._syncDetailsPresentation(openedPresentationRoot);

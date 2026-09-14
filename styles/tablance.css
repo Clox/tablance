@@ -1041,9 +1041,10 @@
   box-sizing: border-box;
 }
 .tablance .details .repeated-group-heading {
-  color: #64748b;
+  color: var(--tablance-heading-color);
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.25;
   letter-spacing: 0.01em;
   pointer-events: none;
   user-select: none;
@@ -1053,8 +1054,20 @@
   padding: 9px 0 2px;
 }
 .tablance .details .repeated-group-heading .repeated-group-title {
+  display: block;
   margin-left: 6px;
   white-space: nowrap;
+}
+.tablance .details .repeated-group-heading .repeated-group-description {
+  display: block;
+  margin: 2px 0 0 6px;
+  color: var(--tablance-muted-color);
+  font-weight: 400;
+  letter-spacing: 0;
+  white-space: normal;
+}
+.tablance .details .repeated-group-heading.details-affordances-suppressed .repeated-group-description {
+  display: none;
 }
 .tablance .details span.repeated-group-heading {
   flex: 0 0 100%;
@@ -1062,6 +1075,11 @@
   height: 25px;
   padding: 9px 0 2px 6px;
   box-sizing: border-box;
+}
+.tablance .details span.repeated-group-heading-with-description {
+  height: auto;
+  min-height: 25px;
+  padding-bottom: 4px;
 }
 .tablance .details tr.repeated-group-entry:not(.details-affordances-suppressed) > td:first-child,
 .tablance .details table.details-group > tbody > tr.repeated-group-entry:not(.details-affordances-suppressed) > td:first-child {

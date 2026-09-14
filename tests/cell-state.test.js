@@ -62,6 +62,29 @@ try {
 	assert(shortcuts._mainRowIndex===1,"ordinary ArrowDown retains row navigation");
 	key(shortcuts.rootEl,"ArrowUp");
 	assert(shortcuts._mainRowIndex===0,"ordinary ArrowUp retains row navigation");
+	const homeEndMain=new Tablance(host(),{main:{columns:[
+		{dataKey:"left"},{dataKey:"middle"},{dataKey:"right"},
+	]}},true,true,{searchbar:false,ordering:false});
+	homeEndMain.setData([
+		{left:"A1",middle:"B1",right:"C1"},
+		{left:"A2",middle:"B2",right:"C2"},
+		{left:"A3",middle:"B3",right:"C3"},
+	]);
+	await tick();
+	homeEndMain._selectMainTableCell(homeEndMain._mainTbody.rows[1].cells[1]);
+	key(homeEndMain.rootEl,"Home","Home");
+	assert(homeEndMain._mainRowIndex===1&&homeEndMain._mainColIndex===0,
+		"Home selects the first selectable main cell on the current row");
+	key(homeEndMain.rootEl,"End","End");
+	assert(homeEndMain._mainRowIndex===1&&homeEndMain._mainColIndex===2,
+		"End selects the last selectable main cell on the current row");
+	homeEndMain._selectMainTableCell(homeEndMain._mainTbody.rows[1].cells[1]);
+	key(homeEndMain.rootEl,"End","End",{ctrlKey:true});
+	assert(homeEndMain._mainRowIndex===2&&homeEndMain._mainColIndex===1,
+		"Ctrl+End selects the final main row while retaining the current column");
+	key(homeEndMain.rootEl,"Home","Home",{ctrlKey:true});
+	assert(homeEndMain._mainRowIndex===0&&homeEndMain._mainColIndex===1,
+		"Ctrl+Home selects the first main row while retaining the current column");
 	shortcuts.rootEl.remove();
 	assert(Tablance.version==="2.0.0","built UMD exposes the breaking 2.0.0 version");
 	Tablance.defaultLang={filterPlaceholder:"Global search"};
@@ -726,6 +749,16 @@ try {
 			`${viewportKind} virtual cursor test uses a viewport with recycled rows`);
 		const firstVirtualRow=virtualTable._mainTbody.querySelector('[data-data-row-index="0"]:not(.details)');
 		virtualTable._selectMainTableCell(firstVirtualRow.cells[1]);
+		key(virtualTable.rootEl,"End","End",{ctrlKey:true});
+		await tick();
+		assert(virtualTable._mainRowIndex===virtualRows.length-1&&virtualTable._mainColIndex===1
+			&&virtualTable._selectedCell?.parentElement.dataset.dataRowIndex===String(virtualRows.length-1),
+			`${viewportKind} Ctrl+End renders and selects the final virtualized row in the same column`);
+		key(virtualTable.rootEl,"Home","Home",{ctrlKey:true});
+		await tick();
+		assert(virtualTable._mainRowIndex===0&&virtualTable._mainColIndex===1
+			&&virtualTable._selectedCell?.parentElement.dataset.dataRowIndex==="0",
+			`${viewportKind} Ctrl+Home renders and selects the first virtualized row in the same column`);
 		const logicalRowIndex=virtualTable._mainRowIndex;
 		const logicalData=virtualTable._cellCursorDataObj;
 		const recycledRow=virtualTable._selectedCell.parentElement;
@@ -760,6 +793,37 @@ try {
 	emptyGroupValueCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
 	assert(emptyGroup.selEl===emptyGroupValueCell&&emptyGroupTable._selectedCell===emptyGroupValueCell,
 		"a list group uses its full value cell as the hit target even when its inner content is empty");
+
+	const homeEndDetails=new Tablance(host(),{details:{type:"list",entries:[
+		{title:"First",dataKey:"first",nodeId:"homeEndFirst"},
+		{title:"Middle",dataKey:"middle",nodeId:"homeEndMiddle"},
+		{type:"group",title:"Last group",nodeId:"homeEndGroup",entries:[
+			{title:"Inner",dataKey:"inner",nodeId:"homeEndInner"},
+		]},
+	]}},true,true,{searchbar:false});
+	homeEndDetails.setData([{first:"First",middle:"Middle",inner:"Inner"}]);
+	await tick();
+	const homeEndFirst=homeEndDetails.getDetailCell(0,"homeEndFirst");
+	const homeEndMiddle=homeEndDetails.getDetailCell(0,"homeEndMiddle");
+	const homeEndGroup=homeEndDetails.getDetailCell(0,"homeEndGroup");
+	const homeEndInner=homeEndDetails.getDetailCell(0,"homeEndInner");
+	homeEndMiddle.select();
+	key(homeEndDetails.rootEl,"Home","Home");
+	assert(homeEndDetails._activeDetailsCell===homeEndFirst,
+		"Home selects the first child of the current details List");
+	key(homeEndDetails.rootEl,"End","End");
+	assert(homeEndDetails._activeDetailsCell===homeEndGroup,
+		"End selects the last child of the current details List and treats a group as terminal");
+	homeEndDetails._openGroup(homeEndGroup);
+	homeEndInner.select();
+	key(homeEndDetails.rootEl,"Home","Home",{ctrlKey:true});
+	assert(homeEndDetails._activeDetailsCell===homeEndFirst&&!homeEndGroup.el.classList.contains("open"),
+		"details Ctrl+Home starts at the details root and closes groups outside the destination path");
+	homeEndDetails._openGroup(homeEndGroup);
+	homeEndInner.select();
+	key(homeEndDetails.rootEl,"End","End",{ctrlKey:true});
+	assert(homeEndDetails._activeDetailsCell===homeEndGroup&&!homeEndGroup.el.classList.contains("open"),
+		"details Ctrl+End descends from the root but never opens or descends through a group terminal");
 
 	let deleteDecision="prevent",beforeDeleteCalls=0,afterDeleteCalls=0,deleteCommits=0;
 	const repeatedRows=[{name:"keep"},{name:"candidate"}];
@@ -989,7 +1053,8 @@ try {
 	const groupedTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},details:{type:"list",entries:[
 		{type:"repeated",dataKey:"items",nodeId:"groupedItems",create:true,
 			createData:()=>({kind:"a",order:0,label:"Draft"}),
-			grouping:{by:"kind",order:[{key:"a",title:"Alpha"},{key:"b",title:"Beta"},
+			grouping:{by:"kind",order:[{key:"a",title:"Alpha",description:"Newest first"},
+				{key:"b",title:"Beta"},
 				{key:"empty",title:"Empty"}]},
 			sortCompare:(a,b)=>{
 				groupedCompareOnlyWithinGroups&&=a.kind===b.kind;
@@ -1013,13 +1078,16 @@ try {
 		===JSON.stringify(["b-2","a-3","y-1","x-1","a-1","b-hidden"])
 		&&groupedCompareOnlyWithinGroups,
 		"grouping orders groups independently from within-group sorting without mutating backing identity");
-	assert(JSON.stringify(groupedHeadings().map(heading=>heading.textContent))
+	assert(JSON.stringify(groupedHeadings().map(heading=>heading.querySelector(".repeated-group-title").textContent))
 		===JSON.stringify(["Alpha","Beta","y","x"])
 		&&groupedHeadings().every(heading=>heading.getAttribute("aria-hidden")==="true"
 			&&!heading.hasAttribute("data-path")
 			&&heading.querySelector(":scope>td>.repeated-group-title")
-			&&!heading.querySelector(".repeated-group-frame")),
-		"declared and first-seen undeclared groups render non-navigable headings while empty groups stay hidden");
+			&&!heading.querySelector(".repeated-group-frame"))
+		&&groupedHeadings()[0].querySelector(".repeated-group-description")?.textContent==="Newest first"
+		&&groupedHeadings()[0].classList.contains("repeated-group-heading-with-description")
+		&&getComputedStyle(groupedHeadings()[0].querySelector(".repeated-group-description")).display==="block",
+		"declared groups render descriptions beneath non-navigable headings while empty groups stay hidden");
 	await tick();
 	const groupedCollectionRect=groupedRepeated.parent.containerEl.getBoundingClientRect();
 	const initialGroupHeadingRects=groupedHeadings().map(heading=>heading.getBoundingClientRect());
@@ -1095,7 +1163,8 @@ try {
 		{type:"group",nodeId:"groupingOuter",entries:[
 			{type:"group",nodeId:"groupingInner",entries:[
 				{type:"repeated",dataKey:"items",nodeId:"nestedGroupedItems",create:true,
-					grouping:{by:"kind",order:[{key:"a",title:"Alpha"}]},entry:{type:"group",
+					grouping:{by:"kind",order:[{key:"a",title:"Alpha",description:"Group guidance"}]},
+					entry:{type:"group",
 						closedRender:({label})=>label,entries:[{title:"Label",dataKey:"label",input:{type:"text"}}]}},
 			]},
 		]},
@@ -1106,10 +1175,13 @@ try {
 	const groupingInner=nestedGroupedTable.getDetailCell(0,"groupingInner");
 	const nestedGroupedRepeated=nestedGroupedTable.getDetailCell(0,"nestedGroupedItems");
 	const nestedGroupTitle=nestedGroupedRepeated.groupHeadings[0].querySelector(".repeated-group-title");
+	const nestedGroupDescription=nestedGroupedRepeated.groupHeadings[0]
+		.querySelector(".repeated-group-description");
 	const nestedGroupedEntry=nestedGroupedRepeated.children.find(child=>!child.schemaNode.creator);
 	const nestedGroupedEntryCell=nestedGroupedEntry.outerContainerEl.cells[0];
 	assert(!nestedGroupedRepeated.groupHeadings[0].querySelector(".repeated-group-frame")
 		&&nestedGroupTitle.getBoundingClientRect().width>0
+		&&getComputedStyle(nestedGroupDescription).display==="none"
 		&&parseFloat(getComputedStyle(nestedGroupedEntryCell).paddingLeft)<24,
 		"grouped repeated under a closed parent keeps its compact heading without adding indentation");
 	nestedGroupedTable._openGroup(groupingOuter);
@@ -1118,7 +1190,8 @@ try {
 		"opening a grandparent does not indent grouped entries while their direct parent remains closed");
 	nestedGroupedTable._openGroup(groupingInner);
 	await tick();
-	assert(parseFloat(getComputedStyle(nestedGroupedEntryCell).paddingLeft)===24,
+	assert(parseFloat(getComputedStyle(nestedGroupedEntryCell).paddingLeft)===24
+		&&getComputedStyle(nestedGroupDescription).display!=="none",
 		"the existing ancestor affordance state indents entries in the normal editable context");
 	nestedGroupedEntry.select();
 	await tick();
@@ -1401,6 +1474,99 @@ try {
 	const reorderDraft=reorderRepeated.children.find(child=>child.creating);
 	assert(reorderDraft.reorderCell?.hidden!==false,
 		"an uncommitted create draft cannot expose or enter repeated reorder mode");
+	reorderTable._deleteCell(reorderDraft,true);
+
+	const transactionalRows=[{id:"older",position:1,label:"Older"},{id:"newer",position:2,label:"Newer"}];
+	const transactionalEvents=[];
+	const transactionalTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},
+		onDataCommit:payload=>transactionalEvents.push(`data:${payload.mode}:${payload.data.label}`),
+		details:{type:"list",entries:[{type:"group",nodeId:"transactionalOuter",entries:[
+			{type:"repeated",dataKey:"items",nodeId:"transactionalItems",create:true,
+				createData:()=>({position:3,label:"Draft"}),sortCompare:(a,b)=>b.position-a.position,
+				reorder:{canMove:(_direction,{target})=>!!target,
+					onCommit:payload=>transactionalEvents.push(`reorder:${payload.data.label}`)},
+				entry:{type:"group",closedRender:data=>data.label,entries:[
+					{title:"Label",dataKey:"label",input:{type:"text"}},
+				]}},
+		]}]},
+	},true,true,{searchbar:false});
+	transactionalTable.setData([{title:"Transactional",items:transactionalRows}]);
+	await tick();
+	let transactionalOuter=transactionalTable.getDetailCell(0,"transactionalOuter");
+	transactionalTable._openGroup(transactionalOuter);
+	let transactionalRepeated=transactionalTable.getDetailCell(0,"transactionalItems");
+	const originalInstances=transactionalRepeated.children.filter(child=>!child.schemaNode.creator);
+	transactionalRepeated.createNewEntry();
+	let transactionalDraft=transactionalRepeated.children.find(child=>child.creating);
+	transactionalDraft.dataObj.label="Created then discarded";
+	transactionalTable._markDirtyField(transactionalDraft.children[0]);
+	transactionalDraft.select();
+	assert(!transactionalDraft.creating&&transactionalDraft.dataObj.id==null
+		&&transactionalRepeated.children[0]===transactionalDraft
+		&&transactionalTable._activeDetailsCell===transactionalDraft
+		&&!transactionalDraft.reorderCell.hidden&&transactionalEvents.length===0,
+		"an accepted local child is fully positioned and reorderable without persistence identity");
+	transactionalTable._enterCell(new Event("enter",{cancelable:true}));
+	assert(transactionalDraft.el.classList.contains("open"),
+		"an accepted unpersisted repeated entry can be reopened through the ordinary group lifecycle");
+	transactionalTable._closeGroup(transactionalDraft);
+	transactionalDraft.select();
+	key(transactionalTable.rootEl,"Escape","Escape",{ctrlKey:true});
+	assert(transactionalRows.length===2&&!transactionalRows.includes(transactionalDraft.dataObj)
+		&&!transactionalRepeated.children.includes(transactionalDraft)&&!transactionalDraft.el.isConnected
+		&&originalInstances.every(instance=>transactionalRepeated.children.includes(instance))
+		&&transactionalEvents.length===0,
+		"parent Ctrl+Escape removes an accepted create and reconciles its stale instance and DOM");
+
+	transactionalOuter=transactionalTable.getDetailCell(0,"transactionalOuter");
+	transactionalTable._openGroup(transactionalOuter);
+	transactionalRepeated=transactionalTable.getDetailCell(0,"transactionalItems");
+	const newerEntry=transactionalRepeated.children.find(child=>child.dataObj.id==="newer");
+	newerEntry.reorderCell.select();
+	key(transactionalTable.rootEl,"Enter","Enter");
+	key(transactionalTable.rootEl,"ArrowDown","ArrowDown");
+	key(transactionalTable.rootEl,"Enter","Enter");
+	assert(transactionalRepeated.children.filter(child=>!child.schemaNode.creator)[1]===newerEntry
+		&&transactionalEvents.length===0,
+		"an accepted repeated reorder remains local while its parent transaction is open");
+	key(transactionalTable.rootEl,"Escape","Escape",{ctrlKey:true});
+	assert(transactionalRepeated.children.filter(child=>!child.schemaNode.creator)[0]===newerEntry
+		&&transactionalEvents.length===0,
+		"parent Ctrl+Escape restores accepted repeated instance and DOM order without persistence");
+
+	transactionalOuter=transactionalTable.getDetailCell(0,"transactionalOuter");
+	transactionalTable._openGroup(transactionalOuter);
+	transactionalRepeated=transactionalTable.getDetailCell(0,"transactionalItems");
+	transactionalRepeated.createNewEntry();
+	transactionalDraft=transactionalRepeated.children.find(child=>child.creating);
+	transactionalDraft.dataObj.label="Created and reordered";
+	transactionalTable._markDirtyField(transactionalDraft.children[0]);
+	transactionalDraft.select();
+	transactionalDraft.reorderCell.select();
+	key(transactionalTable.rootEl,"Enter","Enter");
+	key(transactionalTable.rootEl,"ArrowDown","ArrowDown");
+	key(transactionalTable.rootEl,"Enter","Enter");
+	key(transactionalTable.rootEl,"Escape","Escape",{ctrlKey:true});
+	assert(transactionalRows.length===2&&!transactionalRepeated.children.includes(transactionalDraft)
+		&&transactionalEvents.length===0,
+		"create plus reorder is discarded atomically by parent Ctrl+Escape");
+
+	transactionalOuter=transactionalTable.getDetailCell(0,"transactionalOuter");
+	transactionalTable._openGroup(transactionalOuter);
+	transactionalRepeated=transactionalTable.getDetailCell(0,"transactionalItems");
+	transactionalRepeated.createNewEntry();
+	transactionalDraft=transactionalRepeated.children.find(child=>child.creating);
+	transactionalDraft.dataObj.label="Created and committed";
+	transactionalTable._markDirtyField(transactionalDraft.children[0]);
+	transactionalDraft.select();
+	transactionalDraft.reorderCell.select();
+	key(transactionalTable.rootEl,"Enter","Enter");
+	key(transactionalTable.rootEl,"ArrowDown","ArrowDown");
+	key(transactionalTable.rootEl,"Enter","Enter");
+	transactionalTable._closeGroup(transactionalOuter);
+	assert(JSON.stringify(transactionalEvents)===JSON.stringify(
+		["data:create:Created and committed","reorder:Created and committed"]),
+		"parent commit emits create before its buffered reorder effect in deterministic order");
 
 	const nestedDependencyRenders={};
 	const countNestedRender=(kind,rowData,value)=>{
@@ -2224,6 +2390,13 @@ try {
 		&&wrapLast.outerContainerEl.offsetTop>wrapWide.outerContainerEl.offsetTop
 		&&Math.abs(wrapLast.outerContainerEl.offsetLeft-wrapWide.outerContainerEl.offsetLeft)<1,
 		"preferred widths preserve normal flex wrapping across multiple visual rows");
+	wrapMiddle.select();
+	key(wrappingTable.rootEl,"Home","Home");
+	assert(wrappingTable._activeDetailsCell===wrapWide,
+		"Lineup Home uses the first child on the currently rendered wrapped row");
+	key(wrappingTable.rootEl,"End","End");
+	assert(wrappingTable._activeDetailsCell===wrapMiddle,
+		"Lineup End uses the last child on the currently rendered wrapped row");
 	const wrappedSeparator=getComputedStyle(wrapLast.outerContainerEl,"::before");
 	assert(getComputedStyle(wrappingLineup).overflow==="hidden"
 		&&wrappedSeparator.borderInlineStartWidth==="1px"
@@ -2263,6 +2436,13 @@ try {
 		&&wrapWide.outerContainerEl.offsetTop<wrapMiddle.outerContainerEl.offsetTop
 		&&wrapMiddle.outerContainerEl.offsetTop===wrapLast.outerContainerEl.offsetTop,
 		"Lineup extension ownership follows fresh DOM wrapping after resize rather than stale schema rows");
+	wrapLast.select();
+	key(wrappingTable.rootEl,"Home","Home");
+	assert(wrappingTable._activeDetailsCell===wrapMiddle,
+		"Lineup Home follows the new first child after an actual wrapping reflow");
+	key(wrappingTable.rootEl,"End","End");
+	assert(wrappingTable._activeDetailsCell===wrapLast,
+		"Lineup End follows the new last child after an actual wrapping reflow");
 	wrappingHost.style.width="420px";
 	await tick();
 	assert(wrappingLineupInstance.lineupRowExtensions.length===1
@@ -2456,6 +2636,12 @@ try {
 	gridA1.select();
 	key(gridTable.rootEl,"ArrowRight","ArrowRight");
 	assert(gridTable._activeDetailsCell===gridB1,"ArrowRight moves to the next distinct cell on the same grid row");
+	key(gridTable.rootEl,"Home","Home");
+	assert(gridTable._activeDetailsCell===gridA1,
+		"Grid Home selects the first cell on the current logical visual row");
+	key(gridTable.rootEl,"End","End");
+	assert(gridTable._activeDetailsCell===gridB1,
+		"Grid End selects the last cell on the current logical visual row");
 	key(gridTable.rootEl,"ArrowLeft","ArrowLeft");
 	assert(gridTable._activeDetailsCell===gridA1,"ArrowLeft moves to the previous distinct cell on the same grid row");
 	key(gridTable.rootEl,"ArrowLeft","ArrowLeft");
