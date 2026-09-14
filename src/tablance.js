@@ -246,6 +246,8 @@ class TablanceBase {
 	_helpCloseTimer;
 	_helpResizeObserver;
 	_lineupResizeObserver;
+	_viewportResizeObserver;
+	_viewportResizeFrame;
 	_readOnlyFeedbackTarget;
 	_readOnlyFeedbackTimer;
 	_dropdownAlignmentContainer;
@@ -830,7 +832,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._createTableHeader();
 			this._headerTable.hidden=this._opts.showHeader===false;
 			this._createTableBody();
-			(new ResizeObserver(this._updateSizesOfViewportAndCols.bind(this))).observe(hostEl);
+			this._viewportResizeObserver=new ResizeObserver(()=>{
+				if (this._viewportResizeFrame!=null)
+					return;
+				this._viewportResizeFrame=requestAnimationFrame(()=>{
+					this._viewportResizeFrame=null;
+					this._updateSizesOfViewportAndCols();
+				});
+			});
+			this._viewportResizeObserver.observe(hostEl);
+			// Details and data changes resize the sizer and can add/remove a body scrollbar without resizing the host.
+			// Observe that content geometry so shared header/body widths are recalculated in both scrollbar directions.
+			this._viewportResizeObserver.observe(this._tableSizer);
 			this._setupSpreadsheet(false);
 			
 
@@ -4280,6 +4293,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_detailsRowExtensionDoubleClick(e) {
+		const directReorderCell=e.target.closest(".repeated-reorder-cell")?._tablanceInstanceNode;
+		if (directReorderCell) {
+			e.preventDefault();
+			if (this._activeDetailsCell!==directReorderCell)
+				this._selectDetailsCell(directReorderCell);
+			if (this._activeDetailsCell===directReorderCell)
+				this._enterCell(e);
+			return;
+		}
 		const extension=e.target.closest(".grid-row-extension,.lineup-row-extension");
 		if (!extension)
 			return;
@@ -5114,6 +5136,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			target.classList.toggle("details-affordances-suppressed",!exposed);
 		for (const heading of instanceNode.groupHeadings??[])
 			heading.classList.toggle("details-affordances-suppressed",!exposed);
+		for (const spacer of instanceNode.groupSpacers??[])
+			spacer.classList.toggle("details-affordances-suppressed",!exposed);
 		if (instanceNode.schemaNode?.type==="group"&&instanceNode.groupChevronEl) {
 			const closed=!instanceNode.el.classList.contains("open");
 			instanceNode.groupChevronEl.hidden=!exposed||!closed||instanceNode.cellState?.activatable!==true;
@@ -5552,6 +5576,23 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return heading;
 	}
 
+	_createRepeatedGroupSpacer(repeated) {
+		const collectionEl=repeated.parent?.containerEl;
+		if (!collectionEl)
+			return null;
+		let spacer;
+		if (collectionEl.tagName==="TBODY") {
+			spacer=document.createElement("tr");
+			const cell=spacer.insertCell();
+			const sample=repeated.children?.find(child=>!child.schemaNode?.creator)?.outerContainerEl;
+			cell.colSpan=Math.max(1,sample?.cells?.length??1);
+		} else
+			spacer=document.createElement("span");
+		spacer.className="repeated-group-spacer";
+		spacer.setAttribute("aria-hidden","true");
+		return spacer;
+	}
+
 	_arrangeRepeatedInstances(repeated,preserveEntryOrder=false) {
 		const compare=repeated?.schemaNode?.sortCompare;
 		const grouping=this._getRepeatedGrouping(repeated);
@@ -5619,19 +5660,21 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const collectionEl=repeated.parent?.containerEl;
 		const hasVisibleGroupedEntries=!!grouping&&groups.some(group=>group.entries.some(entry=>!entry.hidden));
 		for (const entry of entries)
-			entry.outerContainerEl?.classList.remove("repeated-group-entry","repeated-group-first","repeated-group-last");
+			entry.outerContainerEl?.classList.remove("repeated-group-entry","repeated-group-first");
 		for (const creator of creators)
 			creator.outerContainerEl?.classList.toggle("grouped-repeated-creator",hasVisibleGroupedEntries);
 		for (const heading of repeated.groupHeadings??[])
 			heading.remove();
 		repeated.groupHeadings=[];
+		for (const spacer of repeated.groupSpacers??[])
+			spacer.remove();
+		repeated.groupSpacers=[];
 		if (collectionEl&&grouping) {
 			for (const group of groups) {
 				const visibleEntries=group.entries.filter(entry=>!entry.hidden);
 				for (const entry of visibleEntries)
 					entry.outerContainerEl?.classList.add("repeated-group-entry");
 				visibleEntries[0]?.outerContainerEl?.classList.add("repeated-group-first");
-				visibleEntries.at(-1)?.outerContainerEl?.classList.add("repeated-group-last");
 				if (group.title&&visibleEntries.length) {
 					const heading=this._createRepeatedGroupHeading(repeated,group.title,group.key,group.description);
 					heading.classList.toggle("details-affordances-suppressed",
@@ -5642,6 +5685,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				for (const entry of group.entries)
 					if (entry.outerContainerEl)
 						collectionEl.insertBefore(entry.outerContainerEl,repeated.insertionPoint);
+				if (visibleEntries.length) {
+					const spacer=this._createRepeatedGroupSpacer(repeated);
+					spacer.classList.toggle("details-affordances-suppressed",
+						!this._canExposeDetailsAffordances(repeated));
+					collectionEl.insertBefore(spacer,repeated.insertionPoint);
+					repeated.groupSpacers.push(spacer);
+				}
 			}
 			for (const pinned of [...drafts,...creators])
 				if (pinned.outerContainerEl)

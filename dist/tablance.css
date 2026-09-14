@@ -1052,6 +1052,7 @@
 .tablance .details .repeated-group-heading > td {
   height: 25px;
   padding: 9px 0 2px;
+  vertical-align: top;
 }
 .tablance .details .repeated-group-heading .repeated-group-title {
   display: block;
@@ -1152,6 +1153,21 @@
   border-radius: inherit;
   background: rgba(248, 250, 252, 0.72);
   box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.42);
+  opacity: var(--tablance-reorder-idle-opacity, 0.5);
+  pointer-events: none;
+}
+.tablance .details .repeated-reorder-entry:has(.tablance-active-cell) .repeated-reorder-cell {
+  color: var(--tablance-heading-color);
+}
+.tablance .details .repeated-reorder-entry:has(.tablance-active-cell) .repeated-reorder-cell > .repeated-reorder-surface {
+  background: rgba(226, 232, 240, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(100, 116, 139, 0.5);
+  opacity: 1;
+}
+.tablance .details .repeated-reorder-entry:has(.tablance-active-cell) .repeated-reorder-cell:hover {
+  color: var(--tablance-accent-color);
+}
+.tablance .details.cell-cursor.repeated-reorder-cell-cursor:not(.edit-mode) {
   pointer-events: none;
 }
 .tablance .details .repeated-reorder-handle {
@@ -1232,9 +1248,21 @@
 .tablance .details.cell-cursor.repeated-reorder-editor .repeated-reorder-down {
   top: calc(100% + 3px);
 }
-.tablance .details tr.repeated-group-last > td,
-.tablance .details table.details-group > tbody > tr.repeated-group-last > td {
-  padding-bottom: var(--tablance-repeated-group-entry-bottom-padding, 8px);
+.tablance .details tr.repeated-group-spacer {
+  font-size: 0;
+  line-height: 0;
+  pointer-events: none;
+}
+.tablance .details tr.repeated-group-spacer > td {
+  height: var(--tablance-repeated-group-entry-bottom-padding, 8px);
+  padding: 0;
+  border: 0;
+}
+.tablance .details span.repeated-group-spacer {
+  flex: 0 0 100%;
+  width: 100%;
+  height: var(--tablance-repeated-group-entry-bottom-padding, 8px);
+  pointer-events: none;
 }
 .tablance .details .details-affordances-suppressed {
   --tablance-repeated-group-entry-bottom-padding: 4px;

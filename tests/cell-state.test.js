@@ -663,6 +663,38 @@ try {
 		&&getComputedStyle(cells[1]).backgroundColor==="rgb(255, 255, 255)",
 		"ordinary and read-only cells share the default white cell surface");
 
+	const scrollbarHost=host();
+	scrollbarHost.style.height="150px";
+	const scrollbarTable=new Tablance(scrollbarHost,{main:{columns:[
+		{dataKey:"a"},{dataKey:"b"},{dataKey:"c"},
+	]}},true,true,{searchbar:false,ordering:false});
+	const scrollbarWidthsAligned=()=>{
+		const row=scrollbarTable._mainTbody.querySelector(":scope>tr:not(.details)");
+		return !!row&&[...row.cells].every((cell,index)=>Math.abs(cell.getBoundingClientRect().width
+			-scrollbarTable._headerTr.cells[index].getBoundingClientRect().width)<1);
+	};
+	const scrollbarSpacerAligned=()=>Math.abs(
+		scrollbarTable._headerTr.lastElementChild.getBoundingClientRect().width
+		-(scrollbarTable._scrollBody.offsetWidth-scrollbarTable._scrollBody.clientWidth))<1;
+	scrollbarTable.setData([{a:"A",b:"B",c:"C"}]);
+	await tick();
+	await tick();
+	assert(scrollbarTable._scrollBody.offsetWidth===scrollbarTable._scrollBody.clientWidth
+		&&scrollbarWidthsAligned()&&scrollbarSpacerAligned(),
+		"header and body share column geometry before a vertical scrollbar is needed");
+	scrollbarTable.setData(Array.from({length:30},(_,index)=>({a:index,b:index,c:index})));
+	await tick();
+	await tick();
+	assert(scrollbarTable._scrollBody.offsetWidth>scrollbarTable._scrollBody.clientWidth
+		&&scrollbarWidthsAligned()&&scrollbarSpacerAligned(),
+		"header geometry resynchronizes when body growth introduces a vertical scrollbar");
+	scrollbarTable.setData([{a:"A",b:"B",c:"C"}]);
+	await tick();
+	await tick();
+	assert(scrollbarTable._scrollBody.offsetWidth===scrollbarTable._scrollBody.clientWidth
+		&&scrollbarWidthsAligned()&&scrollbarSpacerAligned(),
+		"header geometry resynchronizes when body shrink removes the vertical scrollbar");
+
 	const fixedHeightTable=new Tablance(host(),{
 		main:{columns:[{type:"expand",width:45},{dataKey:"value",input:{type:"text"}}]},
 		details:{type:"list",entries:[{title:"Value",dataKey:"value",input:{type:"text"}}]},
@@ -1071,6 +1103,7 @@ try {
 	const groupedRepeated=groupedTable.getDetailCell(0,"groupedItems");
 	const groupedEntries=()=>groupedRepeated.children.filter(child=>!child.schemaNode.creator);
 	const groupedHeadings=()=>[...groupedRepeated.parent.containerEl.querySelectorAll(":scope>.repeated-group-heading")];
+	const groupedSpacers=()=>[...groupedRepeated.parent.containerEl.querySelectorAll(":scope>.repeated-group-spacer")];
 	const initialGroupedCreator=groupedRepeated.children.find(entry=>entry.schemaNode.creator);
 	assert(JSON.stringify(groupedEntries().map(entry=>entry.dataObj.id))
 		===JSON.stringify(["a-1","a-3","b-hidden","b-2","y-1","x-1"])
@@ -1094,13 +1127,14 @@ try {
 	const initialVisibleGroupedEntries=groupedEntries().filter(entry=>!entry.hidden);
 	assert(initialVisibleGroupedEntries.every(entry=>entry.outerContainerEl.classList.contains("repeated-group-entry"))
 		&&groupedEntries().find(entry=>entry.dataObj.id==="a-1").outerContainerEl.classList.contains("repeated-group-first")
-		&&groupedEntries().find(entry=>entry.dataObj.id==="a-3").outerContainerEl.classList.contains("repeated-group-last")
 		&&groupedEntries().find(entry=>entry.dataObj.id==="b-2").outerContainerEl.classList.contains("repeated-group-first")
-		&&groupedEntries().find(entry=>entry.dataObj.id==="b-2").outerContainerEl.classList.contains("repeated-group-last")
 		&&!groupedEntries().find(entry=>entry.dataObj.id==="b-hidden").outerContainerEl.classList.contains("repeated-group-entry")
 		&&initialVisibleGroupedEntries.every(entry=>parseFloat(getComputedStyle(entry.outerContainerEl.cells[0]).paddingLeft)===24)
+		&&groupedSpacers().length===4
+		&&groupedSpacers().every(spacer=>spacer.getAttribute("aria-hidden")==="true"
+			&&!spacer.hasAttribute("data-path")&&spacer.getBoundingClientRect().height===8)
 		&&initialGroupHeadingRects.every(rect=>rect.left===groupedCollectionRect.left),
-		"each visible group keeps its heading at the repeated baseline while its entries receive layout indentation");
+		"each visible group keeps its heading at the repeated baseline while indentation and spacing remain presentational");
 	assert(initialGroupedCreator.outerContainerEl.classList.contains("grouped-repeated-creator")
 		&&parseFloat(getComputedStyle(initialGroupedCreator.outerContainerEl.cells[0]).paddingTop)>0
 		&&parseFloat(getComputedStyle(initialGroupedCreator.outerContainerEl.cells[0]).paddingLeft)===10
@@ -1113,8 +1147,8 @@ try {
 	await tick();
 	const openGroupedEntry=groupedIdentity.el.getBoundingClientRect();
 	assert(openGroupedEntry.left>groupedCollectionRect.left
-		&&parseFloat(getComputedStyle(groupedIdentity.outerContainerEl.cells[0]).paddingBottom)===8,
-		"an open grouped entry uses the indented content width and leaves real layout spacing after its group");
+		&&groupedSpacers().every(spacer=>spacer.getBoundingClientRect().height>0),
+		"an open grouped entry uses the indented content width without absorbing inter-group spacing into its row");
 	groupedIdentity.dataObj.kind="b";
 	groupedTable._markDirtyField(groupedKind);
 	assert(groupedTable._closeGroup(groupedIdentity)
@@ -1177,6 +1211,8 @@ try {
 	const nestedGroupTitle=nestedGroupedRepeated.groupHeadings[0].querySelector(".repeated-group-title");
 	const nestedGroupDescription=nestedGroupedRepeated.groupHeadings[0]
 		.querySelector(".repeated-group-description");
+	const compactGroupTitleOffset=nestedGroupTitle.getBoundingClientRect().top
+		-nestedGroupedRepeated.groupHeadings[0].getBoundingClientRect().top;
 	const nestedGroupedEntry=nestedGroupedRepeated.children.find(child=>!child.schemaNode.creator);
 	const nestedGroupedEntryCell=nestedGroupedEntry.outerContainerEl.cells[0];
 	assert(!nestedGroupedRepeated.groupHeadings[0].querySelector(".repeated-group-frame")
@@ -1191,8 +1227,10 @@ try {
 	nestedGroupedTable._openGroup(groupingInner);
 	await tick();
 	assert(parseFloat(getComputedStyle(nestedGroupedEntryCell).paddingLeft)===24
-		&&getComputedStyle(nestedGroupDescription).display!=="none",
-		"the existing ancestor affordance state indents entries in the normal editable context");
+		&&getComputedStyle(nestedGroupDescription).display!=="none"
+		&&Math.abs((nestedGroupTitle.getBoundingClientRect().top
+			-nestedGroupedRepeated.groupHeadings[0].getBoundingClientRect().top)-compactGroupTitleOffset)<.1,
+		"the editable context indents entries without shifting the group title relative to its top edge");
 	nestedGroupedEntry.select();
 	await tick();
 	const groupedSelectionRect=nestedGroupedEntry.selEl.getBoundingClientRect();
@@ -1291,6 +1329,13 @@ try {
 		"ArrowUp in the repeated entry column stays in the entry column");
 	middleReorderEntry.select();
 	key(reorderTable.rootEl,"ArrowLeft","ArrowLeft");
+	assert(getComputedStyle(middleReorderEntry.reorderCell.el
+		.querySelector(".repeated-reorder-surface")).opacity==="1"
+		&&getComputedStyle(middleReorderEntry.reorderCell.el
+			.querySelector(".repeated-reorder-surface")).backgroundColor==="rgba(226, 232, 240, 0.55)"
+		&&reorderEntries().filter(item=>item!==middleReorderEntry).every(item=>
+			getComputedStyle(item.reorderCell.el.querySelector(".repeated-reorder-surface")).opacity==="0.5"),
+		"idle reorder handles stay discoverable while only the cursor row has full visual emphasis");
 	const reorderCursorRect=reorderTable._cellCursor.getBoundingClientRect();
 	const reorderCellRect=middleReorderEntry.reorderCell.el.getBoundingClientRect();
 	const reorderColumnRect=middleReorderEntry.reorderColumnEl.getBoundingClientRect();
@@ -1309,8 +1354,11 @@ try {
 		&&Math.abs((reorderColumnRect.right-reorderCellRect.right)-3)<.1,
 		"ArrowLeft selects only the inset real reorder cell while preserving the entry's closed render");
 	key(reorderTable.rootEl,"ArrowDown","ArrowDown");
-	assert(reorderTable._activeDetailsCell===entry("old").reorderCell,
-		"ArrowDown in the reorder column stays in the reorder column");
+	assert(reorderTable._activeDetailsCell===entry("old").reorderCell
+		&&getComputedStyle(entry("old").reorderCell.el.querySelector(".repeated-reorder-surface")).opacity==="1"
+		&&getComputedStyle(middleReorderEntry.reorderCell.el
+			.querySelector(".repeated-reorder-surface")).opacity==="0.5",
+		"ArrowDown stays in the reorder column and immediately transfers its visual emphasis");
 	key(reorderTable.rootEl,"ArrowUp","ArrowUp");
 	assert(reorderTable._activeDetailsCell===middleReorderEntry.reorderCell,
 		"ArrowUp in the reorder column stays in the reorder column");
@@ -1365,6 +1413,10 @@ try {
 		&&reorderEntries().every(item=>!item.reorderCell.el.classList.contains("repeated-reorder-peer-suppressed")
 			&&getComputedStyle(item.reorderCell.el).opacity==="1"
 			&&getComputedStyle(item.reorderCell.el).pointerEvents!=="none")
+		&&getComputedStyle(middleReorderEntry.reorderCell.el
+			.querySelector(".repeated-reorder-surface")).opacity==="1"
+		&&reorderEntries().filter(item=>item!==middleReorderEntry).every(item=>
+			getComputedStyle(item.reorderCell.el.querySelector(".repeated-reorder-surface")).opacity==="0.5")
 		&&reorderCommits.length===0,
 		"Escape cancels the reorder editor and restores its complete entry-order baseline");
 
@@ -1420,9 +1472,9 @@ try {
 		&&!reorderTable._activeRepeatedReorderEntry,
 		"pointer selection resolves directly to the real reorder cell");
 	const reorderDoubleClick=new MouseEvent("dblclick",{bubbles:true,cancelable:true});
-	reorderTable._cellCursor.dispatchEvent(reorderDoubleClick);
+	pointerReorderEntry.reorderCell.el.dispatchEvent(reorderDoubleClick);
 	assert(reorderTable._activeRepeatedReorderEntry===pointerReorderEntry&&reorderTable._inEditMode,
-		"double-click activates the selected reorder cell through the shared cell cursor");
+		"double-click activates the selected canonical reorder cell without relying on the visual cursor as its target");
 	assert(reorderDoubleClick.defaultPrevented
 		&&getComputedStyle(reorderTable._cellCursor).userSelect==="none",
 		"reorder double-click and its editor overlay suppress native text selection");
