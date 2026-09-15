@@ -472,6 +472,9 @@
   fill: none;
   stroke: currentColor;
 }
+.tablance > .table-area > .header-table th > .sortSymbol > .tablance-sort-icon > .tablance-sort-chevron {
+  opacity: 1;
+}
 .tablance > .table-area > .header-table th > .sortSymbol > .tablance-sort-priority {
   position: absolute;
   top: -4px;
@@ -483,8 +486,14 @@
   line-height: 1;
   text-align: center;
 }
-.tablance > .table-area > .header-table th.asc > .sortSymbol, .tablance > .table-area > .header-table th.desc > .sortSymbol {
+.tablance > .table-area > .header-table th.asc > .sortSymbol > .tablance-sort-icon, .tablance > .table-area > .header-table th.desc > .sortSymbol > .tablance-sort-icon {
   color: var(--tablance-accent-color);
+}
+.tablance > .table-area > .header-table th.asc > .sortSymbol > .tablance-sort-icon > .tablance-sort-chevron, .tablance > .table-area > .header-table th.desc > .sortSymbol > .tablance-sort-icon > .tablance-sort-chevron {
+  opacity: 0.25;
+}
+.tablance > .table-area > .header-table th.asc > .sortSymbol > .tablance-sort-icon > .tablance-sort-chevron-up, .tablance > .table-area > .header-table th.desc > .sortSymbol > .tablance-sort-icon > .tablance-sort-chevron-down {
+  opacity: 1;
 }
 .tablance > .table-area > .header-table th.select-col > input {
   transform: scale(1.3);

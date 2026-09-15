@@ -3479,6 +3479,19 @@ try {
 	sortingTable.setData(sortingRows);
 	await tick();
 	const sortingHeaders=sortingTable._headerTr.cells;
+	const unsortedTitle=sortingHeaders[0].querySelector(".tablance-main-header-title");
+	const unsortedIcon=sortingHeaders[0].querySelector(".tablance-sort-icon");
+	const unsortedTitleGeometry=unsortedTitle.getBoundingClientRect();
+	const unsortedIconGeometry=unsortedIcon.getBoundingClientRect();
+	assert(unsortedIcon.querySelectorAll(".tablance-sort-chevron").length===2
+		&&getComputedStyle(unsortedIcon.querySelector(".tablance-sort-chevron-up")).opacity==="1"
+		&&getComputedStyle(unsortedIcon.querySelector(".tablance-sort-chevron-down")).opacity==="1"
+		&&unsortedIcon.querySelector(".tablance-sort-chevron-up").getBBox().width===12
+		&&unsortedIcon.querySelector(".tablance-sort-chevron-up").getBBox().height===6
+		&&unsortedIcon.querySelector(".tablance-sort-chevron-down").getBBox().y
+			-unsortedIcon.querySelector(".tablance-sort-chevron-up").getBBox().y
+			-unsortedIcon.querySelector(".tablance-sort-chevron-up").getBBox().height===6,
+		"unsorted headers show both enlarged, proportionate chevrons with the established gap");
 	const normalMouseDown=new MouseEvent("mousedown",{bubbles:true,cancelable:true,button:0});
 	sortingHeaders[0].dispatchEvent(normalMouseDown);
 	assert(!normalMouseDown.defaultPrevented,"ordinary header mousedown keeps native text selection available");
@@ -3492,6 +3505,30 @@ try {
 	assert(sortingTable._sortingCols.length===1
 		&&!sortingHeaders[0].querySelector(".tablance-sort-priority"),
 		"single-column sorting retains its existing icon without a priority number");
+	const sortedAscIcon=sortingHeaders[0].querySelector(".tablance-sort-icon");
+	const sortedAscTitle=sortingHeaders[0].querySelector(".tablance-main-header-title");
+	const ascIconGeometry=sortedAscIcon.getBoundingClientRect();
+	const ascTitleGeometry=sortedAscTitle.getBoundingClientRect();
+	assert(sortedAscIcon.querySelectorAll(".tablance-sort-chevron").length===2
+		&&getComputedStyle(sortedAscIcon.querySelector(".tablance-sort-chevron-up")).opacity==="1"
+		&&getComputedStyle(sortedAscIcon.querySelector(".tablance-sort-chevron-down")).opacity==="0.25"
+		&&unsortedIconGeometry.x===ascIconGeometry.x&&unsortedIconGeometry.y===ascIconGeometry.y
+		&&unsortedIconGeometry.width===ascIconGeometry.width&&unsortedIconGeometry.height===ascIconGeometry.height
+		&&unsortedTitleGeometry.x===ascTitleGeometry.x&&unsortedTitleGeometry.y===ascTitleGeometry.y,
+		"ascending sorting preserves header geometry, keeps both chevrons visible, and subdues the inactive direction");
+	sortingHeaders[0].dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true}));
+	const sortedDescIcon=sortingHeaders[0].querySelector(".tablance-sort-icon");
+	const sortedDescTitle=sortingHeaders[0].querySelector(".tablance-main-header-title");
+	const descIconGeometry=sortedDescIcon.getBoundingClientRect();
+	const descTitleGeometry=sortedDescTitle.getBoundingClientRect();
+	assert(sortedDescIcon.querySelectorAll(".tablance-sort-chevron").length===2
+		&&getComputedStyle(sortedDescIcon.querySelector(".tablance-sort-chevron-up")).opacity==="0.25"
+		&&getComputedStyle(sortedDescIcon.querySelector(".tablance-sort-chevron-down")).opacity==="1"
+		&&ascIconGeometry.x===descIconGeometry.x&&ascIconGeometry.y===descIconGeometry.y
+		&&ascIconGeometry.width===descIconGeometry.width&&ascIconGeometry.height===descIconGeometry.height
+		&&ascTitleGeometry.x===descTitleGeometry.x&&ascTitleGeometry.y===descTitleGeometry.y,
+		"descending sorting preserves the exact header geometry and subdues only the up chevron");
+	sortingHeaders[0].dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true}));
 	const selection=getSelection();
 	const anchor=sortingHeaders[0].querySelector(".tablance-main-header-title").firstChild;
 	const range=document.createRange();
@@ -3521,7 +3558,21 @@ try {
 	assert(sortingHeaders[0].querySelector(".tablance-sort-priority")?.textContent==="1"
 		&&sortingHeaders[1].querySelector(".tablance-sort-priority")?.textContent==="2",
 		"multi-sort icons show their actual primary and secondary priorities");
+	const primaryPriority=sortingHeaders[0].querySelector(".tablance-sort-priority");
+	const secondaryPriority=sortingHeaders[1].querySelector(".tablance-sort-priority");
+	const secondaryPriorityGeometry=secondaryPriority.getBoundingClientRect();
+	const multiIconGeometry=sortingHeaders[0].querySelector(".tablance-sort-icon").getBoundingClientRect();
+	const multiTitleGeometry=sortingHeaders[0].querySelector(".tablance-main-header-title").getBoundingClientRect();
+	assert(getComputedStyle(primaryPriority).fontSize==="9px"&&getComputedStyle(secondaryPriority).fontSize==="9px"
+		&&multiIconGeometry.x-multiTitleGeometry.x===ascIconGeometry.x-ascTitleGeometry.x
+		&&multiIconGeometry.y-multiTitleGeometry.y===ascIconGeometry.y-ascTitleGeometry.y,
+		"multi-sort preserves the existing priority size and the single-sort header geometry");
 	sortingHeaders[1].dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true,shiftKey:true}));
+	const toggledPriorityGeometry=sortingHeaders[1].querySelector(".tablance-sort-priority").getBoundingClientRect();
+	assert(secondaryPriorityGeometry.x===toggledPriorityGeometry.x&&secondaryPriorityGeometry.y===toggledPriorityGeometry.y
+		&&secondaryPriorityGeometry.width===toggledPriorityGeometry.width
+		&&secondaryPriorityGeometry.height===toggledPriorityGeometry.height,
+		"a multi-sort priority does not move or resize when its direction changes");
 	sortingHeaders[2].dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true,shiftKey:true}));
 	const priorities=[...sortingHeaders].slice(0,3)
 		.map(th=>th.querySelector(".tablance-sort-priority")?.textContent).join(",");

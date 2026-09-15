@@ -850,12 +850,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const sortIconAttrs='class="tablance-sort-icon" viewBox="0 0 24 24" fill="none" '
 				+'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" '
 				+'aria-hidden="true"';
+			const sortIconHtml=`<svg ${sortIconAttrs}>`
+				+'<path class="tablance-sort-chevron tablance-sort-chevron-up" d="m6 9 6-6 6 6"/>'
+				+'<path class="tablance-sort-chevron tablance-sort-chevron-down" d="m6 15 6 6 6-6"/>'
+				+'</svg>';
 			if (this._opts.sortAscHtml==null)
-				this._opts.sortAscHtml=`<svg ${sortIconAttrs}><path d="m18 15-6-6-6 6"/></svg>`;
+				this._opts.sortAscHtml=sortIconHtml;
 			if (this._opts.sortDescHtml==null)
-				this._opts.sortDescHtml=`<svg ${sortIconAttrs}><path d="m6 9 6 6 6-6"/></svg>`;
+				this._opts.sortDescHtml=sortIconHtml;
 			if (this._opts.sortNoneHtml==null)
-				this._opts.sortNoneHtml=`<svg ${sortIconAttrs}><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>`;
+				this._opts.sortNoneHtml=sortIconHtml;
 			this._updateHeaderSortHtml();
 			this._buildDependencyGraph(this._schema);
 			// Bulk-edit clones raw nodes but needs wrapper metadata (parents/meta), so pass the wrapped schema.

@@ -512,6 +512,10 @@
 					height: 15px;
 					fill: none;
 					stroke: currentColor;
+
+					>.tablance-sort-chevron {
+						opacity: 1;
+					}
 				}
 
 				>.tablance-sort-priority {
@@ -527,9 +531,18 @@
 				}
 			}
 
-			&.asc>.sortSymbol,
-			&.desc>.sortSymbol {
+			&.asc>.sortSymbol>.tablance-sort-icon,
+			&.desc>.sortSymbol>.tablance-sort-icon {
 				color: var(--tablance-accent-color);
+
+				>.tablance-sort-chevron {
+					opacity: .25;
+				}
+			}
+
+			&.asc>.sortSymbol>.tablance-sort-icon>.tablance-sort-chevron-up,
+			&.desc>.sortSymbol>.tablance-sort-icon>.tablance-sort-chevron-down {
+				opacity: 1;
 			}
 
 			&.select-col>input {
