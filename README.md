@@ -72,6 +72,39 @@ including transparent repeated containers, do not gain a heading solely for help
 
 Schema `title` values are rendered as text by default. Set `titleHtml: true` only for explicitly trusted title markup.
 
+## Menu columns
+
+Use a main-table column with `type: "menu"` for row actions that do not represent or edit a data value. Menu columns
+are never sortable or searchable. Their `actions` may be an array or a callback receiving the standard cell payload.
+Actions use `onSelect` and may set `disabled` to a boolean or a callback. A disabled action remains visible and
+keyboard-navigable; set `disabledReason` to a string or callback to explain why it is unavailable.
+
+```js
+{
+  type: "menu",
+  width: 45,
+  ariaLabel: ({rowData}) => `Actions for ${rowData.name}`,
+  actions: ({rowData}) => [
+    {
+      id: "open",
+      text: "Open",
+      onSelect: ({rowData, mainIndex, event}) => openRow(rowData, mainIndex)
+    },
+    {
+      id: "archive",
+      text: "Archive",
+      disabled: rowData.locked,
+      disabledReason: rowData.locked ? "The row is locked" : "",
+      onSelect: ({rowData}) => archiveRow(rowData)
+    }
+  ]
+}
+```
+
+Clicking the cell or its `⋮` control opens the menu. Enter and Space do the same for a selected menu cell. Within the
+menu, Arrow Up/Down, Home/End, Enter/Space, Escape, and Tab follow the table's keyboard and focus model. Closing the
+menu returns focus to the table cursor unless focus is intentionally moving elsewhere through an outside click.
+
 ## Lineup variants
 
 Lineups support `variant: "auto" | "fields" | "metadata" | "controls"`. The default `auto` variant resolves from

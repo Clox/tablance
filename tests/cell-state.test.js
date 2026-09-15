@@ -85,6 +85,119 @@ try {
 	key(homeEndMain.rootEl,"Home","Home",{ctrlKey:true});
 	assert(homeEndMain._mainRowIndex===0&&homeEndMain._mainColIndex===1,
 		"Ctrl+Home selects the first main row while retaining the current column");
+
+	let menuActionsResolved=0,menuActivations=[];
+	const menuRows=[
+		{name:"Alpha",locked:false},
+		{name:"Beta",locked:true},
+	];
+	const callbackMenuColumn={type:"menu",title:"",width:45,
+		ariaLabel:({rowData})=>`Actions for ${rowData.name}`,
+		actions:payload=>{
+			menuActionsResolved++;
+			return [
+				{text:`Open ${payload.rowData.name}`,onSelect:actionPayload=>menuActivations.push(actionPayload)},
+				{text:"Conditional action",disabled:({rowData})=>rowData.locked,
+					disabledReason:({rowData})=>rowData.locked?`${rowData.name} is locked`:"",
+					onSelect:actionPayload=>menuActivations.push(actionPayload)},
+				{text:"Always unavailable",disabled:true,disabledReason:"Requires permission"},
+			];
+		},
+	};
+	const staticMenuColumn={type:"menu",title:"More",width:45,actions:[
+		{text:"Static action",onSelect:({rowData})=>menuActivations.push({rowData,static:true})},
+	]};
+	const menuTable=new Tablance(host(),{main:{columns:[
+		{dataKey:"name",title:"Name"},callbackMenuColumn,staticMenuColumn,{dataKey:"locked",title:"Locked"},
+	]}},true,true,{searchbar:true});
+	menuTable.setData(menuRows);
+	await tick();
+	const firstMenuCell=menuTable._mainTbody.rows[0].cells[1];
+	const secondMenuCell=menuTable._mainTbody.rows[1].cells[1];
+	const staticMenuCell=menuTable._mainTbody.rows[0].cells[2];
+	const firstMenuTrigger=firstMenuCell.querySelector(".tablance-menu-trigger");
+	assert(firstMenuTrigger.textContent==="⋮"&&firstMenuTrigger.tabIndex===-1
+		&&firstMenuTrigger.getAttribute("aria-haspopup")==="menu"
+		&&menuTable._getCellState(firstMenuCell).kind==="action",
+		"menu columns render a non-tabbable vertical-ellipsis action control with canonical action state");
+	assert(!menuTable._searchableFieldNodes.includes(menuTable._colSchemaNodes[1])
+		&&!menuTable._searchableFieldNodes.includes(menuTable._colSchemaNodes[2]),
+		"menu columns are excluded from main-column search semantics");
+	menuTable._headerTr.cells[1].dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true}));
+	assert(!menuTable._sortingCols.length&&!menuTable._colSchemaNodes[1].sortDiv,
+		"menu headers are not sortable and do not receive sort UI");
+
+	firstMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,cancelable:true}));
+	await tick();
+	assert(menuTable._menuState?.rowData===menuRows[0]&&menuActionsResolved===1
+		&&menuTable._mainRowIndex===0&&menuTable._mainColIndex===1
+		&&menuTable._selectedCellVal===undefined&&!menuTable._inEditMode
+		&&document.activeElement===menuTable._menuState.items[0].el
+		&&menuTable._cellCursor.style.display==="block"
+		&&firstMenuTrigger.getAttribute("aria-expanded")==="true",
+		"a single cell click opens the row-specific menu while retaining the cell cursor and avoiding edit mode");
+	key(document.activeElement,"ArrowDown","ArrowDown");
+	assert(document.activeElement===menuTable._menuState.items[1].el,
+		"ArrowDown moves menu focus to the next action");
+	key(document.activeElement,"Enter","Enter");
+	assert(!menuTable._menuState&&menuActivations.length===1
+		&&menuActivations[0].rowData===menuRows[0]
+		&&document.activeElement===menuTable._focusEl&&menuTable._selectedCell===firstMenuCell,
+		"Enter activates an enabled action and restores table focus without moving the cursor");
+
+	secondMenuCell.click();
+	await tick();
+	key(document.activeElement,"ArrowDown","ArrowDown");
+	const disabledMenuItem=menuTable._menuState.items[1].el;
+	assert(document.activeElement===disabledMenuItem
+		&&disabledMenuItem.getAttribute("aria-disabled")==="true"
+		&&disabledMenuItem.textContent.includes("Beta is locked"),
+		"row-dependent disabled actions remain visible, focused, and expose their reason");
+	key(disabledMenuItem,"Enter","Enter");
+	key(disabledMenuItem," ","Space");
+	disabledMenuItem.click();
+	assert(!!menuTable._menuState&&menuActivations.length===1,
+		"disabled actions cannot be activated by mouse, Enter, or Space");
+	key(document.activeElement,"End","End");
+	assert(document.activeElement===menuTable._menuState.items[2].el,
+		"End focuses the final action including a statically disabled action");
+	key(document.activeElement,"Home","Home");
+	assert(document.activeElement===menuTable._menuState.items[0].el,
+		"Home focuses the first menu action");
+	key(document.activeElement,"ArrowUp","ArrowUp");
+	assert(document.activeElement===menuTable._menuState.items[2].el,
+		"ArrowUp wraps menu focus to the final action");
+	key(document.activeElement,"Escape","Escape");
+	assert(!menuTable._menuState&&document.activeElement===menuTable._focusEl
+		&&menuTable._selectedCell===secondMenuCell&&menuTable._cellCursor.style.display==="block",
+		"Escape closes the menu and restores table focus and the existing cursor");
+
+	key(menuTable.rootEl," ","Space");
+	await tick();
+	assert(menuTable._menuState?.rowData===menuRows[1]&&document.activeElement===menuTable._menuState.items[0].el,
+		"Space opens the focused menu cell");
+	key(document.activeElement,"Tab","Tab");
+	assert(!menuTable._menuState&&menuTable._mainRowIndex===1&&menuTable._mainColIndex===2
+		&&menuTable._selectedCell===staticMenuCell.parentElement.nextElementSibling.cells[2],
+		"Tab closes the menu and resumes ordinary grid navigation in the next cell");
+	key(menuTable.rootEl,"Enter","Enter");
+	await tick();
+	assert(menuTable._menuState?.actions===staticMenuColumn.actions,
+		"a declarative action array opens without passing through edit or select machinery");
+	key(document.activeElement,"Tab","Tab",{shiftKey:true});
+	assert(!menuTable._menuState&&menuTable._mainColIndex===1,
+		"Shift+Tab closes the menu and resumes reverse grid navigation");
+	key(menuTable.rootEl,"Enter","Enter");
+	await tick();
+	document.body.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	assert(!menuTable._menuState,"an outside click closes an open menu");
+	menuTable._selectMainTableCell(firstMenuCell);
+	key(menuTable.rootEl,"Enter","Enter");
+	await tick();
+	assert(!!menuTable._menuState,"Enter opens the focused menu cell");
+	firstMenuCell.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,button:0,cancelable:true}));
+	assert(!menuTable._inEditMode,"double-click never puts a menu cell into edit mode");
+	menuTable._closeMenu(true);
 	shortcuts.rootEl.remove();
 	assert(Tablance.version==="2.0.0","built UMD exposes the breaking 2.0.0 version");
 	Tablance.defaultLang={filterPlaceholder:"Global search"};

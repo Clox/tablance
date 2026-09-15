@@ -4,7 +4,7 @@ const SCHEMA_WRAPPER_MARKER=Symbol("schemaWrapper");
 
 const TABLANCE_VERSION = typeof __TABLANCE_VERSION__!=="undefined"?__TABLANCE_VERSION__:"dev";
 const TABLANCE_BUILD = typeof __TABLANCE_BUILD__!=="undefined"?__TABLANCE_BUILD__:"dev";
-let helpPopoverId=0;
+let anchoredPopoverId=0;
 
 // Shared prototype for instance-nodes so utility getters stay in sync after inserts/deletes.
 const INSTANCE_NODE_PROTOTYPE=Object.create(null);
@@ -78,6 +78,7 @@ const DEFAULT_LANG=Object.freeze({
 	fieldValidationFailedHint:"Press Esc to cancel.",
 	groupValidationFailedHint:"Press Ctrl+Esc to discard changes and back out.",
 	helpLabel:"Help",
+	menuLabel:"Actions",
 	viewsLabel:"Views",
 	reorder:"Change order",
 	reorderUp:"Move up",
@@ -165,6 +166,9 @@ class TablanceBase {
 	_selectedCell;//the HTML-element of the cell-cursor. probably TD's most of the time.
 	_cellStates=new WeakMap();//canonical functional state for every currently rendered cell element
 	_selectedCellState;//canonical state for the selected cell; DOM classes are styling hooks only
+	_activeAnchoredPopover=null;//internal shared lifecycle owner for help/menu anchored popovers
+	_helpPopoverController;
+	_menuPopoverController;
 	_activeVerticalLayout=null;//logical layout whose preferred column is active during vertical navigation
 	_activeVerticalLayoutColumnKey=null;
 	_inEditMode;//whether the user is currently in edit-mode
@@ -327,7 +331,10 @@ class TablanceBase {
 	 * 			type String The default is "data". Possible values are:
 	 * 				"data" - As it it implies, simply to display data but also input-elements such as fields or buttons
 	 * 				"expand" - The column will be buttons used for expanding/contracting the rows. See param details
-	 * 				"select" - The column will be checkboxes used to (un)select rows	
+	 * 				"select" - The column will be checkboxes used to (un)select rows
+	 * 				"menu" - A non-data action column. `actions` is an array or callback returning actions with
+	 * 					{text,onSelect,disabled,disabledReason}. `disabled` and `disabledReason` may be callbacks
+	 * 					receiving the standard row payload plus `action`.
 	 * 		}
 	 * 			
 	 * 	@param	{Boolean} staticRowHeight Legacy row-height setting retained for call compatibility. Prefer
@@ -1388,7 +1395,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const input=node.input;
 			if (input?.type==="select")
 				this._selectInputs.add(input);
-			if ((node.type==="field"||!isDetails) && input?.type!=="button")
+			if ((node.type==="field"||(!isDetails&&!['expand','select','menu'].includes(node.type)))
+				&&input?.type!=="button")
 				this._searchableFieldNodes.push(node);
 			if (isDetails)
 				if (node.entry)
@@ -2336,17 +2344,113 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		trigger.addEventListener("mousedown",()=>this._cancelHelpOpen());
 	}
 
+	_ensureAnchoredPopover(controllerKey,{className,idPrefix,onMouseEnter,onMouseLeave}={}) {
+		if (this[controllerKey])
+			return this[controllerKey];
+		const el=this.rootEl.appendChild(document.createElement("div"));
+		el.id=`${idPrefix}-${++anchoredPopoverId}`;
+		el.className=className;
+		el.hidden=true;
+		if (onMouseEnter)
+			el.addEventListener("mouseenter",onMouseEnter);
+		if (onMouseLeave)
+			el.addEventListener("mouseleave",onMouseLeave);
+		const controller={el,state:null};
+		controller.resizeObserver=new ResizeObserver(()=>this._positionAnchoredPopover(controller));
+		this[controllerKey]=controller;
+		return controller;
+	}
+
+	_openAnchoredPopover(controller,{trigger,target=trigger,viewportMargin=0,state={},onKeyDown,onClose}={}) {
+		if (!trigger?.isConnected)
+			return false;
+		if (this._activeAnchoredPopover&&this._activeAnchoredPopover!==controller)
+			this._closeAnchoredPopover(this._activeAnchoredPopover);
+		if (controller.state)
+			this._closeAnchoredPopover(controller);
+		const popoverState=controller.state={...state,trigger,target,viewportMargin,onKeyDown,onClose};
+		popoverState.outsideMouseDown=e=>{
+			if (!trigger.contains(e.target)&&!controller.el.contains(e.target))
+				this._closeAnchoredPopover(controller);
+		};
+		popoverState.keyDown=e=>{
+			if (onKeyDown?.(e,popoverState)===true)
+				return;
+			if (e.key!=="Escape")
+				return;
+			e.preventDefault();
+			e.stopPropagation();
+			this._closeAnchoredPopover(controller,true);
+		};
+		popoverState.resize=()=>this._positionAnchoredPopover(controller);
+		popoverState.scroll=e=>{
+			if (!controller.el.contains(e.target))
+				this._positionAnchoredPopover(controller);
+		};
+		trigger.setAttribute("aria-controls",controller.el.id);
+		trigger.setAttribute("aria-expanded","true");
+		controller.el.hidden=false;
+		if (typeof controller.el.showPopover==="function") {
+			controller.el.popover="manual";
+			if (!controller.el.matches(":popover-open"))
+				controller.el.showPopover();
+		}
+		controller.resizeObserver.observe(controller.el);
+		document.addEventListener("mousedown",popoverState.outsideMouseDown,true);
+		document.addEventListener("keydown",popoverState.keyDown,true);
+		document.addEventListener("scroll",popoverState.scroll,true);
+		window.addEventListener("resize",popoverState.resize);
+		this._activeAnchoredPopover=controller;
+		this._positionAnchoredPopover(controller);
+		return popoverState;
+	}
+
+	_positionAnchoredPopover(controller) {
+		const state=controller?.state;
+		if (!state)
+			return false;
+		if (!state.target?.isConnected||state.target.getClientRects().length===0) {
+			this._closeAnchoredPopover(controller);
+			return false;
+		}
+		this._alignDropdown(controller.el,state.target,undefined,state.viewportMargin);
+		return true;
+	}
+
+	_closeAnchoredPopover(controller,restoreFocus=false) {
+		const state=controller?.state;
+		if (!state)
+			return false;
+		const restoreTableFocus=restoreFocus&&controller.el.contains(document.activeElement);
+		document.removeEventListener("mousedown",state.outsideMouseDown,true);
+		document.removeEventListener("keydown",state.keyDown,true);
+		document.removeEventListener("scroll",state.scroll,true);
+		window.removeEventListener("resize",state.resize);
+		state.trigger?.setAttribute("aria-expanded","false");
+		state.trigger?.removeAttribute("aria-controls");
+		controller.resizeObserver.disconnect();
+		if (typeof controller.el.hidePopover==="function"&&controller.el.matches(":popover-open"))
+			controller.el.hidePopover();
+		controller.el.hidden=true;
+		controller.el.replaceChildren();
+		controller.state=null;
+		if (this._activeAnchoredPopover===controller)
+			this._activeAnchoredPopover=null;
+		state.onClose?.();
+		if (restoreTableFocus)
+			this._focusEl?.focus({preventScroll:true});
+		return true;
+	}
+
 	_ensureHelpPopover() {
-		if (this._helpPopover)
-			return this._helpPopover;
-		const popover=this._helpPopover=this.rootEl.appendChild(document.createElement("div"));
-		popover.id=`tablance-help-${++helpPopoverId}`;
-		popover.className="tablance-help-popover";
-		popover.hidden=true;
-		popover.addEventListener("mouseenter",()=>this._cancelHelpClose());
-		popover.addEventListener("mouseleave",()=>this._scheduleHelpClose(this._helpState?.trigger));
-		this._helpResizeObserver=new ResizeObserver(()=>this._positionHelp());
-		return popover;
+		const controller=this._ensureAnchoredPopover("_helpPopoverController",{
+			className:"tablance-help-popover",idPrefix:"tablance-help",
+			onMouseEnter:()=>this._cancelHelpClose(),
+			onMouseLeave:()=>this._scheduleHelpClose(this._helpState?.trigger),
+		});
+		this._helpPopover=controller.el;
+		this._helpResizeObserver=controller.resizeObserver;
+		return controller.el;
 	}
 
 	_getHelpPayload(schemaNode,instanceNode,context={}) {
@@ -2426,28 +2530,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return true;
 		}
 		this._closeHelp();
+		this._closeMenu();
 		this._setHelpContent(schemaNode,instanceNode,context);
-		const popover=this._ensureHelpPopover();
-		this._helpState={trigger,schemaNode,instanceNode,pinned,context};
-		trigger.setAttribute("aria-controls",popover.id);
-		trigger.setAttribute("aria-expanded","true");
-		popover.hidden=false;
-		if (typeof popover.showPopover==="function") {
-			popover.popover="manual";
-			if (!popover.matches(":popover-open"))
-				popover.showPopover();
-		}
-		this._helpResizeObserver.observe(popover);
-		this._attachHelpGlobalListeners();
-		this._positionHelp();
+		const controller=this._helpPopoverController;
+		this._helpState=this._openAnchoredPopover(controller,{
+			trigger,viewportMargin:8,state:{schemaNode,instanceNode,pinned,context},
+			onClose:()=>this._helpState=null,
+		});
 		return true;
 	}
 
 	_positionHelp() {
-		const {trigger}=this._helpState??{};
-		if (!trigger?.isConnected||trigger.getClientRects().length===0)
-			return this._closeHelp();
-		this._alignDropdown(this._helpPopover,trigger,undefined,8);
+		return this._positionAnchoredPopover(this._helpPopoverController);
 	}
 
 	_scheduleHelpClose(trigger) {
@@ -2467,54 +2561,182 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._helpOpenTimer=null;
 	}
 
-	_attachHelpGlobalListeners() {
-		if (this._helpState?.outsideMouseDown)
-			return;
-		const state=this._helpState;
-		state.outsideMouseDown=e=>{
-			if (!state.trigger.contains(e.target)&&!this._helpPopover.contains(e.target))
-				this._closeHelp();
-		};
-		state.keyDown=e=>{
-			if (e.key!=="Escape")
-				return;
-			e.preventDefault();
-			e.stopPropagation();
-			this._closeHelp(true);
-		};
-		state.resize=()=>this._positionHelp();
-		state.scroll=e=>{
-			if (!this._helpPopover.contains(e.target))
-				this._positionHelp();
-		};
-		document.addEventListener("mousedown",state.outsideMouseDown,true);
-		document.addEventListener("keydown",state.keyDown,true);
-		document.addEventListener("scroll",state.scroll,true);
-		window.addEventListener("resize",state.resize);
-	}
-
 	_closeHelp(restoreFocus=false) {
 		this._cancelHelpOpen();
 		this._cancelHelpClose();
-		const state=this._helpState;
-		if (!state)
+		return this._closeAnchoredPopover(this._helpPopoverController,restoreFocus);
+	}
+
+	_ensureMenuPopover() {
+		const controller=this._ensureAnchoredPopover("_menuPopoverController",{
+			className:"tablance-menu-popover",idPrefix:"tablance-menu",
+		});
+		this._menuPopover=controller.el;
+		return controller.el;
+	}
+
+	_createMenuButton() {
+		const button=document.createElement("button");
+		button.type="button";
+		button.className="tablance-menu-trigger";
+		button.tabIndex=-1;
+		button.textContent="\u22ee";
+		button.setAttribute("aria-haspopup","menu");
+		button.setAttribute("aria-expanded","false");
+		button.addEventListener("mousedown",e=>e.preventDefault());
+		return button;
+	}
+
+	_initializeMenuCell(cell,content) {
+		content.appendChild(this._createMenuButton());
+		cell.classList.add("menu-col");
+		cell.addEventListener("click",e=>{
+			if (e.button!==0||this._getCellState(cell)?.activatable===false)
+				return;
+			e.preventDefault();
+			e.stopPropagation();
+			this._openMenuForCell(cell,e);
+		});
+	}
+
+	_resolveMenuLabel(schemaNode,payload) {
+		const label=typeof schemaNode.ariaLabel==="function"
+			?schemaNode.ariaLabel(payload):schemaNode.ariaLabel;
+		return String(label??schemaNode.title??this.lang.menuLabel);
+	}
+
+	_resolveMenuActions(schemaNode,payload) {
+		const actions=typeof schemaNode.actions==="function"?schemaNode.actions(payload):schemaNode.actions;
+		if (!Array.isArray(actions))
+			throw new TypeError("A menu column's actions must be an array or a callback returning an array.");
+		return actions;
+	}
+
+	_resolveMenuAction(action,payload) {
+		if (!action||typeof action!=="object")
+			throw new TypeError("Every menu action must be an object.");
+		const disabled=typeof action.disabled==="function"?action.disabled({...payload,action}):action.disabled;
+		const disabledReason=disabled===true?(typeof action.disabledReason==="function"
+			?action.disabledReason({...payload,action}):action.disabledReason):"";
+		return {action,disabled:disabled===true,disabledReason:disabledReason==null?"":String(disabledReason)};
+	}
+
+	_renderMenuActions(menu,state) {
+		state.items=[];
+		for (const descriptor of state.actions) {
+			const resolved=this._resolveMenuAction(descriptor,state.payload);
+			const item=menu.appendChild(document.createElement("button"));
+			item.type="button";
+			item.className="tablance-menu-item";
+			item.setAttribute("role","menuitem");
+			item.tabIndex=-1;
+			const label=item.appendChild(document.createElement("span"));
+			label.className="tablance-menu-item-label";
+			label.textContent=String(resolved.action.text??resolved.action.title??"");
+			item.setAttribute("aria-disabled",String(resolved.disabled));
+			item.classList.toggle("disabled",resolved.disabled);
+			if (resolved.disabled&&resolved.disabledReason) {
+				const reason=item.appendChild(document.createElement("span"));
+				reason.className="tablance-menu-item-disabled-reason";
+				reason.textContent=resolved.disabledReason;
+				item.title=resolved.disabledReason;
+			}
+			const itemState={...resolved,el:item};
+			state.items.push(itemState);
+			item.addEventListener("click",e=>this._activateMenuItem(state,itemState,e));
+			item.addEventListener("mouseenter",()=>item.focus({preventScroll:true}));
+		}
+	}
+
+	_focusMenuItem(state,index) {
+		if (!state.items.length)
+			return state.controller.el.focus({preventScroll:true});
+		const normalized=(index+state.items.length)%state.items.length;
+		state.items[normalized].el.focus({preventScroll:true});
+		state.items[normalized].el.scrollIntoView({block:"nearest"});
+	}
+
+	_activateMenuItem(state,itemState,event) {
+		if (itemState.disabled) {
+			event.preventDefault();
 			return false;
-		const restoreTableFocus=restoreFocus&&this._helpPopover.contains(document.activeElement);
-		document.removeEventListener("mousedown",state.outsideMouseDown,true);
-		document.removeEventListener("keydown",state.keyDown,true);
-		document.removeEventListener("scroll",state.scroll,true);
-		window.removeEventListener("resize",state.resize);
-		state.trigger?.setAttribute("aria-expanded","false");
-		state.trigger?.removeAttribute("aria-controls");
-		this._helpResizeObserver?.disconnect();
-		if (typeof this._helpPopover?.hidePopover==="function"&&this._helpPopover.matches(":popover-open"))
-			this._helpPopover.hidePopover();
-		this._helpPopover.hidden=true;
-		this._helpPopover.replaceChildren();
-		this._helpState=null;
-		if (restoreTableFocus)
-			this._focusEl?.focus({preventScroll:true});
+		}
+		const callbackPayload={...state.payload,event,action:itemState.action};
+		this._closeMenu(true);
+		itemState.action.onSelect?.(callbackPayload);
 		return true;
+	}
+
+	_handleMenuKeyDown(e,state) {
+		const current=state.items.findIndex(item=>item.el===document.activeElement);
+		if (e.key==="ArrowDown"||e.key==="ArrowUp") {
+			e.preventDefault();
+			e.stopPropagation();
+			this._focusMenuItem(state,(current<0?0:current)+(e.key==="ArrowDown"?1:-1));
+			return true;
+		}
+		if (e.key==="Home"||e.key==="End") {
+			e.preventDefault();
+			e.stopPropagation();
+			this._focusMenuItem(state,e.key==="Home"?0:state.items.length-1);
+			return true;
+		}
+		if ((e.key==="Enter"||e.key===" ")&&current>=0) {
+			e.preventDefault();
+			e.stopPropagation();
+			this._activateMenuItem(state,state.items[current],e);
+			return true;
+		}
+		if (e.key==="Tab") {
+			e.preventDefault();
+			e.stopPropagation();
+			this._closeMenu(true);
+			if (this._spreadsheet)
+				this._moveCellCursor(e.shiftKey?-1:1,0,e);
+			return true;
+		}
+		return false;
+	}
+
+	_openMenuForCell(cell,event=null) {
+		if (!cell||this._getCellState(cell)?.activatable===false)
+			return false;
+		if (this._spreadsheet&&cell!==this._selectedCell&&!this._selectMainTableCell(cell))
+			return false;
+		const schemaNode=this._colSchemaNodes[cell.cellIndex];
+		if (schemaNode?.type!=="menu")
+			return false;
+		const trigger=cell.querySelector(".tablance-menu-trigger");
+		if (this._menuState?.trigger===trigger) {
+			this._closeMenu(true);
+			return true;
+		}
+		this._closeHelp();
+		this._closeMenu();
+		const mainIndex=Number(cell.parentElement.dataset.dataRowIndex);
+		const rowData=this._filteredData[mainIndex];
+		const payload=this._makeCallbackPayload(null,{event},{schemaNode,mainIndex,rowData});
+		const actions=this._resolveMenuActions(schemaNode,payload);
+		const menu=this._ensureMenuPopover();
+		menu.setAttribute("role","menu");
+		menu.setAttribute("aria-label",this._resolveMenuLabel(schemaNode,payload));
+		menu.tabIndex=-1;
+		const controller=this._menuPopoverController;
+		const state={controller,cell,schemaNode,rowData,mainIndex,payload,actions,items:[]};
+		this._renderMenuActions(menu,state);
+		this._menuState=this._openAnchoredPopover(controller,{
+			trigger,target:cell,viewportMargin:8,state,
+			onKeyDown:(e,openState)=>this._handleMenuKeyDown(e,openState),
+			onClose:()=>this._menuState=null,
+		});
+		if (!this._menuState)
+			return false;
+		this._focusMenuItem(this._menuState,0);
+		return true;
+	}
+
+	_closeMenu(restoreFocus=false) {
+		return this._closeAnchoredPopover(this._menuPopoverController,restoreFocus);
 	}
 
 	_showSelectedCellHelp() {
@@ -2587,7 +2809,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_spreadsheetOnBlur(_e) {
 		setTimeout(()=>{
-			if (!this._focusEl.contains(document.activeElement)||this._bulkEditArea?.contains(document.activeElement)) {
+			const popoverHasFocus=this._activeAnchoredPopover?.el.contains(document.activeElement);
+			if ((!this._focusEl.contains(document.activeElement)&&!popoverHasFocus)
+				||this._bulkEditArea?.contains(document.activeElement)) {
 				this._highlightOnFocus=true;
 				//if (this.neighbourTables&&Object.values(this.neighbourTables).filter(Boolean).length)
 					this._cellCursor.style.display="none";
@@ -3364,7 +3588,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					return requestAnimationFrame(()=>this._toggleRowExpanded(this._selectedCell.parentElement));
 				if (this._activeSchemaNode.type=="select")
 					return this._rowCheckboxChange(this._selectedCell,e.shiftKey);
-				if (e.code.endsWith("Enter")||this._activeSchemaNode.input?.type==="button") {
+				if (e.code.endsWith("Enter")||this._activeSchemaNode.input?.type==="button"
+					||this._activeSchemaNode.type==="menu") {
 					e.preventDefault();//prevent newline from being entered into textareas
 					return this._enterCell(e);
 				}
@@ -4267,13 +4492,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const td=e.target.closest(".main-table>tbody>tr>td");
 			if (this._getCellState(td)?.selectable===false)
 				return;
-			if (td?.classList.contains("expand-col")||td?.classList.contains("select-col")) {
+			if (td?.classList.contains("expand-col")||td?.classList.contains("select-col")
+				||td?.classList.contains("menu-col")) {
 				if (e.shiftKey)
 					e.preventDefault();//prevent text-selection when shift-clicking checkboxes
 				if (this._mainRowIndex==null) {
 					this._selectMainTableCell(td);
 					this._focusEl.focus({preventScroll:true});
 				}
+				if (td.classList.contains("menu-col"))
+					return;
 				if (td.classList.contains("expand-col"))
 					return this._toggleRowExpanded(td.parentElement);
 				return this._rowCheckboxChange(td,e.shiftKey);
@@ -4576,6 +4804,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return;
 		if (this._selectedCellState.kind==="readOnly")
 			return this._openReadOnlyPresentation(e);
+		if (this._activeSchemaNode.type==="menu") {
+			e.preventDefault();
+			return this._openMenuForCell(this._selectedCell,e);
+		}
 		if (this._activeSchemaNode.type==="reorder") {
 			e.preventDefault();
 			return this._enterRepeatedReorderMode(this._activeDetailsCell.ownerEntry);
@@ -6954,6 +7186,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_selectCell(cellEl,schemaNode,dataObj,adjustCursorPosSize=true,instanceNode=null,
 		preserveVerticalPreferredColumn=false) {
 		this._closeHelp();
+		this._closeMenu();
 		this._clearReadOnlyActivationFeedback();
 		if (!preserveVerticalPreferredColumn)
 			this._resetVerticalLayoutPreferredColumn();
@@ -6982,11 +7215,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._selectedCellState=cellState;
 		this._activeSchemaNode=schemaNode;
 		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
-		const noPtrEvent=schemaNode.type==="expand"||schemaNode.type==="select"||schemaNode.input?.type==="button";
+		const noPtrEvent=schemaNode.type==="expand"||schemaNode.type==="select"||schemaNode.type==="menu"
+			||schemaNode.input?.type==="button";
 		this._cellCursor.style.pointerEvents=noPtrEvent?"none":"auto";
 		this._cellCursor.style.removeProperty("background-color");//select-input sets it to transparent, revert here
 		this._cellCursorDataObj=dataObj;
-		this._selectedCellVal=dataObj?.[schemaNode.dataKey];
+		this._selectedCellVal=schemaNode.type==="menu"?undefined:dataObj?.[schemaNode.dataKey];
 		this._updateStaticCellOverflowPreview();
 		return true;
 	}
@@ -7016,7 +7250,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_showsActionIndicator(cellState,schemaNode) {
-		return cellState?.kind==="action"&&!["expand","select","group","reorder"].includes(schemaNode?.type)
+		return cellState?.kind==="action"&&!["expand","select","menu","group","reorder"].includes(schemaNode?.type)
 			&&schemaNode?.input?.type!=="button";
 	}
 
@@ -7057,6 +7291,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const cell=this._selectedCell;
 		if (!this._staticRowHeight||this._inEditMode||!cell||cell.closest("tr.details")
 			||cell.classList.contains("expand-col")||cell.classList.contains("select-col")
+			||cell.classList.contains("menu-col")
 			||this._activeSchemaNode?.input?.type==="button")
 			return;
 		const content=cell.firstElementChild;
@@ -7121,9 +7356,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._populateSchemaTitle(title,col,null,{fallback:"\xa0",showHelp:false});
 				if (this._hasHelp(col))
 					this._setupMainHeaderHelp(title,col);
+				if (col.type==="menu")
+					th.classList.add("menu-col");
 			}
 
-			if (this._opts.ordering!==false) {
+			if (this._opts.ordering!==false&&col.type!=="menu") {
 				//create the divs used for showing html for sorting-up/down-arrow or whatever has been configured
 				col.sortDiv=th.appendChild(document.createElement("DIV"));
 				col.sortDiv.className="sortSymbol";
@@ -7143,7 +7380,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_onThMouseDown(e) {
 		if ((!e.shiftKey&&e.detail<2)||e.button!==0||this._opts.ordering===false
-			||e.target.closest(".tablance-help-trigger"))
+			||e.target.closest(".tablance-help-trigger")
+			||this._colSchemaNodes[e.currentTarget.cellIndex]?.type==="menu")
 			return;
 		const clickedIndex=e.currentTarget.cellIndex;
 		if (this._colSchemaNodes[clickedIndex]?.type==="select"&&e.target.matches("input"))
@@ -7153,6 +7391,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_onThClick(e) {
 		const clickedIndex=e.currentTarget.cellIndex;
+		if (this._colSchemaNodes[clickedIndex].type==="menu")
+			return;
 		if (this._colSchemaNodes[clickedIndex].type=="select"&&e.target.tagName.toLowerCase()=="input")
 			return this._toggleRowsSelected(e.target.checked,0,this._filteredData.length-1);
 		if (this._opts.ordering===false)
@@ -7189,6 +7429,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (let [thIndex,th] of Object.entries(this._headerTr.cells)) {
 			if (thIndex==this._headerTr.cells.length-1)
 				break;
+			if (this._colSchemaNodes[thIndex].type==="menu")
+				continue;
 			let order=null,priority=null;
 			let sortDiv=this._colSchemaNodes[thIndex].sortDiv;
 			for (let sortingColIndex=0;sortingColIndex<this._sortingCols.length;sortingColIndex++) {
@@ -7950,6 +8192,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				} else if (this._colSchemaNodes[i].type==="select") {
 					div.appendChild(this._createCheckbox(true));
 					cell.classList.add("select-col");
+				} else if (this._colSchemaNodes[i].type==="menu") {
+					this._initializeMenuCell(cell,div);
 				}
 			}
 			const newRowIndex=this._scrollRowIndex+this._numRenderedRows-1;
@@ -7998,6 +8242,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * The row needs to already have the right amount of td's.
 	 * @param {HTMLTableRowElement} tr The tr-element whose cells that should be updated*/
 	_updateRowValues(tr,mainIndex) {
+		if (this._menuState?.cell?.parentElement===tr)
+			this._closeMenu();
 		this._detachMainCursorFromRow(tr,mainIndex);
 		for (const cell of tr.querySelectorAll(":scope>td.tablance-active-cell"))
 			cell.classList.remove("tablance-active-cell");
@@ -8007,7 +8253,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (let colI=0; colI<this._colSchemaNodes.length; colI++) {
 			let td=tr.cells[colI];
 			let colSchemaNode=this._colSchemaNodes[colI];
-			if (colSchemaNode.type!="expand"&&colSchemaNode.type!="select")
+			if (colSchemaNode.type==="menu")
+				this._updateMenuCell(td,colSchemaNode,mainIndex);
+			else if (colSchemaNode.type!="expand"&&colSchemaNode.type!="select")
 				this._updateMainRowCell(td,colSchemaNode);
 			else {
 				const rowData=this._filteredData[mainIndex];
@@ -8247,7 +8495,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return {kind:"disabled",selectable:false,activatable:false,mutable:false,activation:"none",
 				message:disabledResult?.message};
 
-		const isAction=schemaNode.type==="expand"||schemaNode.type==="select"||schemaNode.type==="group"
+		const isAction=schemaNode.type==="expand"||schemaNode.type==="select"||schemaNode.type==="menu"
+			||schemaNode.type==="group"
 			||schemaNode.type==="reorder"||schemaNode.input?.type==="button"||(!schemaNode.input&&!!schemaNode.onEnter);
 		if (isAction)
 			return {kind:"action",selectable:true,activatable:true,mutable:false,activation:"action"};
@@ -8410,6 +8659,17 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		cellEl.firstChild.innerHTML="";
 		const mainIndex=cellEl.closest(".main-table>tbody>tr").dataset.dataRowIndex;
 		this._updateCell(colSchemaNode,cellEl.firstChild,cellEl,this._filteredData[mainIndex],mainIndex);
+	}
+
+	_updateMenuCell(cellEl,colSchemaNode,mainIndex) {
+		const rowData=this._filteredData[mainIndex];
+		const payload=this._makeCallbackPayload(null,{}, {schemaNode:colSchemaNode,mainIndex,rowData});
+		const cellState=this._resolveCellState(colSchemaNode,payload);
+		const button=cellEl.querySelector(".tablance-menu-trigger");
+		button.setAttribute("aria-label",this._resolveMenuLabel(colSchemaNode,payload));
+		button.disabled=cellState.kind==="disabled";
+		this._setCellState(cellEl,cellState,null,colSchemaNode);
+		return cellState;
 	}
 
 	_highlightRowIndex(index) {
