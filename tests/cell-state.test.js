@@ -250,6 +250,192 @@ try {
 	firstMenuCell.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,button:0,cancelable:true}));
 	assert(!menuTable._inEditMode,"double-click never puts a menu cell into edit mode");
 	menuTable._closeMenu(true);
+	const lifecycleRows=[
+		{name:"Alpha",group:"left",deletedOn:null,notes:"Editable",entries:[{value:"child"}]},
+		{name:"Beta",group:"right",deletedOn:null,notes:"Other",entries:[]},
+		{name:"Closed",group:"right",deletedOn:"2026-01-01",notes:"Old",entries:[{value:"old child"}]},
+	];
+	const lifecycleCommits=[];
+	let detailsButtonClicks=0;
+	const lifecycleTable=new Tablance(host(),{
+		trash:{
+			isTrashed:({rowData})=>!!rowData.deletedOn,
+			getChanges:({operation})=>({deletedOn:operation==="trash"?"2026-09-16":null}),
+		},
+		views:{default:{title:"Left",filter:row=>row.group==="left"},all:{title:"All",filter:()=>true}},
+		onDataCommit:payload=>lifecycleCommits.push(payload),
+		main:{toolbar:{defaultInsert:true,viewSwitcher:true,tableActions:[{type:"trash"}]},columns:[
+			{type:"expand",width:40},
+			{dataKey:"name",title:"Name",input:{type:"text"}},
+			{type:"menu",width:45,actions:[
+				{type:"trash"},
+				{text:"Other action",disabled:({lifecycleMode})=>lifecycleMode==="trash",
+					disabledReason:"Unavailable in trash"},
+			]},
+		]},
+		details:{type:"list",entries:[
+			{dataKey:"notes",title:"Notes",input:{type:"text"}},
+			{title:"Change",input:{type:"button",text:"Change",onClick:()=>detailsButtonClicks++}},
+			{type:"repeated",dataKey:"entries",create:true,entry:{type:"group",entries:[
+				{dataKey:"value",title:"Value",input:{type:"text"}},
+			]}},
+		]},
+	},true,true,{searchbar:true});
+	lifecycleTable.setData(lifecycleRows);
+	await tick();
+	assert(lifecycleTable._filteredData.length===1&&lifecycleTable._filteredData[0]===lifecycleRows[0]
+		&&lifecycleTable.getViewState().counts.active===2&&lifecycleTable.getViewState().counts.trash===1,
+		"lifecycle filtering excludes trashed rows before the normal view and reports separate counts");
+	lifecycleTable.setViewMode("all");
+	assert(lifecycleTable._filteredData.length===2&&!lifecycleTable._filteredData.includes(lifecycleRows[2]),
+		"an all-rows normal view cannot include trashed rows");
+	lifecycleTable.setViewMode("default");
+	lifecycleTable._searchInput.value="Alpha";
+	lifecycleTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
+	assert(lifecycleTable._filteredData.length===1&&lifecycleTable.getViewState().search==="Alpha",
+		"active search filters only active-view rows");
+	const tableMenuButton=lifecycleTable._tableMenuButton;
+	assert(!!tableMenuButton&&!tableMenuButton.hidden
+		&&tableMenuButton.parentElement.classList.contains("toolbar-right")
+		&&lifecycleTable._viewSwitcher.hidden===false,
+		"table actions render a toolbar menu independently of column headers");
+	tableMenuButton.click();
+	await tick();
+	assert(lifecycleTable._tableMenuState?.items[0].action.text==="Show trash"
+		&&document.activeElement===lifecycleTable._tableMenuState.items[0].el,
+		"pointer activation opens and focuses the table-level menu");
+	key(document.activeElement,"Escape","Escape");
+	assert(!lifecycleTable._tableMenuState&&document.activeElement===tableMenuButton,
+		"Escape from table menu restores the table-level trigger");
+	tableMenuButton.click();
+	document.body.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	assert(!lifecycleTable._tableMenuState,
+		"outside pointer interaction dismisses the table-level menu");
+	tableMenuButton.click();
+	key(document.activeElement,"Tab","Tab",{shiftKey:true});
+	assert(!lifecycleTable._tableMenuState&&document.activeElement===lifecycleTable._searchInput,
+		"Shift+Tab closes the table menu and moves to the previous toolbar control");
+	tableMenuButton.click();
+	key(document.activeElement,"Tab","Tab");
+	assert(!lifecycleTable._tableMenuState&&document.activeElement===lifecycleTable._tableArea,
+		"Tab closes the table menu and moves into the table");
+	tableMenuButton.click();
+	lifecycleTable._tableMenuState.items[0].el.click();
+	await tick();
+	assert(lifecycleTable.getViewState().lifecycleMode==="trash"
+		&&lifecycleTable.getViewState().viewModeKey===null
+		&&lifecycleTable.getViewState().activeViewModeKey==="default"
+		&&lifecycleTable._filteredData.length===1&&lifecycleTable._filteredData[0]===lifecycleRows[2]
+		&&lifecycleTable._searchInput.value===""&&lifecycleTable._viewSwitcher.hidden
+		&&lifecycleTable._toolbarInsertButton.hidden,
+		"trash is a distinct lifecycle mode with its own empty search and read-only toolbar");
+	const trashNameCell=lifecycleTable._mainTbody.rows[0].cells[1];
+	lifecycleTable._selectMainTableCell(trashNameCell);
+	assert(lifecycleTable._getCellState(trashNameCell).kind==="readOnly"
+		&&lifecycleTable.insertNewRow({name:"Blocked"})===false,
+		"trash mode blocks field edits and direct row insertion");
+	key(lifecycleTable.rootEl,"Enter","Enter");
+	assert(!lifecycleTable._inEditMode,"Enter does not enter an editor in trash mode");
+	lifecycleTable._mainTbody.rows[0].cells[0].dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	await tick();
+	assert(!!lifecycleTable._openDetailsPanes[0],"expand remains available in trash mode");
+	const trashDetails=lifecycleTable._openDetailsPanes[0];
+	assert(!lifecycleTable.rootEl.querySelector(".repeat-insertion")
+		&&JSON.stringify(lifecycleRows[2].entries)==='[{"value":"old child"}]',
+		"trash details show related data without a creator or changes to child rows");
+	const notesNode=trashDetails.children.find(node=>node.schemaNode.dataKey==="notes");
+	const detailsButton=trashDetails.children.find(node=>node.schemaNode.input?.type==="button")?.el;
+	assert(lifecycleTable._getCellState(notesNode.selEl??notesNode.el).kind==="readOnly"
+		&&detailsButtonClicks===0,"details fields are read-only in trash mode");
+	if (detailsButton)
+		detailsButton.click();
+	assert(detailsButtonClicks===0,"changing details buttons do not activate in trash mode");
+	const trashMenuCell=lifecycleTable._mainTbody.rows[0].cells[2];
+	trashMenuCell.click();
+	await tick();
+	assert(lifecycleTable._selectedCell===trashNameCell,
+		"pointer-opening a trash row menu keeps the prior cell cursor");
+	assert(lifecycleTable._menuState?.items[0].action.text==="Restore"
+		&&lifecycleTable._menuState.items[1].el.getAttribute("aria-disabled")==="true"
+		&&lifecycleTable._menuState.items[1].el.textContent.includes("Unavailable in trash"),
+		"row actions stay visible in trash and lifecycle-aware disabled actions explain their state");
+	key(document.activeElement,"ArrowDown","ArrowDown");
+	key(document.activeElement,"Enter","Enter");
+	assert(!!lifecycleTable._menuState&&lifecycleCommits.length===0,
+		"disabled row actions cannot activate in trash mode");
+	key(document.activeElement,"Home","Home");
+	key(document.activeElement,"Escape","Escape");
+	assert(!lifecycleTable._menuState&&lifecycleTable._selectedCell===trashNameCell
+		&&document.activeElement===lifecycleTable._focusEl,
+		"closing a trash row menu restores focus and the prior cell cursor");
+	trashMenuCell.click();
+	await tick();
+	key(document.activeElement,"Enter","Enter");
+	await tick();
+	assert(lifecycleRows[2].deletedOn===null&&lifecycleTable._filteredData.length===0
+		&&lifecycleCommits.length===1&&lifecycleCommits[0].mode==="update"
+		&&lifecycleCommits[0].operation==="restore"
+		&&lifecycleCommits[0].changes.deletedOn===null
+		&&lifecycleCommits[0].data===lifecycleRows[2]
+		&&JSON.stringify(lifecycleRows[2].entries)==='[{"value":"old child"}]',
+		"Restore updates the shared row immediately and dispatches a normal update commit");
+	lifecycleTable._searchInput.value="Closed";
+	lifecycleTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
+	tableMenuButton.click();
+	key(document.activeElement,"Enter","Enter");
+	await tick();
+	assert(lifecycleTable.getViewState().lifecycleMode==="active"
+		&&lifecycleTable.getViewState().viewModeKey==="default"
+		&&lifecycleTable._searchInput.value==="Alpha"
+		&&lifecycleTable._filteredData.length===1&&lifecycleTable._filteredData[0]===lifecycleRows[0],
+		"returning to active rows restores the normal view and its separate search state");
+	lifecycleTable._mainTbody.rows[0].cells[2].click();
+	lifecycleTable._menuState.items[0].el.click();
+	await tick();
+	assert(lifecycleRows[0].deletedOn==="2026-09-16"&&lifecycleTable._filteredData.length===0
+		&&lifecycleCommits.length===2&&lifecycleCommits[1].operation==="trash"
+		&&lifecycleCommits[1].changes.deletedOn==="2026-09-16",
+		"Trash moves a row out of every active view immediately and commits only its configured change");
+	tableMenuButton.click();
+	key(document.activeElement,"Enter","Enter");
+	await tick();
+	assert(lifecycleTable.getViewState().lifecycleMode==="trash"
+		&&lifecycleTable._searchInput.value==="Closed"
+		&&lifecycleTable._filteredData.length===0,
+		"trash mode retains its own search text across lifecycle switches");
+	const capabilityOnly=new Tablance(host(),{
+		trash:{isTrashed:({rowData})=>!!rowData.removed,
+			getChanges:({operation})=>({removed:operation==="trash"})},
+		main:{columns:[{dataKey:"name",input:{type:"text"}}]},
+	},true,true,{searchbar:false});
+	const capabilityRows=[{name:"Kept",removed:false},{name:"Removed",removed:true}];
+	capabilityOnly.setData(capabilityRows);
+	capabilityOnly.setLifecycleMode("trash");
+	assert(!capabilityOnly._tableMenuButton&&!capabilityOnly._mainTbody.querySelector(".tablance-menu-trigger")
+		&&capabilityOnly._filteredData.length===1&&capabilityOnly._filteredData[0]===capabilityRows[1],
+		"trash capability works without exposing any row or table menu");
+	assert(capabilityOnly.trashRow(capabilityRows[1],"restore")
+		&&capabilityRows[1].removed===false&&capabilityOnly._filteredData.length===0,
+		"capability-only tables may restore through the public lifecycle mutation method");
+	const genericTableMenu=new Tablance(host(),{
+		main:{toolbar:{tableActions:[{text:"Inspect",onSelect:()=>detailsButtonClicks++}]},
+			columns:[{dataKey:"name"}]},
+	},true,true,{searchbar:false});
+	genericTableMenu.setData([{name:"Plain"}]);
+	genericTableMenu._tableMenuButton.click();
+	await tick();
+	assert(!!genericTableMenu._tableMenuState
+		&&genericTableMenu._tableMenuState.items[0].action.text==="Inspect",
+		"table actions work without a trash capability");
+	key(document.activeElement,"Enter","Enter");
+	assert(detailsButtonClicks===1&&!genericTableMenu._tableMenuState
+		&&document.activeElement===genericTableMenu._tableMenuButton,
+		"keyboard activation of a table action restores toolbar focus");
+	const emptyTableMenu=new Tablance(host(),{
+		main:{toolbar:{tableActions:[]},columns:[{dataKey:"name"}]},
+	},true,true,{searchbar:false});
+	assert(emptyTableMenu._tableMenuButton.hidden,
+		"an empty declarative table-actions list exposes no visible menu button");
 	shortcuts.rootEl.remove();
 	assert(Tablance.version==="2.0.0","built UMD exposes the breaking 2.0.0 version");
 	Tablance.defaultLang={filterPlaceholder:"Global search"};

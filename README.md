@@ -105,6 +105,56 @@ Clicking the cell or its `⋮` control opens the menu. Enter and Space do the sa
 menu, Arrow Up/Down, Home/End, Enter/Space, Escape, and Tab follow the table's keyboard and focus model. Closing the
 menu returns focus to the table cursor unless focus is intentionally moving elsewhere through an outside click.
 
+## Trash lifecycle and table actions
+
+Trash is opt-in and uses the same `setData`/`addData` source array as active rows. Tablance does not fetch rows or
+assume a field name. `isTrashed` classifies a row; `getChanges` returns a non-empty, shallow root-row update diff that
+must make `isTrashed` reflect the requested operation. Tablance applies that diff immediately and sends it through
+the root `onDataCommit` hook as `mode: "update"`, with `operation: "trash" | "restore"`. The consumer persists it;
+there is no built-in asynchronous confirmation or rollback. Related entries are not changed.
+
+```js
+{
+  trash: {
+    isTrashed: ({rowData}) => rowData.removedOn != null,
+    getChanges: ({operation}) => ({
+      removedOn: operation === "trash" ? new Date().toISOString() : null
+    })
+  },
+  onDataCommit: ({data, changes, mode, operation}) => persist(data, changes, mode, operation),
+  main: {
+    toolbar: {tableActions: [{type: "trash"}]},
+    columns: [
+      {dataKey: "name", input: {type: "text"}},
+      {type: "menu", actions: [
+        {type: "trash"},
+        {text: "Other action", disabled: ({lifecycleMode}) => lifecycleMode === "trash",
+          disabledReason: "Available only for active rows", onSelect: otherAction}
+      ]}
+    ]
+  }
+}
+```
+
+The capability and its controls are independent: omit either menu to keep the capability without that control.
+`main.toolbar.tableActions` also accepts ordinary menu action descriptors or a callback returning an array. The
+table-level `⋮` is shown only when that declaration resolves to at least one action; it lives in `toolbar-right`,
+separate from sortable column headers and contextual help. A table-level `{type: "trash"}` toggles between active
+rows and trash. In a row menu, the same descriptor trashes or restores the current row. Other actions remain visible
+in trash; use the existing `disabled`/`disabledReason` callbacks and `lifecycleMode` payload to control them.
+
+`setLifecycleMode("active" | "trash")` switches lifecycle mode, and `trashRow(rowData, "trash" | "restore")` performs
+the mutation directly. Both require `trash` to be configured. Lifecycle classification precedes normal views and
+search: no normal view, even an all-rows view, can include trashed rows. Trash ignores normal view predicates and
+has its own search text. Switching back restores the active view key and active search text. `getViewState()` and
+`viewstatechange` add `lifecycleMode`, `activeViewModeKey`, and `counts.active`/`counts.trash` for enabled tables;
+`viewModeKey` is `null` in trash. Tables without trash retain the existing view-state shape.
+
+Trash mode shows the same columns but does not allow ordinary field editing, new rows, bulk editing, or changing
+details controls. Expand/collapse, row menus, table actions and read-only inspection remain available. Toolbar
+buttons and normal view controls are hidden in trash mode. Programmatic `updateData` remains available for external
+data synchronization; it does not create a persistence commit by itself.
+
 ## Lineup variants
 
 Lineups support `variant: "auto" | "fields" | "metadata" | "controls"`. The default `auto` variant resolves from

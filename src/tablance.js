@@ -31,6 +31,8 @@ const GROUP_INSTANCE_NODE_PROTOTYPE=Object.create(SELECTABLE_DETAILS_NODE_PROTOT
 const REORDER_INSTANCE_NODE_PROTOTYPE=Object.create(SELECTABLE_DETAILS_NODE_PROTOTYPE);
 const REPEATED_INSTANCE_NODE_PROTOTYPE=Object.create(INSTANCE_NODE_PROTOTYPE);
 REPEATED_INSTANCE_NODE_PROTOTYPE.createNewEntry=function(e,_groupObject) {
+	if (this.tablance?._isTrashMode())
+		return;
 	e?.preventDefault?.();
 	let repeatData=this.dataObj;
 	if (!Array.isArray(repeatData))
@@ -80,6 +82,10 @@ const DEFAULT_LANG=Object.freeze({
 	helpLabel:"Help",
 	menuLabel:"Actions",
 	viewsLabel:"Views",
+	trashAction:"Move to trash",
+	restoreAction:"Restore",
+	showTrash:"Show trash",
+	showActive:"Show active rows",
 	reorder:"Change order",
 	reorderUp:"Move up",
 	reorderDown:"Move down",
@@ -110,6 +116,9 @@ class TablanceBase {
 	_currentViewModeKey="default";//active viewMode key
 	_viewDefinitions=Object.create(null);//lookup table of viewMode predicates keyed by view name
 	_viewSwitcher;//optional segmented toolbar control for schema.views
+	_lifecycleMode="active";
+	_lifecycleSearch={active:"",trash:""};
+	_trashCapability=null;
 	_refreshingView=false;//guards commit flushing while rebuilding the active view pipeline
 	_scrollRowIndex=0;//the index in the #data of the top row in the view
 	_scrollBody;//resides directly inside #container and is the element with the scrollbar. It contains #scrollingDiv
@@ -814,6 +823,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		rootEl.classList.toggle("static-row-height",this._staticRowHeight);
 		rootEl.classList.toggle("natural-row-height",this._naturalAutoHeight);
 		this._schema=this._buildSchemaFacade(schema);
+		if (schema.trash!=null) {
+			if (typeof schema.trash?.isTrashed!=="function"||typeof schema.trash?.getChanges!=="function")
+				throw new TypeError("trash requires isTrashed and getChanges callbacks.");
+			this._trashCapability=schema.trash;
+		}
 		this._viewDefinitions=this._buildViewDefinitions(schema?.views);
 		this._currentViewModeKey="default";
 		this._resetDataState();
@@ -897,6 +911,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_rowMatchesView(row,viewModeKey=this._currentViewModeKey) {
+		if (this._trashCapability) {
+			const trashed=this._isRowTrashed(row);
+			if (this._lifecycleMode==="trash")
+				return trashed;
+			if (trashed)
+				return false;
+		}
 		const rowMeta=row?this._rowMeta?.get(row):null;
 		if (rowMeta?.isNew&&rowMeta.draftViewModeKey===viewModeKey)
 			return true;
@@ -913,6 +934,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._viewData=nextView;
 	}
 
+	_isRowTrashed(rowData) {
+		return !!this._trashCapability?.isTrashed(this._makeCallbackPayload(null,{},
+			{schemaNode:this._schema,rowData}));
+	}
+
 	_countCommittedRows(rows) {
 		let count=0;
 		for (const row of rows??[])
@@ -922,8 +948,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	getViewState() {
-		return {
-			viewModeKey:this._currentViewModeKey,
+		const state={
+			viewModeKey:this._isTrashMode()?null:this._currentViewModeKey,
 			search:this._filter??"",
 			counts:{
 				source:this._countCommittedRows(this._sourceData),
@@ -931,10 +957,25 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				filtered:this._countCommittedRows(this._filteredData),
 			},
 		};
+		if (this._trashCapability) {
+			let active=0,trash=0;
+			for (const row of this._sourceData) {
+				if (this._rowMeta?.get(row)?.isNew)
+					continue;
+				if (this._isRowTrashed(row)) trash++;
+				else active++;
+			}
+			state.lifecycleMode=this._lifecycleMode;
+			state.activeViewModeKey=this._currentViewModeKey;
+			state.counts.active=active;
+			state.counts.trash=trash;
+		}
+		return state;
 	}
 
 	_emitViewStateChange(reason) {
 		this._updateViewSwitcher();
+		this._updateLifecycleControls();
 		this.rootEl.dispatchEvent(new CustomEvent("viewstatechange",{
 			detail:{...this.getViewState(),reason},
 		}));
@@ -963,6 +1004,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._scrollY=0;
 		if (clearFilter) {
 			this._filter="";
+			this._lifecycleSearch[this._lifecycleMode]="";
 			if (this._searchInput)
 				this._searchInput.value="";
 		}
@@ -985,6 +1027,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const oldLen=this._filteredData.length;
 		if (highlight) {
 			this._filter="";
+			this._lifecycleSearch[this._lifecycleMode]="";
 			if (this._searchInput)
 				this._searchInput.value="";
 		}
@@ -1089,8 +1132,67 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			throw new Error(`Unknown viewMode "${viewModeKey}". Valid viewModes: ${validKeys}`);
 		}
 		this._currentViewModeKey=viewModeKey;
+		if (this._isTrashMode()) {
+			this._emitViewStateChange("view");
+			return;
+		}
 		this._rebuildViewData();
 		this._applyFilters(this._filter,true,false,"view");
+	}
+
+	_isTrashMode() {
+		return !!this._trashCapability&&this._lifecycleMode==="trash";
+	}
+
+	setLifecycleMode(mode) {
+		if (!this._trashCapability)
+			throw new Error("Lifecycle mode requires a trash capability.");
+		if (mode!=="active"&&mode!=="trash")
+			throw new TypeError('Lifecycle mode must be "active" or "trash".');
+		if (mode===this._lifecycleMode)
+			return this.getViewState();
+		if (!this._flushValidatedEdits())
+			return this.getViewState();
+		this._lifecycleSearch[this._lifecycleMode]=this._filter??"";
+		this._lifecycleMode=mode;
+		this._selectedRows=[];
+		this._numRowsSelected=this._numRowsInViewSelected=0;
+		this._bulkEditAreaOpen=false;
+		if (this._bulkEditArea)
+			this._bulkEditArea.style.height=0;
+		if (this._numberOfRowsSelectedSpan)
+			this._numberOfRowsSelectedSpan.innerText="0";
+		this._filter=this._lifecycleSearch[mode];
+		if (this._searchInput)
+			this._searchInput.value=this._filter;
+		this._rebuildViewData();
+		this._applyFilters(this._filter,true,false,"lifecycle");
+		this._updateLifecycleControls();
+		return this.getViewState();
+	}
+
+	trashRow(rowData,operation=this._isTrashMode()?"restore":"trash") {
+		if (!this._trashCapability||!this._sourceData.includes(rowData))
+			return false;
+		if (operation!=="trash"&&operation!=="restore")
+			throw new TypeError("Trash operation must be trash or restore.");
+		if (this._rowMeta.get(rowData)?.isNew||!this._flushValidatedEdits())
+			return false;
+		const currentlyTrashed=this._isRowTrashed(rowData);
+		if ((operation==="trash")===currentlyTrashed)
+			return false;
+		const changes=this._trashCapability.getChanges(this._makeCallbackPayload(null,{operation},
+			{schemaNode:this._schema,rowData}));
+		if (!changes||typeof changes!=="object"||Array.isArray(changes)||!Object.keys(changes).length)
+			throw new TypeError("trash.getChanges must return a non-empty changes object.");
+		Object.assign(rowData,changes);
+		const expected=operation==="trash";
+		if (this._isRowTrashed(rowData)!==expected)
+			throw new Error("trash.getChanges must transition the row to the requested lifecycle state.");
+		const payload=this._makeCallbackPayload(null,{data:rowData,changes,mode:"update",operation},
+			{schemaNode:this._schema,rowData,mainIndex:this._filteredData.indexOf(rowData)});
+		this._queueDataCommit(payload,null);
+		return true;
 	}
 
 	refreshView(reason="refresh") {
@@ -1121,6 +1223,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	/**Explicitly create and insert a new, uncommitted row. */
 	insertNewRow(rowData={}, options) {
+		if (this._isTrashMode())
+			return false;
 		const {highlight=true,prepend=true}=options??{};
 		const newRow=rowData?structuredClone(rowData):Object.assign(Object.create(null),{});
 		this._rowMeta.set(newRow,{isNew:true,draftViewModeKey:this._currentViewModeKey});
@@ -1485,6 +1589,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		// Base payload is intentionally minimal; creation-only context (dataKey/dataArray) is injected only
 		// for onDataCommit so other callbacks are not burdened with persistence-only fields.
 		return {tablance:this,schemaTree:this._schema,schemaNode,instanceNode,rowData,mainIndex,bulkEdit,
+			lifecycleMode:this._lifecycleMode,
 			closestMeta: key => this._closestMeta(schemaNode,key),...extra};
 	}
 
@@ -2198,7 +2303,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				input:{type:"button",text:this.lang.insertRow,onClick:()=>this.insertNewRow()},
 			});
 		}
-		if (!toolbarItems.length&&!toolbarCfg?.viewSwitcher&&this._opts.searchbar==false)
+		if (!toolbarItems.length&&!toolbarCfg?.viewSwitcher&&!toolbarCfg?.tableActions
+			&&this._opts.searchbar==false)
 			return;
 
 		const bar=this._toolbar=this.rootEl.appendChild(document.createElement("div"));
@@ -2209,8 +2315,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (toolbarCfg?.viewSwitcher)
 			this._generateViewSwitcher(btnWrap);
 
-		for (const schemaNode of toolbarItems)
-			this._generateButton(schemaNode,null,btnWrap,null).tabIndex=0;
+		this._toolbarButtons=[];
+		for (const schemaNode of toolbarItems) {
+			const button=this._generateButton(schemaNode,null,btnWrap,null);
+			button.tabIndex=0;
+			this._toolbarButtons.push(button);
+			if (toolbarCfg?.defaultInsert&&schemaNode===toolbarItems[0])
+				this._toolbarInsertButton=button;
+		}
 
 		const rightWrap=bar.appendChild(document.createElement("div"));
 		rightWrap.className="toolbar-right";
@@ -2221,6 +2333,35 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._searchInput.placeholder=this.lang.filterPlaceholder;
 			this._searchInput.addEventListener("input",e=>this._onSearchInput(e));
 		}
+		if (toolbarCfg?.tableActions) {
+			const button=this._tableMenuButton=rightWrap.appendChild(this._createMenuButton());
+			button.classList.add("tablance-table-menu-trigger");
+			button.tabIndex=0;
+			button.setAttribute("aria-label",this.lang.menuLabel);
+			button.addEventListener("click",e=>this._openTableMenu(e));
+		}
+		this._updateLifecycleControls();
+	}
+
+	_updateLifecycleControls() {
+		if (this._viewSwitcher)
+			this._viewSwitcher.hidden=this._isTrashMode();
+		const selectAll=this._headerTr?.querySelector(".select-col input");
+		if (selectAll)
+			selectAll.disabled=this._isTrashMode();
+		for (const button of this._toolbarButtons??[])
+			button.hidden=this._isTrashMode();
+		if (this._tableMenuButton)
+			this._tableMenuButton.hidden=this._resolveTableActions().length===0;
+	}
+
+	_resolveTableActions() {
+		const declaration=this._schema.main?.toolbar?.tableActions;
+		const payload=this._makeCallbackPayload(null,{rowData:null}, {schemaNode:this._schema});
+		const actions=typeof declaration==="function"?declaration(payload):declaration;
+		if (!Array.isArray(actions))
+			throw new TypeError("main.toolbar.tableActions must be an array or callback returning an array.");
+		return actions;
 	}
 
 	_onSearchInput(_e) {
@@ -2362,20 +2503,20 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_openAnchoredPopover(controller,{trigger,target=trigger,viewportMargin=0,state={},onKeyDown,onClose,
-		restoreFocusOnOutsidePointer=false}={}) {
+		restoreFocusOnOutsidePointer=false,focusReturn=null}={}) {
 		if (!trigger?.isConnected)
 			return false;
 		if (this._activeAnchoredPopover&&this._activeAnchoredPopover!==controller)
 			this._closeAnchoredPopover(this._activeAnchoredPopover);
 		if (controller.state)
 			this._closeAnchoredPopover(controller);
-		const popoverState=controller.state={...state,trigger,target,viewportMargin,onKeyDown,onClose};
+		const popoverState=controller.state={...state,trigger,target,viewportMargin,onKeyDown,onClose,focusReturn};
 		popoverState.outsideMouseDown=e=>{
 			if (!trigger.contains(e.target)&&!controller.el.contains(e.target)) {
 				const restoreAfterPointer=restoreFocusOnOutsidePointer&&!this._pointerTargetAcceptsFocus(e.target);
 				this._closeAnchoredPopover(controller,restoreFocusOnOutsidePointer);
 				if (restoreAfterPointer)
-					setTimeout(()=>this._focusEl?.focus({preventScroll:true}));
+					setTimeout(()=>(focusReturn??this._focusEl)?.focus({preventScroll:true}));
 			}
 		};
 		popoverState.keyDown=e=>{
@@ -2449,7 +2590,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._activeAnchoredPopover=null;
 		state.onClose?.();
 		if (restoreTableFocus)
-			this._focusEl?.focus({preventScroll:true});
+			(state.focusReturn??this._focusEl)?.focus({preventScroll:true});
 		return true;
 	}
 
@@ -2626,6 +2767,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_resolveMenuAction(action,payload) {
 		if (!action||typeof action!=="object")
 			throw new TypeError("Every menu action must be an object.");
+		if (action.type==="trash") {
+			if (!this._trashCapability)
+				throw new Error('A menu action with type "trash" requires a trash capability.');
+			const rowAction=!!payload.rowData;
+			const operation=this._isTrashMode()?"restore":"trash";
+			action={...action,
+				text:rowAction?(operation==="trash"?this.lang.trashAction:this.lang.restoreAction)
+					:(this._isTrashMode()?this.lang.showActive:this.lang.showTrash),
+				onSelect:rowAction?({rowData})=>this.trashRow(rowData,operation)
+					:()=>this.setLifecycleMode(this._isTrashMode()?"active":"trash"),
+			};
+		}
 		const disabled=typeof action.disabled==="function"?action.disabled({...payload,action}):action.disabled;
 		const disabledReason=disabled===true?(typeof action.disabledReason==="function"
 			?action.disabledReason({...payload,action}):action.disabledReason):"";
@@ -2673,7 +2826,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return false;
 		}
 		const callbackPayload={...state.payload,event,action:itemState.action};
-		this._closeMenu(true);
+		state.close(true);
 		itemState.action.onSelect?.(callbackPayload);
 		return true;
 	}
@@ -2701,12 +2854,22 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (e.key==="Tab") {
 			e.preventDefault();
 			e.stopPropagation();
-			this._closeMenu(true);
-			if (this._spreadsheet)
+			state.close(true);
+			if (state.kind==="table")
+				this._moveFocusFromTableMenu(state.trigger,e.shiftKey);
+			else if (this._spreadsheet)
 				this._moveCellCursor(e.shiftKey?-1:1,0,e);
 			return true;
 		}
 		return false;
+	}
+
+	_moveFocusFromTableMenu(trigger,reverse=false) {
+		const focusables=[...document.querySelectorAll(
+			'a[href],button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex]')]
+			.filter(el=>!el.hidden&&el.tabIndex>=0&&el.getClientRects().length);
+		const index=focusables.indexOf(trigger);
+		focusables[index+(reverse?-1:1)]?.focus({preventScroll:true});
 	}
 
 	_openMenuForCell(cell,event=null) {
@@ -2738,7 +2901,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		menu.setAttribute("aria-label",this._resolveMenuLabel(schemaNode,payload));
 		menu.tabIndex=-1;
 		const controller=this._menuPopoverController;
-		const state={controller,cell,schemaNode,rowData,mainIndex,payload,actions,items:[]};
+		const state={controller,cell,schemaNode,rowData,mainIndex,payload,actions,items:[],
+			kind:"row",close:restore=>this._closeMenu(restore)};
 		this._renderMenuActions(menu,state);
 		this._menuState=this._openAnchoredPopover(controller,{
 			trigger,target:cell,viewportMargin:8,state,
@@ -2754,6 +2918,50 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_closeMenu(restoreFocus=false) {
 		return this._closeAnchoredPopover(this._menuPopoverController,restoreFocus);
+	}
+
+	_ensureTableMenuPopover() {
+		return this._ensureAnchoredPopover("_tableMenuPopoverController",{
+			className:"tablance-menu-popover",idPrefix:"tablance-table-menu",
+		}).el;
+	}
+
+	_openTableMenu(event=null) {
+		const trigger=this._tableMenuButton;
+		if (!trigger||trigger.hidden)
+			return false;
+		if (this._tableMenuState?.trigger===trigger) {
+			this._closeTableMenu(true);
+			return true;
+		}
+		const actions=this._resolveTableActions();
+		if (!actions.length)
+			return false;
+		this._closeHelp();
+		this._closeMenu();
+		const menu=this._ensureTableMenuPopover();
+		menu.setAttribute("role","menu");
+		menu.setAttribute("aria-label",this.lang.menuLabel);
+		menu.tabIndex=-1;
+		const controller=this._tableMenuPopoverController;
+		const payload=this._makeCallbackPayload(null,{event,rowData:null},{schemaNode:this._schema});
+		const state={controller,payload,actions,items:[],kind:"table",
+			close:restore=>this._closeTableMenu(restore)};
+		this._renderMenuActions(menu,state);
+		this._tableMenuState=this._openAnchoredPopover(controller,{
+			trigger,viewportMargin:8,state,
+			onKeyDown:(e,openState)=>this._handleMenuKeyDown(e,openState),
+			onClose:()=>this._tableMenuState=null,
+			focusReturn:trigger,
+		});
+		if (!this._tableMenuState)
+			return false;
+		this._focusMenuItem(this._tableMenuState,0);
+		return true;
+	}
+
+	_closeTableMenu(restoreFocus=false) {
+		return this._closeAnchoredPopover(this._tableMenuPopoverController,restoreFocus);
 	}
 
 	_showSelectedCellHelp() {
@@ -3750,11 +3958,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				: String(schemaNode.dataPath).split(".").filter(Boolean);
 			let target=scopedData;
 			for (const key of ctx) {
-				if (!target[key]||typeof target[key]!="object") {
-					target[key]={};
+				if (!target?.[key]||typeof target[key]!="object") {
+					const empty={};
+					if (!this._isTrashMode())
+						target[key]=empty;
+					target=empty;
 					notYetCreated=true;
-				}
-				target=target[key];
+				} else
+					target=target[key];
 			}
 			scopedData=target;
 		}
@@ -3787,6 +3998,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_repeatedOnDelete=({instanceNode})=>{
+		if (this._isTrashMode())
+			return false;
 		const entryNode=instanceNode.parent.parent;
 		const repeatedContainer=entryNode.parent;
 		const itemIndex=this._getRepeatedDataIndex(entryNode);
@@ -3828,6 +4041,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_fileOnDelete=(payload)=>{
+		if (this._isTrashMode())
+			return false;
 		const fileCell=payload.instanceNode.parent.parent;
 		const inputSchemaNode=fileCell.fileInputSchemaNode;
 		const dataRow=fileCell.parent.dataObj;
@@ -3883,16 +4098,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._validateRepeatedDataArray(repeatData);
 		instanceNode.dataObj=repeatData;
 		instanceNode.insertionPoint=parentEl.appendChild(document.createComment("repeated-insert"));
-		repeatedSchemaNode.create&&this._generateRepeatedCreator(instanceNode);
+		repeatedSchemaNode.create&&!this._isTrashMode()&&this._generateRepeatedCreator(instanceNode);
 		repeatData?.forEach(repeatData=>this._repeatInsert(instanceNode,false,repeatData));
 		this._arrangeRepeatedInstances(instanceNode);
-		return !!repeatData?.length||repeatedSchemaNode.create;
+		return !!repeatData?.length||(repeatedSchemaNode.create&&!this._isTrashMode());
 	}
 
 	/**For repeated schema-nodes with create set to true (meaning users can create more entries via user-interface),
 	 * this method creates the last entry that the user interacts with to create another entry
 	 * @param {Object} repeatedObj The object representing the repeated-container*/
 	_generateRepeatedCreator(repeatedObj) {
+		if (this._isTrashMode())
+			return;
 		const creationTxt=repeatedObj.schemaNode.creationText??this.lang.insertEntry;
 		const creationSchemaNode={type:"group",closedRender:()=>creationTxt,entries:[],
 							creator:true//used to know that this entry is the creator and that it should not be sorted
@@ -3903,6 +4120,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_beginDeleteRepeated({instanceNode}) {
+		if (this._isTrashMode())
+			return false;
 		if (!instanceNode.parent.parent.creating) {
 			instanceNode.parent.containerEl.classList.add("delete-confirming");
 
@@ -3991,12 +4210,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		// inside the existing control on every refreshSubtree call.
 		if (parentEl.matches?.("button")) {
 			parentEl.innerHTML=schemaNode.input.text;
+			parentEl.disabled=this._isTrashMode()&&mainIndex!=null;
 			return parentEl;
 		}
 			const btn=parentEl.appendChild(document.createElement("button"));
 			btn.tabIndex="-1";//so it can't be tabbed to
 			btn.innerHTML=schemaNode.input.text;
+			btn.disabled=this._isTrashMode()&&mainIndex!=null;
 			btn.addEventListener("click",e=>{
+				if (this._isTrashMode())
+					return;
 				const payload=this._makeCallbackPayload(instanceNode,{event:e,file:scopedData},{
 					schemaNode,
 					mainIndex,
@@ -4290,7 +4513,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				rptCelObj.parentData=ownerData&&typeof ownerData==="object"&&!Array.isArray(ownerData)?ownerData:null;
 				rptCelObj.dataArray=Array.isArray(repeatData)?repeatData:undefined;
 				rptCelObj.insertionPoint=collectionObj.containerEl.appendChild(document.createComment("repeat-insert"));
-				childSchemaNode.create&&this._generateRepeatedCreator(rptCelObj);
+				childSchemaNode.create&&!this._isTrashMode()&&this._generateRepeatedCreator(rptCelObj);
 				repeatData?.forEach(repeatData=>this._repeatInsert(rptCelObj,false,repeatData));
 				this._arrangeRepeatedInstances(rptCelObj);
 				for (const entry of rptCelObj.children)
@@ -4574,6 +4797,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_rowCheckboxChange(td,shift) {
+		if (this._isTrashMode())
+			return false;
 		const checked=!td.querySelector("input").checked;
 		const mainIndex=parseInt(td.parentElement.dataset.dataRowIndex);
 		if (!shift)//shift not held, 
@@ -4583,6 +4808,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_toggleRowsSelected(checked,fromIndex,toIndex) {
+		if (this._isTrashMode())
+			return false;
 		this._unsortCol(null,"select");
 		for (var i=fromIndex;i<=toIndex; i++){
 			if (i>=this._scrollRowIndex&&i<this._scrollRowIndex+this._numRenderedRows) {
@@ -4995,6 +5222,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_openGroup(groupObj) {
+		if (this._isTrashMode()) {
+			groupObj.el.classList.add("open");
+			this._syncGroupChevronVisibility(groupObj);
+			this._selectDetailsCell(this._getFirstSelectableDetailsCell(groupObj,true,true));
+			return;
+		}
 		let doOpen=true;
 		groupObj.schemaNode.onOpen?.({preventDefault:()=>doOpen=false},groupObj);
 		if (!doOpen)
@@ -5286,6 +5519,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_closeGroup(groupObject,targetCell=null,suppressTooltip=false) {
+		if (this._isTrashMode()) {
+			this._finalizeGroupClose(groupObject);
+			this._removeGroupFromTransaction(groupObject,true);
+			return true;
+		}
 		// An untouched creation is a disposable draft, not a commit attempt. Remove it before onClose/creation
 		// validation; ordinary navigation can then continue to its requested target.
 		if (this._isUntouchedCreatingGroup(groupObject)) {
@@ -5444,22 +5682,25 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_repeatInsert(repeated,creating,data,entrySchemaNode=null) {
+		if (creating&&this._isTrashMode())
+			return false;
 		//normally entrySchemaNode should be the entry of repeated, 
 		// but schemaNode can be supplied for creating creation-entries
 		entrySchemaNode??=repeated.schemaNode.entry;
+		const hasCreator=repeated.children.some(child=>child.schemaNode.creator);
 
 		let indexOfNew,rowIndex;
 		if (!creating&&repeated.schemaNode.sortCompare&&!repeated.schemaNode.grouping&&!entrySchemaNode.creator) {
 			const rowData=repeated.parent?.dataObj;
-			for (indexOfNew=0;indexOfNew<repeated.children.length-!!repeated.schemaNode.create; indexOfNew++)
+			for (indexOfNew=0;indexOfNew<repeated.children.length-Number(hasCreator); indexOfNew++)
 				if (repeated.schemaNode.sortCompare(
 					data,repeated.children[indexOfNew].dataObj,rowData,repeated)<0)
 					break;
 		} else
-			indexOfNew=repeated.children.length-(repeated.schemaNode.create&&!entrySchemaNode.creator)//pos be4 creator
+			indexOfNew=repeated.children.length-Number(hasCreator&&!entrySchemaNode.creator);//before creator
 		for (let root=repeated.parent; root.parent; root=root.parent,rowIndex=root.rowIndex);//get main-index
 		let entryNode=entrySchemaNode;
-		if (repeated.schemaNode.create&&!entrySchemaNode.creator)
+		if (repeated.schemaNode.create&&!entrySchemaNode.creator&&!this._isTrashMode())
 			entryNode=this._wrapRepeatedEntryForDeletion(entrySchemaNode,repeated.schemaNode);
 		const newObj=this._generateCollectionItem(entryNode,rowIndex,repeated,repeated.path,data,indexOfNew,creating);
 		if (creating) {
@@ -5545,6 +5786,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_setupRepeatedReorderEntry(entry) {
+		if (this._isTrashMode())
+			return;
 		if (!this._getRepeatedReorderConfig(entry)||entry.reorderCell)
 			return;
 		const outer=entry.outerContainerEl;
@@ -5638,6 +5881,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_enterRepeatedReorderMode(entry) {
+		if (this._isTrashMode())
+			return false;
 		if (!entry?.reorderCell||entry.reorderCell.hidden
 			||this._activeDetailsCell!==entry.reorderCell)
 			return false;
@@ -6027,6 +6272,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_deleteCell(instanceNode,programatically=false,selectNext=true) {
+		if (this._isTrashMode()&&!programatically)
+			return false;
 		const parent=instanceNode.parent;
 		const visualIndex=instanceNode.index;
 		const dataArray=parent?.dataObj;
@@ -7803,6 +8050,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 */
 	_filterCurrentView(filterString,includeDetails=true,caseSensitive=false) {
 		this._filter=filterString;
+		if (this._trashCapability)
+			this._lifecycleSearch[this._lifecycleMode]=filterString;
 		const viewData=this._viewData??[];
 		if (filterString) {
 			const selectOptsCache=this._createSelectOptsCache();
@@ -8515,6 +8764,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (isDisabled)
 			return {kind:"disabled",selectable:false,activatable:false,mutable:false,activation:"none",
 				message:disabledResult?.message};
+		if (this._isTrashMode()&&schemaNode.type!=="expand"&&schemaNode.type!=="menu") {
+			if (schemaNode.type==="select")
+				return {kind:"disabled",selectable:false,activatable:false,mutable:false,activation:"none"};
+			if (schemaNode.type==="group"&&!schemaNode.creator)
+				return {kind:"action",selectable:true,activatable:true,mutable:false,activation:"action"};
+			return {kind:"readOnly",selectable:true,activatable:false,mutable:false,activation:"none"};
+		}
 
 		const isAction=schemaNode.type==="expand"||schemaNode.type==="select"||schemaNode.type==="menu"
 			||schemaNode.type==="group"

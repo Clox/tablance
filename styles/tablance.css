@@ -298,6 +298,20 @@
   gap: 8px;
   align-items: center;
 }
+.tablance > .toolbar .tablance-table-menu-trigger {
+  min-width: 32px;
+  min-height: 32px;
+  border: 1px solid var(--tablance-border-color);
+  border-radius: 5px;
+  background: var(--tablance-cell-background);
+  color: var(--tablance-cell-text-color);
+  font: inherit;
+  font-size: 18px;
+  cursor: pointer;
+}
+.tablance > .toolbar [hidden] {
+  display: none;
+}
 .tablance > .toolbar .toolbar-insert-btn {
   cursor: pointer;
 }
@@ -1671,6 +1685,9 @@
   cursor: cell;
 }
 
+.tablance-view-switcher[hidden] {
+  display: none;
+}
 .tablance-view-switcher {
   display: inline-flex;
   align-items: stretch;
