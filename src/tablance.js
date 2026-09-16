@@ -2361,7 +2361,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return controller;
 	}
 
-	_openAnchoredPopover(controller,{trigger,target=trigger,viewportMargin=0,state={},onKeyDown,onClose}={}) {
+	_openAnchoredPopover(controller,{trigger,target=trigger,viewportMargin=0,state={},onKeyDown,onClose,
+		restoreFocusOnOutsidePointer=false}={}) {
 		if (!trigger?.isConnected)
 			return false;
 		if (this._activeAnchoredPopover&&this._activeAnchoredPopover!==controller)
@@ -2370,8 +2371,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._closeAnchoredPopover(controller);
 		const popoverState=controller.state={...state,trigger,target,viewportMargin,onKeyDown,onClose};
 		popoverState.outsideMouseDown=e=>{
-			if (!trigger.contains(e.target)&&!controller.el.contains(e.target))
-				this._closeAnchoredPopover(controller);
+			if (!trigger.contains(e.target)&&!controller.el.contains(e.target)) {
+				const restoreAfterPointer=restoreFocusOnOutsidePointer&&!this._pointerTargetAcceptsFocus(e.target);
+				this._closeAnchoredPopover(controller,restoreFocusOnOutsidePointer);
+				if (restoreAfterPointer)
+					setTimeout(()=>this._focusEl?.focus({preventScroll:true}));
+			}
 		};
 		popoverState.keyDown=e=>{
 			if (onKeyDown?.(e,popoverState)===true)
@@ -2403,6 +2408,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._activeAnchoredPopover=controller;
 		this._positionAnchoredPopover(controller);
 		return popoverState;
+	}
+
+	_pointerTargetAcceptsFocus(target) {
+		const focusTarget=target?.closest?.("a[href],area[href],button,input,select,textarea,label,summary,iframe,"
+			+'[contenteditable]:not([contenteditable="false"]),[tabindex]:not([tabindex="-1"])');
+		return !!focusTarget&&!focusTarget.matches(":disabled");
 	}
 
 	_positionAnchoredPopover(controller) {
@@ -2701,8 +2712,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_openMenuForCell(cell,event=null) {
 		if (!cell||this._getCellState(cell)?.activatable===false)
 			return false;
-		if (this._spreadsheet&&cell!==this._selectedCell&&!this._selectMainTableCell(cell))
-			return false;
+		if (this._spreadsheet&&cell!==this._selectedCell) {
+			if (event instanceof MouseEvent) {
+				if (!this._establishMainActionCellCursor(cell))
+					return false;
+			} else if (!this._selectMainTableCell(cell))
+				return false;
+		}
 		const schemaNode=this._colSchemaNodes[cell.cellIndex];
 		if (schemaNode?.type!=="menu")
 			return false;
@@ -2728,6 +2744,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			trigger,target:cell,viewportMargin:8,state,
 			onKeyDown:(e,openState)=>this._handleMenuKeyDown(e,openState),
 			onClose:()=>this._menuState=null,
+			restoreFocusOnOutsidePointer:true,
 		});
 		if (!this._menuState)
 			return false;
@@ -4496,10 +4513,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				||td?.classList.contains("menu-col")) {
 				if (e.shiftKey)
 					e.preventDefault();//prevent text-selection when shift-clicking checkboxes
-				if (this._mainRowIndex==null) {
-					this._selectMainTableCell(td);
-					this._focusEl.focus({preventScroll:true});
-				}
+				if (!this._establishMainActionCellCursor(td))
+					return;
 				if (td.classList.contains("menu-col"))
 					return;
 				if (td.classList.contains("expand-col"))
@@ -4508,6 +4523,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 			this._selectMainTableCell(td);
 		}
+	}
+
+	_establishMainActionCellCursor(cell) {
+		if (!this._spreadsheet||this._mainRowIndex!=null)
+			return true;
+		return this._selectMainTableCell(cell)!==false;
 	}
 
 	_resolvePointerDetailsInstance(interactiveEl,mainTr=null) {

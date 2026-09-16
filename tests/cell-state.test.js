@@ -145,6 +145,58 @@ try {
 		&&document.activeElement===menuTable._focusEl&&menuTable._selectedCell===firstMenuCell,
 		"Enter activates an enabled action and restores table focus without moving the cursor");
 
+	const priorPointerCell=menuTable._mainTbody.rows[0].cells[0];
+	const nextPriorPointerCell=menuTable._mainTbody.rows[1].cells[0];
+	menuTable._selectMainTableCell(priorPointerCell);
+	secondMenuCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
+	secondMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,cancelable:true}));
+	await tick();
+	assert(menuTable._menuState?.rowData===menuRows[1]&&menuTable._selectedCell===priorPointerCell
+		&&menuTable._mainRowIndex===0&&menuTable._mainColIndex===0,
+		"pointer-opening a menu preserves an established cell cursor");
+	key(document.activeElement,"Escape","Escape");
+	assert(!menuTable._menuState&&document.activeElement===menuTable._focusEl
+		&&menuTable._selectedCell===priorPointerCell,
+		"Escape from a pointer-opened menu restores focus to the previous cell cursor");
+	key(menuTable.rootEl,"ArrowDown","ArrowDown");
+	assert(menuTable._selectedCell===nextPriorPointerCell,
+		"keyboard navigation after Escape continues from the cursor that preceded the pointer-opened menu");
+
+	menuTable._selectMainTableCell(priorPointerCell);
+	secondMenuCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
+	secondMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,cancelable:true}));
+	await tick();
+	menuTable._menuState.items[0].el.click();
+	assert(!menuTable._menuState&&menuTable._selectedCell===priorPointerCell
+		&&document.activeElement===menuTable._focusEl&&menuActivations.length===2,
+		"pointer menu action activation restores focus without moving the established cursor");
+
+	secondMenuCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
+	secondMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,cancelable:true}));
+	await tick();
+	document.body.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
+	await tick();
+	assert(!menuTable._menuState&&menuTable._selectedCell===priorPointerCell
+		&&document.activeElement===menuTable._focusEl,
+		"outside pointer close restores table focus to the cursor that preceded the menu");
+	key(menuTable.rootEl,"ArrowDown","ArrowDown");
+	assert(menuTable._selectedCell===nextPriorPointerCell,
+		"keyboard navigation after outside close continues from the previous cursor");
+	menuTable._selectMainTableCell(priorPointerCell);
+	secondMenuCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
+	secondMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,cancelable:true}));
+	await tick();
+	const externalButton=document.body.appendChild(document.createElement("button"));
+	externalButton.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
+	externalButton.focus();
+	await tick();
+	assert(!menuTable._menuState&&document.activeElement===externalButton
+		&&menuTable._selectedCell===priorPointerCell,
+		"outside close does not reclaim focus from an explicitly focusable pointer target");
+	externalButton.remove();
+	menuActivations.splice(1);
+
+	menuTable._selectMainTableCell(secondMenuCell);
 	secondMenuCell.click();
 	await tick();
 	key(document.activeElement,"ArrowDown","ArrowDown");
