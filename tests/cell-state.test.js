@@ -96,7 +96,8 @@ try {
 		actions:payload=>{
 			menuActionsResolved++;
 			return [
-				{text:`Open ${payload.rowData.name}`,onSelect:actionPayload=>menuActivations.push(actionPayload)},
+				{label:({rowData})=>`Open ${rowData.name}`,icon:"restore",
+					onSelect:actionPayload=>menuActivations.push(actionPayload)},
 				{text:"Conditional action",disabled:({rowData})=>rowData.locked,
 					disabledReason:({rowData})=>rowData.locked?`${rowData.name} is locked`:"",
 					onSelect:actionPayload=>menuActivations.push(actionPayload)},
@@ -104,8 +105,10 @@ try {
 			];
 		},
 	};
+	let allowStaticAction=false;
 	const staticMenuColumn={type:"menu",title:"More",width:45,actions:[
-		{text:"Static action",onSelect:({rowData})=>menuActivations.push({rowData,static:true})},
+		{text:"Static action",beforeSelect:()=>allowStaticAction,
+			onSelect:({rowData})=>menuActivations.push({rowData,static:true})},
 	]};
 	const menuTable=new Tablance(host(),{main:{columns:[
 		{dataKey:"name",title:"Name"},callbackMenuColumn,staticMenuColumn,{dataKey:"locked",title:"Locked"},
@@ -136,6 +139,11 @@ try {
 		&&menuTable._cellCursor.style.display==="block"
 		&&firstMenuTrigger.getAttribute("aria-expanded")==="true",
 		"a single cell click opens the row-specific menu while retaining the cell cursor and avoiding edit mode");
+	assert(menuTable._menuState.items[0].el.querySelector(".tablance-icon-restore.tablance-menu-item-icon")
+		&&menuTable._menuState.items[0].el.querySelector(".tablance-menu-item-label").textContent==="Open Alpha"
+		&&!menuTable._menuState.items[1].el.querySelector(".tablance-menu-item-icon")
+		&&getComputedStyle(menuTable._menuState.items[0].el.querySelector(".tablance-menu-item-icon")).width==="16px",
+		"ordinary actions support callback labels and optional named icons while text-only actions remain icon-free");
 	key(document.activeElement,"ArrowDown","ArrowDown");
 	assert(document.activeElement===menuTable._menuState.items[1].el,
 		"ArrowDown moves menu focus to the next action");
@@ -236,6 +244,10 @@ try {
 	await tick();
 	assert(menuTable._menuState?.actions===staticMenuColumn.actions,
 		"a declarative action array opens without passing through edit or select machinery");
+	menuTable._menuState.items[0].el.click();
+	assert(!!menuTable._menuState&&!menuActivations.some(item=>item.static),
+		"beforeSelect may cancel an enabled action without closing its menu");
+	allowStaticAction=true;
 	key(document.activeElement,"Tab","Tab",{shiftKey:true});
 	assert(!menuTable._menuState&&menuTable._mainColIndex===1,
 		"Shift+Tab closes the menu and resumes reverse grid navigation");
@@ -280,7 +292,7 @@ try {
 				{dataKey:"value",title:"Value",input:{type:"text"}},
 			]}},
 		]},
-	},true,true,{searchbar:true});
+	},true,true,{searchbar:true,lang:{trashAction:"Flytta till papperskorgen",restoreAction:"Återställ"}});
 	lifecycleTable.setData(lifecycleRows);
 	await tick();
 	assert(lifecycleTable._filteredData.length===1&&lifecycleTable._filteredData[0]===lifecycleRows[0]
@@ -301,9 +313,14 @@ try {
 		"table actions render a toolbar menu independently of column headers");
 	tableMenuButton.click();
 	await tick();
+	const defaultTrashIcon=lifecycleTable._tableMenuState?.items[0].el.querySelector(".tablance-icon-trash");
+	const defaultTrashIconMask=getComputedStyle(defaultTrashIcon).maskImage;
+	const defaultTrashIconWebkitMask=getComputedStyle(defaultTrashIcon).webkitMaskImage;
 	assert(lifecycleTable._tableMenuState?.items[0].action.text==="Show trash"
+		&&defaultTrashIcon&&(defaultTrashIconMask!=="none"
+			||defaultTrashIconWebkitMask!=="none")
 		&&document.activeElement===lifecycleTable._tableMenuState.items[0].el,
-		"pointer activation opens and focuses the table-level menu");
+		"pointer activation opens and focuses the table-level menu with its default trash icon");
 	key(document.activeElement,"Escape","Escape");
 	assert(!lifecycleTable._tableMenuState&&document.activeElement===tableMenuButton,
 		"Escape from table menu restores the table-level trigger");
@@ -355,10 +372,13 @@ try {
 	await tick();
 	assert(lifecycleTable._selectedCell===trashNameCell,
 		"pointer-opening a trash row menu keeps the prior cell cursor");
-	assert(lifecycleTable._menuState?.items[0].action.text==="Restore"
+	assert(lifecycleTable.lang.trashAction==="Flytta till papperskorgen"
+		&&lifecycleTable.lang.restoreAction==="Återställ"
+		&&lifecycleTable._menuState?.items[0].action.text==="Återställ"
+		&&lifecycleTable._menuState.items[0].el.querySelector(".tablance-icon-restore")
 		&&lifecycleTable._menuState.items[1].el.getAttribute("aria-disabled")==="true"
 		&&lifecycleTable._menuState.items[1].el.textContent.includes("Unavailable in trash"),
-		"row actions stay visible in trash and lifecycle-aware disabled actions explain their state");
+		"restore uses localized copy and its default icon while other row actions stay visible in trash");
 	key(document.activeElement,"ArrowDown","ArrowDown");
 	key(document.activeElement,"Enter","Enter");
 	assert(!!lifecycleTable._menuState&&lifecycleCommits.length===0,
@@ -390,6 +410,9 @@ try {
 		&&lifecycleTable._filteredData.length===1&&lifecycleTable._filteredData[0]===lifecycleRows[0],
 		"returning to active rows restores the normal view and its separate search state");
 	lifecycleTable._mainTbody.rows[0].cells[2].click();
+	assert(lifecycleTable._menuState.items[0].action.text==="Flytta till papperskorgen"
+		&&lifecycleTable._menuState.items[0].el.querySelector(".tablance-icon-trash"),
+		"trash uses localized copy and the same trash icon primitive as repeated deletion");
 	lifecycleTable._menuState.items[0].el.click();
 	await tick();
 	assert(lifecycleRows[0].deletedOn==="2026-09-16"&&lifecycleTable._filteredData.length===0
@@ -417,6 +440,20 @@ try {
 	assert(capabilityOnly.trashRow(capabilityRows[1],"restore")
 		&&capabilityRows[1].removed===false&&capabilityOnly._filteredData.length===0,
 		"capability-only tables may restore through the public lifecycle mutation method");
+	const overriddenTrashTable=new Tablance(host(),{
+		trash:{isTrashed:({rowData})=>!!rowData.removed,
+			getChanges:({operation})=>({removed:operation==="trash"})},
+		main:{columns:[{dataKey:"name"},{type:"menu",actions:[
+			{type:"trash",label:({rowData})=>`Archive ${rowData.name}`,icon:false},
+		]}]},
+	},true,true,{searchbar:false});
+	overriddenTrashTable.setData([{name:"Custom",removed:false}]);
+	overriddenTrashTable._mainTbody.rows[0].cells[1].click();
+	await tick();
+	assert(overriddenTrashTable._menuState.items[0].el.querySelector(".tablance-menu-item-label").textContent
+		==="Archive Custom"&&!overriddenTrashTable._menuState.items[0].el.querySelector(".tablance-menu-item-icon"),
+		"a built-in action accepts the same generic label and icon overrides as ordinary actions");
+	overriddenTrashTable._closeMenu();
 	const genericTableMenu=new Tablance(host(),{
 		main:{toolbar:{tableActions:[{text:"Inspect",onSelect:()=>detailsButtonClicks++}]},
 			columns:[{dataKey:"name"}]},
@@ -431,6 +468,20 @@ try {
 	assert(detailsButtonClicks===1&&!genericTableMenu._tableMenuState
 		&&document.activeElement===genericTableMenu._tableMenuButton,
 		"keyboard activation of a table action restores toolbar focus");
+	const relocatedToolbarTable=new Tablance(host(),{
+		main:{toolbar:{defaultInsert:true},columns:[{dataKey:"name"}]},
+	},true,true,{searchbar:true});
+	relocatedToolbarTable.setData([{name:"Layout"}]);
+	await tick();
+	const toolbarHeight=relocatedToolbarTable._toolbar.offsetHeight;
+	const viewportHeightBefore=parseFloat(relocatedToolbarTable._scrollBody.style.height);
+	const hostHeightBefore=relocatedToolbarTable.hostEl.offsetHeight;
+	relocatedToolbarTable._toolbar.style.display="none";
+	relocatedToolbarTable._updateSizesOfViewportAndCols();
+	const viewportHeightAfter=parseFloat(relocatedToolbarTable._scrollBody.style.height);
+	assert(relocatedToolbarTable.hostEl.offsetHeight===hostHeightBefore&&toolbarHeight>0
+		&&Math.abs(viewportHeightAfter-viewportHeightBefore-toolbarHeight)<1,
+		"an explicit layout refresh immediately fills space freed by a relocated toolbar without requiring resize");
 	const emptyTableMenu=new Tablance(host(),{
 		main:{toolbar:{tableActions:[]},columns:[{dataKey:"name"}]},
 	},true,true,{searchbar:false});
@@ -1248,9 +1299,11 @@ try {
 		&&guardedDeleteButtonStyle.gap==="6px"
 		&&guardedDeleteIconStyle.width==="18px"&&guardedDeleteIconStyle.height==="18px"
 		&&(guardedDeleteIconStyle.maskImage!=="none"||guardedDeleteIconStyle.webkitMaskImage!=="none")
+		&&(guardedDeleteIconStyle.maskImage===defaultTrashIconMask
+			||guardedDeleteIconStyle.webkitMaskImage===defaultTrashIconWebkitMask)
 		&&getComputedStyle(guardedDeleteControls.querySelector(".no")).display==="none"
 		&&getComputedStyle(guardedDeleteControls.querySelector(".yes")).display==="none",
-		"repeated entries expose a compact neutral delete action with an outline trash icon");
+		"repeated entries and menu actions share the same outline trash icon primitive");
 	assert(guardedDeleteInstance?.schemaNode.cssClass==="delete",
 		"the rendered delete action remains bound to its logical field instance");
 	guardedDeleteTable._beginDeleteRepeated({instanceNode:guardedDeleteInstance});

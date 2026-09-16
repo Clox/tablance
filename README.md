@@ -78,6 +78,11 @@ Use a main-table column with `type: "menu"` for row actions that do not represen
 are never sortable or searchable. Their `actions` may be an array or a callback receiving the standard cell payload.
 Actions use `onSelect` and may set `disabled` to a boolean or a callback. A disabled action remains visible and
 keyboard-navigable; set `disabledReason` to a string or callback to explain why it is unavailable.
+An optional `beforeSelect` callback may return `false` to cancel activation without closing the menu.
+Use `label` (or the existing `text`/`title`) to set the visible copy and optional `icon` for a named icon such as
+`"trash"` or `"restore"`, or an `Element`; both fields may be callbacks receiving the action payload. Icons are
+cloned before rendering, so descriptors remain reusable. Omit `icon` for a text-only action. Built-in trash actions
+use `lang.trashAction`/`lang.restoreAction` and the corresponding icons by default; `label` and `icon` override them.
 
 ```js
 {
@@ -128,7 +133,7 @@ there is no built-in asynchronous confirmation or rollback. Related entries are 
       {dataKey: "name", input: {type: "text"}},
       {type: "menu", actions: [
         {type: "trash"},
-        {text: "Other action", disabled: ({lifecycleMode}) => lifecycleMode === "trash",
+        {label: "Other action", icon: "restore", disabled: ({lifecycleMode}) => lifecycleMode === "trash",
           disabledReason: "Available only for active rows", onSelect: otherAction}
       ]}
     ]

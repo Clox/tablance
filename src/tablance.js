@@ -2772,17 +2772,45 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				throw new Error('A menu action with type "trash" requires a trash capability.');
 			const rowAction=!!payload.rowData;
 			const operation=this._isTrashMode()?"restore":"trash";
+			const hasLabel=["label","text","title"].some(key=>Object.prototype.hasOwnProperty.call(action,key));
 			action={...action,
-				text:rowAction?(operation==="trash"?this.lang.trashAction:this.lang.restoreAction)
-					:(this._isTrashMode()?this.lang.showActive:this.lang.showTrash),
+				...(!hasLabel?{text:rowAction?(operation==="trash"?this.lang.trashAction:this.lang.restoreAction)
+					:(this._isTrashMode()?this.lang.showActive:this.lang.showTrash)}:{}),
+				...(!Object.prototype.hasOwnProperty.call(action,"icon")?{icon:operation}:{}),
 				onSelect:rowAction?({rowData})=>this.trashRow(rowData,operation)
 					:()=>this.setLifecycleMode(this._isTrashMode()?"active":"trash"),
 			};
 		}
-		const disabled=typeof action.disabled==="function"?action.disabled({...payload,action}):action.disabled;
+		const actionPayload={...payload,action};
+		const resolve=value=>typeof value==="function"?value(actionPayload):value;
+		const label=resolve(action.label??action.text??action.title??"");
+		const icon=resolve(action.icon);
+		const disabled=typeof action.disabled==="function"?action.disabled(actionPayload):action.disabled;
 		const disabledReason=disabled===true?(typeof action.disabledReason==="function"
-			?action.disabledReason({...payload,action}):action.disabledReason):"";
-		return {action,disabled:disabled===true,disabledReason:disabledReason==null?"":String(disabledReason)};
+			?action.disabledReason(actionPayload):action.disabledReason):"";
+		return {action,label:label==null?"":String(label),icon,disabled:disabled===true,
+			disabledReason:disabledReason==null?"":String(disabledReason)};
+	}
+
+	_createMenuActionIcon(icon) {
+		if (icon==null||icon===false)
+			return null;
+		let el;
+		if (typeof icon==="string") {
+			const name=icon.trim().toLowerCase().replace(/[^a-z0-9_-]+/g,"-");
+			if (!name)
+				return null;
+			el=document.createElement("span");
+			el.classList.add("tablance-icon",`tablance-icon-${name}`);
+		} else if (icon?.nodeType===1) {
+			el=icon.cloneNode(true);
+			el.classList.add("tablance-icon");
+		} else
+			throw new TypeError("A menu action icon must be a name, an Element, a callback returning either, or null.");
+		el.classList.add("tablance-menu-item-icon");
+		el.setAttribute("aria-hidden","true");
+		el.setAttribute("focusable","false");
+		return el;
 	}
 
 	_renderMenuActions(menu,state) {
@@ -2794,9 +2822,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			item.className="tablance-menu-item";
 			item.setAttribute("role","menuitem");
 			item.tabIndex=-1;
-			const label=item.appendChild(document.createElement("span"));
+			const content=item.appendChild(document.createElement("span"));
+			content.className="tablance-menu-item-content";
+			const icon=this._createMenuActionIcon(resolved.icon);
+			if (icon)
+				content.appendChild(icon);
+			const label=content.appendChild(document.createElement("span"));
 			label.className="tablance-menu-item-label";
-			label.textContent=String(resolved.action.text??resolved.action.title??"");
+			label.textContent=resolved.label;
 			item.setAttribute("aria-disabled",String(resolved.disabled));
 			item.classList.toggle("disabled",resolved.disabled);
 			if (resolved.disabled&&resolved.disabledReason) {
@@ -2826,6 +2859,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return false;
 		}
 		const callbackPayload={...state.payload,event,action:itemState.action};
+		if (itemState.action.beforeSelect?.(callbackPayload)===false)
+			return false;
 		state.close(true);
 		itemState.action.onSelect?.(callbackPayload);
 		return true;
@@ -7979,8 +8014,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_updateSizesOfViewportAndCols() {
 		if (!this.hostEl.offsetWidth||!this.hostEl.offsetHeight)
 			return;
-		if (this.hostEl.offsetHeight != this._containerHeight) {
-			this._updateViewportHeight();
+		const heightChanged=this.hostEl.offsetHeight!=this._containerHeight;
+		// Header and toolbar geometry can change without resizing the host (for example when a consumer relocates
+		// toolbar controls). Always recompute the viewport when layout is explicitly refreshed.
+		this._updateViewportHeight();
+		if (heightChanged) {
 			if (this.hostEl.offsetHeight > this._containerHeight)
 				this._maybeAddTrs();
 			else

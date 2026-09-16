@@ -1,3 +1,12 @@
+$tablance-trash-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M8 6V4h8v2'/%3E%3Cpath d='M19 6l-1 14H6L5 6'/%3E%3Cpath d='M10 11v5'/%3E%3Cpath d='M14 11v5'/%3E%3C/svg%3E");
+$tablance-restore-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 14 4 9l5-5'/%3E%3Cpath d='M4 9h10.5a5.5 5.5 0 0 1 0 11H11'/%3E%3C/svg%3E");
+
+@mixin tablance-mask-icon($icon) {
+	background-color: currentColor;
+	-webkit-mask: $icon center / contain no-repeat;
+	mask: $icon center / contain no-repeat;
+}
+
 @mixin inline-title-state-indicators {
 	>span.title {
 		position: relative;
@@ -510,6 +519,28 @@
 			&.disabled {
 				color: var(--tablance-muted-color);
 				cursor: default;
+			}
+
+			>.tablance-menu-item-content {
+				display: inline-flex;
+				max-width: 100%;
+				align-items: center;
+				gap: 8px;
+			}
+
+			.tablance-menu-item-icon {
+				display: block;
+				flex: 0 0 16px;
+				width: 16px;
+				height: 16px;
+			}
+
+			.tablance-icon-trash {
+				@include tablance-mask-icon($tablance-trash-icon);
+			}
+
+			.tablance-icon-restore {
+				@include tablance-mask-icon($tablance-restore-icon);
 			}
 
 			>.tablance-menu-item-disabled-reason {
@@ -1096,10 +1127,8 @@
 						flex: 0 0 18px;
 						width: 18px;
 						height: 18px;
-						background-color: currentColor;
 						content: "";
-						-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M8 6V4h8v2'/%3E%3Cpath d='M19 6l-1 14H6L5 6'/%3E%3Cpath d='M10 11v5'/%3E%3Cpath d='M14 11v5'/%3E%3C/svg%3E") center / contain no-repeat;
-						mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M8 6V4h8v2'/%3E%3Cpath d='M19 6l-1 14H6L5 6'/%3E%3Cpath d='M10 11v5'/%3E%3Cpath d='M14 11v5'/%3E%3C/svg%3E") center / contain no-repeat;
+						@include tablance-mask-icon($tablance-trash-icon);
 					}
 					&:hover,
 					&:focus-visible {
