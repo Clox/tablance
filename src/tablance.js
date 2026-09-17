@@ -4,6 +4,8 @@ const SCHEMA_WRAPPER_MARKER=Symbol("schemaWrapper");
 
 const TABLANCE_VERSION = typeof __TABLANCE_VERSION__!=="undefined"?__TABLANCE_VERSION__:"dev";
 const TABLANCE_BUILD = typeof __TABLANCE_BUILD__!=="undefined"?__TABLANCE_BUILD__:"dev";
+const CONTEXTUAL_HELP_HOVER_DELAY=350;
+const DEFAULT_MENU_COLUMN_WIDTH=48;
 let anchoredPopoverId=0;
 
 // Shared prototype for instance-nodes so utility getters stay in sync after inserts/deletes.
@@ -123,6 +125,8 @@ class TablanceBase {
 	_scrollRowIndex=0;//the index in the #data of the top row in the view
 	_scrollBody;//resides directly inside #container and is the element with the scrollbar. It contains #scrollingDiv
 	_toolbar;
+	_tableUtilities;//optional common controls in a dedicated, non-data header area
+	_tableUtilitiesWidth=0;
 	_tableArea;//focusable area containing the header and scrollable rows, but not the toolbar
 	_focusEl;//the element receiving spreadsheet focus (tableArea, or rootEl for details-only tables)
 	_scrollingContent;//a div that is inside #scrollbody and holds #tablesizer and #cellCursor if spreadsheet
@@ -767,6 +771,8 @@ class TablanceBase {
 	 * 								can be used to filter the data.
 	 * 							showHeader Bool that defaults to true. If false then the main table's header row
 	 * 								is hidden.
+	 * 							tableUtilitiesPlacement String "default" (toolbar menu/header help) or "table"
+	 * 								(dedicated area on the column-header row). Defaults to "default".
 	 * 							ordering Bool that defaults to true. If false then column-header sorting and its
 	 * 								sort symbols are disabled.
 	 * 							autoHeight Bool that defaults to false. If true then the table grows to fit all
@@ -812,6 +818,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this.hostEl.appendChild(this.rootEl);
 		this._spreadsheet=spreadsheet;
 		this._opts=opts??{};
+		this._tableUtilitiesPlacement=this._opts.tableUtilitiesPlacement??"default";
+		if (this._tableUtilitiesPlacement!=="default"&&this._tableUtilitiesPlacement!=="table")
+			throw new TypeError('opts.tableUtilitiesPlacement must be "default" or "table".');
+		// A hidden column header has no row for table-attached utilities; retain the ordinary toolbar trigger.
+		if (this._tableUtilitiesPlacement==="table"&&this._opts.showHeader===false)
+			this._tableUtilitiesPlacement="default";
 		const rowHeightMode=this._opts.rowHeight??(this._opts.autoHeight?"auto":staticRowHeight?"fixed":"auto");
 		if (rowHeightMode!=="auto"&&rowHeightMode!=="fixed")
 			throw new Error('opts.rowHeight must be either "auto" or "fixed".');
@@ -2303,7 +2315,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				input:{type:"button",text:this.lang.insertRow,onClick:()=>this.insertNewRow()},
 			});
 		}
-		if (!toolbarItems.length&&!toolbarCfg?.viewSwitcher&&!toolbarCfg?.tableActions
+		if (!toolbarItems.length&&!toolbarCfg?.viewSwitcher
+			&&!(toolbarCfg?.tableActions&&this._tableUtilitiesPlacement==="default")
 			&&this._opts.searchbar==false)
 			return;
 
@@ -2333,20 +2346,40 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._searchInput.placeholder=this.lang.filterPlaceholder;
 			this._searchInput.addEventListener("input",e=>this._onSearchInput(e));
 		}
-		if (toolbarCfg?.tableActions) {
-			const button=this._tableMenuButton=rightWrap.appendChild(this._createMenuButton());
-			button.classList.add("tablance-table-menu-trigger");
-			button.tabIndex=0;
-			button.setAttribute("aria-label",this.lang.menuLabel);
-			button.addEventListener("click",e=>this._openTableMenu(e));
-			button.addEventListener("keydown",e=>{
-				if (e.repeat||(e.key!=="Enter"&&e.key!==" "))
-					return;
-				e.preventDefault();
-				e.stopPropagation();
-				this._openTableMenu(e);
-			});
+		if (toolbarCfg?.tableActions&&this._tableUtilitiesPlacement==="default")
+			this._appendTableMenuButton(rightWrap);
+		this._updateLifecycleControls();
+	}
+
+	_appendTableMenuButton(parent) {
+		const button=this._tableMenuButton=parent.appendChild(this._createMenuButton());
+		button.classList.add("tablance-table-menu-trigger");
+		button.tabIndex=0;
+		button.setAttribute("aria-label",this.lang.menuLabel);
+		button.addEventListener("click",e=>this._openTableMenu(e));
+		button.addEventListener("keydown",e=>{
+			if (e.repeat||(e.key!=="Enter"&&e.key!==" "))
+				return;
+			e.preventDefault();
+			e.stopPropagation();
+			this._openTableMenu(e);
+		});
+		return button;
+	}
+
+	_setupTableUtilities() {
+		if (this._tableUtilitiesPlacement!=="table"
+			||(!this._hasTableHelp()&&!this._schema.main?.toolbar?.tableActions))
+			return;
+		const utilities=this._tableUtilities=this._tableArea.appendChild(document.createElement("div"));
+		utilities.className="table-utilities";
+		if (this._hasTableHelp()) {
+			const help=this._createHelpTrigger(this._schema,null,{table:true});
+			help.tabIndex=0;
+			utilities.appendChild(help);
 		}
+		if (this._schema.main?.toolbar?.tableActions)
+			this._appendTableMenuButton(utilities);
 		this._updateLifecycleControls();
 	}
 
@@ -2360,6 +2393,17 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			button.hidden=this._isTrashMode();
 		if (this._tableMenuButton)
 			this._tableMenuButton.hidden=this._resolveTableActions().length===0;
+		if (this._tableUtilities) {
+			const previousWidth=this._tableUtilitiesWidth;
+			const visibleCount=Number(!!this._tableUtilities.querySelector(".table-help-trigger"))
+				+Number(!!this._tableMenuButton&&!this._tableMenuButton.hidden);
+			this._tableUtilitiesWidth=visibleCount?visibleCount*30+(visibleCount-1)*4+8:0;
+			this._tableUtilities.hidden=!visibleCount;
+			this._tableArea.classList.toggle("has-table-utilities",!!visibleCount);
+			this._tableArea.style.setProperty("--tablance-table-utilities-width",this._tableUtilitiesWidth+"px");
+			if (previousWidth!==this._tableUtilitiesWidth&&this._scrollBody)
+				requestAnimationFrame(()=>this._updateSizesOfViewportAndCols());
+		}
 	}
 
 	_resolveTableActions() {
@@ -2457,13 +2501,19 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		trigger.textContent="?";
 		trigger.setAttribute("aria-label",this.lang.helpLabel);
 		trigger.setAttribute("aria-expanded","false");
-		trigger.addEventListener("mouseenter",()=>this._showHelp(trigger,schemaNode,instanceNode,false));
-		trigger.addEventListener("mouseleave",()=>this._scheduleHelpClose(trigger));
+		trigger.addEventListener("mouseenter",()=>this._scheduleHelpOpen(trigger,schemaNode,instanceNode));
+		trigger.addEventListener("mouseleave",()=>{
+			this._cancelHelpOpen();
+			this._scheduleHelpClose(trigger);
+		});
+		trigger.addEventListener("focus",()=>this._showHelp(trigger,schemaNode,instanceNode,false));
 		trigger.addEventListener("mousedown",e=>{
+			this._cancelHelpOpen();
 			e.preventDefault();
 			e.stopPropagation();
 		});
 		trigger.addEventListener("click",e=>{
+			this._cancelHelpOpen();
 			e.preventDefault();
 			e.stopPropagation();
 			if (this._helpState?.trigger===trigger&&this._helpState.pinned)
@@ -2478,13 +2528,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_setupMainHeaderHelp(trigger,schemaNode) {
 		trigger.classList.add("has-help");
-		trigger.addEventListener("mouseenter",()=>{
-			this._cancelHelpOpen();
-			this._helpOpenTimer=setTimeout(()=>{
-				this._helpOpenTimer=null;
-				this._showHelp(trigger,schemaNode,null,false);
-			},600);
-		});
+		trigger.addEventListener("mouseenter",()=>this._scheduleHelpOpen(trigger,schemaNode,null,{},600));
 		trigger.addEventListener("mouseleave",()=>{
 			this._cancelHelpOpen();
 			this._scheduleHelpClose(trigger);
@@ -2701,6 +2745,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_positionHelp() {
 		return this._positionAnchoredPopover(this._helpPopoverController);
+	}
+
+	_scheduleHelpOpen(trigger,schemaNode,instanceNode=null,context={},delay=CONTEXTUAL_HELP_HOVER_DELAY) {
+		this._cancelHelpOpen();
+		this._helpOpenTimer=setTimeout(()=>{
+			this._helpOpenTimer=null;
+			this._showHelp(trigger,schemaNode,instanceNode,false,context);
+		},delay);
 	}
 
 	_scheduleHelpClose(trigger) {
@@ -7693,13 +7745,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		const spacer=this._headerTr.appendChild(document.createElement("th"));
 		spacer.className="scrollbar-spacer";
-		if (this._hasTableHelp()) {
+		if (this._tableUtilitiesPlacement==="default"&&this._hasTableHelp()) {
 			this._headerTable.classList.add("has-table-help");
 			this._headerTr.cells[this._colSchemaNodes.length-1].classList.add("before-table-help");
 			const helpTrigger=this._createHelpTrigger(this._schema,null,{table:true});
 			helpTrigger.tabIndex=0;
 			spacer.appendChild(helpTrigger);
 		}
+		this._setupTableUtilities();
 	}
 
 	_onThMouseDown(e) {
@@ -7750,9 +7803,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_updateHeaderSortHtml() {
 		if (this._opts.ordering===false)
 			return;
-		for (let [thIndex,th] of Object.entries(this._headerTr.cells)) {
-			if (thIndex==this._headerTr.cells.length-1)
-				break;
+		for (let thIndex=0;thIndex<this._colSchemaNodes.length;thIndex++) {
+			const th=this._headerTr.cells[thIndex];
 			if (this._colSchemaNodes[thIndex].type==="menu")
 				continue;
 			let order=null,priority=null;
@@ -8059,8 +8111,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			let totalFixedWidth=0;
 			let numUndefinedWidths=0;
 			for (let col of this._colSchemaNodes)
-				if (!col.width)
+				if (!col.width&&col.type!=="menu")
 					numUndefinedWidths++;
+				else if (!col.width&&col.type==="menu")
+					totalFixedWidth+=(col.pxWidth=DEFAULT_MENU_COLUMN_WIDTH);
 				else if (!percentageWidthRegex.test(col.width))//if fixed width
 					totalFixedWidth+=(col.pxWidth=parseInt(col.width));
 			let sumFixedAndFlexibleWidth=totalFixedWidth;
@@ -8068,14 +8122,40 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				if (col.width&&percentageWidthRegex.test(col.width))//if flexible width
 					sumFixedAndFlexibleWidth+=(col.pxWidth=(areaWidth-totalFixedWidth)*parseFloat(col.width)/100);
 			for (let col of this._colSchemaNodes)
-				if (!col.width)//if undefined width
+				if (!col.width&&col.type!=="menu")//if undefined width
 					col.pxWidth=(areaWidth-sumFixedAndFlexibleWidth)/numUndefinedWidths;
-			for (var colI=0; colI<this._colSchemaNodes.length; colI++) 
-				this._cols[colI].style.width=this._headerTr.cells[colI].style.width
-																			=this._colSchemaNodes[colI].pxWidth+"px";
+			for (var colI=0; colI<this._colSchemaNodes.length; colI++) {
+				const width=this._colSchemaNodes[colI].pxWidth;
+				this._headerTr.cells[colI].style.width=this._cols[colI].style.width=width+"px";
+			}
 			//last col is empty col with the width of table-scrollbar if its present in order to make the header span
 			//the whole with while not actually using that last bit in the calculations for the normal cols
-			this._headerTr.cells[colI].style.width=this._scrollBody.offsetWidth-areaWidth+"px";
+			this._headerTr.cells[colI].style.width
+				=this._scrollBody.offsetWidth-this._scrollBody.clientWidth+"px";
+			this._tableArea.style.setProperty("--tablance-scrollbar-width",
+				this._scrollBody.offsetWidth-this._scrollBody.clientWidth+"px");
+			this._reserveTableUtilitiesHeaderSpace();
+		}
+	}
+
+	_reserveTableUtilitiesHeaderSpace() {
+		for (const header of this._headerTr.cells)
+			header.classList.remove("before-table-utilities");
+		if (!this._tableUtilitiesWidth)
+			return;
+		let remaining=this._tableUtilitiesWidth;
+		for (let index=this._colSchemaNodes.length-1;index>=0;index--) {
+			const column=this._colSchemaNodes[index];
+			if (column.type==="menu"||column.type==="expand"||column.type==="select") {
+				remaining-=column.pxWidth??0;
+				if (remaining<=0)
+					return;
+				continue;
+			}
+			this._headerTr.cells[index].classList.add("before-table-utilities");
+			this._headerTr.cells[index].style.setProperty("--tablance-table-utilities-overlap",
+				Math.min(remaining,column.pxWidth??remaining)+"px");
+			return;
 		}
 	}
 

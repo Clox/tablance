@@ -77,6 +77,58 @@ $tablance-restore-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 		position: relative;
 		border-radius: var(--tablance-radius);
 		outline: none;
+		>.table-utilities {
+			position: absolute;
+			z-index: 3;
+			top: 1px;
+			right: calc(var(--tablance-scrollbar-width, 0px) + 1px);
+			display: flex;
+			box-sizing: border-box;
+			width: var(--tablance-table-utilities-width);
+			height: 42px;
+			padding: 0 4px;
+			align-items: center;
+			justify-content: flex-end;
+			gap: 4px;
+			background: var(--tablance-header-background);
+			&[hidden] { display: none; }
+			>.table-help-trigger,
+			>.tablance-table-menu-trigger {
+				position: static;
+				display: inline-flex;
+				box-sizing: border-box;
+				width: 30px;
+				min-width: 30px;
+				height: 30px;
+				min-height: 30px;
+				margin: 0;
+				padding: 0;
+				align-items: center;
+				justify-content: center;
+				transform: none;
+				border: 1px solid transparent;
+				border-radius: 5px;
+				background: transparent;
+				color: var(--tablance-muted-color);
+				font: 600 15px/1 var(--tablance-font-family);
+				&[hidden] { display: none; }
+				&:hover,
+				&[aria-expanded="true"] {
+					background: var(--tablance-hover-background);
+					color: var(--tablance-heading-color);
+				}
+				&:focus-visible {
+					outline: 2px solid var(--tablance-accent-color);
+					outline-offset: -2px;
+					background: var(--tablance-selected-background);
+				}
+			}
+			>.tablance-table-menu-trigger {
+				color: var(--tablance-cell-text-color);
+				font-size: 20px;
+				font-weight: 700;
+			}
+		}
 		&.show-focus-ring:focus::after {
 			position: absolute;
 			z-index: 10;
@@ -339,21 +391,22 @@ $tablance-restore-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 			gap: 8px;
 			align-items: center;
 		}
-		.tablance-table-menu-trigger {
-			min-width: 32px;
-			min-height: 32px;
-			border: 1px solid var(--tablance-border-color);
-			border-radius: 5px;
-			background: var(--tablance-cell-background);
-			color: var(--tablance-cell-text-color);
-			font: inherit;
-			font-size: 18px;
-			cursor: pointer;
-		}
 		[hidden] { display: none; }
 		.toolbar-insert-btn {
 			cursor: pointer;
 		}
+	}
+	.tablance-table-menu-trigger {
+		min-width: 32px;
+		min-height: 32px;
+		border: 1px solid var(--tablance-border-color);
+		border-radius: 5px;
+		background: var(--tablance-cell-background);
+		color: var(--tablance-cell-text-color);
+		font: inherit;
+		font-size: 18px;
+		cursor: pointer;
+		&[hidden] { display: none; }
 	}
 	.tablance-help-trigger {
 		// The selected-cell cursor is a later positioned sibling covering the canonical cell box. Keep contextual
@@ -604,6 +657,10 @@ $tablance-restore-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 				padding: 0;
 			}
 
+			&.before-table-utilities {
+				padding-right: calc(12px + var(--tablance-table-utilities-overlap, 0px));
+			}
+
 			&.before-table-help {
 				padding-right: 34px;
 			}
@@ -660,6 +717,13 @@ $tablance-restore-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 				transform: scale(1.3);
 			}
 		}
+	}
+	>.table-area.has-table-utilities>.header-table {
+		// The utility overlay must not make the browser redistribute header columns around its reserved padding.
+		// Keep the declared column widths aligned with the fixed-layout body table.
+		table-layout: fixed;
+		height: 44px;
+		th { box-sizing: border-box; }
 	}
 
 	td {

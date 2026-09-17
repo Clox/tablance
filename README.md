@@ -147,10 +147,16 @@ there is no built-in asynchronous confirmation or rollback. Related entries are 
 
 The capability and its controls are independent: omit either menu to keep the capability without that control.
 `main.toolbar.tableActions` also accepts ordinary menu action descriptors or a callback returning an array. The
-table-level `⋮` is shown only when that declaration resolves to at least one action; it lives in `toolbar-right`,
-separate from sortable column headers and contextual help. A table-level `{type: "trash"}` toggles between active
+table-level `⋮` is shown only when that declaration resolves to at least one action; by default it lives in
+`toolbar-right`, separate from sortable column headers and contextual help. A table-level `{type: "trash"}` toggles between active
 rows and trash. In a row menu, the same descriptor trashes or restores the current row. Other actions remain visible
 in trash; use the existing `disabled`/`disabledReason` callbacks and `lifecycleMode` payload to control them.
+
+Set `opts.tableUtilitiesPlacement: "table"` to place common table help (`?`) and table actions (`⋮`) together in a
+dedicated, non-data area at the right end of the column-header row, before the scrollbar gutter. The default,
+`"default"`, preserves the existing header/toolbar locations. The area is omitted when neither utility has content;
+toolbar search, insert actions, and view controls are unaffected. If `showHeader: false`, placement falls back to
+`"default"` so table actions remain accessible without a header row.
 
 `setLifecycleMode("active" | "trash")` switches lifecycle mode, and `trashRow(rowData, "trash" | "restore")` performs
 the mutation directly. Both require `trash` to be configured. Lifecycle classification precedes normal views and

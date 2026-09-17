@@ -34,6 +34,65 @@
   border-radius: var(--tablance-radius);
   outline: none;
 }
+.tablance > .table-area > .table-utilities {
+  position: absolute;
+  z-index: 3;
+  top: 1px;
+  right: calc(var(--tablance-scrollbar-width, 0px) + 1px);
+  display: flex;
+  box-sizing: border-box;
+  width: var(--tablance-table-utilities-width);
+  height: 42px;
+  padding: 0 4px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  background: var(--tablance-header-background);
+}
+.tablance > .table-area > .table-utilities[hidden] {
+  display: none;
+}
+.tablance > .table-area > .table-utilities > .table-help-trigger,
+.tablance > .table-area > .table-utilities > .tablance-table-menu-trigger {
+  position: static;
+  display: inline-flex;
+  box-sizing: border-box;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  margin: 0;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  transform: none;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--tablance-muted-color);
+  font: 600 15px/1 var(--tablance-font-family);
+}
+.tablance > .table-area > .table-utilities > .table-help-trigger[hidden],
+.tablance > .table-area > .table-utilities > .tablance-table-menu-trigger[hidden] {
+  display: none;
+}
+.tablance > .table-area > .table-utilities > .table-help-trigger:hover, .tablance > .table-area > .table-utilities > .table-help-trigger[aria-expanded=true],
+.tablance > .table-area > .table-utilities > .tablance-table-menu-trigger:hover,
+.tablance > .table-area > .table-utilities > .tablance-table-menu-trigger[aria-expanded=true] {
+  background: var(--tablance-hover-background);
+  color: var(--tablance-heading-color);
+}
+.tablance > .table-area > .table-utilities > .table-help-trigger:focus-visible,
+.tablance > .table-area > .table-utilities > .tablance-table-menu-trigger:focus-visible {
+  outline: 2px solid var(--tablance-accent-color);
+  outline-offset: -2px;
+  background: var(--tablance-selected-background);
+}
+.tablance > .table-area > .table-utilities > .tablance-table-menu-trigger {
+  color: var(--tablance-cell-text-color);
+  font-size: 20px;
+  font-weight: 700;
+}
 .tablance > .table-area.show-focus-ring:focus::after {
   position: absolute;
   z-index: 10;
@@ -298,7 +357,13 @@
   gap: 8px;
   align-items: center;
 }
-.tablance > .toolbar .tablance-table-menu-trigger {
+.tablance > .toolbar [hidden] {
+  display: none;
+}
+.tablance > .toolbar .toolbar-insert-btn {
+  cursor: pointer;
+}
+.tablance .tablance-table-menu-trigger {
   min-width: 32px;
   min-height: 32px;
   border: 1px solid var(--tablance-border-color);
@@ -309,11 +374,8 @@
   font-size: 18px;
   cursor: pointer;
 }
-.tablance > .toolbar [hidden] {
+.tablance .tablance-table-menu-trigger[hidden] {
   display: none;
-}
-.tablance > .toolbar .toolbar-insert-btn {
-  cursor: pointer;
 }
 .tablance .tablance-help-trigger {
   position: relative;
@@ -552,6 +614,9 @@
   overflow: visible;
   padding: 0;
 }
+.tablance > .table-area > .header-table th.before-table-utilities {
+  padding-right: calc(12px + var(--tablance-table-utilities-overlap, 0px));
+}
 .tablance > .table-area > .header-table th.before-table-help {
   padding-right: 34px;
 }
@@ -596,6 +661,13 @@
 }
 .tablance > .table-area > .header-table th.select-col > input {
   transform: scale(1.3);
+}
+.tablance > .table-area.has-table-utilities > .header-table {
+  table-layout: fixed;
+  height: 44px;
+}
+.tablance > .table-area.has-table-utilities > .header-table th {
+  box-sizing: border-box;
 }
 .tablance td {
   padding: 8px 12px;

@@ -500,6 +500,138 @@ try {
 	assert(detailsButtonClicks===1&&!genericTableMenu._tableMenuState
 		&&document.activeElement===genericTableMenu._tableMenuButton,
 		"keyboard activation of a table action restores toolbar focus");
+	const tableUtilityHost=host();
+	tableUtilityHost.style.width="280px";
+	const tableUtility=new Tablance(tableUtilityHost,{
+		help:"General table help",
+		trash:{isTrashed:({rowData})=>!!rowData.removed,
+			getChanges:({operation})=>({removed:operation==="trash"})},
+		main:{toolbar:{tableActions:[{type:"trash"}]},columns:[
+			{dataKey:"name",title:"Name"},{type:"menu",actions:[{text:"Inspect"}]},
+		]},
+	},true,true,{searchbar:false,tableUtilitiesPlacement:"table"});
+	tableUtility.setData([{name:"Active",removed:false},{name:"Removed",removed:true}]);
+	await tick();
+	const utilityRow=tableUtility._tableUtilities;
+	const utilityHelp=utilityRow.querySelector(".table-help-trigger");
+	const utilityMenu=tableUtility._tableMenuButton;
+	assert(!tableUtility._toolbar&&utilityRow.parentElement===tableUtility._tableArea
+		&&utilityRow.firstElementChild===utilityHelp&&utilityRow.lastElementChild===utilityMenu
+		&&tableUtility._headerTr.lastElementChild.classList.contains("scrollbar-spacer")
+		&&tableUtility._tableArea.classList.contains("has-table-utilities"),
+		"table placement groups help and menu in a non-data overlay before the scrollbar gutter");
+	const utilityRect=utilityRow.getBoundingClientRect();
+	const helpRect=utilityHelp.getBoundingClientRect();
+	const menuRect=utilityMenu.getBoundingClientRect();
+	const utilityHeaderRect=tableUtility._headerTable.getBoundingClientRect();
+	const defaultUtilityLayout=new Tablance(host(),{
+		help:"General table help",
+		main:{toolbar:{tableActions:[{text:"Inspect"}]},columns:[{dataKey:"name",title:"Name"}]},
+	},true,true,{searchbar:false});
+	defaultUtilityLayout.setData([{name:"Default"}]);
+	await tick();
+	const lastDataHeader=tableUtility._headerTr.cells[tableUtility._colSchemaNodes.length-1]
+		.getBoundingClientRect();
+	const lastDataCell=tableUtility._mainTbody.rows[0].cells[tableUtility._colSchemaNodes.length-1]
+		.getBoundingClientRect();
+	assert(helpRect.left>=utilityRect.left&&menuRect.right<=utilityRect.right
+		&&helpRect.right<menuRect.left
+		&&Math.abs(utilityRect.top-utilityHeaderRect.top)<=1
+		&&Math.abs(utilityRect.bottom-utilityHeaderRect.bottom)<=1
+		&&tableUtility._headerTable.offsetHeight===defaultUtilityLayout._headerTable.offsetHeight
+		&&Math.abs(lastDataHeader.left-lastDataCell.left)<2
+		&&Math.abs(lastDataHeader.right-lastDataCell.right)<2
+		&&Math.abs(lastDataCell.right-tableUtility._headerTr.lastElementChild.getBoundingClientRect().left)<2
+		&&utilityRect.right<=tableUtility._headerTr.lastElementChild.getBoundingClientRect().left+1
+		&&Math.abs(parseFloat(tableUtility._scrollBody.style.height)
+			-(tableUtilityHost.clientHeight-utilityHeaderRect.height
+				-tableUtility._bulkEditArea.offsetHeight))<1,
+		"utilities share the unchanged header height while data columns align with the scrolling table");
+	assert(helpRect.width===menuRect.width&&helpRect.height===menuRect.height
+		&&getComputedStyle(utilityHelp).borderColor===getComputedStyle(utilityMenu).borderColor
+		&&getComputedStyle(utilityHelp).backgroundColor===getComputedStyle(utilityMenu).backgroundColor,
+		"both table utilities share the same unobtrusive hit area and resting appearance");
+	tableUtility._headerTr.cells[0].click();
+	assert(tableUtility._sortingCols.length===1&&tableUtility._sortingCols[0].index===0
+		&&tableUtility._headerTr.cells[0].classList.contains("asc"),
+		"the data header keeps its normal sorting and chevron behavior beside the utility area");
+	utilityRow.click();
+	assert(tableUtility._sortingCols.length===1&&tableUtility._sortingCols[0].index===0,
+		"the separate utility overlay never participates in column sorting");
+	utilityHelp.dispatchEvent(new MouseEvent("mouseenter"));
+	await new Promise(resolve=>setTimeout(resolve,180));
+	utilityHelp.dispatchEvent(new MouseEvent("mouseleave"));
+	utilityMenu.dispatchEvent(new MouseEvent("mouseenter"));
+	await new Promise(resolve=>setTimeout(resolve,200));
+	assert(!tableUtility._helpState,
+		"moving quickly from table help to the adjacent table menu cancels the pending help open");
+	utilityHelp.click();
+	assert(tableUtility._helpState?.trigger===utilityHelp
+		&&tableUtility._helpPopover.getBoundingClientRect().left>=0,
+		"table-attached help anchors its existing popover to the utility trigger");
+	tableUtility._closeHelp();
+	utilityMenu.focus();
+	key(utilityMenu,"Enter","Enter");
+	assert(tableUtility._tableMenuState?.items[0].el===document.activeElement,
+		"table-attached menu preserves keyboard opening and first-item focus");
+	tableUtility._tableMenuState.items[0].el.click();
+	await tick();
+	assert(tableUtility.getViewState().lifecycleMode==="trash"
+		&&tableUtility._tableMenuButton===document.activeElement
+		&&tableUtility._tableUtilities===utilityRow&&!utilityRow.hidden,
+		"table-attached menu switches to trash and restores focus without changing placement");
+	utilityMenu.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
+	assert(document.activeElement===tableUtility._tableMenuPopoverController.el,
+		"pointer opening the table-attached menu retains the shared neutral focus state");
+	key(document.activeElement,"ArrowDown","ArrowDown");
+	key(document.activeElement,"Enter","Enter");
+	await tick();
+	assert(tableUtility.getViewState().lifecycleMode==="active"
+		&&tableUtility._tableUtilities===utilityRow,
+		"table-attached menu returns to active data through the same action flow");
+	tableUtilityHost.style.width="180px";
+	tableUtility._updateSizesOfViewportAndCols();
+	const narrowUtilities=utilityRow.getBoundingClientRect();
+	assert(utilityHelp.getBoundingClientRect().left>=narrowUtilities.left
+		&&utilityMenu.getBoundingClientRect().right<=narrowUtilities.right
+		&&tableUtility._headerTr.cells[0].classList.contains("before-table-utilities")
+		&&narrowUtilities.right<=tableUtility._headerTr.lastElementChild.getBoundingClientRect().left+1
+		&&narrowUtilities.bottom<=tableUtility._headerTable.getBoundingClientRect().bottom+1,
+		"utilities remain clear of the sorting chevron at a narrow table width");
+	assert(tableUtility._colSchemaNodes[1].pxWidth===48
+		&&Math.abs(lastDataHeader.width-48)<1&&Math.abs(lastDataCell.width-48)<1,
+		"a menu column without an explicit width keeps a compact fixed 48 px width");
+	const explicitMenuWidth=new Tablance(host(),{main:{columns:[
+		{dataKey:"name"},{type:"menu",width:"64px",actions:[{text:"Inspect"}]},
+	]}},true,true,{searchbar:false});
+	explicitMenuWidth.setData([{name:"Explicit"}]);
+	await tick();
+	assert(explicitMenuWidth._colSchemaNodes[1].pxWidth===64
+		&&Math.abs(explicitMenuWidth._mainTbody.rows[0].cells[1].getBoundingClientRect().width-64)<1,
+		"an explicit menu-column width continues to override the compact default");
+	const noUtilityTable=new Tablance(host(),{main:{columns:[{dataKey:"name"}]}},true,true,
+		{searchbar:false,tableUtilitiesPlacement:"table"});
+	assert(!noUtilityTable._tableUtilities&&!noUtilityTable._toolbar,
+		"table placement adds no utility area when neither help nor table actions exist");
+	let exposeUtilityAction=false;
+	const conditionalUtility=new Tablance(host(),{
+		main:{toolbar:{tableActions:()=>exposeUtilityAction?[{text:"Inspect"}]:[]},
+			columns:[{dataKey:"name"}]},
+	},true,true,{searchbar:false,tableUtilitiesPlacement:"table"});
+	assert(conditionalUtility._tableUtilities.hidden&&conditionalUtility._tableMenuButton.hidden,
+		"an empty table-actions callback leaves the table utility area hidden");
+	exposeUtilityAction=true;
+	conditionalUtility._updateLifecycleControls();
+	await tick();
+	assert(!conditionalUtility._tableUtilities.hidden&&!conditionalUtility._tableMenuButton.hidden
+		&&conditionalUtility._tableArea.classList.contains("has-table-utilities"),
+		"the shared utility area appears when a table action becomes available");
+	const headerlessUtility=new Tablance(host(),{
+		main:{toolbar:{tableActions:[{text:"Inspect"}]},columns:[{dataKey:"name"}]},
+	},true,true,{searchbar:false,showHeader:false,tableUtilitiesPlacement:"table"});
+	assert(!headerlessUtility._tableUtilities
+		&&headerlessUtility._tableMenuButton.parentElement.classList.contains("toolbar-right"),
+		"a hidden header falls back to the default toolbar trigger instead of losing table actions");
 	const relocatedToolbarTable=new Tablance(host(),{
 		main:{toolbar:{defaultInsert:true},columns:[{dataKey:"name"}]},
 	},true,true,{searchbar:true});
@@ -770,7 +902,19 @@ try {
 	const tableHelpRightInset=helpHeaderRect.right-tableHelpRect.right;
 	assert(tableHelpRect.width===20&&tableHelpRightInset>=9&&tableHelpRightInset<=11,
 		"the common help trigger has a usable hitbox with ten pixels of breathing room at the header edge");
+	tableHelp.focus();
+	assert(helpTable._helpState?.trigger===tableHelp&&!helpTable._helpState.pinned,
+		"keyboard focus exposes table help immediately without the pointer hover delay");
+	helpTable._closeHelp();
+	tableHelp.blur();
 	tableHelp.dispatchEvent(new MouseEvent("mouseenter"));
+	await new Promise(resolve=>setTimeout(resolve,220));
+	assert(!helpTable._helpState,"contextual help does not open before the shared hover delay");
+	tableHelp.dispatchEvent(new MouseEvent("mouseleave"));
+	await new Promise(resolve=>setTimeout(resolve,160));
+	assert(!helpTable._helpState,"leaving a help icon before the delay fully cancels its pending open");
+	tableHelp.dispatchEvent(new MouseEvent("mouseenter"));
+	await new Promise(resolve=>setTimeout(resolve,370));
 	const tableHelpSections=[...helpTable._helpPopover.querySelectorAll(".tablance-table-help-section")];
 	assert(helpTable._helpPopover.querySelector(".tablance-table-help-introduction")?.textContent
 		==="General table help"&&tableHelpSections.length===2
@@ -798,6 +942,7 @@ try {
 		"an outside click closes pinned help without adding a separate overlay interaction layer");
 	helpTable._schema.help=Array.from({length:100},(_,index)=>`Long help line ${index+1}`).join("\n");
 	tableHelp.dispatchEvent(new MouseEvent("mouseenter"));
+	await new Promise(resolve=>setTimeout(resolve,370));
 	const overflowingHelpRect=helpTable._helpPopover.getBoundingClientRect();
 	assert(helpTable._helpPopover.scrollHeight>helpTable._helpPopover.clientHeight
 		&&overflowingHelpRect.height<=innerHeight-16&&overflowingHelpRect.top>=8
@@ -821,6 +966,7 @@ try {
 	const columnsOnlyTableHelp=columnsOnlyHelpTable._headerTr.lastElementChild
 		.querySelector(".table-help-trigger");
 	columnsOnlyTableHelp.dispatchEvent(new MouseEvent("mouseenter"));
+	await new Promise(resolve=>setTimeout(resolve,370));
 	assert(!columnsOnlyHelpTable._helpPopover.querySelector(".tablance-table-help-introduction")
 		&&columnsOnlyHelpTable._helpPopover.querySelectorAll(".tablance-table-help-section").length===1
 		&&columnsOnlyHelpTable._helpPopover.querySelector("h3").textContent==="Column only"
@@ -933,6 +1079,7 @@ try {
 		selectedHelpRect.top+selectedHelpRect.height/2)===selectedHelpTrigger,
 		"a selected inline-title detail cell keeps its help trigger above the pointer-active cell cursor");
 	selectedHelpTrigger.dispatchEvent(new MouseEvent("mouseenter"));
+	await new Promise(resolve=>setTimeout(resolve,370));
 	assert(helpTable._helpState?.trigger===selectedHelpTrigger&&!helpTable._helpState.pinned,
 		"hovering help in a selected detail cell opens the contextual popover");
 	const selectedBeforeHelpClick=helpTable._activeDetailsCell;
