@@ -2339,6 +2339,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			button.tabIndex=0;
 			button.setAttribute("aria-label",this.lang.menuLabel);
 			button.addEventListener("click",e=>this._openTableMenu(e));
+			button.addEventListener("keydown",e=>{
+				if (e.repeat||(e.key!=="Enter"&&e.key!==" "))
+					return;
+				e.preventDefault();
+				e.stopPropagation();
+				this._openTableMenu(e);
+			});
 		}
 		this._updateLifecycleControls();
 	}
@@ -2841,8 +2848,20 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const itemState={...resolved,el:item};
 			state.items.push(itemState);
 			item.addEventListener("click",e=>this._activateMenuItem(state,itemState,e));
-			item.addEventListener("mouseenter",()=>item.focus({preventScroll:true}));
 		}
+	}
+
+	_menuOpenedFromKeyboard(event) {
+		return event instanceof KeyboardEvent
+			||(event instanceof MouseEvent&&event.type==="click"&&event.detail===0);
+	}
+
+	_initializeMenuFocus(state,event) {
+		state.openedFromKeyboard=this._menuOpenedFromKeyboard(event);
+		if (state.openedFromKeyboard)
+			this._focusMenuItem(state,0);
+		else
+			state.controller.el.focus({preventScroll:true});
 	}
 
 	_focusMenuItem(state,index) {
@@ -2871,7 +2890,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (e.key==="ArrowDown"||e.key==="ArrowUp") {
 			e.preventDefault();
 			e.stopPropagation();
-			this._focusMenuItem(state,(current<0?0:current)+(e.key==="ArrowDown"?1:-1));
+			const next=current<0?(e.key==="ArrowDown"?0:state.items.length-1)
+				:current+(e.key==="ArrowDown"?1:-1);
+			this._focusMenuItem(state,next);
 			return true;
 		}
 		if (e.key==="Home"||e.key==="End") {
@@ -2947,7 +2968,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		});
 		if (!this._menuState)
 			return false;
-		this._focusMenuItem(this._menuState,0);
+		this._initializeMenuFocus(this._menuState,event);
 		return true;
 	}
 
@@ -2991,7 +3012,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		});
 		if (!this._tableMenuState)
 			return false;
-		this._focusMenuItem(this._tableMenuState,0);
+		this._initializeMenuFocus(this._tableMenuState,event);
 		return true;
 	}
 

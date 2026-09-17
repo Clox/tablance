@@ -449,6 +449,9 @@
   box-shadow: 0 8px 24px rgba(15, 43, 75, 0.18);
   color: var(--tablance-cell-text-color);
 }
+.tablance .tablance-menu-popover:focus {
+  outline: none;
+}
 .tablance .tablance-menu-popover[hidden] {
   display: none;
 }
@@ -468,9 +471,12 @@
   text-align: left;
   cursor: pointer;
 }
-.tablance .tablance-menu-popover > .tablance-menu-item:hover, .tablance .tablance-menu-popover > .tablance-menu-item:focus-visible {
-  outline: none;
+.tablance .tablance-menu-popover > .tablance-menu-item:hover {
   background: var(--tablance-hover-background);
+}
+.tablance .tablance-menu-popover > .tablance-menu-item:focus-visible {
+  outline: none;
+  background: var(--tablance-selected-background);
 }
 .tablance .tablance-menu-popover > .tablance-menu-item.disabled {
   color: var(--tablance-muted-color);

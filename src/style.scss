@@ -492,6 +492,9 @@ $tablance-restore-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 		box-shadow: 0 8px 24px rgba(15, 43, 75, .18);
 		color: var(--tablance-cell-text-color);
 
+		// Pointer-open parks focus on this internal container; the item highlight carries keyboard focus instead.
+		&:focus { outline: none; }
+
 		&[hidden] { display: none; }
 
 		>.tablance-menu-item {
@@ -510,10 +513,13 @@ $tablance-restore-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 			text-align: left;
 			cursor: pointer;
 
-			&:hover,
+			&:hover {
+				background: var(--tablance-hover-background);
+			}
+
 			&:focus-visible {
 				outline: none;
-				background: var(--tablance-hover-background);
+				background: var(--tablance-selected-background);
 			}
 
 			&.disabled {

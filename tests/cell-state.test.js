@@ -130,20 +130,31 @@ try {
 	assert(!menuTable._sortingCols.length&&!menuTable._colSchemaNodes[1].sortDiv,
 		"menu headers are not sortable and do not receive sort UI");
 
-	firstMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,cancelable:true}));
+	firstMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
 	await tick();
 	assert(menuTable._menuState?.rowData===menuRows[0]&&menuActionsResolved===1
 		&&menuTable._mainRowIndex===0&&menuTable._mainColIndex===1
 		&&menuTable._selectedCellVal===undefined&&!menuTable._inEditMode
-		&&document.activeElement===menuTable._menuState.items[0].el
+		&&!menuTable._menuState.items.some(item=>item.el===document.activeElement)
+		&&menuTable._menuState.openedFromKeyboard===false
 		&&menuTable._cellCursor.style.display==="block"
 		&&firstMenuTrigger.getAttribute("aria-expanded")==="true",
-		"a single cell click opens the row-specific menu while retaining the cell cursor and avoiding edit mode");
+		"a pointer click opens the row menu without pre-highlighting an item or changing cell semantics");
+	assert(document.activeElement===menuTable._menuPopover
+		&&getComputedStyle(menuTable._menuPopover).outlineStyle==="none",
+		"the internally focused row-menu container has no visible browser focus outline");
 	assert(menuTable._menuState.items[0].el.querySelector(".tablance-icon-restore.tablance-menu-item-icon")
 		&&menuTable._menuState.items[0].el.querySelector(".tablance-menu-item-label").textContent==="Open Alpha"
 		&&!menuTable._menuState.items[1].el.querySelector(".tablance-menu-item-icon")
 		&&getComputedStyle(menuTable._menuState.items[0].el.querySelector(".tablance-menu-item-icon")).width==="16px",
 		"ordinary actions support callback labels and optional named icons while text-only actions remain icon-free");
+	const pointerOpenFocus=document.activeElement;
+	menuTable._menuState.items[0].el.dispatchEvent(new MouseEvent("mouseenter"));
+	assert(document.activeElement===pointerOpenFocus,
+		"pointer hover remains separate from keyboard focus");
+	key(document.activeElement,"ArrowDown","ArrowDown");
+	assert(document.activeElement===menuTable._menuState.items[0].el,
+		"ArrowDown establishes keyboard navigation at the first item after a pointer open");
 	key(document.activeElement,"ArrowDown","ArrowDown");
 	assert(document.activeElement===menuTable._menuState.items[1].el,
 		"ArrowDown moves menu focus to the next action");
@@ -157,7 +168,7 @@ try {
 	const nextPriorPointerCell=menuTable._mainTbody.rows[1].cells[0];
 	menuTable._selectMainTableCell(priorPointerCell);
 	secondMenuCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
-	secondMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,cancelable:true}));
+	secondMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
 	await tick();
 	assert(menuTable._menuState?.rowData===menuRows[1]&&menuTable._selectedCell===priorPointerCell
 		&&menuTable._mainRowIndex===0&&menuTable._mainColIndex===0,
@@ -172,7 +183,7 @@ try {
 
 	menuTable._selectMainTableCell(priorPointerCell);
 	secondMenuCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
-	secondMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,cancelable:true}));
+	secondMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
 	await tick();
 	menuTable._menuState.items[0].el.click();
 	assert(!menuTable._menuState&&menuTable._selectedCell===priorPointerCell
@@ -180,7 +191,7 @@ try {
 		"pointer menu action activation restores focus without moving the established cursor");
 
 	secondMenuCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
-	secondMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,cancelable:true}));
+	secondMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
 	await tick();
 	document.body.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
 	await tick();
@@ -192,7 +203,7 @@ try {
 		"keyboard navigation after outside close continues from the previous cursor");
 	menuTable._selectMainTableCell(priorPointerCell);
 	secondMenuCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
-	secondMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,cancelable:true}));
+	secondMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
 	await tick();
 	const externalButton=document.body.appendChild(document.createElement("button"));
 	externalButton.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
@@ -205,13 +216,19 @@ try {
 	menuActivations.splice(1);
 
 	menuTable._selectMainTableCell(secondMenuCell);
-	secondMenuCell.click();
+	menuTable._openMenuForCell(secondMenuCell,new KeyboardEvent("keydown",{key:"Enter",code:"Enter"}));
 	await tick();
+	assert(document.activeElement===menuTable._menuState.items[0].el
+		&&menuTable._menuState.openedFromKeyboard===true
+		&&getComputedStyle(document.activeElement).backgroundColor!=="rgba(0, 0, 0, 0)"
+		&&getComputedStyle(document.activeElement).boxShadow==="none",
+		"keyboard opening focuses the first full menu row without a separate blue indicator");
 	key(document.activeElement,"ArrowDown","ArrowDown");
 	const disabledMenuItem=menuTable._menuState.items[1].el;
 	assert(document.activeElement===disabledMenuItem
 		&&disabledMenuItem.getAttribute("aria-disabled")==="true"
-		&&disabledMenuItem.textContent.includes("Beta is locked"),
+		&&disabledMenuItem.textContent.includes("Beta is locked")
+		&&getComputedStyle(disabledMenuItem).backgroundColor!=="rgba(0, 0, 0, 0)",
 		"row-dependent disabled actions remain visible, focused, and expose their reason");
 	key(disabledMenuItem,"Enter","Enter");
 	key(disabledMenuItem," ","Space");
@@ -311,7 +328,7 @@ try {
 		&&tableMenuButton.parentElement.classList.contains("toolbar-right")
 		&&lifecycleTable._viewSwitcher.hidden===false,
 		"table actions render a toolbar menu independently of column headers");
-	tableMenuButton.click();
+	tableMenuButton.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
 	await tick();
 	const defaultTrashIcon=lifecycleTable._tableMenuState?.items[0].el.querySelector(".tablance-icon-trash");
 	const defaultTrashIconMask=getComputedStyle(defaultTrashIcon).maskImage;
@@ -319,24 +336,36 @@ try {
 	assert(lifecycleTable._tableMenuState?.items[0].action.text==="Show trash"
 		&&defaultTrashIcon&&(defaultTrashIconMask!=="none"
 			||defaultTrashIconWebkitMask!=="none")
-		&&document.activeElement===lifecycleTable._tableMenuState.items[0].el,
-		"pointer activation opens and focuses the table-level menu with its default trash icon");
+		&&!lifecycleTable._tableMenuState.items.some(item=>item.el===document.activeElement),
+		"pointer activation opens the table-level menu without pre-highlighting its default trash action");
+	assert(document.activeElement===lifecycleTable._tableMenuPopoverController.el
+		&&getComputedStyle(lifecycleTable._tableMenuPopoverController.el).outlineStyle==="none",
+		"the internally focused table-menu container has no visible browser focus outline");
+	key(document.activeElement,"ArrowUp","ArrowUp");
+	assert(document.activeElement===lifecycleTable._tableMenuState.items.at(-1).el,
+		"ArrowUp establishes keyboard navigation at the final table action after a pointer open");
 	key(document.activeElement,"Escape","Escape");
 	assert(!lifecycleTable._tableMenuState&&document.activeElement===tableMenuButton,
 		"Escape from table menu restores the table-level trigger");
-	tableMenuButton.click();
+	tableMenuButton.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
 	document.body.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
 	assert(!lifecycleTable._tableMenuState,
 		"outside pointer interaction dismisses the table-level menu");
-	tableMenuButton.click();
+	tableMenuButton.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
 	key(document.activeElement,"Tab","Tab",{shiftKey:true});
 	assert(!lifecycleTable._tableMenuState&&document.activeElement===lifecycleTable._searchInput,
 		"Shift+Tab closes the table menu and moves to the previous toolbar control");
-	tableMenuButton.click();
+	tableMenuButton.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
 	key(document.activeElement,"Tab","Tab");
 	assert(!lifecycleTable._tableMenuState&&document.activeElement===lifecycleTable._tableArea,
 		"Tab closes the table menu and moves into the table");
-	tableMenuButton.click();
+	tableMenuButton.focus();
+	key(tableMenuButton,"Enter","Enter");
+	assert(document.activeElement===lifecycleTable._tableMenuState.items[0].el
+		&&lifecycleTable._tableMenuState.openedFromKeyboard===true
+		&&getComputedStyle(document.activeElement).backgroundColor!=="rgba(0, 0, 0, 0)"
+		&&getComputedStyle(document.activeElement).boxShadow==="none",
+		"Enter on the table-menu trigger highlights its first full row without a separate indicator");
 	lifecycleTable._tableMenuState.items[0].el.click();
 	await tick();
 	assert(lifecycleTable.getViewState().lifecycleMode==="trash"
@@ -368,10 +397,11 @@ try {
 		detailsButton.click();
 	assert(detailsButtonClicks===0,"changing details buttons do not activate in trash mode");
 	const trashMenuCell=lifecycleTable._mainTbody.rows[0].cells[2];
-	trashMenuCell.click();
+	trashMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
 	await tick();
-	assert(lifecycleTable._selectedCell===trashNameCell,
-		"pointer-opening a trash row menu keeps the prior cell cursor");
+	assert(lifecycleTable._selectedCell===trashNameCell
+		&&!lifecycleTable._menuState.items.some(item=>item.el===document.activeElement),
+		"pointer-opening a trash row menu keeps the prior cell cursor and leaves its items unfocused");
 	assert(lifecycleTable.lang.trashAction==="Flytta till papperskorgen"
 		&&lifecycleTable.lang.restoreAction==="Återställ"
 		&&lifecycleTable._menuState?.items[0].action.text==="Återställ"
@@ -379,6 +409,7 @@ try {
 		&&lifecycleTable._menuState.items[1].el.getAttribute("aria-disabled")==="true"
 		&&lifecycleTable._menuState.items[1].el.textContent.includes("Unavailable in trash"),
 		"restore uses localized copy and its default icon while other row actions stay visible in trash");
+	key(document.activeElement,"ArrowDown","ArrowDown");
 	key(document.activeElement,"ArrowDown","ArrowDown");
 	key(document.activeElement,"Enter","Enter");
 	assert(!!lifecycleTable._menuState&&lifecycleCommits.length===0,
@@ -388,8 +419,9 @@ try {
 	assert(!lifecycleTable._menuState&&lifecycleTable._selectedCell===trashNameCell
 		&&document.activeElement===lifecycleTable._focusEl,
 		"closing a trash row menu restores focus and the prior cell cursor");
-	trashMenuCell.click();
+	trashMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
 	await tick();
+	key(document.activeElement,"ArrowDown","ArrowDown");
 	key(document.activeElement,"Enter","Enter");
 	await tick();
 	assert(lifecycleRows[2].deletedOn===null&&lifecycleTable._filteredData.length===0

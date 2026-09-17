@@ -83,6 +83,10 @@ Use `label` (or the existing `text`/`title`) to set the visible copy and optiona
 `"trash"` or `"restore"`, or an `Element`; both fields may be callbacks receiving the action payload. Icons are
 cloned before rendering, so descriptors remain reusable. Omit `icon` for a text-only action. Built-in trash actions
 use `lang.trashAction`/`lang.restoreAction` and the corresponding icons by default; `label` and `icon` override them.
+Pointer opening leaves all actions unfocused until the pointer actually hovers an item or keyboard navigation begins.
+Keyboard opening with Enter/Space focuses the first action immediately. After pointer opening, Arrow Down starts at
+the first action and Arrow Up at the last. Hover and keyboard focus are independent visual states, including for
+disabled actions; disabled actions remain navigable and explanatory but cannot be activated.
 
 ```js
 {
