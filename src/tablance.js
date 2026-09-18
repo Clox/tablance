@@ -2373,13 +2373,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return;
 		const utilities=this._tableUtilities=this._tableArea.appendChild(document.createElement("div"));
 		utilities.className="table-utilities";
+		if (this._schema.main?.toolbar?.tableActions)
+			this._appendTableMenuButton(utilities);
 		if (this._hasTableHelp()) {
 			const help=this._createHelpTrigger(this._schema,null,{table:true});
 			help.tabIndex=0;
 			utilities.appendChild(help);
 		}
-		if (this._schema.main?.toolbar?.tableActions)
-			this._appendTableMenuButton(utilities);
 		this._updateLifecycleControls();
 	}
 
@@ -2397,7 +2397,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const previousWidth=this._tableUtilitiesWidth;
 			const visibleCount=Number(!!this._tableUtilities.querySelector(".table-help-trigger"))
 				+Number(!!this._tableMenuButton&&!this._tableMenuButton.hidden);
-			this._tableUtilitiesWidth=visibleCount?visibleCount*30+(visibleCount-1)*4+8:0;
+			this._tableUtilitiesWidth=visibleCount?visibleCount*30+(visibleCount-1)*2+4:0;
 			this._tableUtilities.hidden=!visibleCount;
 			this._tableArea.classList.toggle("has-table-utilities",!!visibleCount);
 			this._tableArea.style.setProperty("--tablance-table-utilities-width",this._tableUtilitiesWidth+"px");
@@ -7738,6 +7738,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 			if (this._opts.ordering!==false&&col.type!=="menu") {
 				//create the divs used for showing html for sorting-up/down-arrow or whatever has been configured
+				th.classList.add("sortable-header");
 				col.sortDiv=th.appendChild(document.createElement("DIV"));
 				col.sortDiv.className="sortSymbol";
 			} else
@@ -8143,7 +8144,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			header.classList.remove("before-table-utilities");
 		if (!this._tableUtilitiesWidth)
 			return;
-		let remaining=this._tableUtilitiesWidth;
+		// The rightmost utility may use the otherwise empty header space above the vertical scrollbar.
+		const scrollbarWidth=this._scrollBody.offsetWidth-this._scrollBody.clientWidth;
+		let remaining=Math.max(0,this._tableUtilitiesWidth-scrollbarWidth);
 		for (let index=this._colSchemaNodes.length-1;index>=0;index--) {
 			const column=this._colSchemaNodes[index];
 			if (column.type==="menu"||column.type==="expand"||column.type==="select") {

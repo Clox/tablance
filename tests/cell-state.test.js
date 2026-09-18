@@ -26,6 +26,8 @@ try {
 	},true,true,{ordering:false});
 	shortcuts.setData([{name:"one",detail:"details"},{name:"two",detail:"more"}]);
 	await tick();
+	assert(!shortcuts._headerTr.cells[0].classList.contains("sortable-header"),
+		"headers remain visually non-interactive when ordering is disabled");
 	for (const [plus,minus] of [
 		[{key:"+",code:"NumpadAdd"},{key:"-",code:"NumpadSubtract"}],
 		[{key:"+",code:"Equal",shiftKey:true},{key:"-",code:"Minus"}],
@@ -516,10 +518,12 @@ try {
 	const utilityHelp=utilityRow.querySelector(".table-help-trigger");
 	const utilityMenu=tableUtility._tableMenuButton;
 	assert(!tableUtility._toolbar&&utilityRow.parentElement===tableUtility._tableArea
-		&&utilityRow.firstElementChild===utilityHelp&&utilityRow.lastElementChild===utilityMenu
+		&&utilityRow.firstElementChild===utilityMenu&&utilityRow.lastElementChild===utilityHelp
 		&&tableUtility._headerTr.lastElementChild.classList.contains("scrollbar-spacer")
+		&&tableUtility._headerTr.cells[0].classList.contains("sortable-header")
+		&&!tableUtility._headerTr.cells[1].classList.contains("sortable-header")
 		&&tableUtility._tableArea.classList.contains("has-table-utilities"),
-		"table placement groups help and menu in a non-data overlay before the scrollbar gutter");
+		"table placement groups menu then help while marking only sortable data headers as interactive");
 	const utilityRect=utilityRow.getBoundingClientRect();
 	const helpRect=utilityHelp.getBoundingClientRect();
 	const menuRect=utilityMenu.getBoundingClientRect();
@@ -534,23 +538,24 @@ try {
 		.getBoundingClientRect();
 	const lastDataCell=tableUtility._mainTbody.rows[0].cells[tableUtility._colSchemaNodes.length-1]
 		.getBoundingClientRect();
-	assert(helpRect.left>=utilityRect.left&&menuRect.right<=utilityRect.right
-		&&helpRect.right<menuRect.left
+	assert(menuRect.left>=utilityRect.left&&helpRect.right<=utilityRect.right
+		&&menuRect.right<helpRect.left
 		&&Math.abs(utilityRect.top-utilityHeaderRect.top)<=1
 		&&Math.abs(utilityRect.bottom-utilityHeaderRect.bottom)<=1
 		&&tableUtility._headerTable.offsetHeight===defaultUtilityLayout._headerTable.offsetHeight
 		&&Math.abs(lastDataHeader.left-lastDataCell.left)<2
 		&&Math.abs(lastDataHeader.right-lastDataCell.right)<2
 		&&Math.abs(lastDataCell.right-tableUtility._headerTr.lastElementChild.getBoundingClientRect().left)<2
-		&&utilityRect.right<=tableUtility._headerTr.lastElementChild.getBoundingClientRect().left+1
+		&&utilityRect.right<=utilityHeaderRect.right
 		&&Math.abs(parseFloat(tableUtility._scrollBody.style.height)
 			-(tableUtilityHost.clientHeight-utilityHeaderRect.height
 				-tableUtility._bulkEditArea.offsetHeight))<1,
 		"utilities share the unchanged header height while data columns align with the scrolling table");
 	assert(helpRect.width===menuRect.width&&helpRect.height===menuRect.height
-		&&getComputedStyle(utilityHelp).borderColor===getComputedStyle(utilityMenu).borderColor
+		&&getComputedStyle(utilityHelp).borderStyle==="none"
+		&&getComputedStyle(utilityMenu).borderStyle==="none"
 		&&getComputedStyle(utilityHelp).backgroundColor===getComputedStyle(utilityMenu).backgroundColor,
-		"both table utilities share the same unobtrusive hit area and resting appearance");
+		"both table utilities share the same borderless hit area and resting appearance");
 	tableUtility._headerTr.cells[0].click();
 	assert(tableUtility._sortingCols.length===1&&tableUtility._sortingCols[0].index===0
 		&&tableUtility._headerTr.cells[0].classList.contains("asc"),
@@ -592,12 +597,21 @@ try {
 	tableUtilityHost.style.width="180px";
 	tableUtility._updateSizesOfViewportAndCols();
 	const narrowUtilities=utilityRow.getBoundingClientRect();
-	assert(utilityHelp.getBoundingClientRect().left>=narrowUtilities.left
-		&&utilityMenu.getBoundingClientRect().right<=narrowUtilities.right
+	assert(utilityMenu.getBoundingClientRect().left>=narrowUtilities.left
+		&&utilityHelp.getBoundingClientRect().right<=narrowUtilities.right
 		&&tableUtility._headerTr.cells[0].classList.contains("before-table-utilities")
-		&&narrowUtilities.right<=tableUtility._headerTr.lastElementChild.getBoundingClientRect().left+1
+		&&narrowUtilities.right<=tableUtility._headerTable.getBoundingClientRect().right
 		&&narrowUtilities.bottom<=tableUtility._headerTable.getBoundingClientRect().bottom+1,
 		"utilities remain clear of the sorting chevron at a narrow table width");
+	tableUtility.setData(Array.from({length:80},(_,index)=>({name:`Row ${index}`,removed:false})));
+	await tick();
+	tableUtility._updateSizesOfViewportAndCols();
+	const scrollbarGutter=tableUtility._headerTr.lastElementChild.getBoundingClientRect();
+	assert(tableUtility._scrollBody.offsetWidth>tableUtility._scrollBody.clientWidth
+		&&utilityHelp.getBoundingClientRect().right>scrollbarGutter.left
+		&&utilityHelp.getBoundingClientRect().right<=tableUtility._headerTable.getBoundingClientRect().right
+		&&utilityMenu.getBoundingClientRect().right<utilityHelp.getBoundingClientRect().left,
+		"rightmost help may use the scrollbar gutter while table menu remains immediately to its left");
 	assert(tableUtility._colSchemaNodes[1].pxWidth===48
 		&&Math.abs(lastDataHeader.width-48)<1&&Math.abs(lastDataCell.width-48)<1,
 		"a menu column without an explicit width keeps a compact fixed 48 px width");
@@ -609,6 +623,16 @@ try {
 	assert(explicitMenuWidth._colSchemaNodes[1].pxWidth===64
 		&&Math.abs(explicitMenuWidth._mainTbody.rows[0].cells[1].getBoundingClientRect().width-64)<1,
 		"an explicit menu-column width continues to override the compact default");
+	const utilityWithoutMenuColumn=new Tablance(host(),{
+		help:"General help",main:{toolbar:{tableActions:[{text:"Inspect"}]},columns:[{dataKey:"name"}]},
+	},true,true,{searchbar:false,tableUtilitiesPlacement:"table"});
+	utilityWithoutMenuColumn.setData([{name:"No menu column"}]);
+	await tick();
+	assert(utilityWithoutMenuColumn._tableUtilities.firstElementChild
+		===utilityWithoutMenuColumn._tableMenuButton
+		&&utilityWithoutMenuColumn._tableUtilities.lastElementChild.matches(".table-help-trigger")
+		&&utilityWithoutMenuColumn._headerTr.cells[0].classList.contains("before-table-utilities"),
+		"the same compact menu-help order works without a menu column");
 	const noUtilityTable=new Tablance(host(),{main:{columns:[{dataKey:"name"}]}},true,true,
 		{searchbar:false,tableUtilitiesPlacement:"table"});
 	assert(!noUtilityTable._tableUtilities&&!noUtilityTable._toolbar,
@@ -4066,7 +4090,9 @@ try {
 	const unsortedIcon=sortingHeaders[0].querySelector(".tablance-sort-icon");
 	const unsortedTitleGeometry=unsortedTitle.getBoundingClientRect();
 	const unsortedIconGeometry=unsortedIcon.getBoundingClientRect();
-	assert(unsortedIcon.querySelectorAll(".tablance-sort-chevron").length===2
+	assert(sortingHeaders[0].classList.contains("sortable-header")
+		&&sortingHeaders[1].classList.contains("sortable-header")
+		&&unsortedIcon.querySelectorAll(".tablance-sort-chevron").length===2
 		&&getComputedStyle(unsortedIcon.querySelector(".tablance-sort-chevron-up")).opacity==="1"
 		&&getComputedStyle(unsortedIcon.querySelector(".tablance-sort-chevron-down")).opacity==="1"
 		&&unsortedIcon.querySelector(".tablance-sort-chevron-up").getBBox().width===12

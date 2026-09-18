@@ -38,15 +38,15 @@
   position: absolute;
   z-index: 3;
   top: 1px;
-  right: calc(var(--tablance-scrollbar-width, 0px) + 1px);
+  right: 1px;
   display: flex;
   box-sizing: border-box;
   width: var(--tablance-table-utilities-width);
   height: 42px;
-  padding: 0 4px;
+  padding: 0 2px;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 2px;
   background: var(--tablance-header-background);
 }
 .tablance > .table-area > .table-utilities[hidden] {
@@ -66,11 +66,12 @@
   align-items: center;
   justify-content: center;
   transform: none;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 5px;
   background: transparent;
   color: var(--tablance-muted-color);
   font: 600 15px/1 var(--tablance-font-family);
+  transition: background-color 120ms ease, color 120ms ease;
 }
 .tablance > .table-area > .table-utilities > .table-help-trigger[hidden],
 .tablance > .table-area > .table-utilities > .tablance-table-menu-trigger[hidden] {
@@ -79,14 +80,14 @@
 .tablance > .table-area > .table-utilities > .table-help-trigger:hover, .tablance > .table-area > .table-utilities > .table-help-trigger[aria-expanded=true],
 .tablance > .table-area > .table-utilities > .tablance-table-menu-trigger:hover,
 .tablance > .table-area > .table-utilities > .tablance-table-menu-trigger[aria-expanded=true] {
-  background: var(--tablance-hover-background);
+  background: rgba(37, 99, 235, 0.07);
   color: var(--tablance-heading-color);
 }
 .tablance > .table-area > .table-utilities > .table-help-trigger:focus-visible,
 .tablance > .table-area > .table-utilities > .tablance-table-menu-trigger:focus-visible {
-  outline: 2px solid var(--tablance-accent-color);
+  outline: 2px solid rgba(37, 99, 235, 0.7);
   outline-offset: -2px;
-  background: var(--tablance-selected-background);
+  background: rgba(37, 99, 235, 0.11);
 }
 .tablance > .table-area > .table-utilities > .tablance-table-menu-trigger {
   color: var(--tablance-cell-text-color);
@@ -597,6 +598,10 @@
   text-align: left;
   vertical-align: middle;
   cursor: pointer;
+  transition: background-color 80ms ease;
+}
+.tablance > .table-area > .header-table th.sortable-header:hover {
+  background: #E5ECF5;
 }
 .tablance > .table-area > .header-table th.expand-col {
   padding: 0;

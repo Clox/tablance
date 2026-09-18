@@ -81,15 +81,15 @@ $tablance-restore-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 			position: absolute;
 			z-index: 3;
 			top: 1px;
-			right: calc(var(--tablance-scrollbar-width, 0px) + 1px);
+			right: 1px;
 			display: flex;
 			box-sizing: border-box;
 			width: var(--tablance-table-utilities-width);
 			height: 42px;
-			padding: 0 4px;
+			padding: 0 2px;
 			align-items: center;
 			justify-content: flex-end;
-			gap: 4px;
+			gap: 2px;
 			background: var(--tablance-header-background);
 			&[hidden] { display: none; }
 			>.table-help-trigger,
@@ -106,21 +106,22 @@ $tablance-restore-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 				align-items: center;
 				justify-content: center;
 				transform: none;
-				border: 1px solid transparent;
+				border: 0;
 				border-radius: 5px;
 				background: transparent;
 				color: var(--tablance-muted-color);
 				font: 600 15px/1 var(--tablance-font-family);
+				transition: background-color 120ms ease, color 120ms ease;
 				&[hidden] { display: none; }
 				&:hover,
 				&[aria-expanded="true"] {
-					background: var(--tablance-hover-background);
+					background: rgba(37, 99, 235, .07);
 					color: var(--tablance-heading-color);
 				}
 				&:focus-visible {
-					outline: 2px solid var(--tablance-accent-color);
+					outline: 2px solid rgba(37, 99, 235, .7);
 					outline-offset: -2px;
-					background: var(--tablance-selected-background);
+					background: rgba(37, 99, 235, .11);
 				}
 			}
 			>.tablance-table-menu-trigger {
@@ -636,6 +637,11 @@ $tablance-restore-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 			text-align: left;
 			vertical-align: middle;
 			cursor: pointer;
+			transition: background-color 80ms ease;
+
+			&.sortable-header:hover {
+				background: #E5ECF5;
+			}
 
 			&.expand-col {
 				padding: 0;
