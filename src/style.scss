@@ -1,6 +1,7 @@
 $tablance-trash-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M8 6V4h8v2'/%3E%3Cpath d='M19 6l-1 14H6L5 6'/%3E%3Cpath d='M10 11v5'/%3E%3Cpath d='M14 11v5'/%3E%3C/svg%3E");
 $tablance-restore-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 14 4 9l5-5'/%3E%3Cpath d='M4 9h10.5a5.5 5.5 0 0 1 0 11H11'/%3E%3C/svg%3E");
 $tablance-back-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m10 17-5-5 5-5'/%3E%3Cpath d='M5 12h15'/%3E%3C/svg%3E");
+$tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.174 6.812a1 1 0 0 0-3.986-3.986L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z'/%3E%3Cpath d='m15 5 4 4'/%3E%3C/svg%3E");
 
 @mixin tablance-mask-icon($icon) {
 	background-color: currentColor;
@@ -35,8 +36,14 @@ $tablance-back-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
 		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
 	}
+	&.editable-indicator:is(:hover,.tablance-active-cell)>span.title::after {
+		content: "";
+		-webkit-mask: $tablance-edit-icon center / contain no-repeat;
+		mask: $tablance-edit-icon center / contain no-repeat;
+	}
 	&.read-only:hover::before,
-	&.action-indicator:hover::before {
+	&.action-indicator:hover::before,
+	&.editable-indicator:hover::before {
 		content: none;
 	}
 }
@@ -329,6 +336,9 @@ $tablance-back-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 	.read-only:not(.cell-cursor) {
 		position: relative;
 	}
+	.editable-indicator:not(.cell-cursor) {
+		position: relative;
+	}
 	.cell-cursor.action-indicator::before,
 	.action-indicator:not(.cell-cursor):hover::before {
 		position: absolute;
@@ -342,6 +352,21 @@ $tablance-back-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		content: "";
 		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
 		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
+		pointer-events: none;
+	}
+	.cell-cursor.editable-indicator:not(.edit-mode)::before,
+	.editable-indicator:not(.cell-cursor):hover::before {
+		position: absolute;
+		z-index: 1;
+		top: 2px;
+		left: 4px;
+		display: block;
+		width: 12px;
+		height: 12px;
+		background-color: var(--tablance-indicator-color);
+		content: "";
+		-webkit-mask: $tablance-edit-icon center / contain no-repeat;
+		mask: $tablance-edit-icon center / contain no-repeat;
 		pointer-events: none;
 	}
 	.cell-cursor.read-only::before,
@@ -360,7 +385,8 @@ $tablance-back-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		pointer-events: none;
 	}
 	.cell-cursor.details.inline-title-indicator.read-only::before,
-	.cell-cursor.details.inline-title-indicator.action-indicator::before {
+	.cell-cursor.details.inline-title-indicator.action-indicator::before,
+	.cell-cursor.details.inline-title-indicator.editable-indicator::before {
 		content: none;
 	}
 	.cell-cursor.read-only.read-only-activation-feedback::before,
@@ -857,6 +883,7 @@ $tablance-back-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 			transition: background-color 120ms ease;
 		}
 
+		>td.editable-indicator,
 		>td.read-only,
 		>td.action-indicator {
 			padding-top: 9px;
@@ -1088,6 +1115,7 @@ $tablance-back-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		}
 		// A positioned table cell snaps its pseudo-element half a pixel below the equivalent cursor overlay in
 		// Chromium. Compensate only for detail table cells so hover and selected state indicators share a baseline.
+		td.editable-indicator:not(.cell-cursor):hover::before,
 		td.action-indicator:not(.cell-cursor):hover::before,
 		td.read-only:not(.cell-cursor):hover::before {
 			top: 1.5px;
@@ -1157,7 +1185,7 @@ $tablance-back-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 			}
 			>span:has(>div.value:not(.group-cell)) {
 				@include inline-title-state-indicators;
-				&:is(.read-only,.action-indicator)>span.title {
+				&:is(.editable-indicator,.read-only,.action-indicator)>span.title {
 					box-sizing: border-box;
 					padding-right: 16px;
 					&::after {

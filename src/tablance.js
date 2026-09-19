@@ -7866,6 +7866,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				&&cellEl.querySelector(":scope>div.value:not(.group-cell)")
 		));
 		this._cellCursor.classList.toggle("read-only",cellState?.kind==="readOnly");
+		this._cellCursor.classList.toggle("editable-indicator",cellState?.kind==="editable");
 		this._cellCursor.classList.toggle("disabled",cellState?.kind==="disabled");
 		this._cellCursor.classList.toggle("action-cell",cellState?.kind==="action");
 		this._cellCursor.classList.toggle("delete-confirmation-action",
@@ -9385,6 +9386,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			instanceNode.cellState=state;
 		cellEl.classList.add("tablance-cell-state");
 		cellEl.classList.toggle("read-only",state.kind==="readOnly");
+		cellEl.classList.toggle("editable-indicator",state.kind==="editable");
 		cellEl.classList.toggle("disabled",state.kind==="disabled");
 		cellEl.classList.toggle("action-cell",state.kind==="action");
 		cellEl.classList.toggle("action-indicator",this._showsActionIndicator(state,schemaNode));
@@ -9415,6 +9417,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (cellEl===this._selectedCell&&this._cellElementRepresentsLogicalCursor(cellEl,instanceNode)) {
 			this._selectedCellState=state;
 			this._cellCursor?.classList.toggle("read-only",state.kind==="readOnly");
+			this._cellCursor?.classList.toggle("editable-indicator",state.kind==="editable");
 			this._cellCursor?.classList.toggle("disabled",state.kind==="disabled");
 			this._cellCursor?.classList.toggle("action-cell",state.kind==="action");
 			this._cellCursor?.classList.toggle("action-indicator",this._showsActionIndicator(state,this._activeSchemaNode));

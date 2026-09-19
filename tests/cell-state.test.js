@@ -1610,15 +1610,17 @@ try {
 	assert(cells[4].dataset.cellState==="disabled"&&cells[4].getAttribute("aria-disabled")==="true","disabledIf true resolves disabled with ARIA");
 	assert(cells[5].dataset.cellState==="action","onEnter field resolves action");
 	assert(cells[6].dataset.cellState==="action","button resolves action");
-	assert(getComputedStyle(cells[0]).paddingLeft==="12px"&&getComputedStyle(cells[1]).paddingLeft==="14px"
+	assert(getComputedStyle(cells[0]).paddingLeft==="14px"&&getComputedStyle(cells[0]).paddingTop==="9px"
+		&&getComputedStyle(cells[1]).paddingLeft==="14px"
 		&&getComputedStyle(cells[1]).paddingTop==="9px"&&getComputedStyle(cells[5]).paddingLeft==="14px"
 		&&getComputedStyle(cells[5]).paddingTop==="9px"&&getComputedStyle(cells[6]).paddingLeft==="12px",
-		"only text-like main-row state cells reserve permanent space for their indicator");
+		"text-like editable, read-only, and action cells reserve permanent space for their indicator");
 	table.selectCell(row,"editable");
 	key(table.rootEl,"Enter","Enter");
 	const textEditor=table._cellCursor.querySelector("input.text-editor");
-	assert(textEditor&&getComputedStyle(textEditor).paddingLeft==="4px",
-		"a text cell editor keeps a small amount of space before its text");
+	assert(textEditor&&getComputedStyle(textEditor).paddingLeft==="4px"
+		&&getComputedStyle(table._cellCursor,"::before").content==="none",
+		"a text cell editor keeps its spacing and hides the now-redundant pencil while editing");
 	table._exitEditMode(false);
 	assert([...cells].every(cell=>cell.classList.contains("tablance-cell-state")),
 		"every rendered main cell receives the canonical state styling hook");
@@ -2677,6 +2679,21 @@ try {
 		const rect=element.getBoundingClientRect();
 		return [rect.left,rect.top,rect.width,rect.height];
 	};
+	const editableCellGeometry=geometry(cells[0]);
+	const editableTextGeometry=geometry(cells[0].firstElementChild);
+	assert(cells[0].classList.contains("editable-indicator")
+		&&getComputedStyle(cells[0],"::before").content==="none",
+		"an unselected editable cell exposes its indicator hook without showing the pencil permanently");
+	table.selectCell(row,"editable");
+	const editIndicatorStyle=getComputedStyle(table._cellCursor,"::before");
+	assert(cells[0].classList.contains("tablance-active-cell")
+		&&table._cellCursor.classList.contains("editable-indicator")&&editIndicatorStyle.content==='""'
+		&&(editIndicatorStyle.maskImage!=="none"||editIndicatorStyle.webkitMaskImage!=="none")
+		&&editIndicatorStyle.pointerEvents==="none",
+		"a selected editable cell shows a non-interactive pencil indicator");
+	assert(JSON.stringify(geometry(cells[0]))===JSON.stringify(editableCellGeometry)
+		&&JSON.stringify(geometry(cells[0].firstElementChild))===JSON.stringify(editableTextGeometry),
+		"the pencil indicator does not move text or change cell dimensions");
 	const actionCellGeometry=geometry(cells[5]);
 	const actionTextGeometry=geometry(cells[5].firstElementChild);
 	assert(cells[5].classList.contains("action-indicator")&&getComputedStyle(cells[5],"::before").content==="none",
@@ -2694,13 +2711,15 @@ try {
 	table.selectCell(row,"button");
 	assert(!cells[5].classList.contains("tablance-active-cell")&&cells[6].classList.contains("tablance-active-cell")
 		&&table._selectedCellState.kind==="action"&&!cells[6].classList.contains("action-indicator")
-		&&!table._cellCursor.classList.contains("action-indicator"),
+		&&!table._cellCursor.classList.contains("action-indicator")
+		&&!table._cellCursor.classList.contains("editable-indicator"),
 		"native active-cell ownership moves while a button action keeps its own affordance");
 	table.selectCell(row,"editable");
 	assert(!cells[6].classList.contains("tablance-active-cell")&&cells[0].classList.contains("tablance-active-cell")
 		&&!cells[0].classList.contains("action-indicator")&&!table._cellCursor.classList.contains("action-indicator")
-		&&!table._cellCursor.classList.contains("read-only"),
-		"an editable active cell shows no read-only or action state indicator");
+		&&!table._cellCursor.classList.contains("read-only")
+		&&table._cellCursor.classList.contains("editable-indicator"),
+		"an editable active cell shows only the edit indicator");
 	assert(table.selectCell(row,"disabledValue")===false&&!table._cellCursor.classList.contains("action-indicator"),
 		"a disabled cell cannot show the selected action indicator");
 
@@ -2708,7 +2727,8 @@ try {
 	const lockIndicatorStyle=getComputedStyle(table._cellCursor,"::before");
 	assert(cells[1].classList.contains("read-only")&&!cells[1].classList.contains("action-indicator")
 		&&cells[1].classList.contains("tablance-active-cell")&&table._cellCursor.classList.contains("read-only")
-		&&!table._cellCursor.classList.contains("action-indicator")&&lockIndicatorStyle.content==="\"\""
+		&&!table._cellCursor.classList.contains("action-indicator")
+		&&!table._cellCursor.classList.contains("editable-indicator")&&lockIndicatorStyle.content==="\"\""
 		&&(lockIndicatorStyle.maskImage!=="none"||lockIndicatorStyle.webkitMaskImage!=="none"),
 		"a selected readOnly cell shows Tablance's native lock without the action indicator");
 	let copied="";
@@ -3154,8 +3174,8 @@ try {
 	const [editableHistoryField,readOnlyHistoryField]=historyEntries[0].children;
 	assert(getComputedStyle(editableHistoryField.selEl).paddingLeft==="4px"
 		&&getComputedStyle(readOnlyHistoryField.selEl).paddingLeft==="4px"
-		&&getComputedStyle(editableHistoryField.selEl.querySelector(":scope>span.title"),"::after").content==="none",
-		"group value fields retain their compact left edge and fields without indicators reserve no empty space");
+		&&getComputedStyle(editableHistoryField.selEl.querySelector(":scope>span.title"),"::after").content==='""',
+		"group value fields retain their compact left edge while the active editable field shows its pencil");
 	const readOnlyTitle=readOnlyHistoryField.selEl.querySelector(":scope>span.title");
 	const readOnlyValue=readOnlyHistoryField.selEl.querySelector(":scope>div.value");
 	const layoutWithoutIndicator={
@@ -3309,14 +3329,33 @@ try {
 	assert(variantStreet.selEl===variantStreet.outerContainerEl&&variantStreet.el!==variantStreet.selEl
 		&&variantControl.selEl===variantControl.outerContainerEl&&variantControl.el!==variantControl.selEl,
 		"the outer lineup item is the canonical selectable cell while the inner value remains the render surface");
+	const streetTitle=variantStreet.outerContainerEl.querySelector(":scope>span.title");
+	const streetLayoutBefore={
+		cellHeight:variantStreet.outerContainerEl.getBoundingClientRect().height,
+		titleLeft:streetTitle.getBoundingClientRect().left,
+		titleTop:streetTitle.getBoundingClientRect().top,
+		titleHeight:streetTitle.getBoundingClientRect().height,
+	};
+	assert(getComputedStyle(streetTitle).paddingRight==="16px"
+		&&getComputedStyle(streetTitle,"::after").content==="none",
+		"an inactive editable Lineup cell reserves stable title space without showing its pencil permanently");
 	variantStreet.select();
 	const streetRect=variantStreet.outerContainerEl.getBoundingClientRect();
 	const streetCursorRect=lineupVariantTable._cellCursor.getBoundingClientRect();
-	const streetTitleRect=variantStreet.outerContainerEl.querySelector(":scope>span.title").getBoundingClientRect();
+	const streetTitleRect=streetTitle.getBoundingClientRect();
+	const streetLayoutSelected={
+		cellHeight:variantStreet.outerContainerEl.getBoundingClientRect().height,
+		titleLeft:streetTitleRect.left,
+		titleTop:streetTitleRect.top,
+		titleHeight:streetTitleRect.height,
+	};
 	assert(Math.abs(streetCursorRect.left-streetRect.left)<1&&Math.abs(streetCursorRect.top-streetRect.top)<1
 		&&Math.abs(streetCursorRect.width-streetRect.width)<1&&Math.abs(streetCursorRect.height-streetRect.height)<1
-		&&streetTitleRect.top>=streetCursorRect.top&&streetTitleRect.bottom<=streetCursorRect.bottom,
-		"a lineup cursor covers the entire logical cell including its title and padding");
+		&&streetTitleRect.top>=streetCursorRect.top&&streetTitleRect.bottom<=streetCursorRect.bottom
+		&&getComputedStyle(streetTitle,"::after").content==='""'
+		&&getComputedStyle(lineupVariantTable._cellCursor,"::before").content==="none"
+		&&JSON.stringify(streetLayoutSelected)===JSON.stringify(streetLayoutBefore),
+		"a Lineup cursor and pencil cover the logical cell without moving its title");
 	const sourceTitle=variantSource.outerContainerEl.querySelector(":scope>span.title");
 	const sourceTitleStyle=getComputedStyle(sourceTitle);
 	assert(sourceTitleStyle.paddingRight==="16px"
@@ -4108,7 +4147,9 @@ try {
 	const reusedRow=reuseTable._mainTbody.querySelector('tr[data-data-row-index="0"]');
 	const reusedCell=reusedRow.cells[0];
 	reuseTable._updateRowValues(reusedRow,1);
-	assert(reusedCell.dataset.cellState==="disabled"&&reusedCell.classList.contains("disabled")&&!reusedCell.classList.contains("read-only"),"virtualized/reused cell replaces prior state rather than retaining CSS state");
+	assert(reusedCell.dataset.cellState==="disabled"&&reusedCell.classList.contains("disabled")
+		&&!reusedCell.classList.contains("read-only")&&!reusedCell.classList.contains("editable-indicator"),
+		"virtualized/reused cell replaces prior state and edit indicator rather than retaining CSS state");
 
 	const headerlessTable=new Tablance(host(),{main:{columns:[{dataKey:"value",input:{type:"text"}}]}},true,true,
 		{searchbar:false,ordering:false,autoHeight:true,showHeader:false});
