@@ -64,6 +64,7 @@ const DEFAULT_LANG=Object.freeze({
 	fileChooseOrDrag:"<b>Press to choose a file</b> or drag it here",
 	fileDropToUpload:"Drop to upload",
 	filterPlaceholder:"Search",
+	filterPlaceholderTrash:"Search trash",
 	delete:"Delete",
 	deleteAreYouSure:"Delete this entry?",
 	deleteAreYouSureYes:"Delete",
@@ -88,6 +89,7 @@ const DEFAULT_LANG=Object.freeze({
 	restoreAction:"Restore",
 	showTrash:"Show trash",
 	showActive:"Show active rows",
+	backToActive:"Leave trash",
 	resultItemSingular:"row",
 	resultItemPlural:"rows",
 	resultStatus:"{count} {items} shown",
@@ -155,6 +157,7 @@ class TablanceBase {
 	_mainTbody;//tbody of #mainTable
 	_resultStatus;//optional non-scrolling result-status below the row viewport
 	_emptyState;//optional contextual empty-state inside the row viewport
+	_viewportRemainder;//decorative unused fixed-height viewport surface; never participates in row/data layout
 
 	_bulkEditArea;//a div displayed under #scrollBody if rows are selected/checked using select-column. This 
 						//section is used to edit multiple rows at once
@@ -813,6 +816,7 @@ class TablanceBase {
 	 * 								fileChooseOrDrag "<b>Press to choose a file</b> or drag it here"
 	 * 								fileDropToUpload "Drop to upload"
 	 *								filterPlaceholder "Search"
+	 *								filterPlaceholderTrash "Search trash"
 	 * 								delete "Delete" (used in the deletion of repeat-items or files)
 	 * 								deleteAreYouSure "Are you sure?" (Used in the deletion of repeat-items or files)
 	 * 								deleteAreYouSureYes "Yes"  (Used in the deletion of repeat-items or files)
@@ -2166,9 +2170,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._scrollBody.style.height = this.hostEl.clientHeight - this._headerTable.offsetHeight
 		- (this._toolbar?.offsetHeight ?? 0) - (this._resultStatus?.offsetHeight??0)
 		- this._bulkEditArea.offsetHeight + "px";
+		this._updateViewportRemainder();
 	}
 
 	_updateAutoHeight() {
+		this._updateViewportRemainder();
 		if (!this._opts.autoHeight||this._onlyDetails)
 			return;
 		let contentHeight=this._naturalAutoHeight?this._mainTable.offsetHeight
@@ -2360,8 +2366,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		btnWrap.className="toolbar-left";
 		if (toolbarCfg?.viewSwitcher) {
 			this._generateViewSwitcher(btnWrap);
-			const viewCfg=typeof toolbarCfg.viewSwitcher==="object"?toolbarCfg.viewSwitcher:{};
-			this._registerControl(this._viewSwitcher,viewCfg.visible,"active");
 		}
 
 		this._toolbarButtons=[];
@@ -2410,6 +2414,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				visible=visible(payload);
 			control.element.hidden=!visible;
 		}
+		if (this._viewSwitcher)
+			this._viewSwitcher.hidden=!this._viewSwitcher.querySelector("button:not([hidden])");
 	}
 
 	_appendTableMenuButton(parent) {
@@ -2446,6 +2452,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_updateLifecycleControls() {
 		this._updateControlVisibility();
+		if (this._searchInput)
+			this._searchInput.placeholder=this._isTrashMode()
+				?this.lang.filterPlaceholderTrash:this.lang.filterPlaceholder;
 		const selectAll=this._headerTr?.querySelector(".select-col input");
 		if (selectAll)
 			selectAll.disabled=this._isTrashMode();
@@ -2496,11 +2505,27 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			label.className="tablance-view-option-label";
 			label.textContent=title;
 			button.addEventListener("click",()=>this.setViewMode(key));
+			const viewCfg=typeof this._schema.main?.toolbar?.viewSwitcher==="object"
+				?this._schema.main.toolbar.viewSwitcher:{};
+			this._registerControl(button,viewCfg.visible,"active");
+		}
+		if (this._trashCapability) {
+			const back=this._lifecycleBackButton=switcher.appendChild(document.createElement("button"));
+			back.type="button";
+			back.className="tablance-lifecycle-back";
+			const icon=back.appendChild(document.createElement("span"));
+			icon.className="tablance-lifecycle-back-icon";
+			icon.setAttribute("aria-hidden","true");
+			const label=back.appendChild(document.createElement("span"));
+			label.textContent=this.lang.backToActive;
+			back.addEventListener("click",()=>this.setLifecycleMode("active"));
+			this._registerControl(back,({lifecycleMode})=>lifecycleMode==="trash",false);
 		}
 		this._updateViewSwitcher();
 	}
 
 	_updateViewSwitcher() {
+		this._viewSwitcher?.classList.toggle("lifecycle-only",this._isTrashMode());
 		for (const button of this._viewSwitcher?.querySelectorAll(".tablance-view-option")??[]) {
 			const active=button.dataset.viewMode===this._currentViewModeKey;
 			button.classList.toggle("active",active);
@@ -7973,12 +7998,30 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._emptyState.setAttribute("role","status");
 		this._emptyState.setAttribute("aria-live","polite");
 		this._emptyState.hidden=true;
+		this._viewportRemainder=this._scrollingContent.appendChild(document.createElement("div"));
+		this._viewportRemainder.className="tablance-viewport-remainder";
+		this._viewportRemainder.setAttribute("aria-hidden","true");
+		this._viewportRemainder.hidden=true;
 		this._resultStatus=this._tableArea.appendChild(document.createElement("div"));
 		this._resultStatus.className="tablance-result-status";
 		this._resultStatus.setAttribute("role","status");
 		this._resultStatus.setAttribute("aria-live","polite");
 		this._tableArea.classList.add("has-result-status");
 		this._updateResultPresentation();
+	}
+
+	_updateViewportRemainder() {
+		if (!this._viewportRemainder||this._opts.autoHeight) {
+			if (this._viewportRemainder)
+				this._viewportRemainder.hidden=true;
+			return;
+		}
+		const contentBottom=Math.max(0,(parseFloat(this._tableSizer.style.top)||0)
+			+(parseFloat(this._tableSizer.style.height)||0));
+		const remainderHeight=Math.max(0,this._scrollBody.clientHeight-contentBottom);
+		this._viewportRemainder.hidden=remainderHeight<1||this._filteredData.length===0;
+		this._viewportRemainder.style.top=contentBottom+"px";
+		this._viewportRemainder.style.height=remainderHeight+"px";
 	}
 
 	_formatResultTemplate(template,values) {
@@ -7992,7 +8035,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const viewState=this.getViewState();
 		const counts=viewState.counts.visible;
 		const isTrash=viewState.lifecycleMode==="trash";
-		const itemCount=counts.view||counts.lifecycle;
+		const itemCount=counts.view;
 		const itemLabel=typeof config.itemLabel==="function"
 			?config.itemLabel(this._makeCallbackPayload(null,{viewState,count:itemCount},{schemaNode:this._schema,rowData:null}))
 			:itemCount===1?(config.itemSingular??this.lang.resultItemSingular)
@@ -8016,20 +8059,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				?config.emptyFormatter(payload):this._formatResultTemplate(defaultTemplate,values);
 			this._emptyState.textContent=text??"";
 			this._emptyState.hidden=false;
-			this._resultStatus.textContent="";
-			this._resultStatus.classList.add("empty");
 		} else {
-			const reduced=counts.filtered<counts.view;
-			const defaultTemplate=isTrash
-				?(reduced?this.lang.resultStatusTrashFiltered:this.lang.resultStatusTrash)
-				:(reduced?this.lang.resultStatusFiltered:this.lang.resultStatus);
-			const text=typeof config.formatter==="function"
-				?config.formatter(payload):this._formatResultTemplate(defaultTemplate,values);
-			this._resultStatus.textContent=text??"";
-			this._resultStatus.classList.remove("empty");
 			this._emptyState.textContent="";
 			this._emptyState.hidden=true;
 		}
+		const reduced=counts.filtered<counts.view;
+		const defaultTemplate=counts.view===0?this.lang.resultStatus:isTrash
+			?(reduced?this.lang.resultStatusTrashFiltered:this.lang.resultStatusTrash)
+			:(reduced?this.lang.resultStatusFiltered:this.lang.resultStatus);
+		const statusText=typeof config.formatter==="function"
+			?config.formatter(payload):this._formatResultTemplate(defaultTemplate,values);
+		this._resultStatus.textContent=statusText??"";
+		this._resultStatus.classList.remove("empty");
 		const previousHeight=this._resultStatusHeight;
 		this._resultStatusHeight=this._resultStatus.offsetHeight;
 		if (previousHeight!=null&&previousHeight!==this._resultStatusHeight)

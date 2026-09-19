@@ -166,7 +166,8 @@ has its own search text. Switching back restores the active view key and active 
 `viewModeKey` is `null` in trash. Tables without trash omit lifecycle mode and active/trash totals.
 
 Set `main.resultStatus: true` to add a non-scrolling result status directly below the row viewport. It reports the
-current Tablance view and search result, and shows a contextual empty state inside the viewport at zero results.
+current Tablance view and search result. At zero results the count remains visible while a contextual empty state
+inside the viewport explains why no rows are shown.
 `getViewState().counts` retains committed `source`/`lifecycle`/`view`/`filtered` counts and also exposes the same
 pipeline under `counts.visible`, including local draft rows. Result status uses `counts.visible.view` as its
 denominator and `counts.visible.filtered` as its numerator. Language keys beginning with `result` customize the
@@ -178,6 +179,11 @@ Tablance payload plus `viewState`. It is supported by `toolbar.items`, and by ob
 `viewSwitcher`; search visibility is declared as `toolbar.search.visible`. Existing toolbar buttons and view controls
 remain active-only by default, while search remains visible in every lifecycle mode. Visibility follows the element
 even if a consumer reparents that Tablance-created control.
+
+When a trash-enabled table renders a view switcher, trash mode replaces its ordinary view options with a visible
+lifecycle return control in the same control group. Its label uses `lang.backToActive` (default `Leave trash`); the
+table-menu action remains available as the second lifecycle navigation path. Search uses `lang.filterPlaceholder`
+in active mode and `lang.filterPlaceholderTrash` in trash mode.
 
 Trash mode shows the same columns but does not allow ordinary field editing, new rows, bulk editing, or changing
 details controls. Expand/collapse, row menus, table actions and read-only inspection remain available. The default

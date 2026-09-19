@@ -123,15 +123,31 @@
   display: flex;
   box-sizing: border-box;
   min-height: 96px;
-  padding: 24px;
-  align-items: center;
+  padding: 38px 24px 24px;
+  align-items: flex-start;
   justify-content: center;
+  border-right: 1px solid var(--tablance-border-color);
+  border-left: 1px solid var(--tablance-border-color);
   background: var(--tablance-cell-background);
   color: var(--tablance-muted-color);
   text-align: center;
   pointer-events: none;
 }
 .tablance > .table-area > .scroll-body > .tablance-empty-state[hidden] {
+  display: none;
+}
+.tablance > .table-area > .scroll-body .tablance-viewport-remainder {
+  position: absolute;
+  z-index: 0;
+  right: 0;
+  left: 0;
+  box-sizing: border-box;
+  border-right: 1px solid var(--tablance-border-color);
+  border-left: 1px solid var(--tablance-border-color);
+  background: var(--tablance-cell-background);
+  pointer-events: none;
+}
+.tablance > .table-area > .scroll-body .tablance-viewport-remainder[hidden] {
   display: none;
 }
 .tablance > .table-area.has-result-status > .scroll-body {
@@ -142,7 +158,10 @@
   box-sizing: border-box;
   min-height: 32px;
   padding: 7px 10px;
+  border-top: 1px solid #C7D3E1;
+  border-right: 1px solid var(--tablance-border-color);
   border-bottom: 1px solid var(--tablance-border-color);
+  border-left: 1px solid var(--tablance-border-color);
   border-radius: 0 0 var(--tablance-radius) var(--tablance-radius);
   background: var(--tablance-cell-background);
   box-shadow: 0 1px 2px rgba(15, 43, 75, 0.04);
@@ -150,9 +169,6 @@
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   line-height: 17px;
-}
-.tablance > .table-area > .tablance-result-status.empty {
-  color: transparent;
 }
 .tablance > .table-area > .header-table[hidden] + .scroll-body {
   border-top: 1px solid var(--tablance-border-color);
@@ -1843,6 +1859,11 @@
   border-radius: 7px;
   background: #fff;
 }
+.tablance-view-switcher.lifecycle-only {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
 
 .tablance-view-option {
   display: inline-grid;
@@ -1878,6 +1899,47 @@
 .tablance-view-option:focus-visible {
   outline: 2px solid #60a5fa;
   outline-offset: 1px;
+}
+
+.tablance-lifecycle-back {
+  display: inline-flex;
+  margin: 0;
+  padding: 8px 13px;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 6px;
+  background: #64748B;
+  color: #FFF;
+  font: inherit;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tablance-lifecycle-back[hidden] {
+  display: none;
+}
+.tablance-lifecycle-back:hover {
+  background: #526276;
+  color: #FFF;
+}
+.tablance-lifecycle-back:focus {
+  outline: none;
+  box-shadow: none;
+}
+.tablance-lifecycle-back:focus-visible {
+  outline: 2px solid #2563EB;
+  outline-offset: 2px;
+}
+.tablance-lifecycle-back > .tablance-lifecycle-back-icon {
+  display: block;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m10 17-5-5 5-5'/%3E%3Cpath d='M5 12h15'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m10 17-5-5 5-5'/%3E%3Cpath d='M5 12h15'/%3E%3C/svg%3E") center/contain no-repeat;
 }
 
 .pika-container {

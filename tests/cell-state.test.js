@@ -328,7 +328,8 @@ try {
 	const tableMenuButton=lifecycleTable._tableMenuButton;
 	assert(!!tableMenuButton&&!tableMenuButton.hidden
 		&&tableMenuButton.parentElement.classList.contains("toolbar-right")
-		&&lifecycleTable._viewSwitcher.hidden===false,
+		&&!lifecycleTable._viewSwitcher.querySelector(".tablance-view-option").hidden
+		&&lifecycleTable._lifecycleBackButton.hidden,
 		"table actions render a toolbar menu independently of column headers");
 	tableMenuButton.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
 	await tick();
@@ -374,7 +375,9 @@ try {
 		&&lifecycleTable.getViewState().viewModeKey===null
 		&&lifecycleTable.getViewState().activeViewModeKey==="default"
 		&&lifecycleTable._filteredData.length===1&&lifecycleTable._filteredData[0]===lifecycleRows[2]
-		&&lifecycleTable._searchInput.value===""&&lifecycleTable._viewSwitcher.hidden
+		&&lifecycleTable._searchInput.value===""
+		&&[...lifecycleTable._viewSwitcher.querySelectorAll(".tablance-view-option")].every(button=>button.hidden)
+		&&!lifecycleTable._lifecycleBackButton.hidden
 		&&lifecycleTable._toolbarInsertButton.hidden,
 		"trash is a distinct lifecycle mode with its own empty search and read-only toolbar");
 	const trashNameCell=lifecycleTable._mainTbody.rows[0].cells[1];
@@ -816,6 +819,7 @@ try {
 			search:{visible:true},tableActions:[{type:"trash"}],
 		},columns:[{type:"select",width:40},{dataKey:"name",input:{type:"text"}}]},
 	},true,true,{lang:{
+		filterPlaceholder:"Find entry",filterPlaceholderTrash:"Find trash",
 		resultItemSingular:"entry",resultItemPlural:"entries",
 		resultEmptyTrash:"The bin is empty.",resultEmptyView:"This view is empty.",
 		resultEmptyFiltered:"Nothing matches.",
@@ -829,9 +833,22 @@ try {
 	assert(resultTable._resultStatus.textContent==="2 entries shown"
 		&&resultTable._emptyState.hidden
 		&&resultTable._resultStatus.previousElementSibling===resultTable._scrollBody
-		&&resultTable._scrollBody.parentElement===resultTable._tableArea,
+		&&resultTable._scrollBody.parentElement===resultTable._tableArea
+		&&getComputedStyle(resultTable._resultStatus).borderTopWidth==="1px"
+		&&getComputedStyle(resultTable._resultStatus).borderTopStyle==="solid",
 		"opt-in result status is a non-scrolling sibling immediately after the row viewport");
+	assert(!resultTable._viewportRemainder.hidden
+		&&getComputedStyle(resultTable._viewportRemainder).borderLeftWidth==="1px"
+		&&getComputedStyle(resultTable._resultStatus).borderLeftWidth==="1px"
+		&&getComputedStyle(resultTable._resultStatus).borderRightWidth==="1px"
+		&&Math.abs(resultTable._viewportRemainder.getBoundingClientRect().left
+			-resultTable._resultStatus.getBoundingClientRect().left)<1
+		&&Math.abs(resultTable._viewportRemainder.getBoundingClientRect().right
+			-resultTable._resultStatus.getBoundingClientRect().right)<1
+		&&getComputedStyle(resultTable._mainTbody.rows[0]).borderLeftWidth==="0px",
+		"unused viewport borders continue through status without changing real row borders");
 	const statusHeight=resultTable._resultStatus.offsetHeight;
+	const fixedViewportHeight=resultTable._scrollBody.offsetHeight;
 	assert(statusHeight>0&&Math.abs(parseFloat(resultTable._scrollBody.style.height)
 		-(resultHost.clientHeight-resultTable._headerTable.offsetHeight-resultTable._toolbar.offsetHeight
 			-statusHeight-resultTable._bulkEditArea.offsetHeight))<1,
@@ -846,19 +863,23 @@ try {
 				-statusHeight-resultTable._bulkEditArea.offsetHeight))<1,
 		"bulk edit reduces only the row viewport while status remains directly below it");
 	resultTable._toggleRowsSelected(false,0,0);
+	await new Promise(resolve=>setTimeout(resolve,180));
 	resultTable._searchInput.value="Alpha";
 	resultTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
 	assert(resultTable._resultStatus.textContent==="1 of 2 entries shown",
 		"result status uses visible filtered and view counts from the normal filter pipeline");
 	resultTable._searchInput.value="missing";
 	resultTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
-	assert(resultTable._resultStatus.textContent===""&&!resultTable._emptyState.hidden
-		&&resultTable._emptyState.textContent==="Nothing matches.",
+	assert(resultTable._resultStatus.textContent==="0 of 2 entries shown"&&!resultTable._emptyState.hidden
+		&&resultTable._emptyState.textContent==="Nothing matches."
+		&&getComputedStyle(resultTable._emptyState).alignItems==="flex-start"
+		&&resultTable._scrollBody.offsetHeight===fixedViewportHeight,
 		"zero search matches use a contextual viewport empty state instead of a zero status");
 	resultTable._searchInput.value="";
 	resultTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
 	resultTable.setViewMode("empty");
-	assert(resultTable._emptyState.textContent==="This view is empty.",
+	assert(resultTable._emptyState.textContent==="This view is empty."
+		&&resultTable._resultStatus.textContent==="0 entries shown",
 		"an empty Tablance view is distinguished from zero search matches");
 	resultTable.setViewMode("default");
 	const resultDraft=resultTable.insertNewRow({name:"Draft",current:false,deleted:false},{highlight:false});
@@ -869,7 +890,10 @@ try {
 		"a visible local draft is included in result status while committed counts stay separate");
 	resultTable.setLifecycleMode("trash");
 	assert(resultTable._emptyState.textContent==="The bin is empty."
-		&&resultTable._viewSwitcher.hidden&&resultTable._toolbarInsertButton.hidden
+		&&resultTable._resultStatus.textContent==="0 entries shown"
+		&&resultTable._searchInput.placeholder==="Find trash"
+		&&[...resultTable._viewSwitcher.querySelectorAll(".tablance-view-option")].every(button=>button.hidden)
+		&&!resultTable._lifecycleBackButton.hidden&&resultTable._toolbarInsertButton.hidden
 		&&!resultTable._searchInput.hidden,
 		"trash empty state and declarative per-control visibility replace category-wide hiding");
 	resultTable.setData([{name:"Deleted Alpha",current:true,deleted:true},{name:"Deleted Beta",current:true,deleted:true}]);
@@ -880,6 +904,29 @@ try {
 	resultTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
 	assert(resultTable._resultStatus.textContent==="1 of 2 entries in trash shown",
 		"trash search reductions use the same visible view and filtered counts");
+	assert(resultTable._lifecycleBackButton.textContent==="Leave trash"
+		&&resultTable._lifecycleBackButton.querySelector(".tablance-lifecycle-back-icon")
+		&&resultTable._lifecycleBackButton.parentElement===resultTable._viewSwitcher
+		&&resultTable._viewSwitcher.classList.contains("lifecycle-only"),
+		"trash exposes a localized lifecycle return beside the ordinary view controls");
+	resultTable._lifecycleBackButton.click();
+	assert(resultTable.getViewState().lifecycleMode==="active"
+		&&resultTable._lifecycleBackButton.hidden
+		&&!resultTable._viewSwitcher.classList.contains("lifecycle-only")
+		&&resultTable._searchInput.placeholder==="Find entry"
+		&&[...resultTable._viewSwitcher.querySelectorAll(".tablance-view-option")].every(button=>!button.hidden),
+		"the visible lifecycle return restores active rows and ordinary view controls");
+	resultTable._tableMenuButton.click();
+	resultTable._tableMenuState.items[0].el.click();
+	assert(resultTable.getViewState().lifecycleMode==="trash"&&!resultTable._lifecycleBackButton.hidden,
+		"the existing table menu remains an independent path back into trash");
+	const filledResultTable=new Tablance(host(),{main:{resultStatus:true,columns:[{dataKey:"name"}]}},
+		true,true,{searchbar:false,ordering:false});
+	filledResultTable.setData(Array.from({length:80},(_,index)=>({name:`Row ${index}`})));
+	await tick();
+	assert(filledResultTable._viewportRemainder.hidden
+		&&filledResultTable._scrollBody.scrollHeight>filledResultTable._scrollBody.clientHeight,
+		"no decorative remainder is shown when real rows fill and scroll the viewport");
 	const noStatusTable=new Tablance(host(),{main:{columns:[{dataKey:"name"}]}},true,true,
 		{searchbar:false,ordering:false});
 	assert(!noStatusTable._resultStatus&&!noStatusTable._emptyState
