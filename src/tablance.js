@@ -1275,6 +1275,24 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return this;
 	}
 
+	/**Remove an existing row identity while retaining valid view and cell-cursor state. */
+	removeData(rowData) {
+		const sourceIndex=this._sourceData.indexOf(rowData);
+		if (sourceIndex<0||!this._flushValidatedEdits())
+			return false;
+		const previousRows=[...(this._filteredData??[])];
+		this._sourceData=this._sourceData.slice();
+		this._sourceData.splice(sourceIndex,1);
+		this._rowMeta.delete(rowData);
+		this._rowFilterCache.delete(rowData);
+		this._rebuildViewData();
+		this._filterCurrentView(this._filter??"");
+		this._sortData();
+		this._refreshAfterViewRowsChanged(previousRows);
+		this._emitViewStateChange("data");
+		return true;
+	}
+
 	setViewMode(viewModeKey) {
 		if (viewModeKey===this._currentViewModeKey)
 			return;

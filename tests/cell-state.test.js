@@ -561,6 +561,33 @@ try {
 		&&finalRemovalTable._mainRowIndex===null&&finalRemovalTable._mainColIndex===null
 		&&finalRemovalTable._cellCursorDataObj===null&&finalRemovalTable._cellCursor.style.display==="none",
 		"removing the final visible row clears the cursor stably without a ghost selection on the next arrow");
+	const removedRows=[{name:"One",code:"1"},{name:"Two",code:"2"},{name:"Three",code:"3"}];
+	const removeDataTable=new Tablance(host(),{main:{columns:[{dataKey:"name"},{dataKey:"code"}]}},true,true,
+		{searchbar:false});
+	removeDataTable.addData(removedRows);
+	removeDataTable._selectMainTableCell(removeDataTable._mainTbody.rows[1].cells[1]);
+	assert(removeDataTable.removeData(removedRows[1])
+		&&removeDataTable._cellCursorDataObj===removedRows[2]
+		&&removeDataTable._activeSchemaNode.dataKey==="code"
+		&&!removeDataTable._sourceData.includes(removedRows[1]),
+		"removeData preserves the nearest sticky-column cursor while removing the source row");
+	removeDataTable.removeData(removedRows[2]);
+	assert(removeDataTable._cellCursorDataObj===removedRows[0]
+		&&removeDataTable._activeSchemaNode.dataKey==="code",
+		"removeData falls back to the preceding row without losing its sticky column");
+	removeDataTable.removeData(removedRows[0]);
+	key(removeDataTable.rootEl,"ArrowDown","ArrowDown");
+	assert(removeDataTable._filteredData.length===0&&removeDataTable._selectedCell===null
+		&&removeDataTable._mainRowIndex===null&&removeDataTable._mainColIndex===null
+		&&removeDataTable._cellCursorDataObj===null&&removeDataTable._cellCursor.style.display==="none",
+		"removeData clears the only remaining cursor without leaving a ghost navigation column");
+	const firstRemovedRows=[{name:"First",code:"A"},{name:"Next",code:"B"}];
+	removeDataTable.addData(firstRemovedRows);
+	removeDataTable._selectMainTableCell(removeDataTable._mainTbody.rows[0].cells[1]);
+	assert(removeDataTable.removeData(firstRemovedRows[0])
+		&&removeDataTable._cellCursorDataObj===firstRemovedRows[1]
+		&&removeDataTable._activeSchemaNode.dataKey==="code",
+		"removeData moves a first-row cursor to the following row in the same sticky column");
 	const overriddenTrashTable=new Tablance(host(),{
 		trash:{isTrashed:({rowData})=>!!rowData.removed,
 			getChanges:({operation})=>({removed:operation==="trash"})},
