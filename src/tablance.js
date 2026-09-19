@@ -7,6 +7,7 @@ const TABLANCE_BUILD = typeof __TABLANCE_BUILD__!=="undefined"?__TABLANCE_BUILD_
 const CONTEXTUAL_HELP_HOVER_DELAY=350;
 const DEFAULT_MENU_COLUMN_WIDTH=48;
 let anchoredPopoverId=0;
+let textareaShortcutHintId=0;
 
 // Shared prototype for instance-nodes so utility getters stay in sync after inserts/deletes.
 const INSTANCE_NODE_PROTOTYPE=Object.create(null);
@@ -103,6 +104,7 @@ const DEFAULT_LANG=Object.freeze({
 	reorder:"Change order",
 	reorderUp:"Move up",
 	reorderDown:"Move down",
+	textareaNewLine:"New line",
 });
 let defaultLangOverrides=Object.create(null);
 
@@ -569,6 +571,7 @@ class TablanceBase {
 	 * 						maxLength int Sets max-length for the string							
 	 * 					----Properties specific to input "textarea"----
 	 * 						maxHeight int Sets the max-height in pixels that it should be able to be resized to
+	 * 						newLineShortcutHint Bool Shows a platform-specific Ctrl/Cmd+Enter new-line hint while editing
 	 * 					----Properties specific to input "file"----
 	 * 						fileUploadHandler Function This callback will be triggered when the user does a file-upload.
 	 * 							Arguments: 1:XMLHttpRequest - call open() on this to specify url and such,
@@ -4198,6 +4201,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			myField.value = myField.value.substring(0, startPos)
 				+ myValue
 				+ myField.value.substring(endPos, myField.value.length);
+			const nextPos=startPos+myValue.length;
+			myField.setSelectionRange(nextPos,nextPos);
 		} else {
 			myField.value += myValue;
 		}
@@ -6910,9 +6915,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (this._activeSchemaNode.input.maxLength)
 			textarea.maxLength=this._activeSchemaNode.input.maxLength;
 		textarea.placeholder=this._activeSchemaNode.input.placeholder??"";
+		if (this._activeSchemaNode.input.newLineShortcutHint) {
+			this._appendTextAreaNewLineHint(textarea);
+			textarea.dispatchEvent(new Event("input"));
+		}
 		function keydown(e) {
-			if (e.key==="Enter"&&e.ctrlKey) {
-				this._insertAtCursor(textarea,"\r\n");
+			if (e.key==="Enter"&&(e.ctrlKey||e.metaKey)) {
+				e.preventDefault();
+				this._insertAtCursor(textarea,"\n");
 				textarea.dispatchEvent(new Event('input'));//trigger input so that autoTextAreaResize gets called
 				e.stopPropagation();
 			} else if (e.key==="Escape") {
@@ -6920,6 +6930,25 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				textarea.dispatchEvent(new Event('input'));
 			}
 		}
+	}
+
+	_textareaNewLineModifier(platform=navigator.userAgentData?.platform??navigator.platform??"") {
+		return /mac/i.test(platform)?"⌘":"Ctrl";
+	}
+
+	_appendTextAreaNewLineHint(textarea) {
+		const hint=textarea.parentElement.appendChild(document.createElement("span"));
+		hint.className="tablance-textarea-shortcut-hint";
+		hint.id=`tablance-textarea-shortcut-${++textareaShortcutHintId}`;
+		const modifier=hint.appendChild(document.createElement("kbd"));
+		modifier.textContent=this._textareaNewLineModifier();
+		hint.append(" + ");
+		const enter=hint.appendChild(document.createElement("kbd"));
+		enter.textContent="Enter";
+		hint.append(` ${this.lang.textareaNewLine}`);
+		textarea.classList.add("tablance-textarea-with-shortcut-hint");
+		textarea.setAttribute("aria-describedby",hint.id);
+		return hint;
 	}
 
 		/**

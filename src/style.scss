@@ -300,6 +300,42 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 			line-height: inherit;
 			resize: none;//specifically for textarea
 		}
+		>textarea.tablance-textarea-with-shortcut-hint,
+		>.cell-value-editor>textarea.tablance-textarea-with-shortcut-hint {
+			padding-bottom: 30px !important;
+		}
+		>.tablance-textarea-shortcut-hint,
+		>.cell-value-editor>.tablance-textarea-shortcut-hint {
+			position: absolute;
+			z-index: 1;
+			right: 8px;
+			bottom: 5px;
+			display: inline-flex;
+			align-items: center;
+			gap: 3px;
+			color: var(--tablance-muted-color);
+			font-size: 11px;
+			line-height: 1;
+			opacity: .72;
+			pointer-events: none;
+			white-space: nowrap;
+
+			>kbd {
+				display: inline-flex;
+				min-width: 18px;
+				height: 17px;
+				padding: 0 4px;
+				align-items: center;
+				justify-content: center;
+				box-sizing: border-box;
+				border: 1px solid var(--tablance-border-color);
+				border-radius: 3px;
+				background: var(--tablance-header-background);
+				box-shadow: 0 1px 0 rgba(15, 43, 75, .12);
+				color: inherit;
+				font: inherit;
+			}
+		}
 		>.read-only-presentation {
 			background: var(--tablance-read-only-active-background);
 			caret-color: currentColor;

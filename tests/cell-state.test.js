@@ -1564,7 +1564,8 @@ try {
 			{title:"Detail",dataKey:"detail",nodeId:"detail",render:({value})=>value.toUpperCase(),
 				readOnlyPresentation:true},
 			{title:"Explicit detail",dataKey:"explicit",readOnly:true,input:{type:"textarea"}},
-			{title:"Notes",dataKey:"notes",nodeId:"notes",input:{type:"textarea"}},
+			{title:"Notes",dataKey:"notes",nodeId:"notes",
+				input:{type:"textarea",newLineShortcutHint:true}},
 			{type:"group",title:"History",nodeId:"historyGroup",entries:[
 				{type:"repeated",dataKey:"history",entry:{type:"group",closedRender:({date})=>date,entries:[
 					{title:"Date",dataKey:"date",input:{type:"text"}},
@@ -2986,7 +2987,35 @@ try {
 	notes.select();
 	key(table.rootEl,"Enter","Enter");
 	const notesEditor=table._cellCursor.querySelector("textarea");
-	assert(notesEditor?.rows===1,"an editable textarea measures one line as its minimum height");
+	const newLineHint=table._cellCursor.querySelector(".tablance-textarea-shortcut-hint");
+	const shortcutKeys=[...newLineHint.querySelectorAll("kbd")];
+	const expectedModifier=table._textareaNewLineModifier();
+	assert(notesEditor?.rows===1&&newLineHint
+		&&shortcutKeys.length===2&&shortcutKeys[0].textContent===expectedModifier
+		&&shortcutKeys[1].textContent==="Enter"&&newLineHint.textContent===`${expectedModifier} + Enter New line`
+		&&notesEditor.getAttribute("aria-describedby")===newLineHint.id,
+		"an opted-in textarea shows a semantic platform-specific new-line hint only in edit mode");
+	assert(table._textareaNewLineModifier("Windows")==="Ctrl"
+		&&table._textareaNewLineModifier("Linux")==="Ctrl"
+		&&table._textareaNewLineModifier("macOS")==="⌘",
+		"the new-line hint chooses Ctrl on Windows/Linux and Command on macOS");
+	const notesEditorRect=notesEditor.getBoundingClientRect();
+	const newLineHintRect=newLineHint.getBoundingClientRect();
+	assert(parseFloat(getComputedStyle(notesEditor).paddingBottom)>=30
+		&&newLineHintRect.left>=notesEditorRect.left&&newLineHintRect.right<=notesEditorRect.right
+		&&newLineHintRect.bottom<=notesEditorRect.bottom-4,
+		"the bottom-right shortcut hint stays inside the editor while reserved padding protects its text");
+	notesEditor.value="First";
+	notesEditor.setSelectionRange(notesEditor.value.length,notesEditor.value.length);
+	const ctrlEnter=key(notesEditor,"Enter","Enter",{ctrlKey:true});
+	assert(ctrlEnter.defaultPrevented&&notesEditor.value==="First\n"&&notesEditor.selectionStart===6
+		&&table._inEditMode,
+		"Ctrl+Enter inserts exactly one new line and keeps textarea edit mode active");
+	const commandEnter=key(notesEditor,"Enter","Enter",{metaKey:true});
+	assert(commandEnter.defaultPrevented&&notesEditor.value==="First\n\n"&&notesEditor.selectionStart===7
+		&&table._inEditMode,
+		"Command+Enter inserts exactly one new line and keeps textarea edit mode active");
+	notesEditor.value="One line";
 	notesEditor.dispatchEvent(new Event("input",{bubbles:true}));
 	const oneLineHeight=parseFloat(table._selectedCell.style.height);
 	notesEditor.value="First line\nSecond line";
@@ -2997,6 +3026,8 @@ try {
 	assert(twoLineHeight>oneLineHeight&&parseFloat(table._selectedCell.style.height)===oneLineHeight,
 		"textarea auto-resize grows for multiple lines and returns consistently to one-line height");
 	table._exitEditMode(false);
+	assert(!table._cellCursor.querySelector(".tablance-textarea-shortcut-hint"),
+		"the new-line shortcut hint is removed when textarea edit mode closes");
 	const fileButtons=[...table._mainTbody.querySelector('tr.details').querySelectorAll("button")];
 	assert(fileButtons.find(button=>button.textContent==="Open")?.disabled===false,
 		"existing readOnly file retains its non-mutating open action");
@@ -3746,6 +3777,8 @@ try {
 	key(gridTable.rootEl,"Enter","Enter");
 	const gridTextarea=gridTable._cellCursor.querySelector("textarea");
 	assert(gridTextarea?.parentElement.classList.contains("cell-value-editor")
+		&&!gridTextarea.classList.contains("tablance-textarea-with-shortcut-hint")
+		&&!gridTextarea.parentElement.querySelector(".tablance-textarea-shortcut-hint")
 		&&gridB2.outerContainerEl.querySelector(".tablance-help-slot:empty")
 		&&gridTextarea.getBoundingClientRect().top>=gridTextareaTitle.getBoundingClientRect().bottom,
 		"Grid edit without help preserves the same inline title structure and confines its editor to the value box");
