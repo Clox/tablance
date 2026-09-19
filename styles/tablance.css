@@ -454,7 +454,7 @@
   color: var(--tablance-muted-color);
   font: 600 10px/1 var(--tablance-font-family);
   vertical-align: 1px;
-  cursor: help;
+  cursor: pointer;
 }
 .tablance .tablance-help-trigger:hover, .tablance .tablance-help-trigger[aria-expanded=true] {
   border-color: #71839A;
