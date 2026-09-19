@@ -702,6 +702,79 @@ try {
 	assert(tableUtility._colSchemaNodes[1].pxWidth===48
 		&&Math.abs(lastDataHeader.width-48)<1&&Math.abs(lastDataCell.width-48)<1,
 		"a menu column without an explicit width keeps a compact fixed 48 px width");
+	const lifecycleColumnHost=host();
+	lifecycleColumnHost.style.width="760px";
+	const columnVisibilityCalls=[];
+	const lifecycleColumns=new Tablance(lifecycleColumnHost,{
+		trash:{isTrashed:({rowData})=>rowData.deleted,
+			getChanges:({operation})=>({deleted:operation==="trash"})},
+		main:{toolbar:{search:{visible:true}},columns:[
+			{title:"Name",dataKey:"name",width:"40%"},
+			{title:"City",dataKey:"city"},
+			{title:"Active note",dataKey:"activeNote",visible:payload=>{
+				columnVisibilityCalls.push([payload.lifecycleMode,payload.viewState.lifecycleMode]);
+				return payload.lifecycleMode==="active";
+			}},
+			{title:"Removed",dataKey:"deletedAt",width:"150px",
+				visible:({lifecycleMode})=>lifecycleMode==="trash"},
+			{title:"Never",dataKey:"never",visible:false},
+			{type:"menu",actions:[{text:"Inspect"}]},
+		]},
+	},true,true);
+	lifecycleColumns.setData([
+		{name:"Active A",city:"Malmö",activeNote:"Only active A",deletedAt:"hidden active value",deleted:false},
+		{name:"Active B",city:"Lund",activeNote:"Only active B",deletedAt:"hidden active value",deleted:false},
+		{name:"Removed A",city:"Umeå",activeNote:"hidden trash value",deletedAt:"2026-09-18 10:20",deleted:true},
+		{name:"Removed B",city:"Falun",activeNote:"hidden trash value",deletedAt:"2026-09-19 11:30",deleted:true},
+	]);
+	await tick();
+	const activeWidths=lifecycleColumns._colSchemaNodes.map(column=>column.pxWidth);
+	assert(lifecycleColumns._colSchemaNodes.map(column=>column.title??column.type).join("|")
+		==="Name|City|Active note|menu"
+		&&lifecycleColumns._headerTr.cells.length===5
+		&&lifecycleColumns._mainTbody.rows[0].cells.length===4
+		&&columnVisibilityCalls.some(([mode,stateMode])=>mode==="active"&&stateMode==="active"),
+		"column visible callbacks receive lifecycle/view state and define the initial effective column set");
+	lifecycleColumns._selectMainTableCell(lifecycleColumns._mainTbody.rows[0].cells[0]);
+	lifecycleColumns._headerTr.cells[0].click();
+	const survivingSortSchema=lifecycleColumns._sortingCols[0].schemaNode;
+	lifecycleColumns.setLifecycleMode("trash");
+	await tick();
+	assert(lifecycleColumns._colSchemaNodes.map(column=>column.title??column.type).join("|")
+		==="Name|City|Removed|menu"
+		&&lifecycleColumns._headerTr.cells.length===5
+		&&lifecycleColumns._mainTbody.rows[0].cells.length===4
+		&&lifecycleColumns._sortingCols[0]?.schemaNode===survivingSortSchema
+		&&lifecycleColumns._sortingCols[0]?.index===0
+		&&lifecycleColumns._activeSchemaNode===survivingSortSchema,
+		"lifecycle switching rebuilds header/rows while preserving a still-visible sort and sticky cursor column");
+	assert(Math.abs(lifecycleColumns._colSchemaNodes[2].pxWidth-150)<1
+		&&Math.abs(lifecycleColumns._mainTbody.rows[0].cells[2].getBoundingClientRect().width-150)<1,
+		"a newly visible fixed-width lifecycle column participates in a fresh width calculation");
+	key(lifecycleColumns.rootEl,"ArrowDown");
+	assert(lifecycleColumns._mainRowIndex===1&&lifecycleColumns._mainColIndex===0,
+		"vertical keyboard navigation continues from the preserved lifecycle cursor anchor");
+	lifecycleColumns._headerTr.cells[2].click();
+	assert(lifecycleColumns._sortingCols[0].schemaNode===lifecycleColumns._colSchemaNodes[2],
+		"a trash-only column can be sorted while it is visible");
+	lifecycleColumns._searchInput.value="hidden trash value";
+	lifecycleColumns._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
+	assert(lifecycleColumns._filteredData.length===0,
+		"search ignores lifecycle-hidden main columns");
+	lifecycleColumns._searchInput.value="";
+	lifecycleColumns._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
+	lifecycleColumns.setLifecycleMode("active");
+	await tick();
+	assert(lifecycleColumns._colSchemaNodes.map(column=>column.title??column.type).join("|")
+		==="Name|City|Active note|menu"
+		&&!lifecycleColumns._sortingCols.length
+		&&lifecycleColumns._colSchemaNodes.every((column,index)=>Math.abs(column.pxWidth-activeWidths[index])<1),
+		"returning active restores its declarative layout and drops sorting for a column that disappeared");
+	lifecycleColumns._selectMainTableCell(lifecycleColumns._mainTbody.rows[0].cells[2]);
+	lifecycleColumns.setLifecycleMode("trash");
+	await tick();
+	assert(lifecycleColumns._activeSchemaNode.dataKey==="deletedAt"&&lifecycleColumns._mainColIndex===2,
+		"a disappearing focused column deterministically chooses the nearest visible declared column");
 	const explicitMenuWidth=new Tablance(host(),{main:{columns:[
 		{dataKey:"name"},{type:"menu",width:"64px",actions:[{text:"Inspect"}]},
 	]}},true,true,{searchbar:false});

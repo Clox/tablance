@@ -180,6 +180,12 @@ Tablance payload plus `viewState`. It is supported by `toolbar.items`, and by ob
 remain active-only by default, while search remains visible in every lifecycle mode. Visibility follows the element
 even if a consumer reparents that Tablance-created control.
 
+Main columns support the same declarative `visible` boolean or callback. The callback receives the standard payload
+plus `viewState`, so a column may be active-only, trash-only, or depend on another Tablance-known view state. Tablance
+keeps the complete declaration as its source and rebuilds the effective header, rows, search fields, sorting indexes,
+cursor anchor, and fixed/proportional widths when visibility changes during a lifecycle or view switch. A sort whose
+column disappears is removed; a still-visible sorted or focused column is remapped to its new effective index.
+
 When a trash-enabled table renders a view switcher, trash mode replaces its ordinary view options with a visible
 lifecycle return control in the same control group. Its label uses `lang.backToActive` (default `Leave trash`); the
 table-menu action remains available as the second lifecycle navigation path. Search uses `lang.filterPlaceholder`

@@ -121,6 +121,7 @@ class TablanceBase {
 	_containerWidth=0;//height of #container. Used to keep track of if width shrinks or grows
 	_colSchemaNodes;//column-objects. Essentially the same as schema.main.columns but have been processed an may in
 		// addition contain "sortDiv" reffering to the div with the sorting-html (see for example opts->sortAscHtml)
+	_declaredColSchemaNodes;//complete declarative main-column list; _colSchemaNodes is the lifecycle/view-visible subset
 	_cols=[];//array of col-elements for each column
 	_headerTr;//the tr for the top header-row
 	_headerTable;//the tabe for the #headerTr. This table only contains that one row.
@@ -139,6 +140,7 @@ class TablanceBase {
 	_toolbar;
 	_controls=[];//registered table controls with declarative visibility independent of their current DOM parent
 	_tableUtilities;//optional common controls in a dedicated, non-data header area
+	_tableHelpTrigger;//table-attached contextual-help trigger, when declared
 	_tableUtilitiesWidth=0;
 	_tableArea;//focusable area containing the header and scrollable rows, but not the toolbar
 	_focusEl;//the element receiving spreadsheet focus (tableArea, or rootEl for details-only tables)
@@ -200,6 +202,7 @@ class TablanceBase {
 	_menuPopoverController;
 	_activeVerticalLayout=null;//logical layout whose preferred column is active during vertical navigation
 	_activeVerticalLayoutColumnKey=null;
+	_pendingColumnCursorRemap=null;//row/column anchor restored after an effective column-set rebuild
 	_inEditMode;//whether the user is currently in edit-mode
 	_editModeController;//optional non-field editor participating in the ordinary commit/cancel/navigation lifecycle
 	_inReadOnlyMode=false;//whether a read-only presentation textarea is currently open
@@ -348,6 +351,8 @@ class TablanceBase {
 	 * 			width String The width of the column. This can be in either px or % units.
 	 * 				In case of % it will be calculated on the remaining space after all the fixed widths
 	 * 				have been accounted for.
+	 * 			visible Boolean|Function Whether the column belongs to the effective column set. A callback receives the
+	 * 				standard payload plus viewState, including lifecycleMode. It is re-evaluated when lifecycle/view changes.
 	 * 			input: See param details -> input. This is the same as that one except textareas are only valid for
 	 * 												details-cells and not directly in a maintable-cell
 	 * 			render Function Function that can be set to render the content of the cell. The return-value is what
@@ -875,7 +880,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			// 			processedCol[colKey]=colVal;
 			// 	this._colSchemaNodes.push(processedCol);
 			// }
-			this._colSchemaNodes=this._schema.main.columns;
+			this._declaredColSchemaNodes=this._schema.main.columns;
+			this._colSchemaNodes=this._resolveVisibleColumns();
 			this._setupToolbar();
 			this._tableArea=this.rootEl.appendChild(document.createElement("div"));
 			this._tableArea.className="table-area";
@@ -1013,6 +1019,108 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			state.counts.trash=trash;
 		}
 		return state;
+	}
+
+	_resolveVisibleColumns() {
+		const viewState=this.getViewState();
+		return (this._declaredColSchemaNodes??[]).filter(schemaNode=>{
+			let visible=schemaNode.visible;
+			if (visible===undefined)
+				return true;
+			if (typeof visible==="function")
+				visible=visible(this._makeCallbackPayload(null,{viewState},{schemaNode,rowData:null}));
+			else if (typeof visible!=="boolean")
+				throw new TypeError("A column's visible property must be a boolean or callback.");
+			return !!visible;
+		});
+	}
+
+	_syncVisibleColumns() {
+		if (!this._declaredColSchemaNodes)
+			return false;
+		const previousColumns=this._colSchemaNodes;
+		const nextColumns=this._resolveVisibleColumns();
+		if (previousColumns.length===nextColumns.length
+			&&previousColumns.every((column,index)=>column===nextColumns[index]))
+			return false;
+
+		this._closeHelp();
+		this._closeMenu();
+		const selectedRow=Number.isInteger(this._mainRowIndex)
+			?this._filteredData?.[this._mainRowIndex]:null;
+		const previousAnchor=Number.isInteger(this._mainColIndex)
+			?previousColumns[this._mainColIndex]:null;
+		const previousDeclaredIndex=this._declaredColSchemaNodes.indexOf(previousAnchor);
+		let nextAnchorIndex=nextColumns.indexOf(previousAnchor);
+		if (nextAnchorIndex<0&&nextColumns.length) {
+			let bestDistance=Infinity;
+			for (let index=0;index<nextColumns.length;index++) {
+				const declaredIndex=this._declaredColSchemaNodes.indexOf(nextColumns[index]);
+				const distance=Math.abs(declaredIndex-previousDeclaredIndex);
+				if (distance<bestDistance
+					||(distance===bestDistance&&declaredIndex>previousDeclaredIndex)) {
+					bestDistance=distance;
+					nextAnchorIndex=index;
+				}
+			}
+		}
+
+		this._sortingCols=this._sortingCols.flatMap(sortColumn=>{
+			const schemaNode=sortColumn.schemaNode??previousColumns[sortColumn.index];
+			const index=nextColumns.indexOf(schemaNode);
+			return index<0?[]:[{...sortColumn,schemaNode,index,type:schemaNode.type,dataKey:schemaNode.dataKey}];
+		});
+		this._colSchemaNodes=nextColumns;
+		this._renderTableHeader();
+		this._mainTbody.replaceChildren();
+		this._renderMainTableColumns();
+		this._numRenderedRows=0;
+		this._rowHeight=0;
+		this._rowInnerHeights=[];
+		this._setSelectedCellElement(null);
+		this._clearStaticCellOverflowPreview();
+		this._cellCursor.style.display="none";
+		this._activeDetailsCell=null;
+
+		if (selectedRow&&nextAnchorIndex>=0) {
+			this._cellCursorDataObj=selectedRow;
+			this._mainColIndex=nextAnchorIndex;
+			this._activeSchemaNode=nextColumns[nextAnchorIndex];
+			this._selectedCellVal=this._getCellValueBundle(this._activeSchemaNode,selectedRow,
+				this._mainRowIndex,null).value;
+			this._pendingColumnCursorRemap={rowData:selectedRow,preferredColIndex:nextAnchorIndex};
+		} else if (previousAnchor) {
+			this._mainRowIndex=this._mainColIndex=null;
+			this._cellCursorDataObj=null;
+			this._activeSchemaNode=null;
+			this._selectedCellVal=null;
+			this._selectedCellState=null;
+		}
+		if (this._searchableFieldNodes)
+			this._collectFilterSchemaCaches(this._schema);
+		this._rowFilterCache=new WeakMap();
+		this._updateHeaderSortHtml();
+		this._updateColsWidths(true);
+		return true;
+	}
+
+	_restoreColumnCursorAfterRebuild() {
+		const pending=this._pendingColumnCursorRemap;
+		this._pendingColumnCursorRemap=null;
+		if (!pending)
+			return;
+		const rowIndex=this._filteredData.indexOf(pending.rowData);
+		if (rowIndex<0)
+			return;
+		let row=this._mainTbody.querySelector(`[data-data-row-index="${rowIndex}"]:not(.details)`);
+		if (!row) {
+			this.scrollToDataRow(pending.rowData,false,false);
+			this._scrollMethod?.();
+			row=this._mainTbody.querySelector(`[data-data-row-index="${rowIndex}"]:not(.details)`);
+		}
+		const target=this._findSelectableMainCellFromRow(row,1,pending.preferredColIndex);
+		if (target)
+			this._selectMainTableCell(target,false);
 	}
 
 	_emitViewStateChange(reason) {
@@ -1175,12 +1283,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			throw new Error(`Unknown viewMode "${viewModeKey}". Valid viewModes: ${validKeys}`);
 		}
 		this._currentViewModeKey=viewModeKey;
+		const columnsChanged=this._syncVisibleColumns();
 		if (this._isTrashMode()) {
-			this._emitViewStateChange("view");
+			if (columnsChanged) {
+				this._applyFilters(this._filter,true,false,"view");
+				this._restoreColumnCursorAfterRebuild();
+			} else
+				this._emitViewStateChange("view");
 			return;
 		}
 		this._rebuildViewData();
 		this._applyFilters(this._filter,true,false,"view");
+		this._restoreColumnCursorAfterRebuild();
 	}
 
 	_isTrashMode() {
@@ -1198,6 +1312,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return this.getViewState();
 		this._lifecycleSearch[this._lifecycleMode]=this._filter??"";
 		this._lifecycleMode=mode;
+		this._syncVisibleColumns();
 		this._selectedRows=[];
 		this._numRowsSelected=this._numRowsInViewSelected=0;
 		this._bulkEditAreaOpen=false;
@@ -1210,6 +1325,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._searchInput.value=this._filter;
 		this._rebuildViewData();
 		this._applyFilters(this._filter,true,false,"lifecycle");
+		this._restoreColumnCursorAfterRebuild();
 		this._updateLifecycleControls();
 		return this.getViewState();
 	}
@@ -1508,7 +1624,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 *
 	 * Structural assumptions (enforced elsewhere by schema validation):
 	 *
-	 * • `schemaRoot.main.columns` contains field nodes only
+	 * • The current effective main-column set contains field nodes only
 	 *   - Columns never have `entry` or `entries`
 	 *   - All column fields are implicitly searchable (unless input.type==="button")
 	 *
@@ -1551,7 +1667,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				else if (node.entries)
 					stack.push(...node.entries);
 		};
-		for (const col of (schemaRoot.main?.columns ?? []))
+		for (const col of (this._colSchemaNodes ?? schemaRoot.main?.columns ?? []))
 			processNode(col,false);
 		while (stack.length)
 			processNode(stack.pop(),true);
@@ -2436,14 +2552,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_setupTableUtilities() {
 		if (this._tableUtilitiesPlacement!=="table"
-			||(!this._hasTableHelp()&&!this._schema.main?.toolbar?.tableActions))
+			||(!this._hasDeclaredTableHelp()&&!this._schema.main?.toolbar?.tableActions))
 			return;
 		const utilities=this._tableUtilities=this._tableArea.appendChild(document.createElement("div"));
 		utilities.className="table-utilities";
 		if (this._schema.main?.toolbar?.tableActions)
 			this._appendTableMenuButton(utilities);
-		if (this._hasTableHelp()) {
-			const help=this._createHelpTrigger(this._schema,null,{table:true});
+		if (this._hasDeclaredTableHelp()) {
+			const help=this._tableHelpTrigger=this._createHelpTrigger(this._schema,null,{table:true});
 			help.tabIndex=0;
 			utilities.appendChild(help);
 		}
@@ -2460,9 +2576,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			selectAll.disabled=this._isTrashMode();
 		if (this._tableMenuButton)
 			this._tableMenuButton.hidden=this._resolveTableActions().length===0;
+		if (this._tableHelpTrigger)
+			this._tableHelpTrigger.hidden=!this._hasTableHelp();
 		if (this._tableUtilities) {
 			const previousWidth=this._tableUtilitiesWidth;
-			const visibleCount=Number(!!this._tableUtilities.querySelector(".table-help-trigger"))
+			const visibleCount=Number(!!this._tableHelpTrigger&&!this._tableHelpTrigger.hidden)
 				+Number(!!this._tableMenuButton&&!this._tableMenuButton.hidden);
 			this._tableUtilitiesWidth=visibleCount?visibleCount*30+(visibleCount-1)*2+4:0;
 			this._tableUtilities.hidden=!visibleCount;
@@ -2544,7 +2662,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_hasTableHelp() {
 		return this._hasHelp(this._schema)
-			||this._schema.main?.columns?.some(schemaNode=>this._hasHelp(schemaNode))===true;
+			||this._colSchemaNodes?.some(schemaNode=>this._hasHelp(schemaNode))===true;
+	}
+
+	_hasDeclaredTableHelp() {
+		return this._hasHelp(this._schema)
+			||this._declaredColSchemaNodes?.some(schemaNode=>this._hasHelp(schemaNode))===true;
 	}
 
 	_populateSchemaTitle(container,schemaNode,instanceNode=null,
@@ -2787,7 +2910,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			introduction.className="tablance-table-help-introduction";
 			introduction.appendChild(this._resolveHelpContent(this._schema,null,context));
 		}
-		for (const schemaNode of this._schema.main?.columns??[]) {
+		for (const schemaNode of this._colSchemaNodes??[]) {
 			if (!this._hasHelp(schemaNode))
 				continue;
 			const section=content.appendChild(document.createElement("section"));
@@ -7799,6 +7922,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._headerTable.classList.add("header-table");
 		const thead=this._headerTable.appendChild(document.createElement("thead"));
 		this._headerTr=thead.insertRow();
+		this._renderTableHeader();
+		this._setupTableUtilities();
+	}
+
+	_renderTableHeader() {
+		this._headerTr.replaceChildren();
+		this._headerTable.classList.remove("has-table-help");
 		for (let col of this._colSchemaNodes) {
 			let th=this._headerTr.appendChild(document.createElement("th"));
 			th.addEventListener("mousedown",e=>this._onThMouseDown(e));
@@ -7833,12 +7963,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		spacer.className="scrollbar-spacer";
 		if (this._tableUtilitiesPlacement==="default"&&this._hasTableHelp()) {
 			this._headerTable.classList.add("has-table-help");
-			this._headerTr.cells[this._colSchemaNodes.length-1].classList.add("before-table-help");
+			if (this._colSchemaNodes.length)
+				this._headerTr.cells[this._colSchemaNodes.length-1].classList.add("before-table-help");
 			const helpTrigger=this._createHelpTrigger(this._schema,null,{table:true});
 			helpTrigger.tabIndex=0;
 			spacer.appendChild(helpTrigger);
 		}
-		this._setupTableUtilities();
 	}
 
 	_onThMouseDown(e) {
@@ -7874,8 +8004,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 		}
 		if (sortingColIndex==this._sortingCols.length) {//if the clicked header wasn't sorted upon at all
-			const {dataKey,type}=this._colSchemaNodes[clickedIndex];
-			const sortCol={dataKey,type,order:"asc",index:clickedIndex};
+			const schemaNode=this._colSchemaNodes[clickedIndex];
+			const {dataKey,type}=schemaNode;
+			const sortCol={dataKey,type,order:"asc",index:clickedIndex,schemaNode};
 			if (!e.shiftKey)
 				this._sortingCols=[];
 			this._sortingCols.push(sortCol);
@@ -7982,14 +8113,23 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._mainTable=this._tableSizer.appendChild(document.createElement("table"));
 		this._mainTable.className="main-table";
 		this._mainTbody=this._mainTable.appendChild(document.createElement("tbody"));
-		for (let i = 0; i < this._colSchemaNodes.length; i++) {
-			let col=document.createElement("col");
-			this._cols.push(col);
-			this._mainTable.appendChild(document.createElement("colgroup")).appendChild(col);
-		}
+		this._renderMainTableColumns();
 		this._borderSpacingY=parseInt(window.getComputedStyle(this._mainTable)['border-spacing'].split(" ")[1]);
 		if (this._naturalAutoHeight)
 			(new ResizeObserver(()=>this._updateAutoHeight())).observe(this._mainTable);
+	}
+
+	_renderMainTableColumns() {
+		for (const colgroup of this._mainTable.querySelectorAll(":scope>colgroup"))
+			colgroup.remove();
+		this._cols=[];
+		for (let i=0;i<this._colSchemaNodes.length;i++) {
+			let col=document.createElement("col");
+			this._cols.push(col);
+			const colgroup=document.createElement("colgroup");
+			colgroup.appendChild(col);
+			this._mainTable.insertBefore(colgroup,this._mainTbody);
+		}
 	}
 
 	_setupResultStatus() {
@@ -8110,7 +8250,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		mainPage.style.display="block";
 
 		const bulkEditFields=schema.details?this._buildBulkEditSchemaNodes(schema.details):[];
-		for (const column of schema.main.columns)
+		for (const column of this._colSchemaNodes)
 			bulkEditFields.push(...this._buildBulkEditSchemaNodes(column));
 
 		//Build schema for bulk-edit-area based on the real schema
@@ -8280,8 +8420,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._updateAutoHeight();
 	}
 
-	_updateColsWidths() {
-		if (this.rootEl.offsetWidth>this._containerWidth) {
+	_updateColsWidths(force=false) {
+		if (force||this.rootEl.offsetWidth>this._containerWidth) {
 			let areaWidth=this._scrollBody.clientWidth;
 			const percentageWidthRegex=/\d+%/;
 			let totalFixedWidth=0;
