@@ -477,6 +477,90 @@ try {
 	assert(capabilityOnly.trashRow(capabilityRows[1],"restore")
 		&&capabilityRows[1].removed===false&&capabilityOnly._filteredData.length===0,
 		"capability-only tables may restore through the public lifecycle mutation method");
+
+	const removalSchema=()=>({
+		trash:{isTrashed:({rowData})=>!!rowData.removed,
+			getChanges:({operation})=>({removed:operation==="trash"})},
+		main:{columns:[{type:"expand",width:36},{dataKey:"name"},{dataKey:"code"}]},
+		details:{type:"list",entries:[{dataKey:"detail"}]},
+	});
+	const makeRemovalTable=rows=>{
+		const table=new Tablance(host(),removalSchema(),true,true,{searchbar:false,ordering:false});
+		table.setData(rows);
+		return table;
+	};
+	const assertSelectedRemoval=(selectedIndex,expectedName,label)=>{
+		const rows=["Alpha","Beta","Gamma"].map((name,index)=>({name,code:`C${index}`,detail:`D${index}`,removed:false}));
+		const table=makeRemovalTable(rows);
+		table._selectMainTableCell(table._mainTbody.rows[selectedIndex].cells[2]);
+		assert(table.trashRow(rows[selectedIndex],"trash")
+			&&table._cellCursorDataObj.name===expectedName
+			&&table._mainColIndex===2&&table._selectedCell.cellIndex===2
+			&&table._cellCursor.style.display==="block",label);
+		key(table.rootEl,"ArrowDown","ArrowDown");
+		assert(table._mainColIndex===2,"vertical navigation after row removal retains the sticky main column");
+		return table;
+	};
+	assertSelectedRemoval(0,"Beta","removing the first selected row moves the cursor to the next row");
+	assertSelectedRemoval(1,"Gamma","removing a middle selected row moves the cursor to the next row");
+	assertSelectedRemoval(2,"Beta","removing the final selected row moves the cursor to the previous row");
+
+	const preservedRows=["One","Two","Three"].map((name,index)=>
+		({name,code:`P${index}`,detail:`PD${index}`,removed:false}));
+	const preservedTable=makeRemovalTable(preservedRows);
+	preservedTable._selectMainTableCell(preservedTable._mainTbody.rows[1].cells[2]);
+	const externalDialogButton=document.body.appendChild(document.createElement("button"));
+	externalDialogButton.focus();
+	await tick();
+	assert(preservedTable._cellCursorDataObj===preservedRows[1]
+		&&preservedTable._mainColIndex===2&&preservedTable._cellCursor.style.display==="block",
+		"moving DOM focus into an external dialog leaves the logical and visible cell cursor intact");
+	preservedTable.trashRow(preservedRows[0],"trash");
+	assert(document.activeElement===externalDialogButton
+		&&preservedTable._cellCursorDataObj===preservedRows[1]
+		&&preservedTable._mainRowIndex===0&&preservedTable._mainColIndex===2
+		&&preservedTable._cellCursor.style.display==="block",
+		"removing another row preserves the exact cursor without stealing focus from a dialog");
+	preservedTable._focusEl.focus({preventScroll:true});
+	await tick();
+	assert(preservedTable._cellCursorDataObj===preservedRows[1]
+		&&preservedTable._mainColIndex===2&&!preservedTable._focusEl.classList.contains("show-focus-ring"),
+		"dialog cancellation can restore DOM focus without replacing the cell cursor with a table outline");
+	externalDialogButton.remove();
+
+	const detailsRows=["Detail one","Detail two","Detail three"].map((name,index)=>
+		({name,code:`D${index}`,detail:`Nested ${index}`,removed:false}));
+	const detailsRemovalTable=makeRemovalTable(detailsRows);
+	await tick();
+	detailsRemovalTable._selectMainTableCell(detailsRemovalTable._mainTbody.rows[1].cells[2]);
+	const selectedDetail=detailsRemovalTable.expandRow(1)?.children[0];
+	selectedDetail.select();
+	assert(detailsRemovalTable._activeDetailsCell===selectedDetail
+		&&detailsRemovalTable.trashRow(detailsRows[1],"trash")
+		&&detailsRemovalTable._activeDetailsCell===null
+		&&detailsRemovalTable._cellCursorDataObj===detailsRows[2]
+		&&detailsRemovalTable._mainColIndex===2,
+		"a disappearing details row exits through the sticky main-column destination on the next row");
+
+	const restoreRows=["Restore one","Restore two","Restore three"].map((name,index)=>
+		({name,code:`R${index}`,detail:`RD${index}`,removed:true}));
+	const restoreRemovalTable=makeRemovalTable(restoreRows);
+	restoreRemovalTable.setLifecycleMode("trash");
+	restoreRemovalTable._selectMainTableCell(restoreRemovalTable._mainTbody.rows[1].cells[2]);
+	assert(restoreRemovalTable.trashRow(restoreRows[1],"restore")
+		&&restoreRemovalTable._cellCursorDataObj===restoreRows[2]
+		&&restoreRemovalTable._mainColIndex===2,
+		"restore uses the same adjacent-row cursor semantics when its selected row leaves trash");
+
+	const finalRemovalRow={name:"Only",code:"final",detail:"last",removed:false};
+	const finalRemovalTable=makeRemovalTable([finalRemovalRow]);
+	finalRemovalTable._selectMainTableCell(finalRemovalTable._mainTbody.rows[0].cells[2]);
+	finalRemovalTable.trashRow(finalRemovalRow,"trash");
+	key(finalRemovalTable.rootEl,"ArrowDown","ArrowDown");
+	assert(finalRemovalTable._filteredData.length===0&&finalRemovalTable._selectedCell===null
+		&&finalRemovalTable._mainRowIndex===null&&finalRemovalTable._mainColIndex===null
+		&&finalRemovalTable._cellCursorDataObj===null&&finalRemovalTable._cellCursor.style.display==="none",
+		"removing the final visible row clears the cursor stably without a ghost selection on the next arrow");
 	const overriddenTrashTable=new Tablance(host(),{
 		trash:{isTrashed:({rowData})=>!!rowData.removed,
 			getChanges:({operation})=>({removed:operation==="trash"})},
@@ -839,14 +923,17 @@ try {
 		"opt-in result status is a non-scrolling sibling immediately after the row viewport");
 	assert(!resultTable._viewportRemainder.hidden
 		&&getComputedStyle(resultTable._viewportRemainder).borderLeftWidth==="1px"
+		&&getComputedStyle(resultTable._viewportRemainder).borderTopWidth==="1px"
 		&&getComputedStyle(resultTable._resultStatus).borderLeftWidth==="1px"
 		&&getComputedStyle(resultTable._resultStatus).borderRightWidth==="1px"
 		&&Math.abs(resultTable._viewportRemainder.getBoundingClientRect().left
 			-resultTable._resultStatus.getBoundingClientRect().left)<1
 		&&Math.abs(resultTable._viewportRemainder.getBoundingClientRect().right
 			-resultTable._resultStatus.getBoundingClientRect().right)<1
+		&&Math.abs(resultTable._viewportRemainder.getBoundingClientRect().top
+			-(resultTable._mainTbody.lastElementChild.getBoundingClientRect().bottom-1))<1
 		&&getComputedStyle(resultTable._mainTbody.rows[0]).borderLeftWidth==="0px",
-		"unused viewport borders continue through status without changing real row borders");
+		"unused viewport shares one horizontal boundary with rows and continues through status without changing rows");
 	const statusHeight=resultTable._resultStatus.offsetHeight;
 	const fixedViewportHeight=resultTable._scrollBody.offsetHeight;
 	assert(statusHeight>0&&Math.abs(parseFloat(resultTable._scrollBody.style.height)
@@ -904,6 +991,11 @@ try {
 	resultTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
 	assert(resultTable._resultStatus.textContent==="1 of 2 entries in trash shown",
 		"trash search reductions use the same visible view and filtered counts");
+	assert(!resultTable._viewportRemainder.hidden
+		&&getComputedStyle(resultTable._viewportRemainder).borderTopWidth==="1px"
+		&&Math.abs(resultTable._viewportRemainder.getBoundingClientRect().top
+			-(resultTable._mainTbody.lastElementChild.getBoundingClientRect().bottom-1))<1,
+		"trash rows use the same single boundary into decorative unused viewport space as active rows");
 	assert(resultTable._lifecycleBackButton.textContent==="Leave trash"
 		&&resultTable._lifecycleBackButton.querySelector(".tablance-lifecycle-back-icon")
 		&&resultTable._lifecycleBackButton.parentElement===resultTable._viewSwitcher
@@ -927,6 +1019,20 @@ try {
 	assert(filledResultTable._viewportRemainder.hidden
 		&&filledResultTable._scrollBody.scrollHeight>filledResultTable._scrollBody.clientHeight,
 		"no decorative remainder is shown when real rows fill and scroll the viewport");
+	const expandedStatusTable=new Tablance(host(),{main:{resultStatus:true,columns:[
+		{type:"expand",width:36},{dataKey:"name"},
+	]},details:{type:"list",entries:[{dataKey:"detail",nodeId:"expandedStatusDetail"}]}},
+	true,true,{searchbar:false,ordering:false});
+	expandedStatusTable.setData([{name:"Expanded",detail:"Nested"},{name:"After",detail:"Second"}]);
+	await tick();
+	expandedStatusTable.expandRow(0);
+	await new Promise(resolve=>setTimeout(resolve,180));
+	const expandedLastMainRow=[...expandedStatusTable._mainTbody.querySelectorAll(":scope>tr:not(.details)")].at(-1);
+	assert(!expandedStatusTable._viewportRemainder.hidden
+		&&expandedStatusTable._mainTbody.querySelector("tr.details")
+		&&Math.abs(expandedStatusTable._viewportRemainder.getBoundingClientRect().top
+			-(expandedLastMainRow.getBoundingClientRect().bottom-1))<1,
+		"expanded details share the same single boundary with remaining decorative viewport space");
 	const noStatusTable=new Tablance(host(),{main:{columns:[{dataKey:"name"}]}},true,true,
 		{searchbar:false,ordering:false});
 	assert(!noStatusTable._resultStatus&&!noStatusTable._emptyState

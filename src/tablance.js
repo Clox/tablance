@@ -1254,7 +1254,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const rowsChanged=previousRows.length!==this._filteredData.length
 				||previousRows.some((row,index)=>row!==this._filteredData[index]);
 			if (rowsChanged)
-				this._refreshAfterViewRowsChanged();
+				this._refreshAfterViewRowsChanged(previousRows);
 			else
 				this._refreshRenderedViewRows();
 			this._emitViewStateChange(reason);
@@ -3206,20 +3206,22 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_spreadsheetOnFocus(_e) {
-		const tabbedTo=this._highlightOnFocus;
+		const tabbedTo=this._focusEl.matches(":focus-visible");
+		this._highlightOnFocus=tabbedTo;
+		const hasLogicalCursor=this._mainRowIndex!=null&&this._mainColIndex!=null;
 		//when the table is tabbed to, whatever focus-outline that the css has set for it should show, but then when the
 		//user starts to navigate using the keyboard we want to hide it because it is a bit distracting when both it and
-		//a cell is highlighted. Thats why #spreadsheetKeyDown sets outline to none, and this line undos that
-		//also, we dont want it to show when focusing by mouse so we use #focusMethod (see its declaration)
-		this._focusEl.classList.toggle("show-focus-ring",!this._onlyDetails&&this._highlightOnFocus);
-		if (this._onlyDetails||!this._highlightOnFocus)
+		//a cell is highlighted. A retained logical cursor is already the focus indicator; the table outline is only for
+		//keyboard focus entering a table that does not yet have a cell cursor.
+		this._focusEl.classList.toggle("show-focus-ring",!this._onlyDetails&&tabbedTo&&!hasLogicalCursor);
+		if (this._onlyDetails||!tabbedTo||hasLogicalCursor)
 			this._focusEl.style.outline="none";
 		
 		//why is this needed? it messes things up when cellcursor is in mainpage of bulk-edit-area but hidden because
 		//other page is open, and the tablance gets focus because then it will be visible through the active page
 		//this._cellCursor.style.display="block";
 		
-		if (tabbedTo&&(this._mainRowIndex!=null||this._mainColIndex!=null))
+		if (tabbedTo&&hasLogicalCursor)
 			this._scrollToCursor();
 	}
 
@@ -3228,9 +3230,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const popoverHasFocus=this._activeAnchoredPopover?.el.contains(document.activeElement);
 			if ((!this._focusEl.contains(document.activeElement)&&!popoverHasFocus)
 				||this._bulkEditArea?.contains(document.activeElement)) {
-				this._highlightOnFocus=true;
-				//if (this.neighbourTables&&Object.values(this.neighbourTables).filter(Boolean).length)
-					this._cellCursor.style.display="none";
+				this._focusEl.classList.remove("show-focus-ring");
+				this._focusEl.style.outline="none";
 			}
 		});
 	}
@@ -7564,7 +7565,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 
-	_selectMainTableCell(cell) {
+	_selectMainTableCell(cell,focus=true) {
 		if (!cell)	//in case of trying to move up from top row etc,
 			return;
 		if (this._getCellState(cell)?.selectable===false)
@@ -7579,7 +7580,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					
 		if (this._closeActiveDetailsCell(cell)) {
 			const selected=this._selectCell(cell,this._colSchemaNodes[this._mainColIndex],
-				this._filteredData[mainRowIndex]);
+				this._filteredData[mainRowIndex],true,null,false,focus);
 			this._mainRowIndex=mainRowIndex;
 			return selected;
 		}
@@ -7643,7 +7644,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_selectCell(cellEl,schemaNode,dataObj,adjustCursorPosSize=true,instanceNode=null,
-		preserveVerticalPreferredColumn=false) {
+		preserveVerticalPreferredColumn=false,focus=true) {
 		this._closeHelp();
 		this._closeMenu();
 		this._clearReadOnlyActivationFeedback();
@@ -7652,7 +7653,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const cellState=this._getCellState(cellEl,instanceNode);
 		if (cellState?.selectable===false)
 			return false;
-		this._focusEl.focus({preventScroll:true});
+		if (focus)
+			this._focusEl.focus({preventScroll:true});
 		this._clearStaticCellOverflowPreview();
 		if (adjustCursorPosSize)
 			this._adjustCursorPosSize(instanceNode?this._getCursorGeometryEl(instanceNode):cellEl);
@@ -8020,8 +8022,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			+(parseFloat(this._tableSizer.style.height)||0));
 		const remainderHeight=Math.max(0,this._scrollBody.clientHeight-contentBottom);
 		this._viewportRemainder.hidden=remainderHeight<1||this._filteredData.length===0;
-		this._viewportRemainder.style.top=contentBottom+"px";
-		this._viewportRemainder.style.height=remainderHeight+"px";
+		// Overlap the final row/details edge by one pixel so both surfaces share one boundary instead of drawing a
+		// double rule. The remainder remains purely decorative and does not participate in layout or scrolling.
+		const boundaryOverlap=1;
+		this._viewportRemainder.style.top=Math.max(0,contentBottom-boundaryOverlap)+"px";
+		this._viewportRemainder.style.height=remainderHeight+boundaryOverlap+"px";
 	}
 
 	_formatResultTemplate(template,values) {
@@ -8379,9 +8384,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._filteredData=viewData;
 	}
 
-	_refreshAfterViewRowsChanged() {
+	_refreshAfterViewRowsChanged(previousRows=this._filteredData) {
 		const selectedData=this._cellCursorDataObj;
 		const selectedRowIndex=selectedData?this._filteredData.indexOf(selectedData):-1;
+		const previousSelectedRowIndex=selectedData?previousRows.indexOf(selectedData):-1;
+		const preferredColIndex=this._mainColIndex;
+		let replacement=null;
 		this._openDetailsPanes={};
 
 		for (const row of this._sourceData) {
@@ -8395,12 +8403,24 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (const tr of this._mainTbody.querySelectorAll("tr.details"))
 			tr.remove();
 
-		if (selectedRowIndex<0) {
+		if (selectedRowIndex<0&&previousSelectedRowIndex>=0&&this._filteredData.length) {
+			const targetIndex=Math.min(previousSelectedRowIndex,this._filteredData.length-1);
+			replacement={targetIndex,direction:targetIndex===previousSelectedRowIndex?1:-1,preferredColIndex};
 			this._mainRowIndex=this._mainColIndex=null;
 			this._activeDetailsCell=null;
 			this._cellCursorDataObj=null;
 			this._selectedCellState=null;
 			this._setSelectedCellElement(null);
+		} else if (selectedRowIndex<0) {
+			this._mainRowIndex=this._mainColIndex=null;
+			this._activeDetailsCell=null;
+			this._cellCursorDataObj=null;
+			this._selectedCellState=null;
+			this._activeSchemaNode=null;
+			this._selectedCellVal=null;
+			this._setSelectedCellElement(null);
+			this._clearStaticCellOverflowPreview();
+			this._cellCursor.style.display="none";
 		} else {
 			this._mainRowIndex=selectedRowIndex;
 			// View changes close details panes. Preserve the selected row and return to its main-table anchor column.
@@ -8409,6 +8429,27 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._scrollRowIndex=0;
 		this._refreshTable();
 		this._refreshTableSizerNoDetails();
+		if (replacement)
+			this._selectReplacementAfterRowExit(replacement);
+	}
+
+	_selectReplacementAfterRowExit({targetIndex,direction,preferredColIndex}) {
+		const targetData=this._filteredData[targetIndex];
+		if (!targetData)
+			return false;
+		let row=this._mainTbody.querySelector(`[data-data-row-index="${targetIndex}"]:not(.details)`);
+		if (!row) {
+			this.scrollToDataRow(targetData,false,false);
+			this._scrollMethod?.();
+			row=this._mainTbody.querySelector(`[data-data-row-index="${targetIndex}"]:not(.details)`);
+		}
+		const target=this._findSelectableMainCellFromRow(row,direction,preferredColIndex);
+		if (!target) {
+			this._activeSchemaNode=null;
+			this._selectedCellVal=null;
+			return false;
+		}
+		return this._selectMainTableCell(target,false);
 	}
 
 	_refreshRenderedViewRows() {
@@ -8424,6 +8465,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_applyFilters(filterString, includeDetails=true,caseSensitive=false,reason="search") {
 		if (!this._flushValidatedEdits())
 			this._editTransaction=null;
+		const previousRows=[...(this._filteredData??[])];
 
 		//currently all of the rows will have to be closed. This is because Tablance doesn't have the logic needed now
 		//to recalculate the virtualization based on artibrary rows that are expanded with variable heights. It only
@@ -8433,7 +8475,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		//scrolling. This will also allow for a button in the titlebar that expands all.
 		this._filterCurrentView(filterString,includeDetails,caseSensitive);
 		this._sortData();
-		this._refreshAfterViewRowsChanged();
+		this._refreshAfterViewRowsChanged(previousRows);
 		this._emitViewStateChange(reason);
 	}
 
@@ -8713,6 +8755,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const state=this._getCellState(cell);
 		if (state)
 			this._setCellState(cell,state,null,this._colSchemaNodes[this._mainColIndex]);
+		this._adjustCursorPosSize(cell);
 	}
 
 	_detachMainCursorFromRow(tr,nextMainIndex=null) {

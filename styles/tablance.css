@@ -142,6 +142,7 @@
   right: 0;
   left: 0;
   box-sizing: border-box;
+  border-top: 1px solid var(--tablance-row-border-color);
   border-right: 1px solid var(--tablance-border-color);
   border-left: 1px solid var(--tablance-border-color);
   background: var(--tablance-cell-background);
@@ -795,6 +796,7 @@
 .tablance .main-table > tbody > tr:not(.details) > td.read-only,
 .tablance .main-table > tbody > tr:not(.details) > td.action-indicator {
   padding-top: 9px;
+  padding-bottom: 7px;
   padding-left: 14px;
 }
 .tablance .main-table > tbody > tr:not(.details) > td:first-child {
