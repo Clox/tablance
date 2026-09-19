@@ -736,9 +736,10 @@ try {
 		&&viewTable._searchInput.parentElement.classList.contains("toolbar-right"),
 		"viewSwitcher renders titled views in declaration order as an ARIA segmented control on toolbar-left");
 	assert(JSON.stringify(viewTable.getViewState())===JSON.stringify({
-		viewModeKey:"default",search:"",counts:{source:3,view:2,filtered:2},
+		viewModeKey:"default",search:"",counts:{source:3,lifecycle:3,view:2,filtered:2,
+			visible:{source:3,lifecycle:3,view:2,filtered:2}},
 	})&&viewStateEvents.at(-1).reason==="data",
-		"getViewState and viewstatechange expose committed source, view, filtered, view-key, and search state");
+		"getViewState and viewstatechange expose committed and visible pipeline counts with view-key and search state");
 	viewTable._searchInput.value="Beta";
 	viewTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
 	assert(viewTable._filteredData.length===1&&viewTable._filteredData[0]===viewRows[0]
@@ -775,8 +776,11 @@ try {
 	const draft=viewTable.insertNewRow({name:"Draft",active:false},{highlight:false,prepend:true});
 	assert(viewTable._viewData.includes(draft)&&viewTable._filteredData.includes(draft)
 		&&viewTable.getViewState().counts.source===3&&viewTable.getViewState().counts.view===1
-		&&viewTable.getViewState().counts.filtered===1,
-		"a main-row draft stays editable in its creation view but is excluded from every public count");
+		&&viewTable.getViewState().counts.filtered===1
+		&&viewTable.getViewState().counts.visible.source===4
+		&&viewTable.getViewState().counts.visible.view===2
+		&&viewTable.getViewState().counts.visible.filtered===2,
+		"a main-row draft stays editable and appears in visible counts without changing committed counts");
 	viewTable.setViewMode("all");
 	viewTable.setViewMode("default");
 	assert(viewTable._filteredData.includes(draft),
@@ -795,8 +799,92 @@ try {
 	},true,true,{searchbar:false,ordering:false});
 	const firstDraft=emptyDraftTable.insertNewRow({name:"First",matches:false},{highlight:false});
 	assert(emptyDraftTable._filteredData[0]===firstDraft&&emptyDraftTable._rowMeta.get(firstDraft)?.isNew
-		&&emptyDraftTable.getViewState().counts.source===0,
-		"the first draft in an empty dataset retains its creation-view metadata and remains uncounted");
+		&&emptyDraftTable.getViewState().counts.source===0
+		&&emptyDraftTable.getViewState().counts.visible.filtered===1,
+		"the first draft in an empty dataset retains its creation-view metadata and is visible but uncommitted");
+
+	const resultHost=host();
+	const resultTable=new Tablance(resultHost,{
+		trash:{
+			isTrashed:({rowData})=>!!rowData.deleted,
+			getChanges:({operation})=>({deleted:operation==="trash"}),
+		},
+		views:{default:{title:"Current",filter:row=>row.current},empty:{title:"Empty",filter:()=>false}},
+		main:{resultStatus:true,toolbar:{
+			defaultInsert:{visible:({lifecycleMode})=>lifecycleMode==="active"},
+			viewSwitcher:{visible:({lifecycleMode})=>lifecycleMode==="active"},
+			search:{visible:true},tableActions:[{type:"trash"}],
+		},columns:[{type:"select",width:40},{dataKey:"name",input:{type:"text"}}]},
+	},true,true,{lang:{
+		resultItemSingular:"entry",resultItemPlural:"entries",
+		resultEmptyTrash:"The bin is empty.",resultEmptyView:"This view is empty.",
+		resultEmptyFiltered:"Nothing matches.",
+	}});
+	resultTable.setData([
+		{name:"Alpha",current:true,deleted:false},
+		{name:"Beta",current:true,deleted:false},
+		{name:"Archived",current:false,deleted:false},
+	]);
+	await tick();
+	assert(resultTable._resultStatus.textContent==="2 entries shown"
+		&&resultTable._emptyState.hidden
+		&&resultTable._resultStatus.previousElementSibling===resultTable._scrollBody
+		&&resultTable._scrollBody.parentElement===resultTable._tableArea,
+		"opt-in result status is a non-scrolling sibling immediately after the row viewport");
+	const statusHeight=resultTable._resultStatus.offsetHeight;
+	assert(statusHeight>0&&Math.abs(parseFloat(resultTable._scrollBody.style.height)
+		-(resultHost.clientHeight-resultTable._headerTable.offsetHeight-resultTable._toolbar.offsetHeight
+			-statusHeight-resultTable._bulkEditArea.offsetHeight))<1,
+		"the fixed viewport calculation reserves the result-status height before bulk edit");
+	resultTable._toggleRowsSelected(true,0,0);
+	await new Promise(resolve=>setTimeout(resolve,180));
+	resultTable._updateViewportHeight();
+	assert(resultTable._bulkEditAreaOpen&&resultTable._resultStatus.nextElementSibling==null
+		&&resultTable._bulkEditArea.parentElement===resultTable.rootEl
+		&&Math.abs(parseFloat(resultTable._scrollBody.style.height)
+			-(resultHost.clientHeight-resultTable._headerTable.offsetHeight-resultTable._toolbar.offsetHeight
+				-statusHeight-resultTable._bulkEditArea.offsetHeight))<1,
+		"bulk edit reduces only the row viewport while status remains directly below it");
+	resultTable._toggleRowsSelected(false,0,0);
+	resultTable._searchInput.value="Alpha";
+	resultTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
+	assert(resultTable._resultStatus.textContent==="1 of 2 entries shown",
+		"result status uses visible filtered and view counts from the normal filter pipeline");
+	resultTable._searchInput.value="missing";
+	resultTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
+	assert(resultTable._resultStatus.textContent===""&&!resultTable._emptyState.hidden
+		&&resultTable._emptyState.textContent==="Nothing matches.",
+		"zero search matches use a contextual viewport empty state instead of a zero status");
+	resultTable._searchInput.value="";
+	resultTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
+	resultTable.setViewMode("empty");
+	assert(resultTable._emptyState.textContent==="This view is empty.",
+		"an empty Tablance view is distinguished from zero search matches");
+	resultTable.setViewMode("default");
+	const resultDraft=resultTable.insertNewRow({name:"Draft",current:false,deleted:false},{highlight:false});
+	assert(resultTable._resultStatus.textContent==="3 entries shown"
+		&&resultTable.getViewState().counts.view===2
+		&&resultTable.getViewState().counts.visible.view===3
+		&&resultTable._filteredData.includes(resultDraft),
+		"a visible local draft is included in result status while committed counts stay separate");
+	resultTable.setLifecycleMode("trash");
+	assert(resultTable._emptyState.textContent==="The bin is empty."
+		&&resultTable._viewSwitcher.hidden&&resultTable._toolbarInsertButton.hidden
+		&&!resultTable._searchInput.hidden,
+		"trash empty state and declarative per-control visibility replace category-wide hiding");
+	resultTable.setData([{name:"Deleted Alpha",current:true,deleted:true},{name:"Deleted Beta",current:true,deleted:true}]);
+	assert(resultTable._resultStatus.textContent==="2 entries in trash"
+		&&resultTable._emptyState.hidden,
+		"trash rows use the shared lifecycle-aware result status");
+	resultTable._searchInput.value="Alpha";
+	resultTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
+	assert(resultTable._resultStatus.textContent==="1 of 2 entries in trash shown",
+		"trash search reductions use the same visible view and filtered counts");
+	const noStatusTable=new Tablance(host(),{main:{columns:[{dataKey:"name"}]}},true,true,
+		{searchbar:false,ordering:false});
+	assert(!noStatusTable._resultStatus&&!noStatusTable._emptyState
+		&&!noStatusTable._tableArea.classList.contains("has-result-status"),
+		"tables without result-status opt-in keep their existing DOM and layout");
 
 	const nestedRow={name:"Nested",profile:{enabled:true}};
 	const nestedViewTable=new Tablance(host(),{
@@ -3752,14 +3840,15 @@ try {
 	assert(headerlessBodyStyle.borderTopWidth==="1px"&&headerlessBodyStyle.borderTopLeftRadius==="10px",
 		"headerless auto-height tables receive a complete rounded native frame");
 
-	const detailsOnlyTable=new Tablance(host(),{details:{type:"list",entries:[
+	const detailsOnlyTable=new Tablance(host(),{main:{resultStatus:true},details:{type:"list",entries:[
 		{title:"Only detail",dataKey:"value",nodeId:"onlyDetail",input:{type:"text"}},
 	]}},true,true,{searchbar:false});
 	detailsOnlyTable.setData([{value:"detail-only"}]);
 	await tick();
-	assert(detailsOnlyTable.rootEl.querySelector(".details .tablance-cell-state")
+	assert(!detailsOnlyTable._resultStatus&&!detailsOnlyTable._emptyState
+		&&detailsOnlyTable.rootEl.querySelector(".details .tablance-cell-state")
 		&&getComputedStyle(detailsOnlyTable.rootEl).fontFamily.includes("Inter"),
-		"details-only tables use the same native state hooks and default theme");
+		"details-only tables ignore result-status opt-in and keep their native state hooks and theme");
 	const onlyDetail=detailsOnlyTable.getDetailCell(0,"onlyDetail");
 	onlyDetail.select();
 	key(detailsOnlyTable.rootEl,"Enter","Enter");

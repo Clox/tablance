@@ -163,11 +163,26 @@ the mutation directly. Both require `trash` to be configured. Lifecycle classifi
 search: no normal view, even an all-rows view, can include trashed rows. Trash ignores normal view predicates and
 has its own search text. Switching back restores the active view key and active search text. `getViewState()` and
 `viewstatechange` add `lifecycleMode`, `activeViewModeKey`, and `counts.active`/`counts.trash` for enabled tables;
-`viewModeKey` is `null` in trash. Tables without trash retain the existing view-state shape.
+`viewModeKey` is `null` in trash. Tables without trash omit lifecycle mode and active/trash totals.
+
+Set `main.resultStatus: true` to add a non-scrolling result status directly below the row viewport. It reports the
+current Tablance view and search result, and shows a contextual empty state inside the viewport at zero results.
+`getViewState().counts` retains committed `source`/`lifecycle`/`view`/`filtered` counts and also exposes the same
+pipeline under `counts.visible`, including local draft rows. Result status uses `counts.visible.view` as its
+denominator and `counts.visible.filtered` as its numerator. Language keys beginning with `result` customize the
+default labels and templates; `main.resultStatus` may instead provide `itemLabel`, `formatter`, or `emptyFormatter`
+callbacks for table-specific wording.
+
+Toolbar controls support declarative visibility. `visible` may be a boolean or callback receiving the standard
+Tablance payload plus `viewState`. It is supported by `toolbar.items`, and by object forms of `defaultInsert` and
+`viewSwitcher`; search visibility is declared as `toolbar.search.visible`. Existing toolbar buttons and view controls
+remain active-only by default, while search remains visible in every lifecycle mode. Visibility follows the element
+even if a consumer reparents that Tablance-created control.
 
 Trash mode shows the same columns but does not allow ordinary field editing, new rows, bulk editing, or changing
-details controls. Expand/collapse, row menus, table actions and read-only inspection remain available. Toolbar
-buttons and normal view controls are hidden in trash mode. Programmatic `updateData` remains available for external
+details controls. Expand/collapse, row menus, table actions and read-only inspection remain available. The default
+visibility of toolbar buttons and normal view controls is active-only and can be overridden declaratively per
+control. Programmatic `updateData` remains available for external
 data synchronization; it does not create a persistence commit by itself.
 
 ## Lineup variants

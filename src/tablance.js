@@ -88,6 +88,16 @@ const DEFAULT_LANG=Object.freeze({
 	restoreAction:"Restore",
 	showTrash:"Show trash",
 	showActive:"Show active rows",
+	resultItemSingular:"row",
+	resultItemPlural:"rows",
+	resultStatus:"{count} {items} shown",
+	resultStatusFiltered:"{filtered} of {view} {items} shown",
+	resultStatusTrash:"{count} {items} in trash",
+	resultStatusTrashFiltered:"{filtered} of {view} {items} in trash shown",
+	resultEmptyLifecycle:"No {items} to show.",
+	resultEmptyTrash:"Trash is empty.",
+	resultEmptyView:"No {items} in this view.",
+	resultEmptyFiltered:"No {items} match the search.",
 	reorder:"Change order",
 	reorderUp:"Move up",
 	reorderDown:"Move down",
@@ -125,6 +135,7 @@ class TablanceBase {
 	_scrollRowIndex=0;//the index in the #data of the top row in the view
 	_scrollBody;//resides directly inside #container and is the element with the scrollbar. It contains #scrollingDiv
 	_toolbar;
+	_controls=[];//registered table controls with declarative visibility independent of their current DOM parent
 	_tableUtilities;//optional common controls in a dedicated, non-data header area
 	_tableUtilitiesWidth=0;
 	_tableArea;//focusable area containing the header and scrollable rows, but not the toolbar
@@ -142,6 +153,8 @@ class TablanceBase {
 				//"true" height of the table so that the scrollbar reflects all the data that can be scrolled through
 	_mainTable;//the actual main-table that contains the actual data. Resides inside #tableSizer
 	_mainTbody;//tbody of #mainTable
+	_resultStatus;//optional non-scrolling result-status below the row viewport
+	_emptyState;//optional contextual empty-state inside the row viewport
 
 	_bulkEditArea;//a div displayed under #scrollBody if rows are selected/checked using select-column. This 
 						//section is used to edit multiple rows at once
@@ -865,6 +878,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._createTableHeader();
 			this._headerTable.hidden=this._opts.showHeader===false;
 			this._createTableBody();
+			this._setupResultStatus();
 			this._viewportResizeObserver=new ResizeObserver(()=>{
 				if (this._viewportResizeFrame!=null)
 					return;
@@ -923,13 +937,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_rowMatchesView(row,viewModeKey=this._currentViewModeKey) {
-		if (this._trashCapability) {
-			const trashed=this._isRowTrashed(row);
-			if (this._lifecycleMode==="trash")
-				return trashed;
-			if (trashed)
-				return false;
-		}
+		if (!this._rowMatchesLifecycle(row))
+			return false;
+		if (this._isTrashMode())
+			return true;
 		const rowMeta=row?this._rowMeta?.get(row):null;
 		if (rowMeta?.isNew&&rowMeta.draftViewModeKey===viewModeKey)
 			return true;
@@ -951,6 +962,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			{schemaNode:this._schema,rowData}));
 	}
 
+	_rowMatchesLifecycle(row) {
+		if (!this._trashCapability)
+			return true;
+		const trashed=this._isRowTrashed(row);
+		return this._lifecycleMode==="trash"?trashed:!trashed;
+	}
+
 	_countCommittedRows(rows) {
 		let count=0;
 		for (const row of rows??[])
@@ -960,13 +978,21 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	getViewState() {
+		const lifecycleRows=this._sourceData.filter(row=>this._rowMatchesLifecycle(row));
 		const state={
 			viewModeKey:this._isTrashMode()?null:this._currentViewModeKey,
 			search:this._filter??"",
 			counts:{
 				source:this._countCommittedRows(this._sourceData),
+				lifecycle:this._countCommittedRows(lifecycleRows),
 				view:this._countCommittedRows(this._viewData),
 				filtered:this._countCommittedRows(this._filteredData),
+				visible:{
+					source:this._sourceData.length,
+					lifecycle:lifecycleRows.length,
+					view:this._viewData.length,
+					filtered:this._filteredData.length,
+				},
 			},
 		};
 		if (this._trashCapability) {
@@ -988,6 +1014,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_emitViewStateChange(reason) {
 		this._updateViewSwitcher();
 		this._updateLifecycleControls();
+		this._updateResultPresentation();
 		this.rootEl.dispatchEvent(new CustomEvent("viewstatechange",{
 			detail:{...this.getViewState(),reason},
 		}));
@@ -2137,20 +2164,24 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_updateViewportHeight = () => {
 		this._scrollBody.style.height = this.hostEl.clientHeight - this._headerTable.offsetHeight
-		- (this._toolbar?.offsetHeight ?? 0) - this._bulkEditArea.offsetHeight + "px";
+		- (this._toolbar?.offsetHeight ?? 0) - (this._resultStatus?.offsetHeight??0)
+		- this._bulkEditArea.offsetHeight + "px";
 	}
 
 	_updateAutoHeight() {
 		if (!this._opts.autoHeight||this._onlyDetails)
 			return;
-		const contentHeight=this._naturalAutoHeight?this._mainTable.offsetHeight
+		let contentHeight=this._naturalAutoHeight?this._mainTable.offsetHeight
 			:Math.max(parseInt(this._tableSizer.style.height)||0,0);
+		if (this._emptyState&&!this._emptyState.hidden)
+			contentHeight=Math.max(contentHeight,96);
 		if (this._naturalAutoHeight)
 			this._tableSizer.style.height=contentHeight+"px";
 		this._scrollBody.style.height=contentHeight+"px";
 		this._scrollBody.style.overflowY="hidden";
 		this.hostEl.style.height=contentHeight+this._headerTable.offsetHeight
-			+(this._toolbar?.offsetHeight??0)+this._bulkEditArea.offsetHeight+"px";
+			+(this._toolbar?.offsetHeight??0)+(this._resultStatus?.offsetHeight??0)
+			+this._bulkEditArea.offsetHeight+"px";
 		if (!this._naturalAutoHeight)
 			this._maybeAddTrs();
 	}
@@ -2311,8 +2342,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		// without actually modifying the passed in schema. Keep it user-owned.
 		const toolbarItems=[...(toolbarCfg?.items??[])];
 		if (toolbarCfg?.defaultInsert) {
+			const insertCfg=typeof toolbarCfg.defaultInsert==="object"?toolbarCfg.defaultInsert:{};
 			toolbarItems.unshift({
 				input:{type:"button",text:this.lang.insertRow,onClick:()=>this.insertNewRow()},
+				visible:insertCfg.visible,
 			});
 		}
 		if (!toolbarItems.length&&!toolbarCfg?.viewSwitcher
@@ -2325,14 +2358,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		const btnWrap=bar.appendChild(document.createElement("div"));
 		btnWrap.className="toolbar-left";
-		if (toolbarCfg?.viewSwitcher)
+		if (toolbarCfg?.viewSwitcher) {
 			this._generateViewSwitcher(btnWrap);
+			const viewCfg=typeof toolbarCfg.viewSwitcher==="object"?toolbarCfg.viewSwitcher:{};
+			this._registerControl(this._viewSwitcher,viewCfg.visible,"active");
+		}
 
 		this._toolbarButtons=[];
 		for (const schemaNode of toolbarItems) {
 			const button=this._generateButton(schemaNode,null,btnWrap,null);
 			button.tabIndex=0;
 			this._toolbarButtons.push(button);
+			this._registerControl(button,schemaNode.visible,"active");
 			if (toolbarCfg?.defaultInsert&&schemaNode===toolbarItems[0])
 				this._toolbarInsertButton=button;
 		}
@@ -2345,10 +2382,34 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._searchInput.className="search";
 			this._searchInput.placeholder=this.lang.filterPlaceholder;
 			this._searchInput.addEventListener("input",e=>this._onSearchInput(e));
+			this._registerControl(this._searchInput,toolbarCfg?.search?.visible,true);
 		}
 		if (toolbarCfg?.tableActions&&this._tableUtilitiesPlacement==="default")
 			this._appendTableMenuButton(rightWrap);
 		this._updateLifecycleControls();
+	}
+
+	_registerControl(element,visible,defaultVisible=true) {
+		if (!element)
+			return;
+		this._controls.push({element,visible,defaultVisible});
+	}
+
+	_updateControlVisibility() {
+		if (!this._controls?.length)
+			return;
+		const viewState=this.getViewState();
+		const payload=this._makeCallbackPayload(null,{viewState},{schemaNode:this._schema,rowData:null});
+		for (const control of this._controls) {
+			let visible=control.visible;
+			if (visible===undefined)
+				visible=control.defaultVisible;
+			if (visible==="active")
+				visible=payload.lifecycleMode!=="trash";
+			else if (typeof visible==="function")
+				visible=visible(payload);
+			control.element.hidden=!visible;
+		}
 	}
 
 	_appendTableMenuButton(parent) {
@@ -2384,13 +2445,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_updateLifecycleControls() {
-		if (this._viewSwitcher)
-			this._viewSwitcher.hidden=this._isTrashMode();
+		this._updateControlVisibility();
 		const selectAll=this._headerTr?.querySelector(".select-col input");
 		if (selectAll)
 			selectAll.disabled=this._isTrashMode();
-		for (const button of this._toolbarButtons??[])
-			button.hidden=this._isTrashMode();
 		if (this._tableMenuButton)
 			this._tableMenuButton.hidden=this._resolveTableActions().length===0;
 		if (this._tableUtilities) {
@@ -7905,6 +7963,77 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._borderSpacingY=parseInt(window.getComputedStyle(this._mainTable)['border-spacing'].split(" ")[1]);
 		if (this._naturalAutoHeight)
 			(new ResizeObserver(()=>this._updateAutoHeight())).observe(this._mainTable);
+	}
+
+	_setupResultStatus() {
+		if (!this._schema.main?.resultStatus)
+			return;
+		this._emptyState=this._scrollBody.appendChild(document.createElement("div"));
+		this._emptyState.className="tablance-empty-state";
+		this._emptyState.setAttribute("role","status");
+		this._emptyState.setAttribute("aria-live","polite");
+		this._emptyState.hidden=true;
+		this._resultStatus=this._tableArea.appendChild(document.createElement("div"));
+		this._resultStatus.className="tablance-result-status";
+		this._resultStatus.setAttribute("role","status");
+		this._resultStatus.setAttribute("aria-live","polite");
+		this._tableArea.classList.add("has-result-status");
+		this._updateResultPresentation();
+	}
+
+	_formatResultTemplate(template,values) {
+		return String(template??"").replace(/\{(\w+)\}/g,(_match,key)=>values[key]??"");
+	}
+
+	_updateResultPresentation() {
+		if (!this._resultStatus||!this._emptyState)
+			return;
+		const config=this._schema.main.resultStatus===true?{}:this._schema.main.resultStatus;
+		const viewState=this.getViewState();
+		const counts=viewState.counts.visible;
+		const isTrash=viewState.lifecycleMode==="trash";
+		const itemCount=counts.view||counts.lifecycle;
+		const itemLabel=typeof config.itemLabel==="function"
+			?config.itemLabel(this._makeCallbackPayload(null,{viewState,count:itemCount},{schemaNode:this._schema,rowData:null}))
+			:itemCount===1?(config.itemSingular??this.lang.resultItemSingular)
+				:(config.itemPlural??this.lang.resultItemPlural);
+		let emptyReason=null;
+		if (counts.lifecycle===0)
+			emptyReason="lifecycle";
+		else if (counts.view===0)
+			emptyReason="view";
+		else if (counts.filtered===0)
+			emptyReason="filtered";
+		const values={count:counts.filtered,filtered:counts.filtered,view:counts.view,
+			lifecycle:counts.lifecycle,items:itemLabel};
+		const payload=this._makeCallbackPayload(null,{viewState,counts,emptyReason,items:itemLabel},
+			{schemaNode:this._schema,rowData:null});
+		if (emptyReason) {
+			const defaultTemplate=emptyReason==="lifecycle"&&isTrash?this.lang.resultEmptyTrash
+				:emptyReason==="lifecycle"?this.lang.resultEmptyLifecycle
+				:emptyReason==="view"?this.lang.resultEmptyView:this.lang.resultEmptyFiltered;
+			const text=typeof config.emptyFormatter==="function"
+				?config.emptyFormatter(payload):this._formatResultTemplate(defaultTemplate,values);
+			this._emptyState.textContent=text??"";
+			this._emptyState.hidden=false;
+			this._resultStatus.textContent="";
+			this._resultStatus.classList.add("empty");
+		} else {
+			const reduced=counts.filtered<counts.view;
+			const defaultTemplate=isTrash
+				?(reduced?this.lang.resultStatusTrashFiltered:this.lang.resultStatusTrash)
+				:(reduced?this.lang.resultStatusFiltered:this.lang.resultStatus);
+			const text=typeof config.formatter==="function"
+				?config.formatter(payload):this._formatResultTemplate(defaultTemplate,values);
+			this._resultStatus.textContent=text??"";
+			this._resultStatus.classList.remove("empty");
+			this._emptyState.textContent="";
+			this._emptyState.hidden=true;
+		}
+		const previousHeight=this._resultStatusHeight;
+		this._resultStatusHeight=this._resultStatus.offsetHeight;
+		if (previousHeight!=null&&previousHeight!==this._resultStatusHeight)
+			requestAnimationFrame(()=>this._updateSizesOfViewportAndCols());
 	}
 
 	_onScrollNaturalAutoHeight() {}
