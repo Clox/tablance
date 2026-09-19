@@ -218,12 +218,6 @@ class TablanceBase {
 				//keyboard-tabbing, and not when clicking or exiting out of edit-mode which again focuses the table.
 				//By setting this to true in mouseDownEvent we can 
 				//check which input was used last when the focus-method is triggerd
-	_detailsBordersHeight;//when animating details-pane for expanding/contracting the height of them fully
-			//expanded needs to be known to know where to animate to and from. This is different from 
-			//#expandedRowIndicesHeights because that is the height of the whole row and not the div inside.
-			//we could retrieve offsetheight of the div each time a row needs to be animated or instead we can get
-			//the border-top-width + border-bottom-width once and then substract that from the value of  what's in
-			//#expandedRowIndicesHeights instead
 	_scrollMethod;//this will be set to a reference of the scroll-method that will be used. This depends on settings for
 				//staticRowHeight and details
 	_fileMeta=new WeakMap();//Tracks upload progress per File object (uploadedBytes, progress bars, etc.)
@@ -4234,6 +4228,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		detailsDiv.style.height="auto";
 		detailsDiv.className="content";
 		detailsDiv.addEventListener("transitionend",this._detailsAnimationEnd.bind(this));
+		detailsDiv.addEventListener("transitioncancel",this._detailsAnimationEnd.bind(this));
 		const shadowLine=detailsDiv.appendChild(document.createElement("div"));
 		shadowLine.className="details-shadow";
 		const instanceNode=this._openDetailsPanes[rowIndex]=this._createInstanceNode();
@@ -4243,27 +4238,92 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_detailsAnimationEnd(e) {
-		if (e.currentTarget!==e.target)
+		if (e.currentTarget!==e.target||(e.propertyName&&e.propertyName!=="height"))
 			return;//otherwise it will apply to transitions of child-elements as well
-		if (parseInt(e.target.style.height)) {//if expand finished
-
-			e.target.style.height="auto";
-		} else {//if contract finished
-
-			const detailsTr=e.target.closest("tr");
-			const mainTr=detailsTr.previousSibling;
-			const dataRowIndex=parseInt(mainTr.dataset.dataRowIndex);
-			const rowData=this._filteredData[dataRowIndex];
-			const rowMeta=rowData?this._rowMeta.get(rowData):undefined;
-			const mainRowHeight=this._naturalAutoHeight?mainTr.offsetHeight+this._borderSpacingY:this._rowHeight;
-			mainTr.classList.remove("expanded");
-			this._tableSizer.style.height=parseInt(this._tableSizer.style.height)
-					 -(rowMeta?.h??mainRowHeight)+mainRowHeight+"px";
-			detailsTr.remove();
-			if (rowMeta){delete rowMeta.h; if (!Object.keys(rowMeta).length) this._rowMeta.delete(rowData);}
-			delete this._openDetailsPanes[dataRowIndex];
-			this._updateAutoHeight();
+		const transition=e.target._tablanceDetailsTransition;
+		if (!transition)
+			return;
+		if (transition.phase==="expanding") {
+			if (e.type==="transitionend")
+				this._finishDetailsExpansion(e.target,transition);
+			return;
 		}
+		// Reversing an expansion emits transitioncancel after the collapse has already started. It is not the end of
+		// the collapse unless the rendered height has actually reached zero; the duration-derived fallback remains armed.
+		if (parseFloat(getComputedStyle(e.target).height)<=.01)
+			this._finishDetailsCollapse(e.target,transition);
+	}
+
+	_detailsTransitionDuration(element) {
+		const style=getComputedStyle(element);
+		const durations=style.transitionDuration.split(",").map(value=>this._cssTimeToMs(value));
+		const delays=style.transitionDelay.split(",").map(value=>this._cssTimeToMs(value));
+		const properties=style.transitionProperty.split(",").map(value=>value.trim());
+		let max=0;
+		for (let i=0;i<Math.max(durations.length,delays.length,properties.length);i++) {
+			const property=properties[i%properties.length];
+			if (property==="height"||property==="all")
+				max=Math.max(max,durations[i%durations.length]+delays[i%delays.length]);
+		}
+		return max;
+	}
+
+	_cssTimeToMs(value) {
+		const number=parseFloat(value)||0;
+		return value.trim().endsWith("ms")?number:number*1000;
+	}
+
+	_beginDetailsTransition(contentDiv,phase,instanceNode) {
+		const previous=contentDiv._tablanceDetailsTransition;
+		if (previous?.fallback)
+			clearTimeout(previous.fallback);
+		const transition={phase,instanceNode,finished:false,fallback:null};
+		contentDiv._tablanceDetailsTransition=transition;
+		return transition;
+	}
+
+	_armDetailsTransitionFallback(contentDiv,transition) {
+		const duration=this._detailsTransitionDuration(contentDiv);
+		transition.fallback=setTimeout(()=>{
+			if (transition.phase==="expanding")
+				this._finishDetailsExpansion(contentDiv,transition);
+			else
+				this._finishDetailsCollapse(contentDiv,transition);
+		},duration+50);
+	}
+
+	_finishDetailsExpansion(contentDiv,transition) {
+		if (transition.finished||contentDiv._tablanceDetailsTransition!==transition)
+			return;
+		transition.finished=true;
+		clearTimeout(transition.fallback);
+		contentDiv.style.height="auto";
+		delete contentDiv._tablanceDetailsTransition;
+		this._updateViewportRemainder();
+	}
+
+	_finishDetailsCollapse(contentDiv,transition) {
+		if (transition.finished||contentDiv._tablanceDetailsTransition!==transition)
+			return;
+		transition.finished=true;
+		clearTimeout(transition.fallback);
+		delete contentDiv._tablanceDetailsTransition;
+		const detailsTr=contentDiv.closest("tr.details");
+		const mainTr=detailsTr?.previousElementSibling;
+		if (!detailsTr?.isConnected||!mainTr)
+			return;
+		const dataRowIndex=parseInt(mainTr.dataset.dataRowIndex);
+		const rowData=this._filteredData[dataRowIndex];
+		const rowMeta=rowData?this._rowMeta.get(rowData):undefined;
+		const mainRowHeight=this._naturalAutoHeight?mainTr.offsetHeight+this._borderSpacingY:this._rowHeight;
+		mainTr.classList.remove("expanded");
+		this._tableSizer.style.height=parseInt(this._tableSizer.style.height)
+			-(rowMeta?.h??mainRowHeight)+mainRowHeight+"px";
+		detailsTr.remove();
+		if (rowMeta){delete rowMeta.h; if (!Object.keys(rowMeta).length) this._rowMeta.delete(rowData);}
+		if (this._openDetailsPanes[dataRowIndex]===transition.instanceNode)
+			delete this._openDetailsPanes[dataRowIndex];
+		this._updateAutoHeight();
 	}
 
 	/**
@@ -8176,8 +8236,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._viewportRemainder.hidden=true;
 			return;
 		}
-		const contentBottom=Math.max(0,(parseFloat(this._tableSizer.style.top)||0)
+		let contentBottom=Math.max(0,(parseFloat(this._tableSizer.style.top)||0)
 			+(parseFloat(this._tableSizer.style.height)||0));
+		// The virtual sizer is bookkeeping, while the final rendered row is the actual painted boundary. Details use
+		// separate-border table layout and can therefore leave the bookkeeping value a border-spacing away from that
+		// boundary. When the final data row is rendered, prefer its sub-pixel geometry; otherwise retain the virtual end.
+		const lastMainRow=[...(this._mainTbody?.querySelectorAll(":scope>tr:not(.details)")??[])].at(-1);
+		if (lastMainRow&&Number(lastMainRow.dataset.dataRowIndex)===this._filteredData.length-1) {
+			const scrollingRect=this._scrollingContent.getBoundingClientRect();
+			contentBottom=lastMainRow.getBoundingClientRect().bottom-scrollingRect.top;
+		}
 		const remainderHeight=Math.max(0,this._scrollBody.clientHeight-contentBottom);
 		this._viewportRemainder.hidden=remainderHeight<1||this._filteredData.length===0;
 		// Overlap the final row/details edge by one pixel so both surfaces share one boundary instead of drawing a
@@ -9753,8 +9821,8 @@ export default class Tablance extends TablanceBase {
 		const expHeight=mainRowHeight+expRow.offsetHeight+this._borderSpacingY;
 		rowMeta.h=expHeight;
 		const contentDiv=expRow.querySelector(".content");
-		if (!this._detailsBordersHeight)//see declarataion of _detailsTopBottomBorderWidth
-			this._detailsBordersHeight=expHeight-contentDiv.offsetHeight;
+		const expandedContentHeight=getComputedStyle(contentDiv).height;
+		const instanceNode=this._openDetailsPanes[dataRowIndex];
 		this._tableSizer.style.height=parseInt(this._tableSizer.style.height)//adjust scroll-height reflect change...
 			+expHeight-mainRowHeight+"px";//...in height of the table
 		this._updateAutoHeight();
@@ -9762,11 +9830,17 @@ export default class Tablance extends TablanceBase {
 			this._unsortCol(null,"expand");
 			contentDiv.style.transition="";
 			contentDiv.style.height="0px";//start at 0
-			setTimeout(()=>contentDiv.style.height=expHeight-this._detailsBordersHeight+"px");
+			const transition=this._beginDetailsTransition(contentDiv,"expanding",instanceNode);
+			requestAnimationFrame(()=>{
+				if (contentDiv._tablanceDetailsTransition!==transition)
+					return;
+				contentDiv.style.height=expandedContentHeight;
+				this._armDetailsTransitionFallback(contentDiv,transition);
+			});
 			this._animate(()=>this._adjustCursorPosSize(this._selectedCell,true),500,"cellCursor");
 		} else {
 			contentDiv.style.transition="none";
-			contentDiv.style.height=expHeight-this._detailsBordersHeight+"px";
+			contentDiv.style.height="auto";
 		}
 		return expHeight;
 	}
@@ -9792,17 +9866,25 @@ export default class Tablance extends TablanceBase {
 				return;
 			this._scrollToCursor();
 		}
-		if (this._openDetailsPanes[dataRowIndex])
-			this._openDetailsPanes[dataRowIndex].collapsing=true;
+		const instanceNode=this._openDetailsPanes[dataRowIndex];
+		if (instanceNode)
+			instanceNode.collapsing=true;
 		const contentDiv=tr.nextSibling.querySelector(".content");
+		const startCollapse=()=>{
+			const transition=this._beginDetailsTransition(contentDiv,"collapsing",instanceNode);
+			contentDiv.style.height="0px";
+			if (parseFloat(getComputedStyle(contentDiv).height)<=.01)
+				this._finishDetailsCollapse(contentDiv,transition);
+			else
+				this._armDetailsTransitionFallback(contentDiv,transition);
+		};
 		if (contentDiv.style.height==="auto") {//if fully expanded
-			contentDiv.style.height=rowMeta.h-this._detailsBordersHeight+"px";
-			setTimeout(()=>contentDiv.style.height=0);
-		} else if (parseInt(contentDiv.style.height)==0)//if previous closing-animation has reached 0 but transitionend 
-		//hasn't been called yet which happens easily, for instance by selecting expand-button and holding space/enter
-			contentDiv.dispatchEvent(new Event('transitionend'));
+			contentDiv.style.height=getComputedStyle(contentDiv).height;
+			requestAnimationFrame(startCollapse);
+		} else if (parseFloat(contentDiv.style.height)===0)
+			startCollapse();
 		else//if in the middle of animation, either expanding or contracting. make it head towards 0
-			contentDiv.style.height=0;
+			startCollapse();
 		this._animate(()=>this._adjustCursorPosSize(this._selectedCell,true),500,"cellCursor");
 	}
 

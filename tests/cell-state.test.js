@@ -8,6 +8,14 @@ const assert=(condition,message)=>{
 	assertions.push(message);
 };
 const tick=()=>new Promise(resolve=>setTimeout(resolve,20));
+const waitFor=async (condition,message,timeout=1000)=>{
+	const deadline=performance.now()+timeout;
+	while (!condition()) {
+		if (performance.now()>=deadline)
+			throw new Error(`Timed out waiting for ${message}`);
+		await new Promise(resolve=>requestAnimationFrame(resolve));
+	}
+};
 const key=(target,key,code=key,options={})=>{
 	const event=new KeyboardEvent("keydown",{key,code,bubbles:true,cancelable:true,...options});
 	target.dispatchEvent(event);
@@ -42,11 +50,27 @@ try {
 		assert(!!shortcuts._openDetailsPanes[0],`${JSON.stringify(plus)} opens first row from outline`);
 		assert(shortcuts._mainRowIndex===0,"expansion shortcut does not navigate to another row");
 		const collapseEvent=key(shortcuts.rootEl,minus.key,minus.code,minus);
-		await new Promise(resolve=>setTimeout(resolve,350));
+		await waitFor(()=>!shortcuts._openDetailsPanes[0],"details collapse cleanup");
 		assert(!shortcuts._openDetailsPanes[0],`${JSON.stringify(minus)} closes the same row`);
 		if (plus.altKey)
 			assert(expandEvent.defaultPrevented&&collapseEvent.defaultPrevented,"Alt arrows suppress browser default");
 	}
+	const collapsedSizerHeight=shortcuts._tableSizer.style.height;
+	key(shortcuts.rootEl,"+","NumpadAdd");
+	await tick();
+	const fallbackDetails=shortcuts._mainTbody.querySelector("tr.details");
+	const fallbackContent=fallbackDetails.querySelector(".content");
+	const suppressTransitionCompletion=event=>{
+		if (event.target===fallbackContent&&(!event.propertyName||event.propertyName==="height"))
+			event.stopImmediatePropagation();
+	};
+	fallbackContent.addEventListener("transitionend",suppressTransitionCompletion,{capture:true});
+	fallbackContent.addEventListener("transitioncancel",suppressTransitionCompletion,{capture:true});
+	key(shortcuts.rootEl,"-","NumpadSubtract");
+	await waitFor(()=>!shortcuts._openDetailsPanes[0],"fallback details collapse cleanup");
+	assert(!fallbackDetails.isConnected&&!shortcuts._rowMeta.get(shortcuts._filteredData[0])?.h
+		&&shortcuts._tableSizer.style.height===collapsedSizerHeight,
+		"collapse fallback finalizes DOM, row metadata, navigation state, and sizer exactly once without transition events");
 	for (const binding of [{key:"=",code:"Equal"},{key:"_",code:"Minus",shiftKey:true},
 		{key:"+",code:"Equal",ctrlKey:true},{key:"+",code:"Equal",metaKey:true},
 		{key:"+",code:"Equal",isComposing:true}]) {
@@ -1126,7 +1150,8 @@ try {
 	expandedStatusTable.setData([{name:"Expanded",detail:"Nested"},{name:"After",detail:"Second"}]);
 	await tick();
 	expandedStatusTable.expandRow(0);
-	await new Promise(resolve=>setTimeout(resolve,180));
+	await waitFor(()=>expandedStatusTable._mainTbody.querySelector("tr.details .content")?.style.height==="auto",
+		"details expansion cleanup");
 	const expandedLastMainRow=[...expandedStatusTable._mainTbody.querySelectorAll(":scope>tr:not(.details)")].at(-1);
 	assert(!expandedStatusTable._viewportRemainder.hidden
 		&&expandedStatusTable._mainTbody.querySelector("tr.details")
