@@ -4565,6 +4565,44 @@ try {
 		"ordinary list-details with a separate title column retain the existing full-value-cell editor path");
 	detailsOnlyTable._exitEditMode(false);
 
+	const groupAlignmentTable=new Tablance(host(),{details:{type:"list",titlesColWidth:"11em",entries:[
+		{title:"Ordinary",dataKey:"ordinary",nodeId:"alignedOrdinary",input:{type:"text"}},
+		{type:"group",title:"Group",nodeId:"alignedGroup",closedRender:()=>"Summary",entries:[
+			{title:"Inner",dataKey:"inner",nodeId:"alignedInner",input:{type:"text"}},
+			{type:"group",title:"Nested",nodeId:"alignedNested",closedRender:()=>"Nested summary",entries:[
+				{title:"Nested inner",dataKey:"nestedInner",input:{type:"text"}},
+			]},
+		]},
+	]}},true,true,{searchbar:false});
+	groupAlignmentTable.setData([{ordinary:"Ordinary value",inner:"Inner value",nestedInner:"Nested value"}]);
+	await tick();
+	const alignedOrdinary=groupAlignmentTable.getDetailCell(0,"alignedOrdinary");
+	const alignedGroup=groupAlignmentTable.getDetailCell(0,"alignedGroup");
+	const alignedValueLeft=alignedOrdinary.el.getBoundingClientRect().left;
+	const alignedGroupLeft=alignedGroup.viewportEl.getBoundingClientRect().left;
+	assert(Math.abs(alignedGroupLeft-alignedValueLeft)<1
+		&&getComputedStyle(alignedGroup.selEl).paddingLeft==="0px",
+		"a direct list group frame shares the ordinary details value-cell left edge while labels remain separate");
+	alignedGroup.select();
+	const alignedCursorLeft=groupAlignmentTable._cellCursor.getBoundingClientRect().left;
+	assert(Math.abs(alignedCursorLeft-alignedGroupLeft)<1,
+		"direct list group selection follows the newly aligned group frame");
+	key(groupAlignmentTable.rootEl,"Enter","Enter");
+	await waitFor(()=>alignedGroup.el.classList.contains("open")
+		&&!alignedGroup.viewportEl.classList.contains("tablance-group-animating"),"aligned group opening");
+	const alignedNested=groupAlignmentTable.getDetailCell(0,"alignedNested");
+	const alignedOpenValueLeft=alignedOrdinary.el.getBoundingClientRect().left;
+	const alignedOpenLeft=alignedGroup.viewportEl.getBoundingClientRect().left;
+	const alignedNestedLeft=alignedNested.viewportEl.getBoundingClientRect().left;
+	assert(Math.abs(alignedOpenLeft-alignedOpenValueLeft)<1&&alignedNestedLeft>alignedOpenLeft,
+		"opening preserves the top-level alignment while nested groups retain their hierarchy inset");
+	groupAlignmentTable._closeGroup(alignedGroup);
+	await waitFor(()=>!alignedGroup.el.classList.contains("open")
+		&&!alignedGroup.viewportEl.classList.contains("tablance-group-animating"),"aligned group closing");
+	assert(Math.abs(alignedGroup.viewportEl.getBoundingClientRect().left
+		-alignedOrdinary.el.getBoundingClientRect().left)<1,
+		"closing and viewport cleanup preserve the direct list group alignment");
+
 	const bulkRows=[{locked:"one"},{locked:"two"}];
 	const bulkTable=new Tablance(host(),{main:{columns:[
 		{type:"select"},

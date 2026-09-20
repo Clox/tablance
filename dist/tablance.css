@@ -1657,6 +1657,9 @@
 .tablance .details table.details-list > tbody > tr > td.value > .tablance-group-viewport > .details-group {
   min-height: 1.4em;
 }
+.tablance .details table.details-list > tbody > tr > td.value.group-cell {
+  padding-left: 0;
+}
 .tablance .details table.details-list > tbody > tr > td.value:not(.group-cell) {
   padding: 7px 5px 3px;
 }

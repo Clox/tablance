@@ -1699,9 +1699,12 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 							border-left: 1px solid #ccc;
 						}
 						padding: 5px;
-							>.tablance-group-viewport>.details-group {
-								min-height: 1.4em;
-							}
+						>.tablance-group-viewport>.details-group {
+							min-height: 1.4em;
+						}
+					}
+					>td.value.group-cell {
+						padding-left: 0;
 					}
 					>td.value:not(.group-cell) {
 						padding: 7px 5px 3px;
