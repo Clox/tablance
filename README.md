@@ -78,8 +78,14 @@ Search uses a field's rendered value when `render` is configured, the visible op
 and the raw primitive value otherwise. Set `searchValue(payload)` when a field needs different or multiple searchable
 representations. The callback receives the standard render payload plus `renderedValue` and may return one primitive
 value or an array of primitive values; `null`, `undefined`, an empty array, objects, and nested arrays add no search
-text. HTML and DOM results are reduced to their visible text. For example, this makes both a stored and a formatted
-identifier searchable without exposing raw values for every rendered field:
+text. HTML and DOM results are reduced to their visible text.
+
+Query text and every individual search representation normalize whitespace symmetrically: whitespace characters are
+converted to ordinary spaces, consecutive whitespace is collapsed, and leading/trailing whitespace is removed.
+Representations remain separate, so normalization never permits a match across field or representation boundaries.
+
+For example, this makes both a stored and a formatted identifier searchable without exposing raw values for every
+rendered field:
 
 ```js
 {

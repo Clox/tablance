@@ -126,7 +126,7 @@ try {
 			searchValue:({value,renderedValue})=>[value,renderedValue]},
 		{dataKey:"renderOnly",render:()=>"Rendered public label"},
 		{dataKey:"choice",input:{type:"select",options:[{value:"select-internal",text:"Friendly choice"}]}},
-		{dataKey:"boundary",searchValue:()=>["left-edge","right-edge"]},
+		{dataKey:"boundary",searchValue:()=>["left-edge "," right-edge"]},
 		{dataKey:"none",searchValue:()=>null},
 		{dataKey:"empty",searchValue:()=>[]},
 		{dataKey:"object",searchValue:()=>({internal:"object-value"})},
@@ -139,7 +139,7 @@ try {
 	const searchTable=new Tablance(host(),searchSchema,true,true,{searchbar:false,ordering:false});
 	const searchRow={identity:"197001290357",renderOnly:"render-only-internal",choice:"select-internal",
 		boundary:"unused",none:"hidden-null",empty:"hidden-empty",object:"hidden-object",html:"unused",
-		dom:"unused",late:"Late searchable value",detail:"nested searchable value"};
+		dom:"unused",late:"  Oscar\t \nJonsson\u00a0 ",detail:"nested searchable value"};
 	searchTable.setData([searchRow]);
 	await tick();
 	earlySearchBuilds=lateSearchBuilds=detailsSearchBuilds=0;
@@ -151,13 +151,20 @@ try {
 	assert(rowMatches(searchTable,searchRow,"0129-035")
 		&&earlySearchBuilds===1&&lateSearchBuilds===1&&detailsSearchBuilds===1,
 		"searchValue matches a partial rendered representation without rebuilding a cached row");
+	assert(rowMatches(searchTable,searchRow,"  197001290357\u00a0")
+		&&rowMatches(searchTable,searchRow,"\t19700129-0357\n"),
+		"leading, trailing, and non-breaking query whitespace do not change raw or rendered matches");
+	for (const query of ["Oscar Jonsson","Oscar   Jonsson","Oscar\tJonsson","Oscar\n\u00a0Jonsson"])
+		assert(rowMatches(searchTable,searchRow,query),
+			"query and representation whitespace normalize symmetrically across spaces, tabs, newlines, and NBSP");
 	assert(rowMatches(searchTable,searchRow,"Rendered public")
 		&&!rowMatches(searchTable,searchRow,"render-only-internal"),
 		"rendered fields remain rendered-only by default");
 	assert(rowMatches(searchTable,searchRow,"Friendly choice")
 		&&!rowMatches(searchTable,searchRow,"select-internal"),
 		"select fields retain visible option text as their default search representation");
-	assert(!rowMatches(searchTable,searchRow,"edgeri"),
+	assert(!rowMatches(searchTable,searchRow,"edgeri")
+		&&!rowMatches(searchTable,searchRow,"edge right"),
 		"separate searchValue representations cannot match across representation boundaries");
 	assert(!rowMatches(searchTable,searchRow,"hidden-null")
 		&&!rowMatches(searchTable,searchRow,"hidden-empty")
@@ -167,6 +174,13 @@ try {
 	assert(rowMatches(searchTable,searchRow,"Visible HTML text")
 		&&rowMatches(searchTable,searchRow,"Visible DOM text"),
 		"HTML and DOM renderer results are normalized to visible text");
+	const whitespaceQueryTable=new Tablance(host(),{main:{columns:[{dataKey:"name"}]}},
+		true,true,{searchbar:false,ordering:false});
+	whitespaceQueryTable.setData([{name:"First"},{name:"Second"}]);
+	await tick();
+	whitespaceQueryTable._filterCurrentView(" \t\n\u00a0 ");
+	assert(whitespaceQueryTable._filter===""&&whitespaceQueryTable._filteredData.length===2,
+		"a whitespace-only query normalizes to an empty search and leaves every row visible");
 
 	let isolatedDetailsBuilds=0;
 	const detailsSearchTable=new Tablance(host(),{

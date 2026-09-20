@@ -9,6 +9,8 @@ const DEFAULT_MENU_COLUMN_WIDTH=48;
 let anchoredPopoverId=0;
 let textareaShortcutHintId=0;
 
+const normalizeSearchWhitespace=value=>String(value??"").replace(/[\s\u00a0]+/gu," ").trim();
+
 // Shared prototype for instance-nodes so utility getters stay in sync after inserts/deletes.
 const INSTANCE_NODE_PROTOTYPE=Object.create(null);
 Object.defineProperties(INSTANCE_NODE_PROTOTYPE,{
@@ -8911,6 +8913,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * @param {boolean} caseSensitive Whether text matching should be case sensitive.
 	 */
 	_filterCurrentView(filterString,includeDetails=true,caseSensitive=false) {
+		filterString=normalizeSearchWhitespace(filterString);
 		this._filter=filterString;
 		if (this._trashCapability)
 			this._lifecycleSearch[this._lifecycleMode]=filterString;
@@ -9035,7 +9038,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * @returns {boolean} True if the row matches the filter.
 	 */
 	_rowSatisfiesFilters(filterString,dataRow,mainIndex,selectOptsCache,includeDetails=true,caseSensitive=false) {
-		const filterNeedle=!caseSensitive&&typeof filterString==="string"?filterString.toLowerCase():filterString;
+		const normalizedFilter=normalizeSearchWhitespace(filterString);
+		const filterNeedle=caseSensitive?normalizedFilter:normalizedFilter.toLowerCase();
 		const shouldSkipField=schemaNode=>
 			schemaNode?.input?.type==="button"//buttons carry no filterable text
 			||schemaNode?.dependsOnCellPaths;//needs live instance nodes; skip for now
@@ -9055,7 +9059,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					text=htmlToTextDiv.textContent??"";
 				}
 			}
-			return text;
+			return normalizeSearchWhitespace(text);
 		};
 		const fieldRepresentations=(schemaNode,dataObj,mainIndex)=>{
 			if (!schemaNode||shouldSkipField(schemaNode)||dataObj==null)
