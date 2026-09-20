@@ -227,6 +227,9 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		//looks good but is distracting when using arrow-keys. Limit it to mouse-clicks?
 		//transition: left .15s ease-out,top .15s ease-out,height .15s ease-out,width .15s ease-out;
 		position: absolute;
+		&.tablance-group-animation-clipped {
+			visibility: hidden;
+		}
 		cursor:cell;
 		outline:2px solid var(--tablance-accent-color);
 		&:not(.details) {
@@ -1071,7 +1074,7 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 				background-color: var(--tablance-hover-background);
 			}
 		}
-		.details-list>tbody>tr>td.group-cell:has(>.details-group.tablance-cell-state:not(.open):not(.disabled)):hover {
+		.details-list>tbody>tr>td.group-cell:has(>.tablance-group-viewport>.details-group.tablance-cell-state:not(.open):not(.disabled)):hover {
 			background-color: var(--tablance-hover-background);
 		}
 		.lineup {
@@ -1696,7 +1699,7 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 							border-left: 1px solid #ccc;
 						}
 						padding: 5px;
-							>.details-group {
+							>.tablance-group-viewport>.details-group {
 								min-height: 1.4em;
 							}
 					}
@@ -1728,7 +1731,7 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 	}
 	&:has(.cell-cursor:hover:not(.edit-mode):not(.read-only-mode)) {
 		.tablance-active-cell,
-		.tablance-active-cell>.group-cell>.details-group:not(.open) {
+		.tablance-active-cell>.group-cell>.tablance-group-viewport>.details-group:not(.open) {
 			background-color: var(--tablance-hover-background);
 		}
 
@@ -1738,80 +1741,91 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 	}
 	.group-cell{
 		padding: 4px;
-		>table {
-			box-sizing: border-box;
-			overflow: hidden;
-			&:not(:last-of-type) {
-				margin-bottom: 4px;
-			}
-			border: 1px solid #c8cdd3;
-			border-radius: 8px;
-			border-collapse: separate;
-			border-spacing: 0;
-			background-color: transparent;
-			box-shadow:
-				inset 0 1px 5px rgba(71, 86, 106, .10),
-				inset -1px 2px 2px rgba(148, 163, 184, .10),
-				inset 0 -2px 4px rgba(148, 163, 184, .10),
-				inset 3px 3px 4px -2px rgba(51, 65, 85, .10);
+		>:where(.tablance-group-viewport) {
 			width: 100%;
-			&:not(.open) {
-				display: flex;
-				align-items: center;
-				>tbody {
-					display: table;
-					flex: 0 1 auto;
-					width: auto;
-					min-width: 0;
-				}
+			&.tablance-group-animating {
+				transition: height 150ms ease-out;
 			}
-			&.details-affordances-suppressed {
-				border-color: transparent;
-				box-shadow: none;
-			}
-			&:not(.open)>tbody>tr {
-				&.empty,>td>div>.empty {
-					display: none;
+			>table {
+				box-sizing: border-box;
+				overflow: hidden;
+				&:not(:last-of-type) {
+					margin-bottom: 4px;
 				}
-			}
-			&.open>tbody>tr:not(:first-child),>tbody>tr:not(.empty) + tr:not(.empty) {
-				> td>.separator {
-					display: block;
+				border: 1px solid #c8cdd3;
+				border-radius: 8px;
+				border-collapse: separate;
+				border-spacing: 0;
+				background-color: transparent;
+				box-shadow:
+					inset 0 1px 5px rgba(71, 86, 106, .10),
+					inset -1px 2px 2px rgba(148, 163, 184, .10),
+					inset 0 -2px 4px rgba(148, 163, 184, .10),
+					inset 3px 3px 4px -2px rgba(51, 65, 85, .10);
+				width: 100%;
+				&:not(.open) {
+					display: flex;
+					align-items: center;
+					>tbody {
+						display: table;
+						flex: 0 1 auto;
+						width: auto;
+						min-width: 0;
+					}
 				}
-			}
-			&.open>tbody>tr>td>.separator {
-				border-top-style: solid;
-			}
-			&.closed-render {
-				&.open>tbody>tr.group-render {
-					display: none;
+				&.details-affordances-suppressed {
+					border-color: transparent;
+					box-shadow: none;
 				}
-				&:not(.open)>tbody>tr:not(.group-render) {
-					display: none;
-				}
-			}
-			>tbody> {
-				tr:not(:first-child)>td {
-					padding-top: 0;
-				}
-				tr>td:has(>div.group-cell) {
-					padding-top: 2px;
-				}
-				tr>td {
-					padding: 6px 10px;
-					padding-top: 12;
-					border: none;
-					padding-left: 4px;
-					>.separator {
-						border-top: 1px dashed #ccc;
-						margin: 0 4px 0 0;
+				&:not(.open)>tbody>tr {
+					&.empty,>td>div>.empty {
 						display: none;
 					}
-					&.details-affordances-suppressed>.separator {
-						display: none !important;
+				}
+				&.open>tbody>tr:not(:first-child),>tbody>tr:not(.empty) + tr:not(.empty) {
+					> td>.separator {
+						display: block;
+					}
+				}
+				&.open>tbody>tr>td>.separator {
+					border-top-style: solid;
+				}
+				&.closed-render {
+					&.open>tbody>tr.group-render {
+						display: none;
+					}
+					&:not(.open)>tbody>tr:not(.group-render) {
+						display: none;
+					}
+				}
+				>tbody> {
+					tr:not(:first-child)>td {
+						padding-top: 0;
+					}
+					tr>td:has(>div.group-cell) {
+						padding-top: 2px;
+					}
+					tr>td {
+						padding: 6px 10px;
+						padding-top: 12;
+						border: none;
+						padding-left: 4px;
+						>.separator {
+							border-top: 1px dashed #ccc;
+							margin: 0 4px 0 0;
+							display: none;
+						}
+						&.details-affordances-suppressed>.separator {
+							display: none !important;
+						}
 					}
 				}
 			}
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.tablance-group-viewport.tablance-group-animating {
+			transition: none;
 		}
 	}
 	.group-chevron {

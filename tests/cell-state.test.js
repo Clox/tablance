@@ -1795,7 +1795,7 @@ try {
 	emptyGroupTable.setData([{addresses:[]}]);
 	await tick();
 	const emptyGroup=emptyGroupTable.getDetailCell(0,"addressesGroup");
-	const emptyGroupValueCell=emptyGroup.el.parentElement;
+	const emptyGroupValueCell=emptyGroup.viewportEl.parentElement;
 	emptyGroupValueCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
 	assert(emptyGroup.selEl===emptyGroupValueCell&&emptyGroupTable._selectedCell===emptyGroupValueCell,
 		"a list group uses its full value cell as the hit target even when its inner content is empty");
@@ -2206,6 +2206,12 @@ try {
 		heading.querySelector(".repeated-group-title").textContent);
 	const previewPaths=new Map(previewEntries().map(entry=>[entry.dataObj.id,JSON.stringify(entry.path)]));
 	const previewChildren=[...previewRepeated.children];
+	const previewViewport=previewOuter.viewportEl;
+	assert(previewViewport?.classList.contains("tablance-group-viewport")
+		&&previewViewport.firstElementChild===previewOuter.el
+		&&getComputedStyle(previewViewport).transitionProperty==="all"
+		&&!previewViewport.classList.contains("tablance-group-animating"),
+		"every details group is wrapped by an idle dedicated animation viewport");
 	assert(JSON.stringify(previewTitles())===JSON.stringify(["Alpha","Beta","unknown"])
 		&&!previewEntry("a-first").previewHidden&&previewEntry("a-second").previewHidden
 		&&previewEntry("a-hidden").hidden&&!previewEntry("a-hidden").previewHidden
@@ -2222,7 +2228,14 @@ try {
 	assert(!previewTable._isNavigableDetailsInstance(previewEntry("a-second"))
 		&&previewTable._getFirstSelectableDetailsCell(previewRepeated,true)===previewEntry("a-first"),
 		"preview-hidden repeated entries are excluded from logical keyboard navigation");
+	const previewBackingSnapshot=[...previewBacking];
 	previewEntry("a-second").select();
+	const openingPreviewTransition=previewViewport._tablanceGroupTransition;
+	assert(previewOuter.el.classList.contains("open")&&openingPreviewTransition
+		&&openingPreviewTransition.targetHeight===previewTable._groupNaturalHeight(previewOuter)
+		&&previewEntries().every(entry=>!entry.previewHidden)
+		&&JSON.stringify(previewTitles())===JSON.stringify(["Alphas","Betas","Empty group","unknown"]),
+		"programmatic opening synchronizes full presentation before measuring and animating its viewport");
 	await tick();
 	assert(previewOuter.el.classList.contains("open")
 		&&previewEntries().every(entry=>!entry.previewHidden)
@@ -2230,12 +2243,44 @@ try {
 		&&previewTable._activeDetailsCell===previewEntry("a-second"),
 		"programmatic selection opens the enclosing group and restores full repeated rendering");
 	previewTable._finalizeGroupClose(previewOuter);
-	await tick();
+	const reversedPreviewTransition=previewViewport._tablanceGroupTransition;
+	assert(reversedPreviewTransition&&reversedPreviewTransition!==openingPreviewTransition
+		&&!previewOuter.el.classList.contains("open")
+		&&JSON.stringify(previewTitles())===JSON.stringify(["Alpha","Beta","unknown"]),
+		"closing during opening replaces the transition while applying compact logical state immediately");
+	previewViewport.dispatchEvent(new TransitionEvent("transitioncancel",{propertyName:"height"}));
+	assert(previewViewport._tablanceGroupTransition===reversedPreviewTransition,
+		"a transitioncancel away from the current target cannot finalize a reversed group animation");
+	const suppressPreviewAnimationEvent=event=>{
+		if (event.target===previewViewport&&event.propertyName==="height")
+			event.stopImmediatePropagation();
+	};
+	previewViewport.addEventListener("transitionend",suppressPreviewAnimationEvent,{capture:true});
+	previewViewport.addEventListener("transitioncancel",suppressPreviewAnimationEvent,{capture:true});
+	await waitFor(()=>!previewViewport._tablanceGroupTransition,"group transition fallback cleanup");
+	previewViewport.removeEventListener("transitionend",suppressPreviewAnimationEvent,{capture:true});
+	previewViewport.removeEventListener("transitioncancel",suppressPreviewAnimationEvent,{capture:true});
 	assert(JSON.stringify(previewTitles())===JSON.stringify(["Alpha","Beta","unknown"])
 		&&previewRepeated.children.every((entry,index)=>entry===previewChildren[index])
 		&&previewEntries().every(entry=>JSON.stringify(entry.path)===previewPaths.get(entry.dataObj.id))
-		&&previewRow.items===previewBacking,
-		"preview state reuses repeated instances without changing children, paths, or backing data");
+		&&previewRow.items===previewBacking
+		&&previewBacking.every((entry,index)=>entry===previewBackingSnapshot[index])
+		&&!previewViewport.style.height&&!previewViewport.style.overflow
+		&&!previewViewport.classList.contains("tablance-group-animating"),
+		"fallback cleanup restores natural layout without changing repeated instances, paths, or backing data");
+	previewTable._openGroup(previewOuter);
+	await waitFor(()=>!previewViewport._tablanceGroupTransition,"ordinary group transition completion");
+	assert(previewOuter.el.classList.contains("open")&&!previewViewport.style.height&&!previewViewport.style.overflow,
+		"an ordinary transition event leaves an open group at natural height with no temporary inline state");
+	const originalMatchMedia=window.matchMedia;
+	window.matchMedia=query=>({matches:query==="(prefers-reduced-motion: reduce)",media:query,
+		addEventListener:()=>{},removeEventListener:()=>{}});
+	previewTable._finalizeGroupClose(previewOuter);
+	window.matchMedia=originalMatchMedia;
+	assert(!previewOuter.el.classList.contains("open")&&!previewViewport._tablanceGroupTransition
+		&&!previewViewport.style.height&&!previewViewport.style.overflow
+		&&JSON.stringify(previewTitles())===JSON.stringify(["Alpha","Beta","unknown"]),
+		"reduced motion applies compact state synchronously without retaining animation state");
 	previewEntry("a-second").dataObj.order=-1;
 	previewTable._finalizeRepeatedMutation(previewRepeated);
 	assert(!previewEntry("a-second").previewHidden&&previewEntry("a-first").previewHidden,
@@ -2274,6 +2319,32 @@ try {
 	}
 	assert(/preview\.maxEntries/.test(invalidPreviewError?.message),
 		"invalid repeated preview limits fail declaratively");
+
+	const nestedAnimationRow={title:"Nested animation",value:"Value"};
+	const nestedAnimationTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},details:{type:"list",entries:[
+		{type:"group",nodeId:"animationOuter",entries:[
+			{type:"group",nodeId:"animationInner",closedRender:()=>"Compact",entries:[
+				{title:"Value",dataKey:"value",nodeId:"animationValue",input:{type:"text"}},
+			]},
+		]},
+	]}},true,true,{searchbar:false});
+	nestedAnimationTable.setData([nestedAnimationRow]);
+	await tick();
+	const animationOuter=nestedAnimationTable.getDetailCell(0,"animationOuter");
+	const animationInner=nestedAnimationTable.getDetailCell(0,"animationInner");
+	const animationValue=nestedAnimationTable.getDetailCell(0,"animationValue");
+	const animationValuePath=JSON.stringify(animationValue.path);
+	animationValue.select();
+	assert(animationOuter.el.classList.contains("open")&&animationInner.el.classList.contains("open")
+		&&animationOuter.viewportEl._tablanceGroupTransition
+		&&!animationInner.viewportEl._tablanceGroupTransition
+		&&nestedAnimationTable._activeDetailsCell===animationValue
+		&&animationValue.dataObj===nestedAnimationRow&&JSON.stringify(animationValue.path)===animationValuePath,
+		"programmatic descendant selection opens every logical ancestor but animates only the outermost changed group");
+	await waitFor(()=>!animationOuter.viewportEl._tablanceGroupTransition,"nested outer group animation cleanup");
+	assert(!animationOuter.viewportEl.style.height&&!animationOuter.viewportEl.style.overflow
+		&&!animationInner.viewportEl.style.height&&!animationInner.viewportEl.style.overflow,
+		"nested programmatic opening cleans both viewports without altering the selected instance");
 
 	const hiddenReorderTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},details:{type:"list",entries:[
 		{type:"group",nodeId:"hiddenReorderOuter",entries:[
@@ -3173,7 +3244,7 @@ try {
 		"generated file metadata and mutation actions use semantic metadata/control lineups");
 
 	const historyGroup=table.getDetailCell(0,"historyGroup");
-	const historyGroupValueStyle=getComputedStyle(historyGroup.el.parentElement);
+	const historyGroupValueStyle=getComputedStyle(historyGroup.viewportEl.parentElement);
 	assert(historyGroupValueStyle.paddingTop==="5px"&&historyGroupValueStyle.paddingBottom==="5px",
 		`detail group containers retain their original vertical padding (${historyGroupValueStyle.paddingTop}/${historyGroupValueStyle.paddingBottom})`);
 	const safeTextRender=table.getDetailCell(0,"safeTextGroup").el.querySelector("tbody>tr.group-render>td");
@@ -3249,7 +3320,7 @@ try {
 		&&historyEntries.every(entry=>!entry.groupChevronEl.hidden)
 		&&historyGroup.el.querySelector("td").getBoundingClientRect().left===selectedHistoryGroupTextPosition,
 		"opening a group hides its own chevron and exposes its closed child groups without moving content");
-	assert(historyEntries.every(entry=>getComputedStyle(entry.el.parentElement.parentElement).paddingTop==="2px"),
+	assert(historyEntries.every(entry=>getComputedStyle(entry.viewportEl.parentElement.parentElement).paddingTop==="2px"),
 		"every nested group row reserves the same space above its selection outline");
 	const groupStyles=[getComputedStyle(historyGroup.el),getComputedStyle(historyEntries[0].el)];
 	assert(groupStyles.every(style=>["Top","Right","Bottom","Left"].every(side=>
@@ -3270,9 +3341,17 @@ try {
 		&&getComputedStyle(historyEntries[0].el).borderSpacing==="0px 0px",
 		"details groups use the finalized transparent inset design and clip child hover to their rounded shape");
 	historyEntries[1].select();
-	await new Promise(resolve=>setTimeout(resolve,150));
+	await waitFor(()=>!historyGroup.viewportEl._tablanceGroupTransition,"history group animation cleanup");
 	const nestedGroupChevron=historyEntries[0].groupChevronEl;
-	historyEntries[0].el.scrollIntoView({block:"center"});
+	const groupHoverHost=table.rootEl.parentElement;
+	groupHoverHost.style.position="fixed";
+	groupHoverHost.style.inset="0 auto auto 0";
+	groupHoverHost.style.zIndex="100";
+	table._scrollBody.style.height="1100px";
+	table._scrollBody.style.overflow="visible";
+	table._scrollBody.scrollTop=0;
+	await tick();
+	table._scrollBody.scrollTop=0;
 	const nestedClosedRender=historyEntries[0].el.querySelector("tbody>tr.group-render>td");
 	const idleChevronStyle=getComputedStyle(nestedGroupChevron);
 	const idleChevronGlyphStyle=getComputedStyle(nestedGroupChevron,"::before");
@@ -3301,7 +3380,7 @@ try {
 			setTimeout(resolve,180);
 		},{once:true});
 	});
-	window.nativeGroupHoverTarget=historyEntries[0].el;
+	window.nativeGroupHoverTarget=nestedGroupChevron;
 	result.textContent="awaiting trusted group hover";
 	result.dataset.status="awaiting-native-group-hover";
 	await nativeGroupHoverDone;
@@ -3357,6 +3436,11 @@ try {
 		&&getComputedStyle(nestedGroupChevron,"::before").opacity==="1"
 		&&JSON.stringify(selectedChevronLayout)===JSON.stringify(idleChevronLayout),
 		"selection accents the existing group chevron without adding space or moving it");
+	table._scrollBody.style.removeProperty("height");
+	table._scrollBody.style.removeProperty("overflow");
+	groupHoverHost.style.removeProperty("position");
+	groupHoverHost.style.removeProperty("inset");
+	groupHoverHost.style.removeProperty("z-index");
 	assert(table._cellCursor.classList.contains("group-cell-cursor")
 		&&getComputedStyle(table._cellCursor).outlineOffset==="-1px",
 		"a selected details group draws its outline one pixel inward on every side");
@@ -3364,7 +3448,7 @@ try {
 	assert(closedGroupRenderStyle.paddingLeft==="4px"&&closedGroupRenderStyle.paddingTop==="2px"
 		&&closedGroupRenderStyle.paddingBottom==="2px",
 		"a closed group render uses compact horizontal and vertical padding");
-	const nestedGroupCellStyle=getComputedStyle(historyEntries[0].el.parentElement);
+	const nestedGroupCellStyle=getComputedStyle(historyEntries[0].viewportEl.parentElement);
 	assert(nestedGroupCellStyle.paddingRight==="4px"&&getComputedStyle(historyEntries[0].el).boxSizing==="border-box",
 		"a nested group keeps visible space between its right border and its parent border");
 	const firstHistorySeparator=historyEntries[0].children[0].selEl.querySelector(":scope>.separator");

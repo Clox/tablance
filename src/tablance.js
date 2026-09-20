@@ -4655,11 +4655,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * 		schemaNode with no create option).
 	 */
 	_generateDetailsGroup(groupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,notYetCreated) {
-		const groupTable=parentEl.appendChild(document.createElement("table"));
+		const viewport=parentEl.appendChild(document.createElement("div"));
+		viewport.className="tablance-group-viewport";
+		const groupTable=viewport.appendChild(document.createElement("table"));
 		const tbody=instanceNode.containerEl=groupTable.appendChild(document.createElement("tbody"));
 		groupTable.dataset.path=path.join("-");
 		parentEl.classList.add("group-cell");
 		instanceNode.el=groupTable;
+		instanceNode.viewportEl=viewport;
+		viewport.addEventListener("transitionend",e=>this._groupAnimationEnd(e,instanceNode));
+		viewport.addEventListener("transitioncancel",e=>this._groupAnimationEnd(e,instanceNode));
 		// A group instance is visually represented by its own table even when its canonical selection/state surface is
 		// an enclosing cell. Keep cursor geometry at that semantic group level for every group, including repeated
 		// entries and repeated creators; presentation containers such as repeated.grouping must not decide this.
@@ -5628,8 +5633,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_openGroup(groupObj) {
 		if (this._isTrashMode()) {
-			groupObj.el.classList.add("open");
-			this._syncGroupChevronVisibility(groupObj);
+			this._transitionGroupPresentation(groupObj,()=>{
+				groupObj.el.classList.add("open");
+				this._syncGroupChevronVisibility(groupObj);
+			});
 			this._selectDetailsCell(this._getFirstSelectableDetailsCell(groupObj,true,true));
 			return;
 		}
@@ -5639,8 +5646,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return;
 		this._enterEditTransaction(groupObj);
 		this._ensureGroupTransactionBaseline(groupObj);
-		groupObj.el.classList.add("open");
-		this._syncGroupChevronVisibility(groupObj);
+		this._transitionGroupPresentation(groupObj,()=>{
+			groupObj.el.classList.add("open");
+			this._syncGroupChevronVisibility(groupObj);
+		});
 		this._selectDetailsCell(this._getFirstSelectableDetailsCell(groupObj,true,true));
 		groupObj.schemaNode.onOpenAfter?.(groupObj);
 		
@@ -5996,15 +6005,179 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_finalizeGroupClose(groupObject) {
-		groupObject.el.classList.remove("open");
+		this._transitionGroupPresentation(groupObject,()=>{
+			groupObject.el.classList.remove("open");
+			if (groupObject.updateRenderOnClose) {//if group is flagged for having its closed-render updated on close
+				delete groupObject.updateRenderOnClose;//delete the flag so it doesn't get triggered again
+				this._setClosedRender(groupObject,groupObject.schemaNode.closedRender(groupObject.dataObj));
+			}
+			this._syncGroupChevronVisibility(groupObject);
+			this._syncRepeatedReorderEntry(groupObject);
+		});
 		this._ignoreClicksUntil=Date.now()+500;
-		if (groupObject.updateRenderOnClose) {//if group is flagged for having its closed-render updated on close
-			delete groupObject.updateRenderOnClose;//delete the flag so it doesn't get triggered again
-			this._setClosedRender(groupObject,groupObject.schemaNode.closedRender(groupObject.dataObj));
-		}
-		this._syncGroupChevronVisibility(groupObject);
-		this._syncRepeatedReorderEntry(groupObject);
 		delete groupObject._dirtyFields;
+	}
+
+	_groupAnimationEnd(e,groupObject) {
+		if (e.currentTarget!==e.target||(e.propertyName&&e.propertyName!=="height"))
+			return;
+		const transition=e.currentTarget._tablanceGroupTransition;
+		if (!transition)
+			return;
+		const height=e.currentTarget.getBoundingClientRect().height;
+		if (Math.abs(height-transition.targetHeight)<.75)
+			this._finishGroupTransition(groupObject,transition);
+	}
+
+	_groupNaturalHeight(groupObject) {
+		return groupObject.el?.getBoundingClientRect().height??0;
+	}
+
+	_groupReducedMotion() {
+		return typeof matchMedia==="function"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
+	}
+
+	_cancelGroupTransition(groupObject,currentHeight=null) {
+		const viewport=groupObject?.viewportEl;
+		const transition=viewport?._tablanceGroupTransition;
+		if (transition) {
+			transition.finished=true;
+			clearTimeout(transition.fallback);
+			cancelAnimationFrame(transition.startFrame);
+			cancelAnimationFrame(transition.geometryFrame);
+			cancelAnimationFrame(transition.retargetFrame);
+			transition.resizeObserver?.disconnect();
+			delete viewport._tablanceGroupTransition;
+		}
+		if (!viewport)
+			return;
+		viewport.classList.remove("tablance-group-animating");
+		if (currentHeight!=null)
+			viewport.style.height=currentHeight+"px";
+	}
+
+	_finishDescendantGroupTransitions(groupObject) {
+		const visit=node=>{
+			for (const child of node.children??[]) {
+				if (child.schemaNode?.type==="group"&&child.viewportEl?._tablanceGroupTransition)
+					this._finishGroupTransition(child,child.viewportEl._tablanceGroupTransition);
+				visit(child);
+			}
+		};
+		visit(groupObject);
+	}
+
+	_syncGroupAnimationGeometry(groupObject,transition) {
+		const viewport=groupObject.viewportEl;
+		if (viewport?._tablanceGroupTransition!==transition)
+			return;
+		const detailsTr=viewport.closest("tr.details");
+		if (detailsTr&&!this._onlyDetails)
+			this._updateDetailsHeight(detailsTr);
+		this._adjustCursorPosSize?.(this._activeDetailsCell
+			?this._getCursorGeometryEl(this._activeDetailsCell):this._selectedCell);
+		if (this._cellCursor) {
+			const viewportRect=viewport.getBoundingClientRect();
+			const cursorRect=this._cellCursor.getBoundingClientRect();
+			this._cellCursor.classList.toggle("tablance-group-animation-clipped",
+				cursorRect.top<viewportRect.top-.5||cursorRect.bottom>viewportRect.bottom+.5);
+		}
+		transition.geometryFrame=requestAnimationFrame(()=>this._syncGroupAnimationGeometry(groupObject,transition));
+	}
+
+	_armGroupTransitionFallback(groupObject,transition) {
+		const viewport=groupObject.viewportEl;
+		const duration=this._detailsTransitionDuration(viewport);
+		if (duration<=0)
+			return this._finishGroupTransition(groupObject,transition);
+		transition.fallback=setTimeout(()=>this._finishGroupTransition(groupObject,transition),duration+50);
+	}
+
+	_retargetGroupTransition(groupObject,transition) {
+		const viewport=groupObject.viewportEl;
+		if (viewport?._tablanceGroupTransition!==transition)
+			return;
+		const targetHeight=this._groupNaturalHeight(groupObject);
+		if (Math.abs(targetHeight-transition.targetHeight)<.75)
+			return;
+		const currentHeight=viewport.getBoundingClientRect().height;
+		clearTimeout(transition.fallback);
+		cancelAnimationFrame(transition.startFrame);
+		viewport.classList.remove("tablance-group-animating");
+		viewport.style.height=currentHeight+"px";
+		void viewport.offsetHeight;
+		transition.targetHeight=targetHeight;
+		cancelAnimationFrame(transition.retargetFrame);
+		transition.retargetFrame=requestAnimationFrame(()=>{
+			if (viewport._tablanceGroupTransition!==transition)
+				return;
+			viewport.classList.add("tablance-group-animating");
+			viewport.style.height=transition.targetHeight+"px";
+			this._armGroupTransitionFallback(groupObject,transition);
+			if (transition.geometryFrame==null)
+				this._syncGroupAnimationGeometry(groupObject,transition);
+		});
+	}
+
+	_finishGroupTransition(groupObject,transition) {
+		const viewport=groupObject?.viewportEl;
+		if (!viewport||transition.finished||viewport._tablanceGroupTransition!==transition)
+			return;
+		transition.finished=true;
+		clearTimeout(transition.fallback);
+		cancelAnimationFrame(transition.startFrame);
+		cancelAnimationFrame(transition.geometryFrame);
+		cancelAnimationFrame(transition.retargetFrame);
+		transition.resizeObserver?.disconnect();
+		viewport.classList.remove("tablance-group-animating");
+		viewport.style.removeProperty("height");
+		viewport.style.removeProperty("overflow");
+		this._cellCursor?.classList.remove("tablance-group-animation-clipped");
+		delete viewport._tablanceGroupTransition;
+		const detailsTr=viewport.closest("tr.details");
+		if (detailsTr&&!this._onlyDetails)
+			this._updateDetailsHeight(detailsTr);
+		this._adjustCursorPosSize?.(this._activeDetailsCell
+			?this._getCursorGeometryEl(this._activeDetailsCell):this._selectedCell);
+	}
+
+	_transitionGroupPresentation(groupObject,mutatePresentation) {
+		const viewport=groupObject?.viewportEl;
+		if (!viewport) {
+			mutatePresentation();
+			return;
+		}
+		const currentHeight=viewport.getBoundingClientRect().height;
+		this._cancelGroupTransition(groupObject,currentHeight);
+		viewport.style.overflow="hidden";
+		this._finishDescendantGroupTransitions(groupObject);
+		mutatePresentation();
+		const targetHeight=this._groupNaturalHeight(groupObject);
+		if (!viewport.isConnected||this._groupReducedMotion()||Math.abs(currentHeight-targetHeight)<.75) {
+			viewport.style.removeProperty("height");
+			viewport.style.removeProperty("overflow");
+			this._cellCursor?.classList.remove("tablance-group-animation-clipped");
+			const detailsTr=viewport.closest("tr.details");
+			if (detailsTr&&!this._onlyDetails)
+				this._updateDetailsHeight(detailsTr);
+			return;
+		}
+		const transition={groupObject,targetHeight,finished:false,fallback:null,startFrame:null,
+			geometryFrame:null,retargetFrame:null,resizeObserver:null};
+		viewport._tablanceGroupTransition=transition;
+		if (typeof ResizeObserver==="function") {
+			transition.resizeObserver=new ResizeObserver(()=>this._retargetGroupTransition(groupObject,transition));
+			transition.resizeObserver.observe(groupObject.el);
+		}
+		void viewport.offsetHeight;
+		transition.startFrame=requestAnimationFrame(()=>{
+			if (viewport._tablanceGroupTransition!==transition)
+				return;
+			viewport.classList.add("tablance-group-animating");
+			viewport.style.height=transition.targetHeight+"px";
+			this._armGroupTransitionFallback(groupObject,transition);
+			this._syncGroupAnimationGeometry(groupObject,transition);
+		});
 	}
 
 	_placeGroupChevron(groupObject) {
@@ -7907,17 +8080,21 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._mainRowIndex=mainRowIndex;
 
 		//in case this was called via instanceNode.select() it might be necessary to make sure parent-groups are open
-		let openedPresentationRoot=null;
+		const groupsToOpen=[];
 		for (let parentCell=instanceNode; parentCell=parentCell.parent;)
-			if (parentCell.schemaNode.type=="group") {
-				if (!parentCell.el.classList.contains("open"))
-					openedPresentationRoot=parentCell;
-				parentCell.el.classList.add("open");
-				this._enterEditTransaction(parentCell);
-				this._ensureGroupTransactionBaseline(parentCell);
-			}
-		if (openedPresentationRoot)
-			this._syncDetailsPresentation(openedPresentationRoot);
+			if (parentCell.schemaNode.type==="group"&&!parentCell.el.classList.contains("open"))
+				groupsToOpen.push(parentCell);
+		if (groupsToOpen.length) {
+			const openedPresentationRoot=groupsToOpen.at(-1);
+			this._transitionGroupPresentation(openedPresentationRoot,()=>{
+				for (const parentCell of groupsToOpen) {
+					parentCell.el.classList.add("open");
+					this._enterEditTransaction(parentCell);
+					this._ensureGroupTransactionBaseline(parentCell);
+				}
+				this._syncDetailsPresentation(openedPresentationRoot);
+			});
+		}
 
 		this._activeDetailsCell=instanceNode;
 		this._adjustCursorPosSize(this._getCursorGeometryEl(instanceNode));
