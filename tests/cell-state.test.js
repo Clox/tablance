@@ -21,6 +21,12 @@ const key=(target,key,code=key,options={})=>{
 	target.dispatchEvent(event);
 	return event;
 };
+const paste=(target,text)=>{
+	const event=new Event("paste",{bubbles:true,cancelable:true});
+	Object.defineProperty(event,"clipboardData",{value:{getData:type=>type==="text"?text:""}});
+	target.dispatchEvent(event);
+	return event;
+};
 const host=()=>{
 	const element=document.body.appendChild(document.createElement("div"));
 	element.className="host";
@@ -1623,6 +1629,63 @@ try {
 		&&getComputedStyle(table._cellCursor,"::before").content==="none",
 		"a text cell editor keeps its spacing and hides the now-redundant pencil while editing");
 	table._exitEditMode(false);
+
+	const pasteRow={numeric:"12",pattern:"+46",plain:"ordinary"};
+	const pasteTable=new Tablance(host(),{main:{columns:[
+		{dataKey:"numeric",input:{type:"text",format:{numericOnly:true},maxLength:6}},
+		{dataKey:"pattern",input:{type:"text",livePattern:/^\+?\d*$/}},
+		{dataKey:"plain",input:{type:"text"}},
+	]}},true,true,{searchbar:false,ordering:false});
+	pasteTable.setData([pasteRow]);
+	await tick();
+	pasteTable.selectCell(pasteRow,"numeric");
+	key(pasteTable.rootEl,"Enter","Enter");
+	const numericPasteEditor=pasteTable._cellCursor.querySelector("input.text-editor");
+	const invalidManualInput=new InputEvent("beforeinput",{bubbles:true,cancelable:true,
+		inputType:"insertText",data:"-"});
+	numericPasteEditor.dispatchEvent(invalidManualInput);
+	const validManualInput=new InputEvent("beforeinput",{bubbles:true,cancelable:true,
+		inputType:"insertText",data:"7"});
+	numericPasteEditor.dispatchEvent(validManualInput);
+	assert(invalidManualInput.defaultPrevented&&!validManualInput.defaultPrevented,
+		"ordinary keyboard input still rejects invalid characters and permits valid characters");
+	numericPasteEditor.setSelectionRange(1,1);
+	const mixedPaste=paste(numericPasteEditor,"a3-4 ");
+	assert(mixedPaste.defaultPrevented&&numericPasteEditor.value==="1342"
+		&&numericPasteEditor.selectionStart===3&&numericPasteEditor.selectionEnd===3,
+		"paste filters invalid characters while preserving insertion order and the cursor position");
+	numericPasteEditor.setSelectionRange(1,3);
+	paste(numericPasteEditor," 98x");
+	assert(numericPasteEditor.value==="1982"&&numericPasteEditor.selectionStart===3,
+		"normalized paste replaces the current selection and leaves the caret after inserted valid characters");
+	numericPasteEditor.select();
+	paste(numericPasteEditor,"12-34 5678");
+	assert(numericPasteEditor.value==="123456"&&numericPasteEditor.selectionStart===6,
+		"paste removes invalid characters before applying the input maxlength");
+	numericPasteEditor.setSelectionRange(1,4);
+	const invalidSelectionStart=numericPasteEditor.selectionStart;
+	const invalidSelectionEnd=numericPasteEditor.selectionEnd;
+	paste(numericPasteEditor," - ");
+	assert(numericPasteEditor.value==="123456"
+		&&numericPasteEditor.selectionStart===invalidSelectionStart
+		&&numericPasteEditor.selectionEnd===invalidSelectionEnd,
+		"a paste with no valid characters leaves both value and selection unchanged");
+	pasteTable._exitEditMode(false);
+	pasteTable.selectCell(pasteRow,"pattern");
+	key(pasteTable.rootEl,"Enter","Enter");
+	const patternPasteEditor=pasteTable._cellCursor.querySelector("input.text-editor");
+	patternPasteEditor.setSelectionRange(patternPasteEditor.value.length,patternPasteEditor.value.length);
+	paste(patternPasteEditor," 7a0-1");
+	assert(patternPasteEditor.value==="+46701"&&patternPasteEditor.selectionStart===6,
+		"livePattern inputs filter pasted characters through their existing whole-value rule");
+	pasteTable._exitEditMode(false);
+	pasteTable.selectCell(pasteRow,"plain");
+	key(pasteTable.rootEl,"Enter","Enter");
+	const plainPasteEditor=pasteTable._cellCursor.querySelector("input.text-editor");
+	assert(!paste(plainPasteEditor,"a-b c").defaultPrevented&&plainPasteEditor.value==="ordinary",
+		"inputs without character restrictions retain native paste handling");
+	pasteTable._exitEditMode(false);
+
 	assert([...cells].every(cell=>cell.classList.contains("tablance-cell-state")),
 		"every rendered main cell receives the canonical state styling hook");
 	assert(table._headerTable.querySelectorAll(".tablance-sort-icon").length===schema.main.columns.length,

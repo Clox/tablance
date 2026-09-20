@@ -2354,6 +2354,50 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				if (format.numericOnly && /\D/.test(e.data))
 					e.preventDefault();
 			});
+			el.addEventListener("paste",e=>{
+				const pasted=e.clipboardData?.getData("text");
+				if (pasted==null)
+					return;
+				const start=el.selectionStart??el.value.length;
+				const end=el.selectionEnd??start;
+				const before=el.value.slice(0,start);
+				const after=el.value.slice(end);
+				let filtered="";
+				for (const character of pasted) {
+					if (format.numericOnly&&/\D/.test(character))
+						continue;
+					const candidate=before+filtered+character+after;
+					if (liveRegex) {
+						liveRegex.lastIndex=0;
+						if (!liveRegex.test(candidate))
+							continue;
+					}
+					filtered+=character;
+				}
+				if (el.maxLength>=0) {
+					const available=Math.max(0,el.maxLength-(el.value.length-(end-start)));
+					filtered=filtered.slice(0,available);
+				}
+				e.preventDefault();
+				if (!filtered)
+					return;
+				el.setRangeText(filtered,start,end,"end");
+				const digitsBeforeCaret=format.numericOnly
+					?(before+filtered).replace(/\D/g,"").length:null;
+				el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"insertFromPaste",data:filtered}));
+				if (digitsBeforeCaret!=null) {
+					let position=0,digits=0;
+					while (position<el.value.length&&digits<digitsBeforeCaret) {
+						if (/\d/.test(el.value[position]))
+							digits++;
+						position++;
+					}
+					el.setSelectionRange(position,position);
+				} else {
+					const position=Math.min(start+filtered.length,el.value.length);
+					el.setSelectionRange(position,position);
+				}
+			});
 			if (format.numericOnly)
 				el.setAttribute("inputmode", "numeric");
 		}
