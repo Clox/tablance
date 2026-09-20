@@ -2275,6 +2275,34 @@ try {
 	assert(/preview\.maxEntries/.test(invalidPreviewError?.message),
 		"invalid repeated preview limits fail declaratively");
 
+	const hiddenReorderTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},details:{type:"list",entries:[
+		{type:"group",nodeId:"hiddenReorderOuter",entries:[
+			{type:"repeated",dataKey:"items",nodeId:"hiddenReorderItems",create:true,
+				grouping:{by:"kind",order:[{key:"a",title:"Grouped entries"}]},
+				reorder:{canMove:()=>false,onCommit:()=>{}},entry:{type:"group",
+					closedRender:({label})=>label,entries:[{title:"Label",dataKey:"label",input:{type:"text"}}]}},
+		]},
+	]}},true,true,{searchbar:false});
+	hiddenReorderTable.setData([{title:"Inset",items:[{kind:"a",label:"Entry"}]}]);
+	await tick();
+	const hiddenReorderOuter=hiddenReorderTable.getDetailCell(0,"hiddenReorderOuter");
+	const hiddenReorderRepeated=hiddenReorderTable.getDetailCell(0,"hiddenReorderItems");
+	hiddenReorderTable._openGroup(hiddenReorderOuter);
+	await tick();
+	const hiddenReorderEntry=hiddenReorderRepeated.children.find(entry=>!entry.schemaNode.creator);
+	const hiddenReorderCreator=hiddenReorderRepeated.children.find(entry=>entry.schemaNode.creator);
+	const hiddenReorderTitle=hiddenReorderRepeated.groupHeadings[0].querySelector(".repeated-group-title");
+	const hiddenReorderContentCell=hiddenReorderEntry.reorderContentEl;
+	const hiddenReorderCollectionRect=hiddenReorderRepeated.parent.containerEl.getBoundingClientRect();
+	assert(hiddenReorderEntry.reorderColumnEl.hidden
+		&&parseFloat(getComputedStyle(hiddenReorderContentCell).paddingLeft)===24
+		&&parseFloat(getComputedStyle(hiddenReorderContentCell).paddingRight)===16
+		&&hiddenReorderTitle.getBoundingClientRect().left>hiddenReorderCreator.el.getBoundingClientRect().left
+		&&hiddenReorderEntry.el.getBoundingClientRect().left>hiddenReorderCreator.el.getBoundingClientRect().left
+		&&hiddenReorderEntry.el.getBoundingClientRect().left>hiddenReorderCollectionRect.left
+		&&hiddenReorderEntry.el.getBoundingClientRect().right<hiddenReorderCollectionRect.right,
+		"a hidden reorder column preserves the grouped content inset while the creator stays at the repeated baseline");
+
 	const nestedGroupedTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},details:{type:"list",entries:[
 		{type:"group",nodeId:"groupingOuter",entries:[
 			{type:"group",nodeId:"groupingInner",entries:[

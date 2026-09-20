@@ -1418,6 +1418,12 @@
 .tablance .details .repeated-group-heading.details-affordances-suppressed .repeated-group-description {
   display: none;
 }
+.tablance .details .repeated-group-heading:not(.details-affordances-suppressed) .repeated-group-title {
+  margin-left: 20px;
+}
+.tablance .details .repeated-group-heading:not(.details-affordances-suppressed) .repeated-group-description {
+  margin-left: 20px;
+}
 .tablance .details .tablance-preview-hidden {
   display: none !important;
 }
@@ -1450,6 +1456,14 @@
 .tablance .details tr.repeated-group-entry.repeated-reorder-entry:not(.details-affordances-suppressed) > td:nth-child(2),
 .tablance .details table.details-group > tbody > tr.repeated-group-entry.repeated-reorder-entry:not(.details-affordances-suppressed) > td:nth-child(2) {
   padding-left: 0;
+}
+.tablance .details tr.repeated-group-entry.repeated-reorder-entry:not(.details-affordances-suppressed):has(> .repeated-reorder-column[hidden]) > td:nth-child(2),
+.tablance .details table.details-group > tbody > tr.repeated-group-entry.repeated-reorder-entry:not(.details-affordances-suppressed):has(> .repeated-reorder-column[hidden]) > td:nth-child(2) {
+  padding-left: 24px;
+}
+.tablance .details tr.repeated-group-entry:not(.details-affordances-suppressed) > td:last-child,
+.tablance .details table.details-group > tbody > tr.repeated-group-entry:not(.details-affordances-suppressed) > td:last-child {
+  padding-right: 16px;
 }
 .tablance .details span.repeated-reorder-column {
   position: relative;
