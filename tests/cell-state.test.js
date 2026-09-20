@@ -3233,6 +3233,102 @@ try {
 	table._exitEditMode(false);
 	assert(!table._cellCursor.querySelector(".tablance-textarea-shortcut-hint"),
 		"the new-line shortcut hint is removed when textarea edit mode closes");
+
+	const textareaHeightRow={label:"Textarea heights",empty:"",oneLine:"One line",
+		multiLine:"First line\nSecond line\nThird line",preset:"Preset height"};
+	const textareaHeightTable=new Tablance(host(),{
+		main:{columns:[{title:"Case",dataKey:"label"}]},
+		details:{type:"list",entries:[
+			{title:"Empty",dataKey:"empty",nodeId:"heightEmpty",
+				input:{type:"textarea",newLineShortcutHint:true}},
+			{title:"One line",dataKey:"oneLine",nodeId:"heightOneLine",
+				input:{type:"textarea",newLineShortcutHint:true}},
+			{title:"Multiple lines",dataKey:"multiLine",nodeId:"heightMultiLine",
+				input:{type:"textarea",newLineShortcutHint:true}},
+			{title:"Preset",dataKey:"preset",nodeId:"heightPreset",
+				input:{type:"textarea",newLineShortcutHint:true}},
+		]},
+	},true,true,{searchbar:false,ordering:false});
+	textareaHeightTable.setData([textareaHeightRow]);
+	textareaHeightTable.expandRow(0,false);
+	await tick();
+	const textareaHeightDetails=textareaHeightTable._mainTbody.querySelector("tr.details");
+	const textareaHeightContent=textareaHeightDetails.querySelector(".content");
+	const measureTextareaLayout=cell=>({
+		cellHeight:cell.el.getBoundingClientRect().height,
+		contentHeight:textareaHeightContent.getBoundingClientRect().height,
+		inlineHeight:cell.el.style.height,
+	});
+	const assertTextareaLayoutRestored=(before,cell,message)=>{
+		const after=measureTextareaLayout(cell);
+		const cursorRect=textareaHeightTable._cellCursor.getBoundingClientRect();
+		const cellRect=cell.el.getBoundingClientRect();
+		const mainRowHeight=textareaHeightTable._naturalAutoHeight
+			?textareaHeightDetails.previousElementSibling.offsetHeight+textareaHeightTable._borderSpacingY
+			:textareaHeightTable._rowHeight;
+		const expectedDetailsHeight=mainRowHeight+textareaHeightDetails.offsetHeight
+			+textareaHeightTable._borderSpacingY;
+		const recordedDetailsHeight=textareaHeightTable._rowMeta.get(textareaHeightRow)?.h;
+		assert(Math.abs(after.cellHeight-before.cellHeight)<1
+			&&after.inlineHeight===before.inlineHeight
+			&&Math.abs(cursorRect.height-cellRect.height)<1
+			&&textareaHeightContent.style.height==="auto"
+			&&Math.abs(recordedDetailsHeight-expectedDetailsHeight)<1,
+			`${message}: ${JSON.stringify({before,after,cursorHeight:cursorRect.height,cellHeight:cellRect.height,
+				recordedDetailsHeight,expectedDetailsHeight})}`);
+	};
+
+	const emptyHeightCell=textareaHeightTable.getDetailCell(0,"heightEmpty");
+	emptyHeightCell.select();
+	const emptyHeightBefore=measureTextareaLayout(emptyHeightCell);
+	key(textareaHeightTable.rootEl,"Enter","Enter");
+	const emptyHeightEditor=textareaHeightTable._cellCursor.querySelector("textarea");
+	assert(emptyHeightEditor&&emptyHeightCell.el.getBoundingClientRect().height>emptyHeightBefore.cellHeight,
+		"an empty textarea can reserve shortcut-hint space while editing");
+	textareaHeightTable._exitEditMode(false);
+	assertTextareaLayoutRestored(emptyHeightBefore,emptyHeightCell,
+		"cancel restores an empty textarea's compact read height, details height, cursor, and prior inline height");
+
+	const oneLineHeightCell=textareaHeightTable.getDetailCell(0,"heightOneLine");
+	oneLineHeightCell.select();
+	const oneLineHeightBefore=measureTextareaLayout(oneLineHeightCell);
+	key(textareaHeightTable.rootEl,"Enter","Enter");
+	const oneLineHeightEditor=textareaHeightTable._cellCursor.querySelector("textarea");
+	oneLineHeightEditor.value="Saved one line";
+	oneLineHeightEditor.dispatchEvent(new Event("input",{bubbles:true}));
+	oneLineHeightEditor.dispatchEvent(new Event("change",{bubbles:true}));
+	textareaHeightTable._exitEditMode(true);
+	assert(textareaHeightRow.oneLine==="Saved one line","ordinary textarea save still commits its value");
+	assertTextareaLayoutRestored(oneLineHeightBefore,oneLineHeightCell,
+		"save restores a one-line textarea's natural read height and previous empty inline height");
+
+	const multiLineHeightCell=textareaHeightTable.getDetailCell(0,"heightMultiLine");
+	multiLineHeightCell.select();
+	const multiLineHeightBefore=measureTextareaLayout(multiLineHeightCell);
+	key(textareaHeightTable.rootEl,"Enter","Enter");
+	const multiLineHeightEditor=textareaHeightTable._cellCursor.querySelector("textarea");
+	const multiLineEditHeight=multiLineHeightEditor.getBoundingClientRect().height;
+	multiLineHeightEditor.value="One line";
+	multiLineHeightEditor.dispatchEvent(new Event("input",{bubbles:true}));
+	assert(multiLineHeightEditor.getBoundingClientRect().height<multiLineEditHeight,
+		"a multiline textarea still shrinks naturally during editing");
+	key(multiLineHeightEditor,"Escape","Escape");
+	assert(!textareaHeightTable._inEditMode&&textareaHeightRow.multiLine==="First line\nSecond line\nThird line",
+		"Escape cancels multiline textarea editing without changing its value");
+	assertTextareaLayoutRestored(multiLineHeightBefore,multiLineHeightCell,
+		"Escape restores a multiline textarea's natural read height and previous inline height");
+
+	const presetHeightCell=textareaHeightTable.getDetailCell(0,"heightPreset");
+	presetHeightCell.el.style.height="73px";
+	presetHeightCell.select();
+	const presetHeightBefore=measureTextareaLayout(presetHeightCell);
+	key(textareaHeightTable.rootEl,"Enter","Enter");
+	const presetHeightEditor=textareaHeightTable._cellCursor.querySelector("textarea");
+	presetHeightEditor.value="First line\nSecond line";
+	presetHeightEditor.dispatchEvent(new Event("input",{bubbles:true}));
+	textareaHeightTable._exitEditMode(false);
+	assertTextareaLayoutRestored(presetHeightBefore,presetHeightCell,
+		"textarea cleanup restores an exact legitimate pre-existing inline height instead of removing it");
 	const fileButtons=[...table._mainTbody.querySelector('tr.details').querySelectorAll("button")];
 	assert(fileButtons.find(button=>button.textContent==="Open")?.disabled===false,
 		"existing readOnly file retains its non-mutating open action");

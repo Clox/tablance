@@ -217,6 +217,8 @@ class TablanceBase {
 	_inlineEditorHost;//value-scoped editor layer for details cells whose title shares the canonical cell box
 	_inlineEditorValueEl;
 	_inlineEditorValueHeight;
+	_textAreaEditorCellEl;//ordinary full-cell textarea target whose temporary edit height must be restored
+	_textAreaEditorCellHeight;
 	_highlightOnFocus=true;//when the spreadsheet is focused  we want focus-outline to appear but only if focused by
 				//keyboard-tabbing, and not when clicking or exiting out of edit-mode which again focuses the table.
 				//By setting this to true in mouseDownEvent we can 
@@ -5551,11 +5553,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_restoreInlineEditorLayout() {
 		const valueEl=this._inlineEditorValueEl;
+		const textAreaCellEl=this._textAreaEditorCellEl;
 		if (valueEl)
 			valueEl.style.height=this._inlineEditorValueHeight;
+		if (textAreaCellEl)
+			textAreaCellEl.style.height=this._textAreaEditorCellHeight;
 		this._inlineEditorHost=this._inlineEditorValueEl=this._inlineEditorValueHeight=null;
-		if (valueEl) {
-			const detailsTr=this._selectedCell?.closest("tr.details");
+		this._textAreaEditorCellEl=this._textAreaEditorCellHeight=null;
+		if (valueEl||textAreaCellEl) {
+			const detailsTr=(valueEl??textAreaCellEl).closest("tr.details");
 			if (detailsTr)
 				this._updateDetailsHeight(detailsTr);
 		}
@@ -7124,6 +7130,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_openTextAreaEdit() {
 		const textarea=this._appendCellEditor(document.createElement("textarea"));
+		if (!this._inlineEditorValueEl) {
+			this._textAreaEditorCellEl=this._selectedCell;
+			this._textAreaEditorCellHeight=this._selectedCell.style.height;
+		}
 		textarea.rows=1;
 		textarea.addEventListener('input', this._autoTextAreaResize.bind(this));
 
