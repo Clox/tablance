@@ -6924,11 +6924,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (let i=visualIndex,otherCell; otherCell=parent.children[i]; i++)
 			this._changeInstanceNodeIndex(otherCell,i);
 
-		// DOM removal
-		if (parent.schemaNode.type==="repeated"&&parent.parent.schemaNode.type==="list")
-			instanceNode.el.parentElement.parentElement.remove();
-		else
-			instanceNode.el.parentElement.remove();
+		// Remove the collection item through its canonical owning wrapper. Deriving that wrapper from the inner
+		// element's parent chain is brittle: presentation wrappers such as the group animation viewport may be added
+		// without changing which DOM node belongs to the instance.
+		instanceNode.outerContainerEl.remove();
 		// Replacing repeated data programmatically removes and rebuilds its entry instances. Clear the logical cursor
 		// only when the selected instance is actually part of the removed subtree. A selected ancestor (for example the
 		// group containing the repeated) remains the same connected canonical instance and must stay activatable.

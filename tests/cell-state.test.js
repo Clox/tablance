@@ -4755,16 +4755,34 @@ try {
 	untouchedCreateTable.setData([{history:untouchedCreateRows,after:"next"}]);
 	await tick();
 	const untouchedRepeated=untouchedCreateTable.getDetailCell(0,"untouchedCreateHistory");
-	untouchedRepeated.createNewEntry();
-	let untouchedEntry=untouchedRepeated.children.find(child=>child.creating);
-	assert(Object.keys(untouchedEntry.dataObj.renderDefaults).length===0
-		&&untouchedCreateTable._isUntouchedCreatingGroup(untouchedEntry)
-		&&untouchedCreateTable._buildGroupPayload(untouchedEntry).changed===false,
-		"createData values and nested defaults form the canonical untouched draft baseline");
-	key(untouchedCreateTable.rootEl,"Escape","Escape");
-	assert(untouchedCreateRows.length===0&&!untouchedRepeated.children.includes(untouchedEntry)
-		&&untouchedCreateCloseCalls===0&&untouchedCreateCommits===0,
-		"Escape discards an untouched default-valued creation without running blocking group validation");
+	const untouchedCollection=untouchedRepeated.parent.containerEl;
+	const untouchedBaselineElements=[...untouchedCollection.children];
+	const untouchedBaselineHeight=untouchedCollection.getBoundingClientRect().height;
+	for (let cycle=0;cycle<4;cycle++) {
+		untouchedRepeated.createNewEntry();
+		const untouchedEntry=untouchedRepeated.children.find(child=>child.creating);
+		assert(Object.keys(untouchedEntry.dataObj.renderDefaults).length===0
+			&&untouchedCreateTable._isUntouchedCreatingGroup(untouchedEntry)
+			&&untouchedCreateTable._buildGroupPayload(untouchedEntry).changed===false,
+			"createData values and nested defaults form the canonical untouched draft baseline");
+		const draftOuter=untouchedEntry.outerContainerEl;
+		if (cycle%2)
+			untouchedCreateTable._deleteCell(untouchedEntry);
+		else
+			key(untouchedCreateTable.rootEl,"Escape","Escape");
+		const remainingElements=[...untouchedCollection.children];
+		assert(!draftOuter.isConnected,
+			"repeated create then abandon/delete removes its canonical owning wrapper");
+		assert(!untouchedRepeated.children.includes(untouchedEntry),
+			"repeated create then abandon/delete removes its instance node");
+		assert(remainingElements.length===untouchedBaselineElements.length
+			&&remainingElements.every((element,index)=>element===untouchedBaselineElements[index])
+			,"repeated create then abandon/delete leaves the original collection DOM unchanged");
+		assert(Math.abs(untouchedCollection.getBoundingClientRect().height-untouchedBaselineHeight)<.1,
+			`repeated create then abandon/delete does not accumulate height (${untouchedBaselineHeight} -> ${untouchedCollection.getBoundingClientRect().height})`);
+	}
+	assert(untouchedCreateRows.length===0&&untouchedCreateCloseCalls===0&&untouchedCreateCommits===0,
+		"discarding untouched creations does not run blocking group validation or create commits");
 
 	untouchedRepeated.createNewEntry();
 	let editedEntry=untouchedRepeated.children.find(child=>child.creating);
@@ -4788,6 +4806,8 @@ try {
 	untouchedCreateTable._markDirtyField(validEntry.children[1]);
 	assert(untouchedCreateTable._closeGroup(validEntry)===true&&untouchedCreateRows.length===1
 		&&untouchedCreateRows[0]===validEntry.dataObj&&!validEntry.creating&&untouchedCreateCommits===1
+		&&validEntry.outerContainerEl.isConnected
+		&&untouchedCollection.getBoundingClientRect().height>untouchedBaselineHeight
 		&&validEntry.el.querySelector("tr.group-render")?.textContent==="change:legacy",
 		"a changed and validated createData draft commits once and receives its real closed render immediately");
 	untouchedRepeated.createNewEntry();
