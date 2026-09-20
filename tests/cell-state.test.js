@@ -2169,6 +2169,112 @@ try {
 		&&!groupedHeadings().some(heading=>heading.textContent==="x"),
 		"deleting the final visible entry removes its now-empty group heading");
 
+	const previewBacking=[
+		{id:"a-hidden",kind:"a",order:0,label:"Hidden Alpha",visible:false},
+		{id:"a-first",kind:"a",order:1,label:"First Alpha",visible:true},
+		{id:"a-second",kind:"a",order:2,label:"Second Alpha",visible:true},
+		{id:"b-first",kind:"b",order:1,label:"First Beta",visible:true},
+		{id:"b-chosen",kind:"b",order:2,label:"Chosen Beta",visible:true},
+		{id:"empty",kind:"empty",order:1,label:"Filtered out",visible:true},
+		{id:"unknown-one",kind:"unknown",order:1,label:"Unknown one",visible:true},
+		{id:"unknown-two",kind:"unknown",order:2,label:"Unknown two",visible:true},
+	];
+	const previewIncludeCalls=[];
+	const previewRow={title:"Preview",items:previewBacking};
+	const previewTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},details:{type:"list",entries:[
+		{type:"group",nodeId:"previewOuter",entries:[
+			{type:"repeated",dataKey:"items",nodeId:"previewItems",grouping:{by:"kind",order:[
+				{key:"a",title:"Alphas",preview:{title:"Alpha",maxEntries:1}},
+				{key:"b",title:"Betas",preview:{title:"Beta",maxEntries:1,
+					include:(data,context)=>{
+						previewIncludeCalls.push({data,context});
+						return data.id==="b-chosen";
+					}}},
+				{key:"empty",title:"Empty group",preview:{maxEntries:1,include:()=>false}},
+			]},sortCompare:(a,b)=>a.order-b.order,entry:{type:"group",
+				visibleIf:({rowData})=>rowData.visible!==false,closedRender:({label})=>label,
+				entries:[{title:"Label",dataKey:"label",input:{type:"text"}}]}},
+		]},
+	]}},true,true,{searchbar:false});
+	previewTable.setData([previewRow]);
+	await tick();
+	const previewOuter=previewTable.getDetailCell(0,"previewOuter");
+	const previewRepeated=previewTable.getDetailCell(0,"previewItems");
+	const previewEntries=()=>previewRepeated.children.filter(child=>!child.schemaNode.creator);
+	const previewEntry=id=>previewEntries().find(entry=>entry.dataObj.id===id);
+	const previewTitles=()=>previewRepeated.groupHeadings.map(heading=>
+		heading.querySelector(".repeated-group-title").textContent);
+	const previewPaths=new Map(previewEntries().map(entry=>[entry.dataObj.id,JSON.stringify(entry.path)]));
+	const previewChildren=[...previewRepeated.children];
+	assert(JSON.stringify(previewTitles())===JSON.stringify(["Alpha","Beta","unknown"])
+		&&!previewEntry("a-first").previewHidden&&previewEntry("a-second").previewHidden
+		&&previewEntry("a-hidden").hidden&&!previewEntry("a-hidden").previewHidden
+		&&previewEntry("b-first").previewHidden&&!previewEntry("b-chosen").previewHidden
+		&&previewEntry("empty").previewHidden
+		&&!previewEntry("unknown-one").previewHidden&&!previewEntry("unknown-two").previewHidden
+		&&previewRepeated.groupSpacers.length===3,
+		"a closed parent applies per-group preview titles, include, limits, and omits empty preview groups");
+	assert(previewIncludeCalls.length>=2
+		&&previewIncludeCalls.every(call=>call.context.rowData===previewRow
+			&&call.context.groupKey==="b"&&call.context.repeatedInstance===previewRepeated
+			&&JSON.stringify(call.context.entries.map(data=>data.id))===JSON.stringify(["b-first","b-chosen"])),
+		"preview include receives visible data in the existing grouped and sorted presentation order");
+	assert(!previewTable._isNavigableDetailsInstance(previewEntry("a-second"))
+		&&previewTable._getFirstSelectableDetailsCell(previewRepeated,true)===previewEntry("a-first"),
+		"preview-hidden repeated entries are excluded from logical keyboard navigation");
+	previewEntry("a-second").select();
+	await tick();
+	assert(previewOuter.el.classList.contains("open")
+		&&previewEntries().every(entry=>!entry.previewHidden)
+		&&JSON.stringify(previewTitles())===JSON.stringify(["Alphas","Betas","Empty group","unknown"])
+		&&previewTable._activeDetailsCell===previewEntry("a-second"),
+		"programmatic selection opens the enclosing group and restores full repeated rendering");
+	previewTable._finalizeGroupClose(previewOuter);
+	await tick();
+	assert(JSON.stringify(previewTitles())===JSON.stringify(["Alpha","Beta","unknown"])
+		&&previewRepeated.children.every((entry,index)=>entry===previewChildren[index])
+		&&previewEntries().every(entry=>JSON.stringify(entry.path)===previewPaths.get(entry.dataObj.id))
+		&&previewRow.items===previewBacking,
+		"preview state reuses repeated instances without changing children, paths, or backing data");
+	previewEntry("a-second").dataObj.order=-1;
+	previewTable._finalizeRepeatedMutation(previewRepeated);
+	assert(!previewEntry("a-second").previewHidden&&previewEntry("a-first").previewHidden,
+		"preview recomputes after repeated sorting changes");
+	const externallyAdded={id:"a-new",kind:"a",order:-2,label:"External",visible:true};
+	previewBacking.push(externallyAdded);
+	previewTable.updateData(previewRow,"items",null,false,true);
+	assert(previewEntry("a-new")&&!previewEntry("a-new").previewHidden
+		&&previewEntry("a-second").previewHidden,
+		"updateData additions are reconciled into the compact preview");
+	previewBacking.splice(previewBacking.indexOf(externallyAdded),1);
+	previewTable.updateData(previewRow,"items",null,false,true);
+	assert(!previewEntry("a-new")&&!previewEntry("a-second").previewHidden,
+		"updateData removals restore the next eligible compact preview entry");
+	const reorderedAlpha=previewEntry("a-first");
+	previewRepeated.children.splice(previewRepeated.children.indexOf(reorderedAlpha),1);
+	previewRepeated.children.unshift(reorderedAlpha);
+	previewTable._arrangeRepeatedInstances(previewRepeated,true);
+	assert(!reorderedAlpha.previewHidden&&previewEntry("a-second").previewHidden,
+		"a preserved repeated reorder immediately determines the first compact preview entry");
+	previewTable._finalizeRepeatedMutation(previewRepeated);
+	assert(!previewEntry("a-second").previewHidden&&previewEntry("a-first").previewHidden,
+		"canonical repeated sorting restores the compact preview after reorder refresh");
+	previewEntry("a-second").dataObj.kind="b";
+	previewTable._finalizeRepeatedMutation(previewRepeated);
+	assert(!previewEntry("a-first").previewHidden&&previewEntry("a-second").previewHidden
+		&&previewTitles().includes("Alpha"),
+		"regrouping recomputes each group's compact preview without replacing entry instances");
+	let invalidPreviewError;
+	try {
+		previewTable._getRepeatedGrouping({schemaNode:{grouping:{by:"kind",order:[
+			{key:"bad",title:"Bad",preview:{maxEntries:1.5}},
+		]}}});
+	} catch (error) {
+		invalidPreviewError=error;
+	}
+	assert(/preview\.maxEntries/.test(invalidPreviewError?.message),
+		"invalid repeated preview limits fail declaratively");
+
 	const nestedGroupedTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},details:{type:"list",entries:[
 		{type:"group",nodeId:"groupingOuter",entries:[
 			{type:"group",nodeId:"groupingInner",entries:[
@@ -3135,8 +3241,20 @@ try {
 		&&getComputedStyle(historyGroup.el).borderCollapse==="separate"
 		&&getComputedStyle(historyEntries[0].el).borderSpacing==="0px 0px",
 		"details groups use the finalized transparent inset design and clip child hover to their rounded shape");
+	historyEntries[1].select();
+	await new Promise(resolve=>setTimeout(resolve,150));
 	const nestedGroupChevron=historyEntries[0].groupChevronEl;
+	historyEntries[0].el.scrollIntoView({block:"center"});
 	const nestedClosedRender=historyEntries[0].el.querySelector("tbody>tr.group-render>td");
+	const idleChevronStyle=getComputedStyle(nestedGroupChevron);
+	const idleChevronGlyphStyle=getComputedStyle(nestedGroupChevron,"::before");
+	const chevronLayout=()=>{
+		const chevronRect=nestedGroupChevron.getBoundingClientRect();
+		const groupRect=historyEntries[0].el.getBoundingClientRect();
+		return [chevronRect.left-groupRect.left,chevronRect.top-groupRect.top,
+			chevronRect.width,chevronRect.height];
+	};
+	const idleChevronLayout=chevronLayout();
 	assert(nestedGroupChevron?.classList.contains("group-chevron")
 		&&nestedClosedRender.lastElementChild?.classList.contains("group-closed-content")
 		&&nestedGroupChevron.parentElement===historyEntries[0].el
@@ -3146,6 +3264,24 @@ try {
 		&&getComputedStyle(nestedGroupChevron,"::before").content==='""'
 		&&getComputedStyle(nestedGroupChevron).pointerEvents==="none",
 		"closedRender groups place the chevron's subtle non-interactive icon container after the preview table");
+	assert(idleChevronGlyphStyle.opacity==="0.72"&&idleChevronStyle.color==="rgb(100, 116, 139)",
+		"an idle group chevron keeps its existing muted presentation");
+	const nativeGroupHoverDone=new Promise((resolve,reject)=>{
+		const timeout=setTimeout(()=>reject(new Error("Timed out waiting for trusted group hover")),5000);
+		historyEntries[0].el.addEventListener("mousemove",()=>{
+			clearTimeout(timeout);
+			setTimeout(resolve,180);
+		},{once:true});
+	});
+	window.nativeGroupHoverTarget=historyEntries[0].el;
+	result.textContent="awaiting trusted group hover";
+	result.dataset.status="awaiting-native-group-hover";
+	await nativeGroupHoverDone;
+	const hoverChevronLayout=chevronLayout();
+	assert(historyEntries[0].el.matches(":hover")
+		&&getComputedStyle(nestedGroupChevron,"::before").opacity==="1"
+		&&JSON.stringify(hoverChevronLayout)===JSON.stringify(idleChevronLayout),
+		"hover strengthens the existing group chevron without changing its size or position");
 	const longSummaryGroup=table.getDetailCell(0,"longSummaryGroup");
 	longSummaryGroup.el.style.width="240px";
 	const longSummaryContent=longSummaryGroup.el.querySelector(".group-closed-content");
@@ -3182,6 +3318,17 @@ try {
 		"the untouched lazy empty static group can be opened again after it closes");
 	historyEntries[0].select();
 	assert(table._selectedCellState?.kind==="action","a closed-render group selection retains its canonical action state");
+	await new Promise(resolve=>setTimeout(resolve,150));
+	const selectedChevronStyle=getComputedStyle(nestedGroupChevron);
+	const selectedChevronLayout=chevronLayout();
+	assert(historyEntries[0].el.classList.contains("tablance-selected-group")
+		&&!historyEntries[1].el.classList.contains("tablance-selected-group")
+		&&selectedChevronStyle.color==="rgb(37, 99, 235)"
+		&&selectedChevronStyle.backgroundColor==="rgba(37, 99, 235, 0.18)"
+		&&selectedChevronStyle.borderTopColor==="rgba(37, 99, 235, 0.55)"
+		&&getComputedStyle(nestedGroupChevron,"::before").opacity==="1"
+		&&JSON.stringify(selectedChevronLayout)===JSON.stringify(idleChevronLayout),
+		"selection accents the existing group chevron without adding space or moving it");
 	assert(table._cellCursor.classList.contains("group-cell-cursor")
 		&&getComputedStyle(table._cellCursor).outlineOffset==="-1px",
 		"a selected details group draws its outline one pixel inward on every side");

@@ -113,6 +113,11 @@ try {
 	await press("Home","Home",36);
 	await send("Input.insertText",{text:"X"},sessionId);
 	await press("Escape","Escape",27);
+	await waitForStatus(["awaiting-native-group-hover"]);
+	const groupHoverPoint=await evaluate(`(()=>{const rect=window.nativeGroupHoverTarget.getBoundingClientRect();return {
+		x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
+	await send("Input.dispatchMouseEvent",{type:"mouseMoved",x:groupHoverPoint.x,y:groupHoverPoint.y,
+		button:"none",buttons:0},sessionId);
 	await waitForStatus(["awaiting-native-sorting"]);
 	const headerPoint=await evaluate(`(()=>{const rect=window.nativeSortingHeader.getBoundingClientRect();return {
 		x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);

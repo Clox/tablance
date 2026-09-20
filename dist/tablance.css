@@ -1418,6 +1418,9 @@
 .tablance .details .repeated-group-heading.details-affordances-suppressed .repeated-group-description {
   display: none;
 }
+.tablance .details .tablance-preview-hidden {
+  display: none !important;
+}
 .tablance .details span.repeated-group-heading {
   flex: 0 0 100%;
   width: 100%;
@@ -1738,20 +1741,35 @@
   width: 15px;
   height: 15px;
   margin-left: 6px;
+  border: 1px solid transparent;
   border-radius: 3px;
   background-color: rgba(100, 116, 139, 0.1);
+  color: #64748B;
   vertical-align: middle;
   pointer-events: none;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .tablance .group-chevron::before {
   content: "";
   box-sizing: border-box;
   width: 5px;
   height: 5px;
-  border-right: 1.25px solid #64748B;
-  border-bottom: 1.25px solid #64748B;
+  border-right: 1.25px solid currentColor;
+  border-bottom: 1.25px solid currentColor;
   opacity: 0.72;
   transform: translateX(-1px) rotate(-45deg);
+  transition: opacity 120ms ease;
+}
+.tablance .details-group:not(.open):not(.disabled):hover > .group-chevron::before {
+  opacity: 1;
+}
+.tablance .details-group.tablance-selected-group:not(.open) > .group-chevron {
+  border-color: rgba(37, 99, 235, 0.55);
+  background-color: rgba(37, 99, 235, 0.18);
+  color: var(--tablance-accent-color);
+}
+.tablance .details-group.tablance-selected-group:not(.open) > .group-chevron::before {
+  opacity: 1;
 }
 .tablance .group-chevron[hidden] {
   display: none;

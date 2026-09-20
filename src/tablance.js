@@ -197,6 +197,7 @@ class TablanceBase {
 						//repeat-entries this will point to the correct inner object
 	_selectedCellVal;//the value of the cell that the cellCursor is at
 	_selectedCell;//the HTML-element of the cell-cursor. probably TD's most of the time.
+	_selectedGroupEl;//the group table whose existing chevron represents the selected logical group
 	_cellStates=new WeakMap();//canonical functional state for every currently rendered cell element
 	_selectedCellState;//canonical state for the selected cell; DOM classes are styling hooks only
 	_activeAnchoredPopover=null;//internal shared lifecycle owner for help/menu anchored popovers
@@ -689,10 +690,14 @@ class TablanceBase {
 	 * 					by String|Function Data-key or callback used to obtain each entry's group key. A callback
 	 * 						receives 1: entry data, 2: rowData, 3: repeated instanceNode.
 	 * 					order Array Optional explicit group order. Each item is
-	 * 						{key:*,title:String,description?:String}. Undeclared
+	 * 						{key:*,title:String,description?:String,preview?:Object}. Undeclared
 	 * 						keys follow in stable first-occurrence order. Empty groups are not rendered.
 	 * 						Descriptions are compact presentational guidance shown beneath the heading while the
 	 * 						repeated is in its normal open ancestor context.
+	 * 						preview applies while the repeated's enclosing group is closed. It supports an
+	 * 						alternate title, maxEntries, and include(data, context). context contains entries in
+	 * 						the normal visible/sorted order, rowData, groupKey, and repeatedInstance. include
+	 * 						filters without reordering; maxEntries is applied afterwards.
 	 * 					Grouping only changes presentation. Entry instances and backing-array identity remain flat,
 	 * 					and sortCompare is applied only between entries in the same group.
 	 * 				reorder Object Optional reorder editor for closed repeated entries.
@@ -3583,7 +3588,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_collectLogicalDetailsCells(instanceNode,cells) {
-		if (!instanceNode||instanceNode.hidden)
+		if (!instanceNode||instanceNode.hidden||instanceNode.previewHidden)
 			return cells;
 		const schemaNode=instanceNode.schemaNode;
 		const children=instanceNode.children??[];
@@ -3614,7 +3619,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_isNavigableDetailsInstance(instanceNode) {
 		const cellEl=instanceNode?.selEl??instanceNode?.el;
-		return !!cellEl&&!instanceNode.hidden&&this._getCellState(cellEl,instanceNode)?.selectable!==false;
+		return !!cellEl&&!instanceNode.hidden&&!instanceNode.previewHidden
+			&&this._getCellState(cellEl,instanceNode)?.selectable!==false;
 	}
 
 	_leaveDetailsByTab(direction) {
@@ -3931,7 +3937,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const index=instanceNode.index;
 		for (let i=index+(isGoingDown||-1); i>=0&&i<siblings.length; i+=isGoingDown||-1) {
 			const sibling=siblings[i];
-			if (sibling.hidden)
+			if (sibling.hidden||sibling.previewHidden)
 				continue;
 			if (sibling.el) {
 				if (this._getCellState(sibling.selEl??sibling.el,sibling)?.selectable!==false)
@@ -3987,7 +3993,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				startI=chosenCell.index;
 		}
 		for (let childI=startI;childI>=0&&childI<children.length; childI+=isGoingDown||-1)
-			if (!children[childI].hidden&&(children[childI].children||children[childI].select)) {
+			if (!children[childI].hidden&&!children[childI].previewHidden
+				&&(children[childI].children||children[childI].select)) {
 				const target=this._getFirstSelectableDetailsCell(children[childI],isGoingDown);
 				if (target)
 					return target;
@@ -6021,6 +6028,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_applyDetailsAffordanceState(instanceNode) {
+		const previewDefinitions=instanceNode.schemaNode?.type==="repeated"
+			?instanceNode.schemaNode.grouping?.order:null;
+		if (Array.isArray(previewDefinitions)&&previewDefinitions.some(definition=>definition?.preview)
+			&&instanceNode.previewActive!==this._isRepeatedPreviewActive(instanceNode))
+			this._arrangeRepeatedInstances(instanceNode,true);
 		const exposed=this._canExposeDetailsAffordances(instanceNode);
 		instanceNode.detailsAffordancesExposed=exposed;
 		const targets=new Set([instanceNode.outerContainerEl,instanceNode.selEl,instanceNode.el,
@@ -6433,6 +6445,17 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				throw new TypeError("Every repeated grouping.order item must have a key and non-empty title.");
 			if (definition.description!=null&&typeof definition.description!=="string")
 				throw new TypeError("Repeated grouping descriptions must be strings.");
+			const preview=definition.preview;
+			if (preview!=null) {
+				if (!preview||typeof preview!=="object"||Array.isArray(preview))
+					throw new TypeError("Repeated grouping preview must be an object.");
+				if (preview.title!=null&&(typeof preview.title!=="string"||!preview.title.trim()))
+					throw new TypeError("Repeated grouping preview.title must be a non-empty string.");
+				if (preview.maxEntries!=null&&(!Number.isInteger(preview.maxEntries)||preview.maxEntries<0))
+					throw new TypeError("Repeated grouping preview.maxEntries must be a non-negative integer.");
+				if (preview.include!=null&&typeof preview.include!=="function")
+					throw new TypeError("Repeated grouping preview.include must be a function.");
+			}
 			if (keys.has(definition.key))
 				throw new TypeError("Repeated grouping.order cannot contain duplicate keys.");
 			keys.add(definition.key);
@@ -6445,6 +6468,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return typeof grouping.by==="function"
 			?grouping.by(entry.dataObj,rowData,repeated)
 			:entry.dataObj?.[grouping.by];
+	}
+
+	_isRepeatedPreviewActive(repeated) {
+		const enclosingGroup=this._getNearestAncestorGroup(repeated);
+		return !!enclosingGroup&&!enclosingGroup.el.classList.contains("open");
+	}
+
+	_setRepeatedEntryPreviewHidden(entry,hidden) {
+		entry.previewHidden=!!hidden;
+		entry.outerContainerEl?.classList.toggle("tablance-preview-hidden",entry.previewHidden);
 	}
 
 	_createRepeatedGroupHeading(repeated,title,key,description=null) {
@@ -6546,7 +6579,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					groupEntries.sort((a,b)=>compare(a.dataObj,b.dataObj,rowData,repeated)
 						||(previousOrder.get(a)-previousOrder.get(b)));
 				return {key,title:definition?.title??String(key??""),description:definition?.description,
-					entries:groupEntries};
+					preview:definition?.preview,entries:groupEntries};
 			});
 			sorted=groups.flatMap(group=>group.entries);
 		} else if (preserveEntryOrder)
@@ -6558,6 +6591,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const orderChanged=!sorted.every((entry,index)=>entry===entries[index]);
 		repeated.children=[...sorted,...drafts,...creators];
 		const collectionEl=repeated.parent?.containerEl;
+		const previewActive=this._isRepeatedPreviewActive(repeated);
+		repeated.previewActive=previewActive;
+		for (const entry of repeated.children??[])
+			this._setRepeatedEntryPreviewHidden(entry,false);
 		const hasVisibleGroupedEntries=!!grouping&&groups.some(group=>group.entries.some(entry=>!entry.hidden));
 		for (const entry of entries)
 			entry.outerContainerEl?.classList.remove("repeated-group-entry","repeated-group-first");
@@ -6572,11 +6609,25 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (collectionEl&&grouping) {
 			for (const group of groups) {
 				const visibleEntries=group.entries.filter(entry=>!entry.hidden);
+				let presentedEntries=visibleEntries;
+				if (previewActive&&group.preview) {
+					const entryData=visibleEntries.map(entry=>entry.dataObj);
+					if (group.preview.include) {
+						const context={entries:entryData,rowData,groupKey:group.key,repeatedInstance:repeated};
+						presentedEntries=presentedEntries.filter(entry=>group.preview.include(entry.dataObj,context));
+					}
+					if (group.preview.maxEntries!=null)
+						presentedEntries=presentedEntries.slice(0,group.preview.maxEntries);
+				}
+				const presentedSet=new Set(presentedEntries);
 				for (const entry of visibleEntries)
+					this._setRepeatedEntryPreviewHidden(entry,previewActive&&!presentedSet.has(entry));
+				for (const entry of presentedEntries)
 					entry.outerContainerEl?.classList.add("repeated-group-entry");
-				visibleEntries[0]?.outerContainerEl?.classList.add("repeated-group-first");
-				if (group.title&&visibleEntries.length) {
-					const heading=this._createRepeatedGroupHeading(repeated,group.title,group.key,group.description);
+				presentedEntries[0]?.outerContainerEl?.classList.add("repeated-group-first");
+				const title=previewActive&&group.preview?.title!=null?group.preview.title:group.title;
+				if (title&&presentedEntries.length) {
+					const heading=this._createRepeatedGroupHeading(repeated,title,group.key,group.description);
 					heading.classList.toggle("details-affordances-suppressed",
 						!this._canExposeDetailsAffordances(repeated));
 					collectionEl.insertBefore(heading,repeated.insertionPoint);
@@ -6585,7 +6636,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				for (const entry of group.entries)
 					if (entry.outerContainerEl)
 						collectionEl.insertBefore(entry.outerContainerEl,repeated.insertionPoint);
-				if (visibleEntries.length) {
+				if (presentedEntries.length) {
 					const spacer=this._createRepeatedGroupSpacer(repeated);
 					spacer.classList.toggle("details-affordances-suppressed",
 						!this._canExposeDetailsAffordances(repeated));
@@ -7903,7 +7954,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._cellCursor.classList.toggle("repeated-reorder-cell-cursor",schemaNode.type==="reorder");
 		this._cellCursor.classList.toggle("action-indicator",this._showsActionIndicator(cellState,schemaNode));
 		(this._scrollingContent??this.rootEl).appendChild(this._cellCursor);
-		this._setSelectedCellElement(cellEl);
+		this._setSelectedCellElement(cellEl,instanceNode);
 		this._selectedCellState=cellState;
 		this._activeSchemaNode=schemaNode;
 		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
@@ -7917,9 +7968,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return true;
 	}
 
-	_setSelectedCellElement(cellEl) {
+	_setSelectedCellElement(cellEl,instanceNode=null) {
 		if (this._selectedCell!==cellEl)
 			this._selectedCell?.classList.remove("tablance-active-cell");
+		const groupEl=instanceNode?.schemaNode?.type==="group"?instanceNode.el:null;
+		if (this._selectedGroupEl!==groupEl)
+			this._selectedGroupEl?.classList.remove("tablance-selected-group");
+		this._selectedGroupEl=groupEl;
+		groupEl?.classList.add("tablance-selected-group");
 		this._selectedCell=cellEl;
 		cellEl?.classList.add("tablance-active-cell");
 	}

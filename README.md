@@ -234,6 +234,15 @@ defines the logical column count. Grid renders one subtle full-width separator b
 Grid v1 intentionally excludes direct repeated children, explicit coordinates, row spans, responsive column changes,
 and responsive column changes.
 
+## Repeated group previews
+
+Entries in `repeated.grouping.order` may set `preview` to compact that group while its enclosing group is closed.
+`preview.title` replaces the group title in that state, `preview.include(data, context)` filters candidates without
+changing their existing visible and sorted order, and `preview.maxEntries` limits the remaining candidates. The
+callback context contains `{entries, rowData, groupKey, repeatedInstance}`, where `entries` is the group's visible
+data in presentation order. Opening the enclosing group restores the normal title and every ordinarily visible entry.
+Previewing reuses the same repeated instances and never changes backing data, paths, sorting, or `visibleIf` state.
+
 ## Closed group rendering
 
 Groups with `closedRender` render its result as text by default. A consumer that needs markup may explicitly opt in with
