@@ -235,6 +235,9 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		&:not(.details) {
 			outline-offset:-2px;
 		}
+		&.details:not(.group-cell-cursor) {
+			outline-offset: -2px;
+		}
 		&.details.group-cell-cursor {
 			outline-offset: -1px;
 		}

@@ -4564,6 +4564,9 @@ try {
 		&&!detailsOnlyTable._cellCursor.querySelector(".cell-value-editor"),
 		"ordinary list-details with a separate title column retain the existing full-value-cell editor path");
 	detailsOnlyTable._exitEditMode(false);
+	assert(getComputedStyle(detailsOnlyTable._cellCursor).outlineWidth==="2px"
+		&&getComputedStyle(detailsOnlyTable._cellCursor).outlineOffset==="-2px",
+		"ordinary details cursors keep their two-pixel outline fully inside the overlay geometry");
 
 	const groupAlignmentTable=new Tablance(host(),{details:{type:"list",titlesColWidth:"11em",entries:[
 		{title:"Ordinary",dataKey:"ordinary",nodeId:"alignedOrdinary",input:{type:"text"}},
@@ -4585,8 +4588,9 @@ try {
 		"a direct list group frame shares the ordinary details value-cell left edge while labels remain separate");
 	alignedGroup.select();
 	const alignedCursorLeft=groupAlignmentTable._cellCursor.getBoundingClientRect().left;
-	assert(Math.abs(alignedCursorLeft-alignedGroupLeft)<1,
-		"direct list group selection follows the newly aligned group frame");
+	assert(Math.abs(alignedCursorLeft-alignedGroupLeft)<1
+		&&getComputedStyle(groupAlignmentTable._cellCursor).outlineOffset==="-1px",
+		"direct list group selection follows the newly aligned frame and retains its intentional outline offset");
 	key(groupAlignmentTable.rootEl,"Enter","Enter");
 	await waitFor(()=>alignedGroup.el.classList.contains("open")
 		&&!alignedGroup.viewportEl.classList.contains("tablance-group-animating"),"aligned group opening");

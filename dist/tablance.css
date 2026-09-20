@@ -194,6 +194,9 @@
 .tablance .cell-cursor:not(.details) {
   outline-offset: -2px;
 }
+.tablance .cell-cursor.details:not(.group-cell-cursor) {
+  outline-offset: -2px;
+}
 .tablance .cell-cursor.details.group-cell-cursor {
   outline-offset: -1px;
 }
