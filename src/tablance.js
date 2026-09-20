@@ -1383,6 +1383,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return this.getViewState();
 		this._refreshingView=true;
 		try {
+			this._rowFilterCache=new WeakMap();
 			if (!this._flushValidatedEdits())
 				return this.getViewState();
 			const previousRows=[...(this._filteredData??[])];
@@ -1435,6 +1436,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			dataRow=this._filteredData[mainIndx=dataRow_or_mainIndex];
 		else //if (typeof dataRow_or_mainIndex=="object")
 			mainIndx=this._filteredData.indexOf(dataRow=dataRow_or_mainIndex);
+		if (dataRow&&typeof dataRow==="object")
+			this._rowFilterCache.delete(dataRow);
 		dataPath=typeof dataPath=="string"?dataPath.split(/\.|(?=\[\d*\])/):dataPath;
 
 		if (!onlyRefresh) {//if we're not only refreshing the cell but actually modifying/adding data
@@ -9033,41 +9036,67 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 */
 	_rowSatisfiesFilters(filterString,dataRow,mainIndex,selectOptsCache,includeDetails=true,caseSensitive=false) {
 		const filterNeedle=!caseSensitive&&typeof filterString==="string"?filterString.toLowerCase():filterString;
-		const searchDelim="\u0001";//separator to prevent cross-field substring matches when caching
-		let rowSearchText;
-		const matchesFilter=value=>{
-			rowSearchText+=(value==null?"":String(value))+searchDelim;
-			if (value==null)
-				return false;
-			const haystackStr=typeof value==="string"?value:String(value);
-			const haystack=caseSensitive?haystackStr:haystackStr.toLowerCase();
-			return haystack.includes(filterNeedle);
-		};
 		const shouldSkipField=schemaNode=>
 			schemaNode?.input?.type==="button"//buttons carry no filterable text
 			||schemaNode?.dependsOnCellPaths;//needs live instance nodes; skip for now
-		const matchesFieldValue=(schemaNode,dataObj,mainIndex)=>{
+		const normalizeRepresentation=(value,html=false)=>{
+			if (value==null)
+				return null;
+			if (typeof Node!=="undefined"&&value instanceof Node)
+				return value.textContent??"";
+			if (!["string","number","bigint","boolean"].includes(typeof value))
+				return null;
+			let text=String(value);
+			if (html&&typeof value==="string") {
+				const htmlToTextDiv=this._htmlToTextDiv??=(typeof document!=="undefined"
+					?document.createElement("div"):null);
+				if (htmlToTextDiv) {
+					htmlToTextDiv.innerHTML=text;
+					text=htmlToTextDiv.textContent??"";
+				}
+			}
+			return text;
+		};
+		const fieldRepresentations=(schemaNode,dataObj,mainIndex)=>{
 			if (!schemaNode||shouldSkipField(schemaNode)||dataObj==null)
-				return false;
-			if (schemaNode.input?.type=="select"&&!schemaNode.render) {
-				const cellVal=dataObj?.[schemaNode.dataKey];
+				return [];
+			const {value,idValue,dependedValue}=this._getCellValueBundle(schemaNode,dataObj,mainIndex);
+			let renderedValue;
+			if (schemaNode.render) {
+				const renderPayload=this._makeCallbackPayload(null,{value,idValue,dependedValue,rowData:dataObj},{
+					schemaNode,mainIndex,rowData:dataObj});
+				renderedValue=schemaNode.render(renderPayload);
+			} else if (schemaNode.input?.type==="select") {
 				if (schemaNode.input.boolean) {
 					const option=this._getSelectOptions(schemaNode.input,schemaNode,dataObj,mainIndex)
-						.find(opt=>this._getSelectValue(opt)===this._getSelectValue(cellVal));
-					return option?matchesFilter(option.text):false;
+						.find(opt=>this._getSelectValue(opt)===this._getSelectValue(value));
+					renderedValue=option?.text;
+				} else {
+					const optionsSrc=schemaNode.input.options;
+					if (typeof optionsSrc==="function") {
+						if (schemaNode.searchValue) {
+							const option=this._getSelectOptions(schemaNode.input,schemaNode,dataObj,mainIndex)
+								.find(opt=>this._getSelectValue(opt)===this._getSelectValue(value));
+							renderedValue=option?.text;
+						}
+					} else {
+						const cacheEntry=selectOptsCache.get(optionsSrc);
+						renderedValue=cacheEntry?.[this._getSelectValue(value)];
+					}
 				}
-				const optionsSrc=schemaNode.input.options;
-				if (typeof optionsSrc==="function")
-					return false;
-				const cacheEntry=selectOptsCache.get(optionsSrc);
-				const valKey=this._getSelectValue(cellVal);
-				const text=cacheEntry?.[valKey];
-				if (!text)
-					return false;
-				return matchesFilter(text);
+			} else
+				renderedValue=value;
+			const payload=this._makeCallbackPayload(null,
+				{value,idValue,dependedValue,renderedValue,rowData:dataObj},{schemaNode,mainIndex,rowData:dataObj});
+			const result=schemaNode.searchValue?schemaNode.searchValue(payload):renderedValue;
+			const candidates=Array.isArray(result)?result:[result];
+			const representations=[];
+			for (const candidate of candidates) {
+				const normalized=normalizeRepresentation(candidate,!!schemaNode.html);
+				if (normalized!=null)
+					representations.push(normalized);
 			}
-			const filterVal=this._getDisplayValue(schemaNode,dataObj,mainIndex,true);//strip tags if html-rendered
-			return matchesFilter(filterVal);
+			return representations;
 		};
 		// Some details containers re-root their data with dataPath; adjust before reading children.
 		const applyDataPath=(schemaNode,dataObj)=>{
@@ -9083,54 +9112,54 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return cur;
 		};
 		// Depth-first walk of details schema; repeated nodes fan out across all entries.
-		const detailsMatch=(schemaNode,dataObj,mainIndex)=>{
+		const collectDetails=(schemaNode,dataObj,mainIndex,representations)=>{
 			if (!schemaNode)
-				return false;
+				return;
 			const scopedData=applyDataPath(schemaNode,dataObj);
 			switch (schemaNode.type) {
 				case "field":
-					return matchesFieldValue(schemaNode,scopedData,mainIndex);
+					representations.push(...fieldRepresentations(schemaNode,scopedData,mainIndex));
+					return;
 				case "repeated": {
 					const repeatArr=scopedData?.[schemaNode.dataKey];
 					if (!Array.isArray(repeatArr))
-						return false;
+						return;
 					for (const item of repeatArr)//fan out over each repeated entry
-						if (detailsMatch(schemaNode.entry,item,mainIndex))
-							return true;
-					return false;
+						collectDetails(schemaNode.entry,item,mainIndex,representations);
+					return;
 				}
 				case "group":
 				case "list":
 				case "lineup":
 					for (const child of schemaNode.entries)//depth-first search down details schema
-						if (detailsMatch(child,scopedData,mainIndex))
-							return true;
-					return false;
+						collectDetails(child,scopedData,mainIndex,representations);
+					return;
 			}
-			return false;
 		};
 		const colsToFilterBy=[];
 		for (let col of this._colSchemaNodes)
 			if (col.type!=="expand"&&col.type!=="select")
 				colsToFilterBy.push(col);
-		const cachedSearchText=this._rowFilterCache.get(dataRow);
-		if (cachedSearchText!=null&&cachedSearchText.includes(searchDelim)) {
-			const haystack=caseSensitive?cachedSearchText:cachedSearchText.toLowerCase();
-			return haystack.includes(filterNeedle);
+		let cacheEntry=this._rowFilterCache.get(dataRow);
+		if (!cacheEntry) {
+			cacheEntry={main:null,details:null};
+			this._rowFilterCache.set(dataRow,cacheEntry);
 		}
-
-		rowSearchText="";
-		let match=false;
-		for (let colI=-1,col; col=colsToFilterBy[++colI];)
-			if (matchesFieldValue(col,dataRow,mainIndex)) {
-				match=true;
-				break;
-			}
-		if (!match&&includeDetails&&this._schema.details)
-			match=detailsMatch(this._schema.details,dataRow,mainIndex);
-		if (!match)
-			this._rowFilterCache.set(dataRow,rowSearchText);
-		return match;
+		if (!cacheEntry.main) {
+			cacheEntry.main=[];
+			for (const col of colsToFilterBy)
+				cacheEntry.main.push(...fieldRepresentations(col,dataRow,mainIndex));
+		}
+		if (includeDetails&&cacheEntry.details==null) {
+			cacheEntry.details=[];
+			if (this._schema.details)
+				collectDetails(this._schema.details,dataRow,mainIndex,cacheEntry.details);
+		}
+		const matches=representation=>{
+			const haystack=caseSensitive?representation:representation.toLowerCase();
+			return haystack.includes(filterNeedle);
+		};
+		return cacheEntry.main.some(matches)||(includeDetails&&cacheEntry.details.some(matches));
 	}
 
 	_setDataForOnlyDetails(data) {

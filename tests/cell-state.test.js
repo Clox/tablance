@@ -118,6 +118,108 @@ try {
 	assert(homeEndMain._mainRowIndex===0&&homeEndMain._mainColIndex===1,
 		"Ctrl+Home selects the first main row while retaining the current column");
 
+	let earlySearchBuilds=0,lateSearchBuilds=0,detailsSearchBuilds=0;
+	const domSearchValue=document.createElement("span");
+	domSearchValue.innerHTML="Visible <b>DOM</b> text";
+	const searchSchema={main:{columns:[
+		{dataKey:"identity",render:({value})=>{ earlySearchBuilds++; return `${value.slice(0,8)}-${value.slice(8)}`; },
+			searchValue:({value,renderedValue})=>[value,renderedValue]},
+		{dataKey:"renderOnly",render:()=>"Rendered public label"},
+		{dataKey:"choice",input:{type:"select",options:[{value:"select-internal",text:"Friendly choice"}]}},
+		{dataKey:"boundary",searchValue:()=>["left-edge","right-edge"]},
+		{dataKey:"none",searchValue:()=>null},
+		{dataKey:"empty",searchValue:()=>[]},
+		{dataKey:"object",searchValue:()=>({internal:"object-value"})},
+		{dataKey:"html",html:true,render:()=>"<strong>Visible HTML text</strong>"},
+		{dataKey:"dom",render:()=>domSearchValue},
+		{dataKey:"late",render:({value})=>{ lateSearchBuilds++; return value; }},
+	]},details:{type:"list",entries:[
+		{dataKey:"detail",render:({value})=>{ detailsSearchBuilds++; return `Detail ${value}`; }},
+	]}};
+	const searchTable=new Tablance(host(),searchSchema,true,true,{searchbar:false,ordering:false});
+	const searchRow={identity:"197001290357",renderOnly:"render-only-internal",choice:"select-internal",
+		boundary:"unused",none:"hidden-null",empty:"hidden-empty",object:"hidden-object",html:"unused",
+		dom:"unused",late:"Late searchable value",detail:"nested searchable value"};
+	searchTable.setData([searchRow]);
+	await tick();
+	earlySearchBuilds=lateSearchBuilds=detailsSearchBuilds=0;
+	const rowMatches=(table,row,needle,includeDetails=true)=>table._rowSatisfiesFilters(needle,row,
+		table._viewData.indexOf(row),table._createSelectOptsCache(),includeDetails);
+	assert(rowMatches(searchTable,searchRow,"700129")
+		&&earlySearchBuilds===1&&lateSearchBuilds===1&&detailsSearchBuilds===1,
+		"searchValue matches a partial raw representation while the first search still builds the complete row cache");
+	assert(rowMatches(searchTable,searchRow,"0129-035")
+		&&earlySearchBuilds===1&&lateSearchBuilds===1&&detailsSearchBuilds===1,
+		"searchValue matches a partial rendered representation without rebuilding a cached row");
+	assert(rowMatches(searchTable,searchRow,"Rendered public")
+		&&!rowMatches(searchTable,searchRow,"render-only-internal"),
+		"rendered fields remain rendered-only by default");
+	assert(rowMatches(searchTable,searchRow,"Friendly choice")
+		&&!rowMatches(searchTable,searchRow,"select-internal"),
+		"select fields retain visible option text as their default search representation");
+	assert(!rowMatches(searchTable,searchRow,"edgeri"),
+		"separate searchValue representations cannot match across representation boundaries");
+	assert(!rowMatches(searchTable,searchRow,"hidden-null")
+		&&!rowMatches(searchTable,searchRow,"hidden-empty")
+		&&!rowMatches(searchTable,searchRow,"[object Object]")
+		&&!rowMatches(searchTable,searchRow,"object-value"),
+		"null, empty arrays, arrays and objects do not create implicit search text");
+	assert(rowMatches(searchTable,searchRow,"Visible HTML text")
+		&&rowMatches(searchTable,searchRow,"Visible DOM text"),
+		"HTML and DOM renderer results are normalized to visible text");
+
+	let isolatedDetailsBuilds=0;
+	const detailsSearchTable=new Tablance(host(),{
+		main:{columns:[{dataKey:"main"}]},
+		details:{type:"list",entries:[{dataKey:"detail",render:({value})=>{
+			isolatedDetailsBuilds++;
+			return value;
+		}}]},
+	},true,true,{searchbar:false,ordering:false});
+	const detailsSearchRow={main:"main-only",detail:"details-only"};
+	detailsSearchTable.setData([detailsSearchRow]);
+	await tick();
+	isolatedDetailsBuilds=0;
+	assert(!rowMatches(detailsSearchTable,detailsSearchRow,"details-only",false)
+		&&isolatedDetailsBuilds===0
+		&&rowMatches(detailsSearchTable,detailsSearchRow,"details-only",true)
+		&&isolatedDetailsBuilds===1
+		&&!rowMatches(detailsSearchTable,detailsSearchRow,"details-only",false),
+		"search caches main and details representations separately when details searching is optional");
+
+	const invalidationTable=new Tablance(host(),{main:{columns:[
+		{dataKey:"value",render:({value})=>`Shown ${value}`},
+	]}},true,true,{searchbar:false,ordering:false});
+	const invalidationRow={value:"before"};
+	invalidationTable.setData([invalidationRow]);
+	await tick();
+	assert(rowMatches(invalidationTable,invalidationRow,"Shown before"),
+		"the updateData invalidation fixture starts with a populated cache");
+	invalidationTable.updateData(invalidationRow,"value","after");
+	assert(rowMatches(invalidationTable,invalidationRow,"Shown after")
+		&&!rowMatches(invalidationTable,invalidationRow,"Shown before"),
+		"updateData invalidates cached search representations after a normal update");
+	invalidationRow.value="external";
+	invalidationTable.updateData(invalidationRow,"value",null,false,true);
+	assert(rowMatches(invalidationTable,invalidationRow,"Shown external")
+		&&!rowMatches(invalidationTable,invalidationRow,"Shown after"),
+		"updateData invalidates cached search representations for onlyRefresh updates");
+
+	let externalSearchLabel="First external label";
+	const refreshSearchTable=new Tablance(host(),{main:{columns:[
+		{dataKey:"value",render:()=>externalSearchLabel},
+	]}},true,true,{searchbar:false,ordering:false});
+	const refreshSearchRow={value:"stable"};
+	refreshSearchTable.setData([refreshSearchRow]);
+	await tick();
+	assert(rowMatches(refreshSearchTable,refreshSearchRow,"First external label"),
+		"the refreshView invalidation fixture starts with a populated cache");
+	externalSearchLabel="Second external label";
+	refreshSearchTable.refreshView();
+	assert(rowMatches(refreshSearchTable,refreshSearchRow,"Second external label")
+		&&!rowMatches(refreshSearchTable,refreshSearchRow,"First external label"),
+		"refreshView conservatively invalidates search representations derived from external state");
+
 	let menuActionsResolved=0,menuActivations=[];
 	const menuRows=[
 		{name:"Alpha",locked:false},

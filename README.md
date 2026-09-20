@@ -72,6 +72,23 @@ including transparent repeated containers, do not gain a heading solely for help
 
 Schema `title` values are rendered as text by default. Set `titleHtml: true` only for explicitly trusted title markup.
 
+## Search representations
+
+Search uses a field's rendered value when `render` is configured, the visible option text for an unrendered select,
+and the raw primitive value otherwise. Set `searchValue(payload)` when a field needs different or multiple searchable
+representations. The callback receives the standard render payload plus `renderedValue` and may return one primitive
+value or an array of primitive values; `null`, `undefined`, an empty array, objects, and nested arrays add no search
+text. HTML and DOM results are reduced to their visible text. For example, this makes both a stored and a formatted
+identifier searchable without exposing raw values for every rendered field:
+
+```js
+{
+  dataKey: "identityNumber",
+  render: ({value}) => formatIdentityNumber(value),
+  searchValue: ({value, renderedValue}) => [value, renderedValue]
+}
+```
+
 ## Menu columns
 
 Use a main-table column with `type: "menu"` for row actions that do not represent or edit a data value. Menu columns
