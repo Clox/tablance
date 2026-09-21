@@ -287,6 +287,9 @@ class TablanceBase {
 	_viewportResizeFrame;
 	_readOnlyFeedbackTarget;
 	_readOnlyFeedbackTimer;
+	_navigationFeedbackTarget;
+	_navigationFeedbackTimer;
+	_navigationCursorTransition;
 	_dropdownAlignmentContainer;
 	lang;//object holding strings used in the table for various purposes. See DEFAULT_LANG for default values					
 	_rowMeta;//tracks row metadata (isNew flags, expanded heights, etc.) keyed by row data objects
@@ -1140,6 +1143,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	/**Reset all per-dataset state to an empty baseline. */
 	_resetDataState({clearFilter=true}={}) {
+		this._cancelNavigationCursorTransition?.();
+		this._clearNavigationActivationFeedback?.();
 		this._closeHelp();
 		this._sourceData=[];
 		this._viewData=[];
@@ -3644,7 +3649,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const schemaNode=instanceNode.schemaNode;
 		const children=instanceNode.children??[];
 		if (schemaNode?.type==="group") {
-			const isOpen=instanceNode.el?.classList.contains("open");
+			const isOpen=this._isGroupPresentationOpen(instanceNode);
 			if (!isOpen) {
 				if (this._isNavigableDetailsInstance(instanceNode))
 					cells.push(instanceNode);
@@ -4022,6 +4027,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * @param {Boolean} onlyGetChild if set to true then it will never return the passed in instanceNode and instead
 	 *			only look at its (grand)children. Used for groups where both itself and its children can be selected*/
 	_getFirstSelectableDetailsCell(instanceNode,isGoingDown,onlyGetChild=false) {
+		if (instanceNode?.presentationState==="creator-empty") {
+			const creator=this._getCreatorEmptyTarget(instanceNode);
+			if (creator&&this._isNavigableDetailsInstance(creator))
+				return creator;
+		}
 		if (!onlyGetChild&&instanceNode.el) {
 			if (this._getCellState(instanceNode.selEl??instanceNode.el,instanceNode)?.selectable!==false)
 				return instanceNode;
@@ -4714,6 +4724,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		parentEl.classList.add("group-cell");
 		instanceNode.el=groupTable;
 		instanceNode.viewportEl=viewport;
+		instanceNode.presentationState="closed";
 		viewport.addEventListener("transitionend",e=>this._groupAnimationEnd(e,instanceNode));
 		viewport.addEventListener("transitioncancel",e=>this._groupAnimationEnd(e,instanceNode));
 		// A group instance is visually represented by its own table even when its canonical selection/state surface is
@@ -4748,6 +4759,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		});
 		this._setCellState(groupTable,this._resolveCellState(groupSchemaNode,statePayload),instanceNode);
 		this._setupRepeatedReorderEntry(instanceNode);
+		this._syncCreatorEmptyPresentation(instanceNode);
 		return true;
 	}
 
@@ -5223,7 +5235,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			instanceNode=instanceNode.children[step];
 			if (!instanceNode)
 				return;
-			if (instanceNode.schemaNode.type==="group"&&!instanceNode.el.classList.contains("open"))
+			if (instanceNode.schemaNode.type==="group"&&!this._isGroupPresentationOpen(instanceNode))
 				break;
 		}
 		return instanceNode;
@@ -5497,8 +5509,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		const selBefore=this._selectedCell;
 		const schemaBefore=this._activeSchemaNode;
+		const cursorRectBefore=this._cellCursor?.style.display!=="none"
+			?this._cellCursor.getBoundingClientRect():null;
 		let doEnter=true;
 		if (this._activeSchemaNode.onEnter) {
+			if (this._showsActionIndicator(this._selectedCellState,this._activeSchemaNode))
+				this._showNavigationActivationFeedback();
 			const payload=this._makeCallbackPayload(this._activeDetailsCell,{
 				event:e,
 				value:this._selectedCellVal,
@@ -5509,7 +5525,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			});
 			this._activeSchemaNode.onEnter(payload);
 		}
-		if (!doEnter||selBefore!==this._selectedCell||schemaBefore!==this._activeSchemaNode)
+		if (selBefore!==this._selectedCell||schemaBefore!==this._activeSchemaNode) {
+			this._startNavigationCursorTransition(cursorRectBefore);
+			return;
+		}
+		if (!doEnter)
 			return;
 		if (this._selectedCellState.kind==="readOnly")
 			return this._openReadOnlyPresentation(e);
@@ -5559,6 +5579,118 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		clearTimeout(this._readOnlyFeedbackTimer);
 		this._readOnlyFeedbackTarget?.classList.remove("read-only-activation-feedback");
 		this._readOnlyFeedbackTarget=null;
+	}
+
+	_showNavigationActivationFeedback() {
+		const target=this._selectedCell;
+		if (!target||this._groupReducedMotion())
+			return false;
+		this._clearNavigationActivationFeedback();
+		target.classList.remove("navigation-activation-feedback");
+		void target.offsetWidth;
+		target.classList.add("navigation-activation-feedback");
+		this._navigationFeedbackTarget=target;
+		this._navigationFeedbackTimer=setTimeout(()=>{
+			target.classList.remove("navigation-activation-feedback");
+			if (this._navigationFeedbackTarget===target)
+				this._navigationFeedbackTarget=null;
+		},180);
+		return true;
+	}
+
+	_clearNavigationActivationFeedback() {
+		clearTimeout(this._navigationFeedbackTimer);
+		this._navigationFeedbackTarget?.classList.remove("navigation-activation-feedback");
+		this._navigationFeedbackTarget=null;
+	}
+
+	_finishNavigationCursorTransition(transition) {
+		if (!transition||transition.finished||this._navigationCursorTransition!==transition)
+			return;
+		transition.finished=true;
+		clearTimeout(transition.fallback);
+		cancelAnimationFrame(transition.startFrame);
+		this._cellCursor.removeEventListener("transitionend",transition.onEnd);
+		this._cellCursor.removeEventListener("transitioncancel",transition.onEnd);
+		this._cellCursor.classList.remove("tablance-navigation-cursor-animating");
+		this._cellCursor.style.removeProperty("transform");
+		this._cellCursor.style.removeProperty("transform-origin");
+		this._navigationCursorTransition=null;
+		this._adjustCursorPosSize(this._activeDetailsCell
+			?this._getCursorGeometryEl(this._activeDetailsCell):this._selectedCell);
+	}
+
+	_cancelNavigationCursorTransition() {
+		const transition=this._navigationCursorTransition;
+		if (!transition)
+			return;
+		transition.finished=true;
+		clearTimeout(transition.fallback);
+		cancelAnimationFrame(transition.startFrame);
+		this._cellCursor.removeEventListener("transitionend",transition.onEnd);
+		this._cellCursor.removeEventListener("transitioncancel",transition.onEnd);
+		this._cellCursor.classList.remove("tablance-navigation-cursor-animating");
+		this._cellCursor.style.removeProperty("transform");
+		this._cellCursor.style.removeProperty("transform-origin");
+		this._navigationCursorTransition=null;
+	}
+
+	_scrollNavigationDestinationIntoView() {
+		const target=this._activeDetailsCell?this._getCursorGeometryEl(this._activeDetailsCell):this._selectedCell;
+		// Public main-cell selection already renders and scrolls virtualized offscreen rows before it can select them.
+		// Only details targets can still lie outside the viewport after their parent presentation was opened.
+		if (!this._activeDetailsCell||!target?.isConnected)
+			return;
+		const viewport=this._onlyDetails?this.rootEl:this._scrollBody;
+		const targetRect=target.getBoundingClientRect();
+		const viewportRect=viewport.getBoundingClientRect();
+		if (targetRect.top>=viewportRect.top&&targetRect.bottom<=viewportRect.bottom
+			&&targetRect.left>=viewportRect.left&&targetRect.right<=viewportRect.right)
+			return;
+		if (this._onlyDetails||this._naturalAutoHeight)
+			target.scrollIntoView({behavior:"auto",block:"nearest",inline:"nearest"});
+		else {
+			if (targetRect.top<viewportRect.top)
+				viewport.scrollTop+=targetRect.top-viewportRect.top;
+			else if (targetRect.bottom>viewportRect.bottom)
+				viewport.scrollTop+=targetRect.bottom-viewportRect.bottom;
+			if (targetRect.left<viewportRect.left)
+				viewport.scrollLeft+=targetRect.left-viewportRect.left;
+			else if (targetRect.right>viewportRect.right)
+				viewport.scrollLeft+=targetRect.right-viewportRect.right;
+		}
+		this._adjustCursorPosSize(target);
+	}
+
+	_startNavigationCursorTransition(fromRect) {
+		this._cancelNavigationCursorTransition();
+		if (!fromRect||this._groupReducedMotion()||!this._cellCursor?.isConnected)
+			return false;
+		this._scrollNavigationDestinationIntoView();
+		const toRect=this._cellCursor.getBoundingClientRect();
+		const deltaX=fromRect.left-toRect.left;
+		const deltaY=fromRect.top-toRect.top;
+		if (Math.abs(deltaX)<.5&&Math.abs(deltaY)<.5)
+			return false;
+		const transition={finished:false,startFrame:null,fallback:null,onEnd:null};
+		transition.onEnd=e=>{
+			if (e.target===this._cellCursor&&(!e.propertyName||e.propertyName==="transform"))
+				this._finishNavigationCursorTransition(transition);
+		};
+		this._navigationCursorTransition=transition;
+		this._cellCursor.style.transformOrigin="top left";
+		this._cellCursor.style.transform=`translate(${deltaX}px, ${deltaY}px)`;
+		void this._cellCursor.offsetWidth;
+		this._cellCursor.addEventListener("transitionend",transition.onEnd);
+		this._cellCursor.addEventListener("transitioncancel",transition.onEnd);
+		transition.startFrame=requestAnimationFrame(()=>{
+			if (this._navigationCursorTransition!==transition)
+				return;
+			this._cellCursor.classList.add("tablance-navigation-cursor-animating");
+			this._cellCursor.style.transform="translate(0px, 0px)";
+			transition.fallback=setTimeout(()=>this._finishNavigationCursorTransition(transition),210);
+		});
+		return true;
 	}
 
 	_getInlineEditorValueEl() {
@@ -5689,7 +5821,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_openGroup(groupObj) {
 		if (this._isTrashMode()) {
 			this._transitionGroupPresentation(groupObj,()=>{
-				groupObj.el.classList.add("open");
+				this._setGroupPresentationState(groupObj,"open");
 				this._syncGroupChevronVisibility(groupObj);
 			});
 			this._selectDetailsCell(this._getFirstSelectableDetailsCell(groupObj,true,true));
@@ -5702,7 +5834,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._enterEditTransaction(groupObj);
 		this._ensureGroupTransactionBaseline(groupObj);
 		this._transitionGroupPresentation(groupObj,()=>{
-			groupObj.el.classList.add("open");
+			this._setGroupPresentationState(groupObj,"open");
 			this._syncGroupChevronVisibility(groupObj);
 		});
 		this._selectDetailsCell(this._getFirstSelectableDetailsCell(groupObj,true,true));
@@ -5817,11 +5949,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!payload.mode)
 			payload.mode="update";
 		// Creation-only context should only be present for create commits.
+		const repeatedContext=payload.mode==="create"
+			?this._getRepeatedAncestors(instanceNode).find(node=>node.schemaNode?.type==="repeated")
+			:null;
 		const intentDataKey=payload.mode==="create"
-			?instanceNode?.schemaNode?.dataKey??schema?.dataKey
+			?repeatedContext?.schemaNode?.dataKey??instanceNode?.schemaNode?.dataKey??schema?.dataKey
 			:undefined;
 		const intentDataArray=payload.mode==="create"
-			?instanceNode?.dataArray
+			?repeatedContext?.dataObj??instanceNode?.dataArray
 			:undefined;
 		txn.intents.push({
 			group,
@@ -6060,8 +6195,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_finalizeGroupClose(groupObject) {
+		if (this._isCreatorEmptyGroup(groupObject)) {
+			this._presentCreatorEmpty(groupObject);
+			this._ignoreClicksUntil=Date.now()+500;
+			delete groupObject._dirtyFields;
+			return;
+		}
 		this._transitionGroupPresentation(groupObject,()=>{
-			groupObject.el.classList.remove("open");
+			this._setGroupPresentationState(groupObject,"closed");
 			if (groupObject.updateRenderOnClose) {//if group is flagged for having its closed-render updated on close
 				delete groupObject.updateRenderOnClose;//delete the flag so it doesn't get triggered again
 				this._setClosedRender(groupObject,groupObject.schemaNode.closedRender(groupObject.dataObj));
@@ -6131,7 +6272,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._updateDetailsHeight(detailsTr);
 		this._adjustCursorPosSize?.(this._activeDetailsCell
 			?this._getCursorGeometryEl(this._activeDetailsCell):this._selectedCell);
-		if (this._cellCursor) {
+		if (this._cellCursor&&!this._navigationCursorTransition) {
 			const viewportRect=viewport.getBoundingClientRect();
 			const cursorRect=this._cellCursor.getBoundingClientRect();
 			this._cellCursor.classList.toggle("tablance-group-animation-clipped",
@@ -6250,9 +6391,90 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				return ancestor;
 	}
 
+	_isGroupPresentationOpen(groupObject) {
+		return groupObject?.presentationState==="open"
+			||groupObject?.presentationState==="creator-empty";
+	}
+
+	_setGroupPresentationState(groupObject,state) {
+		if (!groupObject)
+			return false;
+		groupObject.presentationState=state;
+		groupObject.el?.classList.toggle("open",state==="open");
+		groupObject.el?.classList.toggle("creator-empty",state==="creator-empty");
+		groupObject.viewportEl?.classList.toggle("creator-empty",state==="creator-empty");
+		return true;
+	}
+
+	_presentCreatorEmpty(groupObject) {
+		this._cancelGroupTransition(groupObject);
+		groupObject.viewportEl?.style.removeProperty("height");
+		groupObject.viewportEl?.style.removeProperty("overflow");
+		this._cellCursor?.classList.remove("tablance-group-animation-clipped");
+		this._setGroupPresentationState(groupObject,"creator-empty");
+		this._syncDetailsPresentation(groupObject);
+		const detailsTr=groupObject.viewportEl?.closest("tr.details");
+		if (detailsTr&&!this._onlyDetails)
+			this._updateDetailsHeight(detailsTr);
+		this._adjustCursorPosSize?.(this._activeDetailsCell
+			?this._getCursorGeometryEl(this._activeDetailsCell):this._selectedCell);
+	}
+
+	_getCreatorEmptyTarget(groupObject) {
+		if (groupObject?.presentationState!=="creator-empty")
+			return null;
+		const creators=this._getGroupOwnedRepeated(groupObject).flatMap(repeated=>
+			(repeated.children??[]).filter(child=>child.schemaNode?.creator&&!child.hidden));
+		return creators.length===1?creators[0]:null;
+	}
+
+	_getGroupOwnedRepeated(groupObject) {
+		const repeated=[];
+		const visit=node=>{
+			for (const child of node.children??[]) {
+				if (child.schemaNode?.type==="group")
+					continue;
+				if (child.schemaNode?.type==="repeated")
+					repeated.push(child);
+				else
+					visit(child);
+			}
+		};
+		visit(groupObject);
+		return repeated;
+	}
+
+	_isCreatorEmptyGroup(groupObject) {
+		const repeated=this._getGroupOwnedRepeated(groupObject);
+		return repeated.length===1
+			&&repeated[0].children?.filter(entry=>entry.schemaNode?.creator).length===1
+			&&!repeated[0].children.some(entry=>!entry.schemaNode?.creator&&!entry.creating);
+	}
+
+	_syncCreatorEmptyPresentation(instanceNode) {
+		const groupObject=instanceNode?.schemaNode?.type==="group"
+			?instanceNode:this._getNearestAncestorGroup(instanceNode);
+		if (!groupObject)
+			return false;
+		const creatorEmpty=this._isCreatorEmptyGroup(groupObject);
+		if (creatorEmpty) {
+			if (groupObject.presentationState==="creator-empty")
+				return false;
+			this._presentCreatorEmpty(groupObject);
+			return true;
+		}
+		if (groupObject.presentationState!=="creator-empty")
+			return false;
+		// A first committed entry keeps the currently exposed presentation open. It is now an ordinary open group
+		// and will close through the normal navigation/group lifecycle.
+		this._setGroupPresentationState(groupObject,"open");
+		this._syncDetailsPresentation(groupObject);
+		return true;
+	}
+
 	_canExposeDetailsAffordances(instanceNode) {
 		const ancestorGroup=this._getNearestAncestorGroup(instanceNode);
-		return !ancestorGroup||ancestorGroup.el.classList.contains("open");
+		return !ancestorGroup||this._isGroupPresentationOpen(ancestorGroup);
 	}
 
 	_applyDetailsAffordanceState(instanceNode) {
@@ -6272,7 +6494,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (const spacer of instanceNode.groupSpacers??[])
 			spacer.classList.toggle("details-affordances-suppressed",!exposed);
 		if (instanceNode.schemaNode?.type==="group"&&instanceNode.groupChevronEl) {
-			const closed=!instanceNode.el.classList.contains("open");
+			const closed=!this._isGroupPresentationOpen(instanceNode);
 			instanceNode.groupChevronEl.hidden=!exposed||!closed||instanceNode.cellState?.activatable!==true;
 		}
 		this._syncRepeatedReorderEntry(instanceNode);
@@ -6416,7 +6638,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_repeatedReorderDirections(entry) {
 		const config=this._getRepeatedReorderConfig(entry);
-		if (!config||entry.creating||entry.schemaNode?.creator||entry.el?.classList.contains("open")
+		if (!config||entry.creating||entry.schemaNode?.creator||this._isGroupPresentationOpen(entry)
 			||!this._canExposeDetailsAffordances(entry))
 			return {up:false,down:false};
 		const canMove=direction=>config.canMove(direction,this._makeRepeatedReorderPayload(entry,direction))===true;
@@ -6700,7 +6922,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_isRepeatedPreviewActive(repeated) {
 		const enclosingGroup=this._getNearestAncestorGroup(repeated);
-		return !!enclosingGroup&&!enclosingGroup.el.classList.contains("open");
+		return !!enclosingGroup&&!this._isGroupPresentationOpen(enclosingGroup);
 	}
 
 	_setRepeatedEntryPreviewHidden(entry,hidden) {
@@ -6891,6 +7113,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!repeated?.schemaNode||repeated.schemaNode.type!=="repeated")
 			return;
 		this._arrangeRepeatedInstances(repeated);
+		this._syncCreatorEmptyPresentation(repeated);
 		for (const entry of repeated.children??[])
 			this._syncRepeatedReorderEntry(entry);
 		this._updateDependentCells(repeated.schemaNode,repeated);
@@ -7005,6 +7228,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			payload.parentData=parentData;
 			this._queueDataCommit(payload,instanceNode);
 		}
+		else if (parent?.schemaNode?.type==="repeated"&&wasCreating)
+			this._finalizeRepeatedMutation(parent);
 
 		// Select next cell
 		let newSelectedCell=parent.children[visualIndex]??parent.children[visualIndex-1];
@@ -7799,7 +8024,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_getOpenGroupAncestor(instanceNode) {
 		for (let group=instanceNode; group; group=group.parent)
-			if (group.schemaNode?.type==="group"&&group.el?.classList.contains("open"))
+			if (group.schemaNode?.type==="group"&&this._isGroupPresentationOpen(group))
 				return group;
 	}
 
@@ -8101,6 +8326,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_selectDetailsCell(instanceNode,preserveVerticalPreferredColumn=false) {
 		if (!instanceNode)
 			return false;
+		instanceNode=this._getCreatorEmptyTarget(instanceNode)??instanceNode;
 		let root=instanceNode;
 		while (root.parent) root=root.parent;
 		if (root.collapsing)
@@ -8140,13 +8366,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		//in case this was called via instanceNode.select() it might be necessary to make sure parent-groups are open
 		const groupsToOpen=[];
 		for (let parentCell=instanceNode; parentCell=parentCell.parent;)
-			if (parentCell.schemaNode.type==="group"&&!parentCell.el.classList.contains("open"))
+			if (parentCell.schemaNode.type==="group"&&!this._isGroupPresentationOpen(parentCell))
 				groupsToOpen.push(parentCell);
 		if (groupsToOpen.length) {
 			const openedPresentationRoot=groupsToOpen.at(-1);
 			this._transitionGroupPresentation(openedPresentationRoot,()=>{
 				for (const parentCell of groupsToOpen) {
-					parentCell.el.classList.add("open");
+					this._setGroupPresentationState(parentCell,"open");
 					this._enterEditTransaction(parentCell);
 					this._ensureGroupTransactionBaseline(parentCell);
 				}
@@ -8161,6 +8387,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_selectCell(cellEl,schemaNode,dataObj,adjustCursorPosSize=true,instanceNode=null,
 		preserveVerticalPreferredColumn=false,focus=true) {
+		this._cancelNavigationCursorTransition();
 		this._closeHelp();
 		this._closeMenu();
 		this._clearReadOnlyActivationFeedback();
@@ -9727,6 +9954,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_setCellState(cellEl,state,instanceNode=null,schemaNode=instanceNode?.schemaNode) {
 		if (!cellEl)
 			return state;
+		if (cellEl===this._navigationFeedbackTarget)
+			this._clearNavigationActivationFeedback();
 		if (!schemaNode&&!instanceNode&&cellEl.parentElement?.parentElement===this._mainTbody)
 			schemaNode=this._colSchemaNodes[cellEl.cellIndex];
 		this._cellStates.set(cellEl,state);

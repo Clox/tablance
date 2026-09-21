@@ -1976,8 +1976,9 @@ try {
 	const emptyGroup=emptyGroupTable.getDetailCell(0,"addressesGroup");
 	const emptyGroupValueCell=emptyGroup.viewportEl.parentElement;
 	emptyGroupValueCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
-	assert(emptyGroup.selEl===emptyGroupValueCell&&emptyGroupTable._selectedCell===emptyGroupValueCell,
-		"a list group uses its full value cell as the hit target even when its inner content is empty");
+	const emptyGroupCreator=emptyGroup.children[0].children.find(entry=>entry.schemaNode.creator);
+	assert(emptyGroup.selEl===emptyGroupValueCell&&emptyGroupTable._activeDetailsCell===emptyGroupCreator,
+		"a creator-empty list group resolves its value-cell hit target to the directly presented creator");
 
 	const homeEndDetails=new Tablance(host(),{details:{type:"list",entries:[
 		{title:"First",dataKey:"first",nodeId:"homeEndFirst"},
@@ -3093,6 +3094,167 @@ try {
 	assert(JSON.stringify(geometry(cells[5]))===JSON.stringify(actionCellGeometry)
 		&&JSON.stringify(geometry(cells[5].firstElementChild))===JSON.stringify(actionTextGeometry),
 		"the action indicator does not move text or change cell dimensions");
+
+	const navigationRow={jump:"Open",chainA:"First",chainB:"Second",target:"Target"};
+	let navigationAnimationTable;
+	navigationAnimationTable=new Tablance(host(),{main:{columns:[
+		{dataKey:"jump",onEnter:({mainIndex,tablance})=>tablance.selectCell(mainIndex,"target")},
+		{dataKey:"chainA",onEnter:({mainIndex,tablance})=>tablance.selectCell(mainIndex,"chainB")},
+		{dataKey:"chainB",onEnter:({mainIndex,tablance})=>tablance.selectCell(mainIndex,"target")},
+		{dataKey:"target",input:{type:"text"}},
+	]}},true,true,{searchbar:false,ordering:false});
+	navigationAnimationTable.setData([navigationRow]);
+	await tick();
+	navigationAnimationTable.selectCell(navigationRow,"jump");
+	const navigationSource=navigationAnimationTable._selectedCell;
+	const cursorBeforeNavigation=navigationAnimationTable._cellCursor.getBoundingClientRect();
+	key(navigationAnimationTable.rootEl,"Enter","Enter");
+	const navigationTransition=navigationAnimationTable._navigationCursorTransition;
+	const cursorDestination=navigationAnimationTable._cellCursor.getBoundingClientRect();
+	const arrowFeedback=getComputedStyle(navigationSource,"::before");
+	assert(navigationAnimationTable._activeSchemaNode.dataKey==="target"
+		&&navigationTransition&&navigationSource.classList.contains("navigation-activation-feedback")
+		&&arrowFeedback.animationName==="tablance-navigation-arrow-feedback"
+		&&arrowFeedback.animationDuration==="0.14s"
+		&&Math.abs(cursorDestination.left-cursorBeforeNavigation.left)<.5,
+		"activating a navigation cell updates logical selection immediately while its arrow and cursor start visually at the source");
+	await new Promise(resolve=>requestAnimationFrame(resolve));
+	assert(navigationAnimationTable._cellCursor.classList.contains("tablance-navigation-cursor-animating")
+		&&getComputedStyle(navigationAnimationTable._cellCursor).transitionDuration==="0.15s",
+		"navigation cursor movement uses the same short ease-out timing as group presentation");
+	navigationAnimationTable._cellCursor.dispatchEvent(
+		new TransitionEvent("transitioncancel",{propertyName:"transform"}));
+	assert(!navigationAnimationTable._navigationCursorTransition
+		&&!navigationAnimationTable._cellCursor.classList.contains("tablance-navigation-cursor-animating")
+		&&!navigationAnimationTable._cellCursor.style.transform,
+		"a cancelled navigation transition restores the cursor's natural destination geometry");
+	navigationAnimationTable._setCellState(navigationSource,
+		navigationAnimationTable._getCellState(navigationSource),null,
+		navigationAnimationTable._colSchemaNodes[0]);
+	assert(!navigationSource.classList.contains("navigation-activation-feedback"),
+		"row rebinding clears arrow feedback instead of carrying it onto a recycled offscreen cell");
+
+	navigationAnimationTable.selectCell(navigationRow,"chainA");
+	const suppressNavigationTransitionEvents=event=>{
+		if (event.target===navigationAnimationTable._cellCursor&&event.propertyName==="transform")
+			event.stopImmediatePropagation();
+	};
+	navigationAnimationTable._cellCursor.addEventListener("transitionend",
+		suppressNavigationTransitionEvents,{capture:true});
+	navigationAnimationTable._cellCursor.addEventListener("transitioncancel",
+		suppressNavigationTransitionEvents,{capture:true});
+	key(navigationAnimationTable.rootEl,"Enter","Enter");
+	const firstRapidNavigation=navigationAnimationTable._navigationCursorTransition;
+	key(navigationAnimationTable.rootEl,"Enter","Enter");
+	const secondRapidNavigation=navigationAnimationTable._navigationCursorTransition;
+	assert(firstRapidNavigation?.finished&&secondRapidNavigation&&secondRapidNavigation!==firstRapidNavigation
+		&&navigationAnimationTable._activeSchemaNode.dataKey==="target",
+		"rapid repeated navigation replaces the old token from the cursor's current visual position");
+	await waitFor(()=>!navigationAnimationTable._navigationCursorTransition,
+		"rapid navigation cursor fallback cleanup");
+	navigationAnimationTable._cellCursor.removeEventListener("transitionend",
+		suppressNavigationTransitionEvents,{capture:true});
+	navigationAnimationTable._cellCursor.removeEventListener("transitioncancel",
+		suppressNavigationTransitionEvents,{capture:true});
+	assert(!navigationAnimationTable._cellCursor.style.transform
+		&&!navigationAnimationTable._cellCursor.style.transformOrigin,
+		"navigation fallback cleanup removes all temporary cursor geometry");
+
+	navigationAnimationTable.selectCell(navigationRow,"target");
+	key(navigationAnimationTable.rootEl,"ArrowLeft","ArrowLeft");
+	assert(navigationAnimationTable._activeSchemaNode.dataKey==="chainB"
+		&&!navigationAnimationTable._navigationCursorTransition
+		&&!navigationAnimationTable._cellCursor.classList.contains("tablance-navigation-cursor-animating")
+		&&!navigationAnimationTable._cellCursor.style.transform,
+		"ordinary arrow-key cell navigation remains immediate");
+
+	const groupedNavigationRow={jump:"Open details",deep:"Destination",moreA:"A",moreB:"B",moreC:"C"};
+	const groupedNavigationTable=new Tablance(host(),{main:{columns:[
+		{dataKey:"jump",onEnter:({mainIndex,tablance})=>tablance.selectCell(mainIndex,"deepTarget")},
+	]},details:{type:"list",entries:[
+		{type:"group",nodeId:"navigationGroup",closedRender:()=>"Summary",entries:[
+			{dataKey:"deep",nodeId:"deepTarget",input:{type:"text"}},
+			{dataKey:"moreA",input:{type:"text"}},
+			{dataKey:"moreB",input:{type:"text"}},
+			{dataKey:"moreC",input:{type:"text"}},
+		]},
+	]}},true,true,{searchbar:false,ordering:false});
+	groupedNavigationTable.setData([groupedNavigationRow]);
+	await tick();
+	groupedNavigationTable.selectCell(groupedNavigationRow,"jump");
+	key(groupedNavigationTable.rootEl,"Enter","Enter");
+	const navigationGroup=groupedNavigationTable.getDetailCell(groupedNavigationRow,"navigationGroup");
+	assert(groupedNavigationTable._activeSchemaNode.nodeId==="deepTarget"
+		&&navigationGroup.el.classList.contains("open")
+		&&navigationGroup.viewportEl._tablanceGroupTransition
+		&&groupedNavigationTable._navigationCursorTransition
+		&&!groupedNavigationTable._cellCursor.classList.contains("tablance-group-animation-clipped"),
+		"navigation applies full group presentation before measuring and runs one coherent cursor/group transition");
+	await waitFor(()=>!navigationGroup.viewportEl._tablanceGroupTransition
+		&&!groupedNavigationTable._navigationCursorTransition,"coordinated group navigation cleanup");
+	assert(groupedNavigationTable._activeSchemaNode.nodeId==="deepTarget"
+		&&!groupedNavigationTable._cellCursor.style.transform,
+		"group navigation finishes at the logically selected destination without stale cursor state");
+
+	const offscreenHost=host();
+	offscreenHost.style.height="140px";
+	const offscreenRow={jump:"Open"};
+	const offscreenEntries=Array.from({length:18},(_value,index)=>{
+		offscreenRow[`detail${index}`]=`Detail ${index}`;
+		return {dataKey:`detail${index}`,...(index===17?{nodeId:"offscreenTarget"}:{})};
+	});
+	const offscreenNavigationTable=new Tablance(offscreenHost,{main:{columns:[
+		{dataKey:"jump",onEnter:({mainIndex,tablance})=>tablance.selectCell(mainIndex,"offscreenTarget")},
+	]},details:{type:"list",entries:offscreenEntries}},true,true,{searchbar:false,ordering:false});
+	offscreenNavigationTable.setData([offscreenRow]);
+	await tick();
+	offscreenNavigationTable.selectCell(offscreenRow,"jump");
+	key(offscreenNavigationTable.rootEl,"Enter","Enter");
+	const offscreenViewport=offscreenNavigationTable._scrollBody.getBoundingClientRect();
+	const offscreenDestination=offscreenNavigationTable._cellCursor.getBoundingClientRect();
+	assert(offscreenNavigationTable._activeSchemaNode.nodeId==="offscreenTarget"
+		&&offscreenNavigationTable._scrollBody.scrollTop>0
+		&&offscreenDestination.bottom>=offscreenViewport.top&&offscreenDestination.top<=offscreenViewport.bottom
+		&&offscreenNavigationTable._navigationCursorTransition,
+		"offscreen navigation scrolls and renders the destination before cursor animation geometry is captured");
+	offscreenNavigationTable._finishNavigationCursorTransition(
+		offscreenNavigationTable._navigationCursorTransition);
+
+	const originalNavigationMatchMedia=window.matchMedia;
+	window.matchMedia=query=>({matches:query==="(prefers-reduced-motion: reduce)",media:query,
+		addEventListener:()=>{},removeEventListener:()=>{}});
+	navigationAnimationTable.selectCell(navigationRow,"jump");
+	const reducedNavigationSource=navigationAnimationTable._selectedCell;
+	key(navigationAnimationTable.rootEl,"Enter","Enter");
+	window.matchMedia=originalNavigationMatchMedia;
+	assert(navigationAnimationTable._activeSchemaNode.dataKey==="target"
+		&&!navigationAnimationTable._navigationCursorTransition
+		&&!reducedNavigationSource.classList.contains("navigation-activation-feedback")
+		&&!navigationAnimationTable._cellCursor.style.transform,
+		"reduced motion keeps navigation and arrow feedback immediate without temporary animation state");
+
+	const inlineNavigationRow={source:"Source",target:"Target"};
+	const inlineNavigationTable=new Tablance(host(),{details:{type:"list",entries:[
+		{type:"lineup",entries:[
+			{title:"Source",dataKey:"source",nodeId:"inlineNavigationSource",
+				onEnter:({mainIndex,tablance})=>tablance.selectCell(mainIndex,"inlineNavigationTarget")},
+			{title:"Target",dataKey:"target",nodeId:"inlineNavigationTarget",input:{type:"text"}},
+		]},
+	]}},true,true,{searchbar:false,ordering:false});
+	inlineNavigationTable.setData([inlineNavigationRow]);
+	await tick();
+	const inlineNavigationSource=inlineNavigationTable.getDetailCell(0,"inlineNavigationSource");
+	inlineNavigationSource.select();
+	key(inlineNavigationTable.rootEl,"Enter","Enter");
+	const inlineNavigationCell=inlineNavigationSource.selEl??inlineNavigationSource.el;
+	const inlineNavigationTitle=inlineNavigationCell.querySelector(":scope>span.title");
+	assert(getComputedStyle(inlineNavigationTitle,"::after").animationName
+			==="tablance-navigation-arrow-feedback"
+		&&getComputedStyle(inlineNavigationCell,"::before").content==="none"
+		&&inlineNavigationTable._activeSchemaNode.nodeId==="inlineNavigationTarget",
+		"an inline-title navigation cell rotates only its existing title arrow while selecting its destination");
+	inlineNavigationTable._finishNavigationCursorTransition(inlineNavigationTable._navigationCursorTransition);
+
 	table.selectCell(row,"button");
 	assert(!cells[5].classList.contains("tablance-active-cell")&&cells[6].classList.contains("tablance-active-cell")
 		&&table._selectedCellState.kind==="action"&&!cells[6].classList.contains("action-indicator")
@@ -3783,12 +3945,12 @@ try {
 		&&getComputedStyle(firstHistorySeparator).marginLeft==="0px"
 		&&getComputedStyle(firstHistorySeparator).marginRight==="4px",
 		"open inner cell separators become solid while retaining the same indentation");
-	historyEntries[0].el.classList.remove("open");
+	table._setGroupPresentationState(historyEntries[0],"closed");
 	table._syncGroupChevronVisibility(historyEntries[0]);
 	assert(getComputedStyle(firstHistorySeparator).display==="none"
 		&&!nestedGroupChevron.hidden,
 		"closing a nested group suppresses descendant separators while exposing the group's own chevron");
-	historyEntries[0].el.classList.add("open");
+	table._setGroupPresentationState(historyEntries[0],"open");
 	table._syncGroupChevronVisibility(historyEntries[0]);
 	const openGroupFieldStyle=getComputedStyle(historyEntries[0].children[0].selEl);
 	assert(openGroupFieldStyle.paddingLeft==="4px"&&openGroupFieldStyle.paddingTop==="4px"
@@ -4550,6 +4712,170 @@ try {
 	key(wrappedVerticalTable.rootEl,"ArrowUp","ArrowUp");
 	assert(wrappedVerticalTable._activeDetailsCell===wrappedB,
 		"wrapped Lineup geometry remains bidirectional and does not use Grid state");
+
+	const creatorEmptyRow={before:"before",emptyItems:[],populatedItems:[{label:"Existing"}],plainItems:[],
+		after:"after"};
+	const repeatedEntry={type:"group",closedRender:data=>data.label??"",entries:[
+		{title:"Label",dataKey:"label",input:{type:"text"}},
+	]};
+	const creatorEmptyCommits=[];
+	const creatorEmptyTable=new Tablance(host(),{onDataCommit:payload=>creatorEmptyCommits.push(payload),
+		details:{type:"list",entries:[
+		{title:"Before",dataKey:"before",nodeId:"creatorEmptyBefore"},
+		{type:"group",title:"Empty repeated",nodeId:"creatorEmptyGroup",entries:[
+			{type:"repeated",dataKey:"emptyItems",nodeId:"creatorEmptyRepeated",create:true,
+				creationText:"Add empty item",grouping:{by:()=>"all",order:[{key:"all",title:"All"}]},
+				entry:repeatedEntry},
+		]},
+		{type:"group",title:"Populated repeated",nodeId:"populatedRepeatedGroup",entries:[
+			{type:"repeated",dataKey:"populatedItems",nodeId:"populatedRepeated",create:true,
+				creationText:"Add populated item",entry:repeatedEntry},
+		]},
+		{type:"group",title:"No creator",nodeId:"noCreatorRepeatedGroup",entries:[
+			{type:"repeated",dataKey:"plainItems",nodeId:"noCreatorRepeated",entry:repeatedEntry},
+		]},
+		{title:"After",dataKey:"after",nodeId:"creatorEmptyAfter"},
+	]}},true,true,{searchbar:false});
+	creatorEmptyTable.setData([creatorEmptyRow]);
+	await tick();
+	const creatorEmptyGroup=creatorEmptyTable.getDetailCell(0,"creatorEmptyGroup");
+	const creatorEmptyRepeated=creatorEmptyTable.getDetailCell(0,"creatorEmptyRepeated");
+	const creator=creatorEmptyRepeated.children.find(child=>child.schemaNode.creator);
+	const populatedRepeatedGroup=creatorEmptyTable.getDetailCell(0,"populatedRepeatedGroup");
+	const populatedRepeated=creatorEmptyTable.getDetailCell(0,"populatedRepeated");
+	const noCreatorRepeatedGroup=creatorEmptyTable.getDetailCell(0,"noCreatorRepeatedGroup");
+	const beforeCreatorEmpty=creatorEmptyTable.getDetailCell(0,"creatorEmptyBefore");
+	const afterCreatorEmpty=creatorEmptyTable.getDetailCell(0,"creatorEmptyAfter");
+	const creatorEmptyBaselineHeight=creator.el.getBoundingClientRect().height;
+	const directCreatorTable=new Tablance(host(),{details:{type:"list",entries:[
+		{type:"repeated",dataKey:"emptyItems",nodeId:"directCreatorRepeated",create:true,
+			creationText:"Add empty item",entry:repeatedEntry},
+	]}},true,true,{searchbar:false});
+	directCreatorTable.setData([{emptyItems:[]}]);
+	await tick();
+	const directCreator=directCreatorTable.getDetailCell(0,"directCreatorRepeated").children[0];
+	assert(creatorEmptyGroup.presentationState==="creator-empty"
+		&&creatorEmptyGroup.el.classList.contains("creator-empty")
+		&&!creatorEmptyGroup.el.classList.contains("open")
+		&&creator.el.getClientRects().length>0
+		&&!creatorEmptyGroup.el.querySelector(":scope>tbody>tr.group-render"),
+		"an initially empty repeated group exposes its creator in a distinct creator-only presentation");
+	const outerCreatorStyle=getComputedStyle(creatorEmptyGroup.el);
+	const innerCreatorStyle=getComputedStyle(creator.el);
+	const directCreatorStyle=getComputedStyle(directCreator.el);
+	assert(outerCreatorStyle.display==="contents"
+		&&creatorEmptyGroup.viewportEl.getClientRects().length===0
+		&&creatorEmptyGroup.el.getClientRects().length===0
+		&&innerCreatorStyle.borderTopWidth===directCreatorStyle.borderTopWidth
+		&&Math.abs(creator.el.getBoundingClientRect().height
+			-directCreator.el.getBoundingClientRect().height)<.1,
+		"creator-empty adds no box height, border, padding, or shadow and matches an unwrapped creator's height and border");
+	assert(populatedRepeatedGroup.presentationState==="closed"
+		&&!populatedRepeatedGroup.el.classList.contains("open")
+		&&populatedRepeated.children.some(child=>!child.schemaNode.creator&&!child.creating),
+		"a repeated group with an existing entry retains ordinary closed presentation");
+	assert(noCreatorRepeatedGroup.presentationState==="closed"
+		&&!noCreatorRepeatedGroup.el.classList.contains("open"),
+		"an empty repeated group without a creator remains unchanged and closed");
+
+	beforeCreatorEmpty.select();
+	key(creatorEmptyTable.rootEl,"Tab","Tab");
+	assert(creatorEmptyTable._activeDetailsCell===creator
+		&&creatorEmptyTable._cellCursor.getBoundingClientRect().height>0,
+		"keyboard navigation selects the actual visible creator cell, not its outer group");
+	directCreator.select();
+	assert(creatorEmptyTable._activeDetailsCell===creator
+		&&creatorEmptyTable._cellCursor.getBoundingClientRect().height
+			===directCreatorTable._cellCursor.getBoundingClientRect().height,
+		"the wrapped creator and direct creator expose the same logical cursor geometry");
+	creator.select();
+	key(creatorEmptyTable.rootEl,"Enter","Enter");
+	let creatorEmptyDraft=creatorEmptyRepeated.children.find(child=>child.creating);
+	assert(creatorEmptyDraft&&creatorEmptyTable._activeDetailsCell===creatorEmptyDraft.children[0]
+		&&creatorEmptyGroup.presentationState==="creator-empty"&&creatorEmptyRow.emptyItems.length===0,
+		"one Enter from the visually selected Add item creator creates the first draft without an intermediate group step");
+	key(creatorEmptyTable.rootEl,"Escape","Escape");
+	await waitFor(()=>!creatorEmptyGroup.viewportEl._tablanceGroupTransition,
+		"creator-empty draft-abandon animation cleanup");
+	assert(!creatorEmptyRepeated.children.includes(creatorEmptyDraft)&&creatorEmptyRow.emptyItems.length===0
+		&&creatorEmptyGroup.presentationState==="creator-empty"
+		&&creatorEmptyRepeated.children.filter(child=>!child.schemaNode.creator).length===0
+		&&creatorEmptyRepeated.groupHeadings.length===0&&creatorEmptyRepeated.groupSpacers.length===0
+		&&Math.abs(creator.el.getBoundingClientRect().height-creatorEmptyBaselineHeight)<.1,
+		"abandoning the first and only draft restores creator-empty state without residual instances, grouping spacers, animation, or height");
+	afterCreatorEmpty.select();
+	assert(creatorEmptyGroup.presentationState==="creator-empty"
+		&&!creatorEmptyGroup.el.classList.contains("open")&&creator.el.getClientRects().length>0,
+		"leaving an empty repeated group does not close its persistent creator-empty presentation");
+	for (const expected of [noCreatorRepeatedGroup,populatedRepeatedGroup,creator]) {
+		key(creatorEmptyTable.rootEl,"Tab","Tab",{shiftKey:true});
+		assert(creatorEmptyTable._activeDetailsCell===expected,
+			"reverse navigation follows ordinary closed groups before the empty creator");
+	}
+	assert(creatorEmptyTable._activeDetailsCell===creator
+		&&creatorEmptyGroup.presentationState==="creator-empty",
+		"reverse navigation returns directly to the creator after an abandoned draft");
+	creatorEmptyTable._selectDetailsCell(creatorEmptyGroup);
+	assert(creatorEmptyTable._activeDetailsCell===creator,
+		"selecting the outer creator-empty group resolves to the sole logical creator cell");
+	creatorEmptyGroup.el.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	assert(creatorEmptyTable._activeDetailsCell===creator,
+		"pointer selection of the creator-only presentation resolves to the creator rather than a hidden group step");
+	creatorEmptyTable._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,button:0}));
+	const pointerCreatorDraft=creatorEmptyRepeated.children.find(child=>child.creating);
+	assert(pointerCreatorDraft&&creatorEmptyTable._activeDetailsCell===pointerCreatorDraft.children[0],
+		"pointer activation of creator-empty invokes the creator directly without activating the outer group");
+	key(creatorEmptyTable.rootEl,"Escape","Escape");
+	assert(!creatorEmptyRepeated.children.includes(pointerCreatorDraft)
+		&&creatorEmptyGroup.presentationState==="creator-empty"
+		&&!creatorEmptyGroup.viewportEl._tablanceGroupTransition,
+		"abandoning a pointer-created draft restores creator-only state without a group animation");
+	creator.select();
+
+	key(creatorEmptyTable.rootEl,"Enter","Enter");
+	creatorEmptyDraft=creatorEmptyRepeated.children.find(child=>child.creating);
+	creatorEmptyDraft.dataObj.label="First";
+	creatorEmptyTable._markDirtyField(creatorEmptyDraft.children[0]);
+	afterCreatorEmpty.select();
+	assert(creatorEmptyRow.emptyItems.length===1&&creatorEmptyRow.emptyItems[0]===creatorEmptyDraft.dataObj
+		&&!creatorEmptyDraft.creating&&creatorEmptyGroup.presentationState==="closed"
+		&&!creatorEmptyGroup.el.classList.contains("open"),
+		"committing the first entry returns the containing group to ordinary open/closed navigation behavior");
+	const firstCreatorEmptyCommit=creatorEmptyCommits.find(payload=>payload.mode==="create");
+	assert(firstCreatorEmptyCommit?.data===creatorEmptyDraft.dataObj
+		&&firstCreatorEmptyCommit.data.label==="First"
+		&&!Object.prototype.hasOwnProperty.call(firstCreatorEmptyCommit.data,"undefined")
+		&&firstCreatorEmptyCommit.dataKey==="emptyItems"
+		&&firstCreatorEmptyCommit.dataArray===creatorEmptyRow.emptyItems,
+		"the first creator-empty commit preserves field and repeated data keys in its ordinary create payload");
+
+	creatorEmptyTable._openGroup(creatorEmptyGroup);
+	const firstEntry=creatorEmptyRepeated.children.find(child=>!child.schemaNode.creator&&!child.creating);
+	creatorEmptyTable._deleteCell(firstEntry);
+	await waitFor(()=>!creatorEmptyGroup.viewportEl._tablanceGroupTransition,
+		"last-entry deletion creator-empty animation cleanup");
+	assert(creatorEmptyRow.emptyItems.length===0&&creatorEmptyGroup.presentationState==="creator-empty"
+		&&!creatorEmptyGroup.el.classList.contains("open")&&creatorEmptyTable._activeDetailsCell===creator
+		&&creator.el.getClientRects().length>0&&creatorEmptyRepeated.groupHeadings.length===0
+		&&creatorEmptyRepeated.groupSpacers.length===0
+		&&!creatorEmptyGroup.viewportEl.classList.contains("tablance-group-animating"),
+		"deleting the last committed entry immediately restores the navigable creator-empty state with no stale grouped or animation state");
+	const creatorEmptyExternalEntry={label:"External"};
+	creatorEmptyRow.emptyItems.push(creatorEmptyExternalEntry);
+	creatorEmptyTable._reconcileRepeatedData(creatorEmptyRepeated,creatorEmptyRow.emptyItems);
+	creatorEmptyTable._finalizeRepeatedMutation(creatorEmptyRepeated);
+	assert(creatorEmptyGroup.presentationState==="open"
+		&&creatorEmptyRepeated.children.some(entry=>entry.dataObj===creatorEmptyExternalEntry),
+		"repeated-instance reconciliation leaves creator-empty presentation when an external first entry arrives");
+	creatorEmptyRow.emptyItems.splice(0,1);
+	creatorEmptyTable._reconcileRepeatedData(creatorEmptyRepeated,creatorEmptyRow.emptyItems);
+	creatorEmptyTable._finalizeRepeatedMutation(creatorEmptyRepeated);
+	await waitFor(()=>!creatorEmptyGroup.viewportEl._tablanceGroupTransition,
+		"reconciled creator-empty animation cleanup");
+	assert(creatorEmptyGroup.presentationState==="creator-empty"
+		&&creatorEmptyRepeated.children.every(entry=>entry.schemaNode.creator)
+		&&creatorEmptyRepeated.groupHeadings.length===0&&creatorEmptyRepeated.groupSpacers.length===0,
+		"repeated-instance reconciliation restores creator-empty presentation after the external last entry disappears");
 
 	const tabRow={name:"Tab order",before:"before",first:"first",hidden:"hidden",disabled:"disabled",
 		choice:"two",after:"after",source:"Ratsit",synced:"2022-01-31 18:04",final:"final",

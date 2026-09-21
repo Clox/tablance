@@ -31,7 +31,7 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center / contain no-repeat;
 		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center / contain no-repeat;
 	}
-	&.action-indicator:is(:hover,.tablance-active-cell)>span.title::after {
+	&.action-indicator:is(:hover,.tablance-active-cell,.navigation-activation-feedback)>span.title::after {
 		content: "";
 		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
 		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
@@ -42,7 +42,7 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		mask: $tablance-edit-icon center / contain no-repeat;
 	}
 	&.read-only:hover::before,
-	&.action-indicator:hover::before,
+	&.action-indicator:is(:hover,.navigation-activation-feedback)::before,
 	&.editable-indicator:hover::before {
 		content: none;
 	}
@@ -227,6 +227,10 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		//looks good but is distracting when using arrow-keys. Limit it to mouse-clicks?
 		//transition: left .15s ease-out,top .15s ease-out,height .15s ease-out,width .15s ease-out;
 		position: absolute;
+		&.tablance-navigation-cursor-animating {
+			transition: transform 150ms ease-out;
+			will-change: transform;
+		}
 		&.tablance-group-animation-clipped {
 			visibility: hidden;
 		}
@@ -382,7 +386,7 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		position: relative;
 	}
 	.cell-cursor.action-indicator::before,
-	.action-indicator:not(.cell-cursor):hover::before {
+	.action-indicator:not(.cell-cursor):is(:hover,.navigation-activation-feedback)::before {
 		position: absolute;
 		z-index: 1;
 		top: 2px;
@@ -395,6 +399,15 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
 		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
 		pointer-events: none;
+	}
+	.action-indicator.navigation-activation-feedback::before,
+	.tablance-cell-state.action-indicator.navigation-activation-feedback>span.title::after {
+		animation: tablance-navigation-arrow-feedback 140ms ease-out;
+		transform-origin: center;
+	}
+	@keyframes tablance-navigation-arrow-feedback {
+		from { rotate: 0deg; }
+		to { rotate: -360deg; }
 	}
 	.cell-cursor.editable-indicator:not(.edit-mode)::before,
 	.editable-indicator:not(.cell-cursor):hover::before {
@@ -493,6 +506,13 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		}
 	}
 	@media (prefers-reduced-motion: reduce) {
+		.cell-cursor.tablance-navigation-cursor-animating {
+			transition: none;
+		}
+		.action-indicator.navigation-activation-feedback::before,
+		.tablance-cell-state.action-indicator.navigation-activation-feedback>span.title::after {
+			animation: none;
+		}
 		.cell-cursor.read-only.read-only-activation-feedback::before,
 		.tablance-cell-state.read-only.read-only-activation-feedback>span.title::after {
 			animation: none;
@@ -1070,14 +1090,14 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		}
 
 		.tablance-cell-state:not(.disabled):not(.details-group),
-		.details-group.tablance-cell-state:not(.open):not(.disabled) {
+		.details-group.tablance-cell-state:not(.open):not(.creator-empty):not(.disabled) {
 			transition: background-color 120ms ease;
 
 			&:hover {
 				background-color: var(--tablance-hover-background);
 			}
 		}
-		.details-list>tbody>tr>td.group-cell:has(>.tablance-group-viewport>.details-group.tablance-cell-state:not(.open):not(.disabled)):hover {
+		.details-list>tbody>tr>td.group-cell:has(>.tablance-group-viewport>.details-group.tablance-cell-state:not(.open):not(.creator-empty):not(.disabled)):hover {
 			background-color: var(--tablance-hover-background);
 		}
 		.lineup {
@@ -1749,6 +1769,23 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		padding: 4px;
 		>:where(.tablance-group-viewport) {
 			width: 100%;
+			&.creator-empty {
+				// The group remains an instance-tree owner but contributes no layout box of its own.
+				// Its sole visible cell is the creator at the group's position.
+				display: contents;
+				>.details-group,
+				>.details-group>tbody {
+					display: contents;
+				}
+				>.details-group>tbody>tr {
+					display: block;
+					width: 100%;
+					>td {
+						display: block;
+						padding: 0;
+					}
+				}
+			}
 			&.tablance-group-animating {
 				transition: height 150ms ease-out;
 			}
@@ -1769,7 +1806,7 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 					inset 0 -2px 4px rgba(148, 163, 184, .10),
 					inset 3px 3px 4px -2px rgba(51, 65, 85, .10);
 				width: 100%;
-				&:not(.open) {
+				&:not(.open):not(.creator-empty) {
 					display: flex;
 					align-items: center;
 					>tbody {
@@ -1783,7 +1820,7 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 					border-color: transparent;
 					box-shadow: none;
 				}
-				&:not(.open)>tbody>tr {
+				&:not(.open):not(.creator-empty)>tbody>tr {
 					&.empty,>td>div>.empty {
 						display: none;
 					}
@@ -1797,10 +1834,10 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 					border-top-style: solid;
 				}
 				&.closed-render {
-					&.open>tbody>tr.group-render {
+					&:is(.open,.creator-empty)>tbody>tr.group-render {
 						display: none;
 					}
-					&:not(.open)>tbody>tr:not(.group-render) {
+					&:not(.open):not(.creator-empty)>tbody>tr:not(.group-render) {
 						display: none;
 					}
 				}

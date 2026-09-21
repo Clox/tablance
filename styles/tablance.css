@@ -184,6 +184,10 @@
 .tablance .cell-cursor {
   position: absolute;
 }
+.tablance .cell-cursor.tablance-navigation-cursor-animating {
+  transition: transform 150ms ease-out;
+  will-change: transform;
+}
 .tablance .cell-cursor.tablance-group-animation-clipped {
   visibility: hidden;
 }
@@ -347,7 +351,7 @@
   position: relative;
 }
 .tablance .cell-cursor.action-indicator::before,
-.tablance .action-indicator:not(.cell-cursor):hover::before {
+.tablance .action-indicator:not(.cell-cursor):is(:hover, .navigation-activation-feedback)::before {
   position: absolute;
   z-index: 1;
   top: 2px;
@@ -360,6 +364,19 @@
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center/contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center/contain no-repeat;
   pointer-events: none;
+}
+.tablance .action-indicator.navigation-activation-feedback::before,
+.tablance .tablance-cell-state.action-indicator.navigation-activation-feedback > span.title::after {
+  animation: tablance-navigation-arrow-feedback 140ms ease-out;
+  transform-origin: center;
+}
+@keyframes tablance-navigation-arrow-feedback {
+  from {
+    rotate: 0deg;
+  }
+  to {
+    rotate: -360deg;
+  }
 }
 .tablance .cell-cursor.editable-indicator:not(.edit-mode)::before,
 .tablance .editable-indicator:not(.cell-cursor):hover::before {
@@ -456,6 +473,13 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .tablance .cell-cursor.tablance-navigation-cursor-animating {
+    transition: none;
+  }
+  .tablance .action-indicator.navigation-activation-feedback::before,
+  .tablance .tablance-cell-state.action-indicator.navigation-activation-feedback > span.title::after {
+    animation: none;
+  }
   .tablance .cell-cursor.read-only.read-only-activation-feedback::before,
   .tablance .tablance-cell-state.read-only.read-only-activation-feedback > span.title::after {
     animation: none;
@@ -982,14 +1006,14 @@
   background-color: transparent;
 }
 .tablance .details .tablance-cell-state:not(.disabled):not(.details-group),
-.tablance .details .details-group.tablance-cell-state:not(.open):not(.disabled) {
+.tablance .details .details-group.tablance-cell-state:not(.open):not(.creator-empty):not(.disabled) {
   transition: background-color 120ms ease;
 }
 .tablance .details .tablance-cell-state:not(.disabled):not(.details-group):hover,
-.tablance .details .details-group.tablance-cell-state:not(.open):not(.disabled):hover {
+.tablance .details .details-group.tablance-cell-state:not(.open):not(.creator-empty):not(.disabled):hover {
   background-color: var(--tablance-hover-background);
 }
-.tablance .details .details-list > tbody > tr > td.group-cell:has(> .tablance-group-viewport > .details-group.tablance-cell-state:not(.open):not(.disabled)):hover {
+.tablance .details .details-list > tbody > tr > td.group-cell:has(> .tablance-group-viewport > .details-group.tablance-cell-state:not(.open):not(.creator-empty):not(.disabled)):hover {
   background-color: var(--tablance-hover-background);
 }
 .tablance .details .lineup > .date-container {
@@ -1153,7 +1177,7 @@
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center/contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center/contain no-repeat;
 }
-.tablance .details .lineup > span:has(> div.value:not(.group-cell)).action-indicator:is(:hover, .tablance-active-cell) > span.title::after {
+.tablance .details .lineup > span:has(> div.value:not(.group-cell)).action-indicator:is(:hover, .tablance-active-cell, .navigation-activation-feedback) > span.title::after {
   content: "";
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center/contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center/contain no-repeat;
@@ -1163,7 +1187,7 @@
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.174 6.812a1 1 0 0 0-3.986-3.986L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z'/%3E%3Cpath d='m15 5 4 4'/%3E%3C/svg%3E") center/contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.174 6.812a1 1 0 0 0-3.986-3.986L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z'/%3E%3Cpath d='m15 5 4 4'/%3E%3C/svg%3E") center/contain no-repeat;
 }
-.tablance .details .lineup > span:has(> div.value:not(.group-cell)).read-only:hover::before, .tablance .details .lineup > span:has(> div.value:not(.group-cell)).action-indicator:hover::before, .tablance .details .lineup > span:has(> div.value:not(.group-cell)).editable-indicator:hover::before {
+.tablance .details .lineup > span:has(> div.value:not(.group-cell)).read-only:hover::before, .tablance .details .lineup > span:has(> div.value:not(.group-cell)).action-indicator:is(:hover, .navigation-activation-feedback)::before, .tablance .details .lineup > span:has(> div.value:not(.group-cell)).editable-indicator:hover::before {
   content: none;
 }
 .tablance .details .lineup > span:has(> div.value:not(.group-cell)):is(.editable-indicator, .read-only, .action-indicator) > span.title {
@@ -1360,7 +1384,7 @@
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center/contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center/contain no-repeat;
 }
-.tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)).action-indicator:is(:hover, .tablance-active-cell) > span.title::after {
+.tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)).action-indicator:is(:hover, .tablance-active-cell, .navigation-activation-feedback) > span.title::after {
   content: "";
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center/contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center/contain no-repeat;
@@ -1370,7 +1394,7 @@
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.174 6.812a1 1 0 0 0-3.986-3.986L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z'/%3E%3Cpath d='m15 5 4 4'/%3E%3C/svg%3E") center/contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.174 6.812a1 1 0 0 0-3.986-3.986L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z'/%3E%3Cpath d='m15 5 4 4'/%3E%3C/svg%3E") center/contain no-repeat;
 }
-.tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)).read-only:hover::before, .tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)).action-indicator:hover::before, .tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)).editable-indicator:hover::before {
+.tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)).read-only:hover::before, .tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)).action-indicator:is(:hover, .navigation-activation-feedback)::before, .tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)).editable-indicator:hover::before {
   content: none;
 }
 .tablance .details table.details-group > tbody > tr:not(:first-child) > td:has(> div.value:not(.group-cell)) {
@@ -1696,6 +1720,21 @@
 .tablance .group-cell > :where(.tablance-group-viewport) {
   width: 100%;
 }
+.tablance .group-cell > :where(.tablance-group-viewport).creator-empty {
+  display: contents;
+}
+.tablance .group-cell > :where(.tablance-group-viewport).creator-empty > .details-group,
+.tablance .group-cell > :where(.tablance-group-viewport).creator-empty > .details-group > tbody {
+  display: contents;
+}
+.tablance .group-cell > :where(.tablance-group-viewport).creator-empty > .details-group > tbody > tr {
+  display: block;
+  width: 100%;
+}
+.tablance .group-cell > :where(.tablance-group-viewport).creator-empty > .details-group > tbody > tr > td {
+  display: block;
+  padding: 0;
+}
 .tablance .group-cell > :where(.tablance-group-viewport).tablance-group-animating {
   transition: height 150ms ease-out;
 }
@@ -1715,11 +1754,11 @@
   box-shadow: inset 0 1px 5px rgba(71, 86, 106, 0.1), inset -1px 2px 2px rgba(148, 163, 184, 0.1), inset 0 -2px 4px rgba(148, 163, 184, 0.1), inset 3px 3px 4px -2px rgba(51, 65, 85, 0.1);
   width: 100%;
 }
-.tablance .group-cell > :where(.tablance-group-viewport) > table:not(.open) {
+.tablance .group-cell > :where(.tablance-group-viewport) > table:not(.open):not(.creator-empty) {
   display: flex;
   align-items: center;
 }
-.tablance .group-cell > :where(.tablance-group-viewport) > table:not(.open) > tbody {
+.tablance .group-cell > :where(.tablance-group-viewport) > table:not(.open):not(.creator-empty) > tbody {
   display: table;
   flex: 0 1 auto;
   width: auto;
@@ -1729,7 +1768,7 @@
   border-color: transparent;
   box-shadow: none;
 }
-.tablance .group-cell > :where(.tablance-group-viewport) > table:not(.open) > tbody > tr.empty, .tablance .group-cell > :where(.tablance-group-viewport) > table:not(.open) > tbody > tr > td > div > .empty {
+.tablance .group-cell > :where(.tablance-group-viewport) > table:not(.open):not(.creator-empty) > tbody > tr.empty, .tablance .group-cell > :where(.tablance-group-viewport) > table:not(.open):not(.creator-empty) > tbody > tr > td > div > .empty {
   display: none;
 }
 .tablance .group-cell > :where(.tablance-group-viewport) > table.open > tbody > tr:not(:first-child) > td > .separator, .tablance .group-cell > :where(.tablance-group-viewport) > table > tbody > tr:not(.empty) + tr:not(.empty) > td > .separator {
@@ -1738,10 +1777,10 @@
 .tablance .group-cell > :where(.tablance-group-viewport) > table.open > tbody > tr > td > .separator {
   border-top-style: solid;
 }
-.tablance .group-cell > :where(.tablance-group-viewport) > table.closed-render.open > tbody > tr.group-render {
+.tablance .group-cell > :where(.tablance-group-viewport) > table.closed-render:is(.open, .creator-empty) > tbody > tr.group-render {
   display: none;
 }
-.tablance .group-cell > :where(.tablance-group-viewport) > table.closed-render:not(.open) > tbody > tr:not(.group-render) {
+.tablance .group-cell > :where(.tablance-group-viewport) > table.closed-render:not(.open):not(.creator-empty) > tbody > tr:not(.group-render) {
   display: none;
 }
 .tablance .group-cell > :where(.tablance-group-viewport) > table > tbody > tr:not(:first-child) > td {
