@@ -4758,6 +4758,7 @@ try {
 		&&creatorEmptyGroup.el.classList.contains("creator-empty")
 		&&!creatorEmptyGroup.el.classList.contains("open")
 		&&creator.el.getClientRects().length>0
+		&&!creator.outerContainerEl.classList.contains("repeated-creator-after-entry")
 		&&!creatorEmptyGroup.el.querySelector(":scope>tbody>tr.group-render"),
 		"an initially empty repeated group exposes its creator in a distinct creator-only presentation");
 	const outerCreatorStyle=getComputedStyle(creatorEmptyGroup.el);
@@ -4772,7 +4773,9 @@ try {
 		"creator-empty adds no box height, border, padding, or shadow and matches an unwrapped creator's height and border");
 	assert(populatedRepeatedGroup.presentationState==="closed"
 		&&!populatedRepeatedGroup.el.classList.contains("open")
-		&&populatedRepeated.children.some(child=>!child.schemaNode.creator&&!child.creating),
+		&&populatedRepeated.children.some(child=>!child.schemaNode.creator&&!child.creating)
+		&&populatedRepeated.children.find(child=>child.schemaNode.creator).outerContainerEl
+			.classList.contains("repeated-creator-after-entry"),
 		"a repeated group with an existing entry retains ordinary closed presentation");
 	assert(noCreatorRepeatedGroup.presentationState==="closed"
 		&&!noCreatorRepeatedGroup.el.classList.contains("open"),
@@ -4794,11 +4797,54 @@ try {
 	assert(creatorEmptyDraft&&creatorEmptyTable._activeDetailsCell===creatorEmptyDraft.children[0]
 		&&creatorEmptyGroup.presentationState==="creator-empty"&&creatorEmptyRow.emptyItems.length===0,
 		"one Enter from the visually selected Add item creator creates the first draft without an intermediate group step");
+	await waitFor(()=>!creatorEmptyDraft.viewportEl?._tablanceGroupTransition,
+		"creator-empty draft opening animation");
+	const draftCreatorGap=creator.el.getBoundingClientRect().top
+		-creatorEmptyDraft.el.getBoundingClientRect().bottom;
+	assert(creator.outerContainerEl.classList.contains("repeated-creator-after-entry")
+		&&parseFloat(getComputedStyle(creator.outerContainerEl.cells[0]).paddingTop)===5
+		&&draftCreatorGap>=4.5&&draftCreatorGap<=5.5,
+		"a draft receives one compact visual gap before its following creator without inserting a spacer node");
+	key(creatorEmptyTable.rootEl,"Enter","Enter");
+	const creatorEmptyEditor=creatorEmptyTable._cellCursor.querySelector("input.text-editor");
+	const editorRect=creatorEmptyEditor.getBoundingClientRect();
+	const editorHostRect=creatorEmptyEditor.parentElement.getBoundingClientRect();
+	const editorValueRect=creatorEmptyDraft.children[0].el.getBoundingClientRect();
+	const followingFieldRect=creatorEmptyDraft.children[1].outerContainerEl.getBoundingClientRect();
+	assert(Math.abs(editorRect.top-editorHostRect.top)<.05
+		&&Math.abs(editorRect.bottom-editorHostRect.bottom)<.05
+		&&Math.abs(editorRect.bottom-editorValueRect.bottom)<.05
+		&&editorRect.bottom<=followingFieldRect.top
+		&&Math.abs(creatorEmptyTable._cellCursor.getBoundingClientRect().bottom
+			-creatorEmptyDraft.children[0].selEl.getBoundingClientRect().bottom)<.05
+		&&getComputedStyle(creatorEmptyEditor).display==="block"
+		&&getComputedStyle(creatorEmptyTable._cellCursor).boxShadow==="none"
+		&&getComputedStyle(creatorEmptyTable._cellCursor).outlineStyle==="none"
+		&&getComputedStyle(creatorEmptyTable._cellCursor,"::after").borderBottomWidth==="2px"
+		&&getComputedStyle(creatorEmptyTable._cellCursor,"::after").zIndex==="1"
+		&&getComputedStyle(creatorEmptyEditor.parentElement).outlineStyle==="none"
+		&&getComputedStyle(creatorEmptyDraft.children[0].el).padding==="6px 4px 2px",
+		"a single-line inline editor fits its padded value box beneath the full-field edit border");
+	const matchingGridEditorTable=new Tablance(host(),{details:{type:"grid",columns:1,entries:[
+		{type:"field",title:"Grid label",dataKey:"label",nodeId:"matchingGridLabel",input:{type:"text"}},
+	]}},true,true,{searchbar:false});
+	matchingGridEditorTable.setData([{label:""}]);
+	await tick();
+	matchingGridEditorTable.getDetailCell(0,"matchingGridLabel").select();
+	key(matchingGridEditorTable.rootEl,"Enter","Enter");
+	const matchingGridEditor=matchingGridEditorTable._cellCursor.querySelector("input.text-editor");
+	assert(Math.abs(matchingGridEditor.getBoundingClientRect().height-editorRect.height)<.05
+		&&getComputedStyle(matchingGridEditorTable._cellCursor,"::after").borderBottomWidth==="2px"
+		&&getComputedStyle(matchingGridEditor.parentElement).outlineStyle==="none",
+		"grid and list-style group text editors share value height and keep the full-field cursor outline in edit mode");
+	key(matchingGridEditor,"Escape","Escape");
+	key(creatorEmptyEditor,"Escape","Escape");
 	key(creatorEmptyTable.rootEl,"Escape","Escape");
 	await waitFor(()=>!creatorEmptyGroup.viewportEl._tablanceGroupTransition,
 		"creator-empty draft-abandon animation cleanup");
 	assert(!creatorEmptyRepeated.children.includes(creatorEmptyDraft)&&creatorEmptyRow.emptyItems.length===0
 		&&creatorEmptyGroup.presentationState==="creator-empty"
+		&&!creator.outerContainerEl.classList.contains("repeated-creator-after-entry")
 		&&creatorEmptyRepeated.children.filter(child=>!child.schemaNode.creator).length===0
 		&&creatorEmptyRepeated.groupHeadings.length===0&&creatorEmptyRepeated.groupSpacers.length===0
 		&&Math.abs(creator.el.getBoundingClientRect().height-creatorEmptyBaselineHeight)<.1,
@@ -4839,7 +4885,8 @@ try {
 	afterCreatorEmpty.select();
 	assert(creatorEmptyRow.emptyItems.length===1&&creatorEmptyRow.emptyItems[0]===creatorEmptyDraft.dataObj
 		&&!creatorEmptyDraft.creating&&creatorEmptyGroup.presentationState==="closed"
-		&&!creatorEmptyGroup.el.classList.contains("open"),
+		&&!creatorEmptyGroup.el.classList.contains("open")
+		&&creator.outerContainerEl.classList.contains("repeated-creator-after-entry"),
 		"committing the first entry returns the containing group to ordinary open/closed navigation behavior");
 	const firstCreatorEmptyCommit=creatorEmptyCommits.find(payload=>payload.mode==="create");
 	assert(firstCreatorEmptyCommit?.data===creatorEmptyDraft.dataObj
@@ -4851,11 +4898,34 @@ try {
 
 	creatorEmptyTable._openGroup(creatorEmptyGroup);
 	const firstEntry=creatorEmptyRepeated.children.find(child=>!child.schemaNode.creator&&!child.creating);
+	const existingGroupSpacerHeight=creatorEmptyRepeated.groupSpacers[0].getBoundingClientRect().height;
+	creator.select();
+	key(creatorEmptyTable.rootEl,"Enter","Enter");
+	const secondCreatorEmptyDraft=creatorEmptyRepeated.children.find(child=>child.creating);
+	await waitFor(()=>!secondCreatorEmptyDraft.viewportEl?._tablanceGroupTransition,
+		"second creator-empty draft opening animation");
+	const entryToDraftGap=secondCreatorEmptyDraft.el.getBoundingClientRect().top
+		-firstEntry.el.getBoundingClientRect().bottom;
+	const secondDraftToCreatorGap=creator.el.getBoundingClientRect().top
+		-secondCreatorEmptyDraft.el.getBoundingClientRect().bottom;
+	assert(entryToDraftGap>=existingGroupSpacerHeight
+		&&creatorEmptyRepeated.groupSpacers.length===1
+		&&creatorEmptyRepeated.groupSpacers[0].getBoundingClientRect().height===existingGroupSpacerHeight
+		&&secondDraftToCreatorGap>=8&&secondDraftToCreatorGap<=10
+		&&parseFloat(getComputedStyle(creator.outerContainerEl.cells[0]).paddingTop)===7,
+		"multiple entries retain the existing grouping spacer while the creator keeps its grouped spacing");
+	key(creatorEmptyTable.rootEl,"Escape","Escape");
+	assert(!creatorEmptyRepeated.children.includes(secondCreatorEmptyDraft)
+		&&creatorEmptyRow.emptyItems.length===1
+		&&creator.outerContainerEl.classList.contains("repeated-creator-after-entry"),
+		"abandoning a later draft preserves the committed entry and its single creator separation");
+	creatorEmptyTable._openGroup(creatorEmptyGroup);
 	creatorEmptyTable._deleteCell(firstEntry);
 	await waitFor(()=>!creatorEmptyGroup.viewportEl._tablanceGroupTransition,
 		"last-entry deletion creator-empty animation cleanup");
 	assert(creatorEmptyRow.emptyItems.length===0&&creatorEmptyGroup.presentationState==="creator-empty"
 		&&!creatorEmptyGroup.el.classList.contains("open")&&creatorEmptyTable._activeDetailsCell===creator
+		&&!creator.outerContainerEl.classList.contains("repeated-creator-after-entry")
 		&&creator.el.getClientRects().length>0&&creatorEmptyRepeated.groupHeadings.length===0
 		&&creatorEmptyRepeated.groupSpacers.length===0
 		&&!creatorEmptyGroup.viewportEl.classList.contains("tablance-group-animating"),
@@ -4876,6 +4946,18 @@ try {
 		&&creatorEmptyRepeated.children.every(entry=>entry.schemaNode.creator)
 		&&creatorEmptyRepeated.groupHeadings.length===0&&creatorEmptyRepeated.groupSpacers.length===0,
 		"repeated-instance reconciliation restores creator-empty presentation after the external last entry disappears");
+	const ordinaryEditorTable=new Tablance(host(),{main:{columns:[
+		{dataKey:"value",input:{type:"text"}},
+	]}},true,true,{searchbar:false});
+	ordinaryEditorTable.setData([{value:"Existing"}]);
+	await tick();
+	ordinaryEditorTable._selectMainTableCell(ordinaryEditorTable._mainTbody.rows[0].cells[0]);
+	key(ordinaryEditorTable.rootEl,"Enter","Enter");
+	assert(ordinaryEditorTable._cellCursor.querySelector("input.text-editor")
+		&&!ordinaryEditorTable._cellCursor.classList.contains("inline-title-indicator")
+		&&getComputedStyle(ordinaryEditorTable._cellCursor).boxShadow!=="none",
+		"ordinary one-line editors retain their existing cursor elevation outside inline-title fields");
+	key(ordinaryEditorTable._cellCursor.querySelector("input.text-editor"),"Escape","Escape");
 
 	const tabRow={name:"Tab order",before:"before",first:"first",hidden:"hidden",disabled:"disabled",
 		choice:"two",after:"after",source:"Ratsit",synced:"2022-01-31 18:04",final:"final",

@@ -6563,6 +6563,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (repeated.schemaNode.create&&!entrySchemaNode.creator&&!this._isTrashMode())
 			entryNode=this._wrapRepeatedEntryForDeletion(entrySchemaNode,repeated.schemaNode);
 		const newObj=this._generateCollectionItem(entryNode,rowIndex,repeated,repeated.path,data,indexOfNew,creating);
+		this._syncRepeatedCreatorSeparation(repeated);
 		if (creating) {
 			newObj.creating=true;//creating means it hasn't been commited yet.
 			// Creating groups have no closed render until their first successful commit. Ensure that commit renders the
@@ -6976,6 +6977,17 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return spacer;
 	}
 
+	_syncRepeatedCreatorSeparation(repeated) {
+		if (repeated?.schemaNode?.type!=="repeated")
+			return false;
+		const creators=(repeated.children??[]).filter(entry=>entry.schemaNode?.creator);
+		const hasPresentedEntry=(repeated.children??[]).some(entry=>!entry.schemaNode?.creator
+			&&!entry.hidden&&!entry.previewHidden);
+		for (const creator of creators)
+			creator.outerContainerEl?.classList.toggle("repeated-creator-after-entry",hasPresentedEntry);
+		return hasPresentedEntry;
+	}
+
 	_arrangeRepeatedInstances(repeated,preserveEntryOrder=false) {
 		const compare=repeated?.schemaNode?.sortCompare;
 		const grouping=this._getRepeatedGrouping(repeated);
@@ -7103,6 +7115,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		for (let index=0;index<repeated.children.length;index++)
 			this._changeInstanceNodeIndex(repeated.children[index],index);
+		this._syncRepeatedCreatorSeparation(repeated);
 		this._syncRepeatedReorderColumns(repeated);
 		this._adjustCursorPosSize?.(this._activeDetailsCell
 			?this._getCursorGeometryEl(this._activeDetailsCell):this._selectedCell);
@@ -7113,6 +7126,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!repeated?.schemaNode||repeated.schemaNode.type!=="repeated")
 			return;
 		this._arrangeRepeatedInstances(repeated);
+		this._syncRepeatedCreatorSeparation(repeated);
 		this._syncCreatorEmptyPresentation(repeated);
 		for (const entry of repeated.children??[])
 			this._syncRepeatedReorderEntry(entry);
@@ -8482,9 +8496,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._cellCursor.style.left=elPos.x+"px";
 		this._cellCursor.style.display="block";//it starts at display none since #setupSpreadsheet, so make visible now
 		if (!onlyPos) {
-			const explicitCursorRect=this._activeDetailsCell?.cursorEl===el?el.getBoundingClientRect():null;
-			this._cellCursor.style.height=(explicitCursorRect?.height??el.offsetHeight)+"px";
-			this._cellCursor.style.width=(explicitCursorRect?.width??el.offsetWidth)+"px";
+			// Keep the same fractional geometry used for positioning. offsetHeight/offsetWidth round to
+			// whole pixels, which can leave an inline editor extending below its cursor outline.
+			const cursorRect=el.getBoundingClientRect();
+			this._cellCursor.style.height=cursorRect.height+"px";
+			this._cellCursor.style.width=cursorRect.width+"px";
 			if (el===this._selectedCell)
 				this._updateStaticCellOverflowPreview();
 		}

@@ -217,6 +217,17 @@
 }
 .tablance .cell-cursor.edit-mode.inline-title-indicator {
   background-color: transparent;
+  box-shadow: none;
+  outline: none;
+}
+.tablance .cell-cursor.edit-mode.inline-title-indicator::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  border: 2px solid var(--tablance-accent-color);
+  pointer-events: none;
 }
 .tablance .cell-cursor.edit-mode > input.text-editor,
 .tablance .cell-cursor.edit-mode > .cell-value-editor > input.text-editor {
@@ -253,6 +264,9 @@
   position: absolute;
   box-sizing: border-box;
   background-color: var(--tablance-cell-background);
+}
+.tablance .cell-cursor > .cell-value-editor > input.text-editor {
+  display: block;
 }
 .tablance .cell-cursor > input, .tablance .cell-cursor > textarea,
 .tablance .cell-cursor > .cell-value-editor > input,
@@ -1060,13 +1074,11 @@
   box-sizing: border-box;
   min-width: 0;
   padding: 0.4em;
+  line-height: 1.4;
 }
 .tablance .details .details-grid > span > span.title {
   display: block;
   text-align: left;
-}
-.tablance .details .details-grid > span > div {
-  padding: 6px 4px 2px;
 }
 .tablance .details .details-grid > span > div.value {
   box-sizing: border-box;
@@ -1359,6 +1371,10 @@
 .tablance .details table.details-group > tbody > tr > td > div.group-cell {
   padding-right: 4px;
 }
+.tablance .details .details-grid > span > div,
+.tablance .details table.details-group > tbody > tr > td > div.value:not(.group-cell) {
+  padding: 6px 4px 2px;
+}
 .tablance .details table.details-group > tbody > tr > td:has(> div.value:not(.group-cell)) {
   padding-top: 4px;
   padding-bottom: 0;
@@ -1406,6 +1422,12 @@
 .tablance .details .repeat-insertion td {
   padding: 0;
   color: gray;
+}
+.tablance .details tr.repeat-insertion.repeated-creator-after-entry:not(.grouped-repeated-creator) > td {
+  padding-top: 5px;
+}
+.tablance .details span.repeat-insertion.repeated-creator-after-entry:not(.grouped-repeated-creator) {
+  margin-top: 5px;
 }
 .tablance .details tr.repeat-insertion.grouped-repeated-creator:not(.details-affordances-suppressed) > td {
   padding-top: 7px;

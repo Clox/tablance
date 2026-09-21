@@ -257,6 +257,21 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 			cursor:auto;
 			&.inline-title-indicator {
 				background-color: transparent;
+				// The logical cursor includes both the inline title and value. Its elevation must not paint outside
+				// that field and over the following row; the actual editor remains scoped to .cell-value-editor.
+				box-shadow: none;
+				// The value editor can reach the bottom of a list-style field. Paint the full-cell border above
+				// it so the editor cannot cover the inset outline's lower edge.
+				outline: none;
+				&::after {
+					content: "";
+					position: absolute;
+					inset: 0;
+					z-index: 1;
+					box-sizing: border-box;
+					border: 2px solid var(--tablance-accent-color);
+					pointer-events: none;
+				}
 			}
 			>input.text-editor,
 			>.cell-value-editor>input.text-editor {
@@ -294,6 +309,10 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 			position: absolute;
 			box-sizing: border-box;
 			background-color: var(--tablance-cell-background);
+			>input.text-editor {
+				// Inline-block baseline alignment shifts an otherwise 100%-high input below its value box.
+				display: block;
+			}
 		}
 		>input,>textarea,
 		>.cell-value-editor>input,
@@ -1147,12 +1166,10 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 				box-sizing: border-box;
 				min-width: 0;
 				padding: .4em;
+				line-height: 1.4;
 				>span.title {
 					display: block;
 					text-align: left;
-				}
-				>div {
-					padding: 6px 4px 2px;
 				}
 				>div.value {
 					box-sizing: border-box;
@@ -1428,6 +1445,11 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 				padding-right: 4px;
 			}
 		}
+		// Inline-title fields use the same value/editor height in grids and list-style groups.
+		.details-grid>span>div,
+		table.details-group>tbody>tr>td>div.value:not(.group-cell) {
+			padding: 6px 4px 2px;
+		}
 		table.details-group>tbody>tr>td:has(>div.value:not(.group-cell)) {
 			padding-top: 4px;
 			padding-bottom: 0;
@@ -1442,6 +1464,12 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		.repeat-insertion td{
 			padding: 0;
 			color: gray;
+		}
+		tr.repeat-insertion.repeated-creator-after-entry:not(.grouped-repeated-creator)>td {
+			padding-top: 5px;
+		}
+		span.repeat-insertion.repeated-creator-after-entry:not(.grouped-repeated-creator) {
+			margin-top: 5px;
 		}
 		tr.repeat-insertion.grouped-repeated-creator:not(.details-affordances-suppressed)>td {
 			padding-top: 7px;
