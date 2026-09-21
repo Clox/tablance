@@ -3448,9 +3448,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		e?.preventDefault();//to prevent native scrolling when pressing arrow-keys. Needed if #onlyDetails==true but
 							//not otherwise. Seems the native scrolling is only done on the body and not scrollpane..?
 		//const newColIndex=Math.min(this._cols.length-1,Math.max(0,this._cellCursorColIndex+numCols));
-		if (!this._onlyDetails&&!this._naturalAutoHeight)
-			this._scrollToCursor();//need this first to make sure adjacent cell is even rendered
-
 		// Tab follows the logical details instance tree. Grid arrows use logical rows/columns; geometry is reserved for
 		// choosing between visual rows created by wrapping within one lineup.
 		const isVerticalArrow=vSign!==0&&(e?.key==="ArrowUp"||e?.key==="ArrowDown"
@@ -3487,7 +3484,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 		} else if (!this._activeDetailsCell)
 			this._selectMainTableCell(this._getAdjacentSelectableMainCell(this._selectedCell,hSign));
-		if ((this._onlyDetails||this._naturalAutoHeight)&&this._mainRowIndex!=null)
+		// Selection updates the logical cursor and positions its overlay synchronously. Auto-scroll must happen only
+		// after that so this navigation is measured from its destination rather than the cell it just left. Fixed-row
+		// virtualization is refreshed synchronously by _scrollToCursor, leaving the next adjacent row rendered.
+		if (this._mainRowIndex!=null)
 			this._scrollToCursor();
 	}
 
@@ -3837,7 +3837,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const cells=[...this._selectedCell?.parentElement?.cells??[]]
 				.filter(cell=>this._getCellState(cell)?.selectable!==false);
 			const target=toEnd?cells.at(-1):cells[0];
-			return target?this._selectMainTableCell(target):false;
+			const selected=target?this._selectMainTableCell(target):false;
+			if (selected)
+				this._scrollToCursor();
+			return selected;
 		}
 		if (ctrlKey) {
 			const root=this._openDetailsPanes[this._mainRowIndex];
@@ -4160,8 +4163,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const code=this._expansionShortcutCode(e);
 		if (code!==e.code&&e.altKey)
 			e.preventDefault();
-		const scrollKeys=["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Home","End","Escape",
-							"NumpadAdd","NumpadSubtract","Enter","NumpadEnter"];
+		// Arrow/Home/End navigation performs its own destination-based scroll after selection. Scrolling here would
+		// measure the cell being left and make follow-scroll lag one keystroke behind the logical cursor.
+		const scrollKeys=["Escape","NumpadAdd","NumpadSubtract","Enter","NumpadEnter"];
 		if (scrollKeys.includes(code))
 			this._scrollToCursor();
 		switch (code) {
@@ -10386,17 +10390,17 @@ export default class Tablance extends TablanceBase {
 										//scrolling will be done. 0.5 is half of view, 1 is entire height of view
 		const distanceRatioCenteringTollerance=1;//if moving the cellcursor within this ratio, but outside of 
 					//distanceRatioDeadzone then minimum scrolling will occur only to get within distanceRatioDeadzone
-		const scrollPos=this._scrollBody.scrollTop;
 		const scrollHeight=this._scrollBody.offsetHeight;
-		const cursorY=parseInt(this._cellCursor.style.top);
-		const cursorHeight=this._cellCursor.offsetHeight;
-		const distanceFromCenter=cursorY+cursorHeight/2-scrollPos-scrollHeight/2;
+		const viewportRect=this._scrollBody.getBoundingClientRect();
+		const cursorRect=this._cellCursor.getBoundingClientRect();
+		const cursorHeight=cursorRect.height;
+		const distanceFromCenter=cursorRect.top+cursorHeight/2-(viewportRect.top+scrollHeight/2);
 		const distanceFromCenterRatio=Math.abs(distanceFromCenter/scrollHeight);
 		if (distanceFromCenterRatio>distanceRatioDeadzone/2) {
 			if (distanceFromCenterRatio>distanceRatioCenteringTollerance/2)
-				this._scrollBody.scrollTop=cursorY-scrollHeight/2+this._rowHeight/2;
+				this._scrollBody.scrollTop+=distanceFromCenter+(this._rowHeight-cursorHeight)/2;
 			else
-				this._scrollBody.scrollTop=cursorY-scrollHeight/2+cursorHeight/2
+				this._scrollBody.scrollTop+=distanceFromCenter
 								+(distanceFromCenter<0?1:-1)*scrollHeight*distanceRatioDeadzone/2;
 		}
 		//need to call this manually so that elements that are expected to exist after scroll are guaranteed to do so.

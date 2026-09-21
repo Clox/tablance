@@ -118,6 +118,69 @@ try {
 	assert(homeEndMain._mainRowIndex===0&&homeEndMain._mainColIndex===1,
 		"Ctrl+Home selects the first main row while retaining the current column");
 
+	const makeKeyboardScrollTable=async()=>{
+		const scrollHost=host();
+		scrollHost.style.width="420px";
+		scrollHost.style.height="190px";
+		const scrollTable=new Tablance(scrollHost,{main:{columns:[
+			{dataKey:"left",width:140},{dataKey:"middle",width:140},{dataKey:"right",width:140},
+		]}},true,true,{searchbar:false,ordering:false});
+		scrollTable.setData(Array.from({length:60},(_value,index)=>({
+			left:`Left ${index}`,middle:`Middle ${index}`,right:`Right ${index}`,
+		})));
+		await tick();
+		scrollTable.selectCell(0,"middle");
+		return scrollTable;
+	};
+	const reachFirstKeyboardFollowScroll=table=>{
+		for (let count=0;count<30;count++) {
+			const before=table._scrollBody.scrollTop;
+			key(table.rootEl,"ArrowDown","ArrowDown");
+			if (table._scrollBody.scrollTop>before+.5)
+				return true;
+		}
+		return false;
+	};
+	for (const trailingKey of ["ArrowLeft","ArrowRight","ArrowUp"]) {
+		const scrollTable=await makeKeyboardScrollTable();
+		assert(reachFirstKeyboardFollowScroll(scrollTable),
+			`repeated ArrowDown reaches follow-scroll before ${trailingKey}`);
+		const scrollBeforeTrailingKey=scrollTable._scrollBody.scrollTop;
+		const rowBeforeTrailingKey=scrollTable._mainRowIndex;
+		const colBeforeTrailingKey=scrollTable._mainColIndex;
+		key(scrollTable.rootEl,trailingKey,trailingKey);
+		assert(scrollTable._scrollBody.scrollTop<=scrollBeforeTrailingKey+.5
+			&&(trailingKey==="ArrowUp"?scrollTable._mainRowIndex===rowBeforeTrailingKey-1
+				:scrollTable._mainRowIndex===rowBeforeTrailingKey
+					&&scrollTable._mainColIndex===colBeforeTrailingKey+(trailingKey==="ArrowLeft"?-1:1)),
+			`${trailingKey} after downward follow-scroll uses its destination and does not continue scrolling down`);
+	}
+
+	const rapidScrollTable=await makeKeyboardScrollTable();
+	for (let count=0;count<18;count++)
+		key(rapidScrollTable.rootEl,"ArrowDown","ArrowDown");
+	const rapidDownScroll=rapidScrollTable._scrollBody.scrollTop;
+	assert(rapidDownScroll>0&&rapidScrollTable._mainRowIndex===18,
+		"rapid repeated ArrowDown preserves normal downward follow-scroll and logical navigation");
+	key(rapidScrollTable.rootEl,"ArrowRight","ArrowRight");
+	key(rapidScrollTable.rootEl,"ArrowLeft","ArrowLeft");
+	key(rapidScrollTable.rootEl,"ArrowUp","ArrowUp");
+	const rapidSequenceScroll=rapidScrollTable._scrollBody.scrollTop;
+	assert(rapidSequenceScroll<=rapidDownScroll+.5&&rapidScrollTable._mainRowIndex===17
+		&&rapidScrollTable._mainColIndex===1,
+		"rapid mixed navigation does not stack stale downward follow-scroll steps");
+	await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+	assert(Math.abs(rapidScrollTable._scrollBody.scrollTop-rapidSequenceScroll)<.5,
+		"no superseded keyboard scroll adjustment runs after rapid navigation settles");
+	for (let count=0;count<17;count++)
+		key(rapidScrollTable.rootEl,"ArrowUp","ArrowUp");
+	assert(rapidScrollTable._mainRowIndex===0&&rapidScrollTable._scrollBody.scrollTop<rapidSequenceScroll,
+		"normal upward navigation continues to follow the cursor toward the top");
+	key(rapidScrollTable.rootEl,"ArrowLeft","ArrowLeft");
+	key(rapidScrollTable.rootEl,"ArrowRight","ArrowRight");
+	assert(rapidScrollTable._mainRowIndex===0&&rapidScrollTable._mainColIndex===1,
+		"horizontal keyboard navigation continues to move across main-table columns");
+
 	let earlySearchBuilds=0,lateSearchBuilds=0,detailsSearchBuilds=0;
 	const domSearchValue=document.createElement("span");
 	domSearchValue.innerHTML="Visible <b>DOM</b> text";
