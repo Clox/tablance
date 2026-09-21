@@ -8,6 +8,34 @@ const CONTEXTUAL_HELP_HOVER_DELAY=350;
 const DEFAULT_MENU_COLUMN_WIDTH=48;
 let anchoredPopoverId=0;
 let textareaShortcutHintId=0;
+const tabFocusIntentByDocument=new WeakMap();
+
+const getTabFocusIntent=doc=>{
+	let state=tabFocusIntentByDocument.get(doc);
+	if (state)
+		return state;
+	state={pending:false,target:null};
+	doc.addEventListener("keydown",e=>{
+		if (e.key!=="Tab")
+			return;
+		state.pending=true;
+		state.target=null;
+	},{capture:true});
+	doc.addEventListener("keyup",e=>{
+		if (e.key==="Tab")
+			state.pending=false;
+	},{capture:true});
+	doc.addEventListener("mousedown",()=>{
+		state.pending=false;
+		state.target=null;
+	},{capture:true});
+	doc.addEventListener("focus",e=>{
+		if (state.pending)
+			state.target=e.target;
+	},{capture:true});
+	tabFocusIntentByDocument.set(doc,state);
+	return state;
+};
 
 const normalizeSearchWhitespace=value=>String(value??"").replace(/[\s\u00a0]+/gu," ").trim();
 
@@ -225,6 +253,8 @@ class TablanceBase {
 				//keyboard-tabbing, and not when clicking or exiting out of edit-mode which again focuses the table.
 				//By setting this to true in mouseDownEvent we can 
 				//check which input was used last when the focus-method is triggerd
+	_pointerFocusPending=false;//mousedown selects and focuses synchronously, before :focus-visible necessarily reflects
+				//pointer modality; suppress the table ring for that focus event only
 	_scrollMethod;//this will be set to a reference of the scroll-method that will be used. This depends on settings for
 				//staticRowHeight and details
 	_fileMeta=new WeakMap();//Tracks upload progress per File object (uploadedBytes, progress bars, etc.)
@@ -3365,6 +3395,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_setupSpreadsheet(onlyDetails) {
 		const focusEl=this._focusEl=onlyDetails?this.rootEl:this._tableArea;
+		getTabFocusIntent(focusEl.ownerDocument);
 		this.rootEl.classList.add("spreadsheet");
 		this._cellCursor=document.createElement("div");
 		this._cellCursor.className="cell-cursor";
@@ -3405,15 +3436,19 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_spreadsheetOnFocus(_e) {
-		const tabbedTo=this._focusEl.matches(":focus-visible");
-		this._highlightOnFocus=tabbedTo;
 		const hasLogicalCursor=this._mainRowIndex!=null&&this._mainColIndex!=null;
+		const tabFocusIntent=getTabFocusIntent(this._focusEl.ownerDocument);
+		const tabbedTo=!this._pointerFocusPending&&(tabFocusIntent.target===this._focusEl
+			||(!hasLogicalCursor&&this._focusEl.matches(":focus-visible")));
+		tabFocusIntent.target=null;
+		this._pointerFocusPending=false;
+		this._highlightOnFocus=tabbedTo;
 		//when the table is tabbed to, whatever focus-outline that the css has set for it should show, but then when the
 		//user starts to navigate using the keyboard we want to hide it because it is a bit distracting when both it and
-		//a cell is highlighted. A retained logical cursor is already the focus indicator; the table outline is only for
-		//keyboard focus entering a table that does not yet have a cell cursor.
-		this._focusEl.classList.toggle("show-focus-ring",!this._onlyDetails&&tabbedTo&&!hasLogicalCursor);
-		if (this._onlyDetails||!tabbedTo||hasLogicalCursor)
+		//a cell is highlighted. A retained logical cursor does not change this entry state: Tab first focuses the table as
+		//one control, and the next non-Tab interaction returns to its retained cell cursor.
+		this._focusEl.classList.toggle("show-focus-ring",!this._onlyDetails&&tabbedTo);
+		if (this._onlyDetails||!tabbedTo)
 			this._focusEl.style.outline="none";
 		
 		//why is this needed? it messes things up when cellcursor is in mainpage of bulk-edit-area but hidden because
@@ -4089,6 +4124,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._tooltip.style.visibility="hidden";
 		const keysThatEnterFromOutline=["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Home","End","Escape",
 								"NumpadAdd","NumpadSubtract","Enter","NumpadEnter","Space"];
+		const tableOutlineMode=this._focusEl.classList.contains("show-focus-ring");
+		if (!this._inEditMode&&tableOutlineMode&&e.code==="Tab")
+			return;
 
 		if (!this._inEditMode&&this._mainRowIndex==null&&this._mainColIndex==null) {
 			if (e.code==="Tab")
@@ -5198,6 +5236,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	
 	_spreadsheetMouseDown(e) {
 		this._resetVerticalLayoutPreferredColumn();
+		this._pointerFocusPending=true;
+		queueMicrotask(()=>this._pointerFocusPending=false);
 		this._highlightOnFocus=false;//see decleration
 		this._focusEl.classList.remove("show-focus-ring");
 		this._focusEl.style.outline="none";//see #spreadsheetOnFocus
@@ -8425,8 +8465,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const cellState=this._getCellState(cellEl,instanceNode);
 		if (cellState?.selectable===false)
 			return false;
-		if (focus)
+		if (focus) {
 			this._focusEl.focus({preventScroll:true});
+			// Selecting a cell is an explicit transition into table interaction, including through the public select API.
+			this._highlightOnFocus=false;
+			this._focusEl.classList.remove("show-focus-ring");
+			this._focusEl.style.outline="none";
+		}
 		this._clearStaticCellOverflowPreview();
 		if (adjustCursorPosSize)
 			this._adjustCursorPosSize(instanceNode?this._getCursorGeometryEl(instanceNode):cellEl);

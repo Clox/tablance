@@ -134,6 +134,36 @@ try {
 		await send("Input.dispatchMouseEvent",{type:"mouseReleased",x:doubleHeaderPoint.x,y:doubleHeaderPoint.y,
 			button:"left",buttons:0,clickCount},sessionId);
 	}
+	await waitForStatus(["awaiting-native-table-focus"]);
+	await evaluate(`window.nativeTableFocus.cell.scrollIntoView({block:"center"})`);
+	const tableFocusPoint=await evaluate(`(()=>{const rect=window.nativeTableFocus.cell.getBoundingClientRect();return {
+		x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
+	await send("Input.dispatchMouseEvent",{type:"mousePressed",x:tableFocusPoint.x,y:tableFocusPoint.y,
+		button:"left",buttons:1,clickCount:1},sessionId);
+	await send("Input.dispatchMouseEvent",{type:"mouseReleased",x:tableFocusPoint.x,y:tableFocusPoint.y,
+		button:"left",buttons:0,clickCount:1},sessionId);
+	await evaluate(`window.verifyNativeTableFocus("pointer")`);
+	const focusedAfter=await evaluate(`(()=>{window.nativeTableFocus.after.focus();return document.activeElement===window.nativeTableFocus.after})()`);
+	if (!focusedAfter)
+		throw new Error("Could not move focus after native table before Shift+Tab regression check");
+	await evaluate(`window.nativeTableFocus.after.addEventListener("keydown",event=>event.preventDefault(),{once:true})`);
+	await dispatch("rawKeyDown","Tab","Tab",9,8);
+	await evaluate(`window.nativeTableFocus.table._focusEl.focus()`);
+	await dispatch("keyUp","Tab","Tab",9,8);
+	await evaluate(`window.verifyNativeTableFocus("tab-return")`);
+	const outlineTabPrevented=await evaluate(`(()=>{const event=new KeyboardEvent("keydown",{
+		key:"Tab",code:"Tab",bubbles:true,cancelable:true});window.nativeTableFocus.table.rootEl.dispatchEvent(event);
+		return event.defaultPrevented})()`);
+	if (outlineTabPrevented)
+		throw new Error("Tab was prevented while the table had whole-table focus");
+	await evaluate(`window.nativeTableFocus.after.focus()`);
+	await evaluate(`window.verifyNativeTableFocus("tab-pass")`);
+	await evaluate(`window.nativeTableFocus.after.addEventListener("keydown",event=>event.preventDefault(),{once:true})`);
+	await dispatch("rawKeyDown","Tab","Tab",9,8);
+	await evaluate(`window.nativeTableFocus.table._focusEl.focus()`);
+	await dispatch("keyUp","Tab","Tab",9,8);
+	await press("ArrowRight","ArrowRight",39);
+	await evaluate(`window.verifyNativeTableFocus("interaction");window.finishNativeTableFocus()`);
 	const finalResult=await waitForStatus(["passed"]);
 	console.log(finalResult.text);
 	await send("Target.closeTarget",{targetId});

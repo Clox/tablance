@@ -1992,6 +1992,7 @@ try {
 	]}},true,true,{searchbar:false,ordering:false});
 	collapseScrollTable.setData(collapseScrollRows);
 	await tick();
+	collapseScrollTable._selectMainTableCell(collapseScrollTable._mainTbody.rows[0].cells[1]);
 	const collapseScrollGroup=collapseScrollTable.getDetailCell(0,"collapseScrollGroup");
 	const collapseScrollValue=collapseScrollTable.getDetailCell(0,"collapseScrollValue");
 	collapseScrollTable._openGroup(collapseScrollGroup);
@@ -5826,6 +5827,43 @@ try {
 	await nativeDoubleSortDone;
 	assert(selection.isCollapsed&&selection.toString()==="",
 		"trusted double-click sorting does not select header text");
+
+	const nativeFocusWrap=document.body.appendChild(document.createElement("div"));
+	const nativeFocusBefore=nativeFocusWrap.appendChild(document.createElement("button"));
+	nativeFocusBefore.textContent="Before focus table";
+	const nativeFocusHost=nativeFocusWrap.appendChild(document.createElement("div"));
+	nativeFocusHost.className="host";
+	const nativeFocusTable=new Tablance(nativeFocusHost,{main:{columns:[
+		{dataKey:"first",input:{type:"text"}},{dataKey:"second",input:{type:"text"}},
+	]}},true,true,{searchbar:false,ordering:false});
+	nativeFocusTable.setData([{first:"First",second:"Second"}]);
+	await tick();
+	const nativeFocusAfter=nativeFocusWrap.appendChild(document.createElement("button"));
+	nativeFocusAfter.textContent="After focus table";
+	window.nativeTableFocus={table:nativeFocusTable,before:nativeFocusBefore,after:nativeFocusAfter,
+		cell:nativeFocusTable._mainTbody.rows[0].cells[0]};
+	window.verifyNativeTableFocus=phase=>{
+		if (phase==="pointer")
+			assert(document.activeElement===nativeFocusTable._focusEl
+				&&!nativeFocusTable._focusEl.classList.contains("show-focus-ring"),
+				"trusted pointer selection focuses the table without showing its whole-table focus ring");
+		else if (phase==="tab-return")
+			assert(document.activeElement===nativeFocusTable._focusEl
+				&&nativeFocusTable._focusEl.classList.contains("show-focus-ring")
+				&&nativeFocusTable._mainColIndex===0,
+				"trusted Shift+Tab restores the whole-table focus ring even when a logical cursor is retained");
+		else if (phase==="tab-pass")
+			assert(document.activeElement===nativeFocusAfter,
+				"Tab from whole-table focus leaves the table instead of entering cell traversal");
+		else if (phase==="interaction")
+			assert(document.activeElement===nativeFocusTable._focusEl
+				&&!nativeFocusTable._focusEl.classList.contains("show-focus-ring")
+				&&nativeFocusTable._mainColIndex===1,
+				"a non-Tab navigation key exits whole-table focus mode and resumes cell interaction");
+	};
+	result.textContent="awaiting trusted table focus navigation";
+	result.dataset.status="awaiting-native-table-focus";
+	await new Promise(resolve=>window.finishNativeTableFocus=resolve);
 
 	result.textContent=`${assertions.length} cell-state assertions passed`;
 	result.dataset.status="passed";
