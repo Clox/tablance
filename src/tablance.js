@@ -8515,7 +8515,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_updateStaticCellOverflowPreview() {
 		this._clearStaticCellOverflowPreview();
 		const cell=this._selectedCell;
-		if (!this._staticRowHeight||this._inEditMode||!cell||cell.closest("tr.details")
+		if (!this._staticRowHeight||this._inEditMode||!cell||this._activeDetailsCell
+			||cell.closest("tr.details,.details-grid")
 			||cell.classList.contains("expand-col")||cell.classList.contains("select-col")
 			||cell.classList.contains("menu-col")
 			||this._activeSchemaNode?.input?.type==="button")

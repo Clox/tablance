@@ -1182,6 +1182,9 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 					border: 0;
 				}
 			}
+			>span:has(>div.value:not(.group-cell)) {
+				@include inline-title-state-indicators;
+			}
 		}
 		.grid-extension-target-hover:not(.disabled) {
 			background-color: var(--tablance-hover-background);

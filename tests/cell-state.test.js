@@ -4380,6 +4380,58 @@ try {
 	catch(error) { invalidGrowRejected=error instanceof TypeError; }
 	assert(invalidWrapRejected&&invalidWidthRejected&&invalidGrowRejected,
 		"invalid lineup wrap, width, and grow declarations fail fast");
+	const indicatorLayoutTable=new Tablance(host(),{details:{type:"list",entries:[
+		{title:"List title",dataKey:"listValue",nodeId:"listIndicatorField",input:{type:"text"}},
+		{type:"grid",columns:2,entries:[
+			{type:"field",title:"Grid edit",dataKey:"gridEdit",nodeId:"gridIndicatorEdit",input:{type:"text"}},
+			{type:"field",title:"Grid action",dataKey:"gridAction",nodeId:"gridIndicatorAction",onEnter:()=>{}},
+		]},
+	]}},false,true,{searchbar:false});
+	indicatorLayoutTable.setData([{listValue:"List",gridEdit:"Edit",gridAction:"Action"}]);
+	await tick();
+	const listIndicatorField=indicatorLayoutTable.getDetailCell(0,"listIndicatorField");
+	const gridIndicatorEdit=indicatorLayoutTable.getDetailCell(0,"gridIndicatorEdit");
+	const gridIndicatorAction=indicatorLayoutTable.getDetailCell(0,"gridIndicatorAction");
+	listIndicatorField.select();
+	const listIndicatorStyle=getComputedStyle(indicatorLayoutTable._cellCursor,"::before");
+	assert(!(listIndicatorField.selEl??listIndicatorField.el).querySelector(":scope>span.title")
+		&&listIndicatorStyle.content==='""'&&listIndicatorStyle.left==="4px"
+		&&listIndicatorStyle.top==="2px",
+		"List fields retain their separate title cell and top-left selected edit indicator");
+	const gridEditTitle=gridIndicatorEdit.outerContainerEl.querySelector(":scope>span.title");
+	const gridEditTitleBefore=gridEditTitle.getBoundingClientRect();
+	assert(getComputedStyle(gridEditTitle,"::after").content==="none"
+		&&getComputedStyle(gridIndicatorEdit.outerContainerEl,"::before").content==="none",
+		"an inactive Grid field keeps both indicator layers hidden until hover or selection");
+	gridIndicatorEdit.select();
+	const gridEditTitleSelected=gridEditTitle.getBoundingClientRect();
+	const gridEditIndicatorStyle=getComputedStyle(gridEditTitle,"::after");
+	assert(gridEditIndicatorStyle.content==='""'
+		&&Math.abs(parseFloat(gridEditIndicatorStyle.left)-gridEditTitleSelected.width)<.05
+		&&gridEditIndicatorStyle.marginLeft==="4px"
+		&&getComputedStyle(indicatorLayoutTable._cellCursor,"::before").content==="none"
+		&&Math.abs(gridEditTitleSelected.left-gridEditTitleBefore.left)<.05
+		&&Math.abs(gridEditTitleSelected.top-gridEditTitleBefore.top)<.05
+		&&Math.abs(gridEditTitleSelected.width-gridEditTitleBefore.width)<.05,
+		"a selected Grid edit icon uses the Group title-adjacent layout without moving or overlapping its title");
+	const gridActionTitle=gridIndicatorAction.outerContainerEl.querySelector(":scope>span.title");
+	const gridActionTitleBefore=gridActionTitle.getBoundingClientRect();
+	gridIndicatorAction.select();
+	const gridActionIndicatorStyle=getComputedStyle(gridActionTitle,"::after");
+	const gridActionTitleSelected=gridActionTitle.getBoundingClientRect();
+	assert(gridIndicatorAction.outerContainerEl.classList.contains("action-indicator")
+		&&gridActionIndicatorStyle.content==='""'
+		&&(gridActionIndicatorStyle.maskImage!=="none"||gridActionIndicatorStyle.webkitMaskImage!=="none")
+		&&getComputedStyle(indicatorLayoutTable._cellCursor,"::before").content==="none"
+		&&Math.abs(gridActionTitleSelected.left-gridActionTitleBefore.left)<.05
+		&&Math.abs(gridActionTitleSelected.width-gridActionTitleBefore.width)<.05,
+		"Grid action icons share the same stable title-adjacent selected presentation as edit icons");
+	const gridIndicatorRule=[...document.styleSheets].flatMap(sheet=>{
+		try { return [...sheet.cssRules]; } catch(error) { return []; }
+	}).find(rule=>rule.selectorText?.includes(".details-grid")
+		&&rule.selectorText.includes(".editable-indicator:is(:hover, .tablance-active-cell)"));
+	assert(gridIndicatorRule,
+		"Grid title indicators retain one shared hover and active-cell visibility rule");
 
 	const gridHost=host();
 	gridHost.style.width="640px";
