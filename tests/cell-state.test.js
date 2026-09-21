@@ -1980,6 +1980,57 @@ try {
 	assert(reboundActionCell.classList.contains("action-indicator"),
 		"recycling retains the generic indicator on ordinary text-like action fields");
 
+	const collapseScrollHost=host();
+	collapseScrollHost.style.height="160px";
+	const collapseScrollRows=Array.from({length:80},(_entry,index)=>({title:`Row ${index}`,value:`Value ${index}`}));
+	const collapseScrollTable=new Tablance(collapseScrollHost,{main:{columns:[
+		{type:"expand",width:40},{dataKey:"title"},
+	]},details:{type:"list",entries:[
+		{type:"group",nodeId:"collapseScrollGroup",closedRender:({value})=>value,entries:[
+			{title:"Value",dataKey:"value",nodeId:"collapseScrollValue",input:{type:"text"}},
+		]},
+	]}},true,true,{searchbar:false,ordering:false});
+	collapseScrollTable.setData(collapseScrollRows);
+	await tick();
+	const collapseScrollGroup=collapseScrollTable.getDetailCell(0,"collapseScrollGroup");
+	const collapseScrollValue=collapseScrollTable.getDetailCell(0,"collapseScrollValue");
+	collapseScrollTable._openGroup(collapseScrollGroup);
+	await waitFor(()=>!collapseScrollGroup.viewportEl._tablanceGroupTransition,
+		"collapse-scroll group opening");
+	collapseScrollValue.select();
+	const collapseScrollMainRow=collapseScrollTable._mainTbody
+		.querySelector('[data-data-row-index="0"]:not(.details)');
+	collapseScrollTable._contractRow(collapseScrollMainRow);
+	await new Promise(resolve=>setTimeout(resolve,80));
+	collapseScrollTable._scrollBody.scrollTop=collapseScrollTable._scrollMarginPx+500;
+	collapseScrollTable._scrollBody.dispatchEvent(new Event("scroll"));
+	await new Promise(resolve=>setTimeout(resolve,180));
+	collapseScrollTable._scrollBody.scrollTop=0;
+	collapseScrollTable._scrollBody.dispatchEvent(new Event("scroll"));
+	for (let cycle=0;cycle<3&&collapseScrollTable._scrollRowIndex>=0;cycle++) {
+		collapseScrollTable._scrollBody.scrollTop=collapseScrollTable._scrollMarginPx+500;
+		collapseScrollTable._scrollBody.dispatchEvent(new Event("scroll"));
+		collapseScrollTable._scrollBody.scrollTop=0;
+		collapseScrollTable._scrollBody.dispatchEvent(new Event("scroll"));
+	}
+	const collapseScrollIndexes=[...collapseScrollTable._mainTbody
+		.querySelectorAll(":scope>tr:not(.details)")].map(row=>Number(row.dataset.dataRowIndex));
+	assert(collapseScrollTable._scrollRowIndex>=0
+		&&!collapseScrollTable._rowMeta.get(collapseScrollRows[0])?.h
+		&&collapseScrollIndexes.every(index=>index>=0&&index<collapseScrollRows.length),
+		"collapsing a row while scrolling it out cannot retain expanded metadata or underflow the virtual index");
+	const collapseScrollTotalHeight=parseInt(collapseScrollTable._tableSizer.style.height)
+		+parseInt(collapseScrollTable._tableSizer.style.top);
+	collapseScrollTable._scrollRowIndex=-3;
+	collapseScrollTable._tableSizer.style.top="123px";
+	collapseScrollTable._tableSizer.style.height=collapseScrollTotalHeight-123+"px";
+	collapseScrollTable._scrollMethod();
+	const recoveredIndexes=[...collapseScrollTable._mainTbody
+		.querySelectorAll(":scope>tr:not(.details)")].map(row=>Number(row.dataset.dataRowIndex));
+	assert(collapseScrollTable._scrollRowIndex>=0&&collapseScrollTable._tableSizer.style.top!=="123px"
+		&&recoveredIndexes.every(index=>index>=0&&index<collapseScrollRows.length),
+		"an invalid virtual row index is rebuilt immediately instead of propagating blank recycled rows");
+
 	const assertVirtualCursorRecycling=async withDetails=>{
 		const virtualHost=host();
 		virtualHost.style.height="160px";

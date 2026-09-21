@@ -4403,6 +4403,17 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._updateAutoHeight();
 	}
 
+	_finishCollapsingDetailsBeforeRecycle(detailsTr) {
+		if (!detailsTr?.classList.contains("details"))
+			return false;
+		const contentDiv=detailsTr.querySelector(":scope>td>.content");
+		const transition=contentDiv?._tablanceDetailsTransition;
+		if (transition?.phase!=="collapsing")
+			return false;
+		this._finishDetailsCollapse(contentDiv,transition);
+		return !detailsTr.isConnected;
+	}
+
 	/**
 	 * Creates details content based on the provided structure.
 	 *
@@ -9487,10 +9498,25 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_onScrollStaticRowHeightDetails(_e) {
-		const newScrY=Math.max(this._scrollBody.scrollTop-this._scrollMarginPx,0);
+		const tableTop=parseInt(this._tableSizer.style.top);
+		if (this._scrollRowIndex<0
+			||(this._filteredData.length>0&&this._scrollRowIndex>=this._filteredData.length)
+			||(this._scrollRowIndex===0&&tableTop!==0)) {
+			this._refreshTable();
+			return;
+		}
+		let newScrY=Math.max(this._scrollBody.scrollTop-this._scrollMarginPx,0);
 		if (newScrY>parseInt(this._scrollY)) {//if scrolling down
-			while (newScrY-parseInt(this._tableSizer.style.top)
-			>(this._rowMeta.get(this._filteredData[this._scrollRowIndex])?.h??this._rowHeight)) {//if a whole top row is outside
+			while (true) {
+				const topMainRow=this._mainTbody.firstElementChild;
+				if (this._finishCollapsingDetailsBeforeRecycle(topMainRow?.nextElementSibling)) {
+					newScrY=Math.max(this._scrollBody.scrollTop-this._scrollMarginPx,0);
+					continue;
+				}
+				const topHeight=this._rowMeta.get(this._filteredData[this._scrollRowIndex])?.h??this._rowHeight;
+				if (newScrY-parseInt(this._tableSizer.style.top)<=topHeight)
+					break;
+				// A whole top row is outside the rendered viewport.
 				if (this._scrollRowIndex+this._numRenderedRows>this._filteredData.length-1)
 					break;
 				let topShift;//height of the row that is at the top before scroll and which will be removed which is the
@@ -9513,7 +9539,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._scrollRowIndex++;
 			}
 		} else if (newScrY<parseInt(this._scrollY)) {//if scrolling up
-			while (newScrY<parseInt(this._tableSizer.style.top)) {//while top row is below top of viewport
+			while (this._scrollRowIndex>0&&newScrY<parseInt(this._tableSizer.style.top)) {
+				if (this._finishCollapsingDetailsBeforeRecycle(this._mainTbody.lastElementChild)) {
+					newScrY=Math.max(this._scrollBody.scrollTop-this._scrollMarginPx,0);
+					continue;
+				}
 				this._scrollRowIndex--;
 
 				//check if the bottom row (the one that is to be moved to the top) is expanded
@@ -10461,13 +10491,16 @@ export default class Tablance extends TablanceBase {
 		if (!this._schema.details||!rowMeta?.h)
 			return;
 		this._unsortCol(null,"expand");
+		const instanceNode=this._openDetailsPanes[dataRowIndex];
 		if (hasOpenDetails) {//if cell-cursor is inside the details
 			this._selectMainTableCell(tr.cells[this._mainColIndex]);//then move it out
 			if (this._activeDetailsCell)//closing group failed (validation), so keep details open
 				return;
+			// Moving out can start one or more group presentation transitions. Settle them before the entire details row
+			// starts collapsing so their geometry frames cannot overwrite rowMeta with a partial outer-row height.
+			this._finishDescendantGroupTransitions(instanceNode);
 			this._scrollToCursor();
 		}
-		const instanceNode=this._openDetailsPanes[dataRowIndex];
 		if (instanceNode)
 			instanceNode.collapsing=true;
 		const contentDiv=tr.nextSibling.querySelector(".content");
