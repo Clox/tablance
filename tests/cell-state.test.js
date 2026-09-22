@@ -1866,6 +1866,71 @@ try {
 		"inputs without character restrictions retain native paste handling");
 	pasteTable._exitEditMode(false);
 
+	const comboboxRow={label:"Egen benämning",after:"next"};
+	const comboboxNextRow={label:"Nästa benämning",after:"next row"};
+	const comboboxTable=new Tablance(host(),{main:{columns:[
+		{dataKey:"label",input:{type:"combobox",options:[
+			{text:"Mobil",value:"ignored-mobile"},{text:"Hemtelefon",value:"ignored-home"},
+			{text:"Arbete",value:"ignored-work"},
+		]}},
+		{dataKey:"after",input:{type:"text"}},
+	]}},true,true,{searchbar:false,ordering:false});
+	comboboxTable.setData([comboboxRow,comboboxNextRow]);
+	await tick();
+	comboboxTable.selectCell(comboboxRow,"label");
+	key(comboboxTable.rootEl,"Enter","Enter");
+	let comboboxInput=comboboxTable._cellCursor.querySelector("input.tablance-combobox-input");
+	let comboboxPopup=comboboxTable._comboboxContext.popup;
+	assert(document.activeElement===comboboxInput&&comboboxInput.value==="Egen benämning"
+		&&comboboxInput.getAttribute("role")==="combobox"
+		&&comboboxInput.getAttribute("aria-autocomplete")==="list"
+		&&comboboxInput.getAttribute("aria-expanded")==="true"
+		&&comboboxPopup.querySelector('[role="listbox"]')
+		&&comboboxPopup.querySelectorAll('[role="option"]').length===3
+		&&!comboboxInput.hasAttribute("aria-activedescendant"),
+		"editable combobox opens as a focused free-text input with an accessible suggestion list");
+	comboboxInput.value="hem";
+	comboboxInput.dispatchEvent(new Event("input",{bubbles:true}));
+	assert(comboboxPopup.querySelectorAll('[role="option"]').length===3
+		&&!comboboxInput.hasAttribute("aria-activedescendant"),
+		"free typing leaves the complete suggestion list visible with no active option");
+	key(comboboxInput,"ArrowDown","ArrowDown");
+	assert(comboboxInput.value==="Mobil"
+		&&comboboxInput.selectionStart===comboboxInput.value.length
+		&&comboboxInput.selectionEnd===comboboxInput.value.length&&comboboxPopup.isConnected,
+		"Down starts at the first suggestion and immediately writes it into the focused input");
+	key(comboboxInput,"ArrowDown","ArrowDown");
+	assert(comboboxInput.value==="Hemtelefon"&&document.activeElement===comboboxInput,
+		"repeated Down navigation writes the next suggestion directly into the input");
+	key(comboboxInput,"ArrowDown","ArrowDown");
+	assert(comboboxInput.value==="Arbete","Down can browse the complete suggestion list in order");
+	comboboxInput.value="Fri text";
+	comboboxInput.dispatchEvent(new Event("input",{bubbles:true}));
+	key(comboboxInput,"ArrowUp","ArrowUp");
+	assert(comboboxInput.value==="Arbete",
+		"Up starts at the last suggestion after free typing clears the active option");
+	comboboxInput.value="Fritt värde";
+	comboboxInput.dispatchEvent(new Event("input",{bubbles:true}));
+	const commitByEnter=key(comboboxInput,"Enter","Enter");
+	assert(commitByEnter.defaultPrevented&&comboboxRow.label==="Fritt värde"&&!comboboxTable._inEditMode
+		&&!comboboxPopup.isConnected&&comboboxTable._cellCursorDataObj===comboboxNextRow
+		&&comboboxTable._activeSchemaNode.dataKey==="label",
+		"Enter commits free combobox text and navigates exactly like an ordinary text editor");
+	comboboxTable.selectCell(comboboxRow,"label");
+	key(comboboxTable.rootEl,"Enter","Enter");
+	comboboxInput=comboboxTable._cellCursor.querySelector("input.tablance-combobox-input");
+	const mouseOption=[...comboboxTable._comboboxContext.list.querySelectorAll('[role="option"]')]
+		.find(option=>option.textContent==="Arbete");
+	mouseOption.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,cancelable:true,button:0}));
+	mouseOption.click();
+	assert(comboboxInput.value==="Arbete"&&document.activeElement===comboboxInput
+		&&comboboxTable._inEditMode&&comboboxTable._comboboxContext.popup.isConnected,
+		"pointer selection inserts a suggestion while keeping the editable combobox open and focused");
+	key(comboboxInput,"Escape","Escape");
+	assert(comboboxRow.label==="Fritt värde"&&!comboboxTable._inEditMode
+		&&!comboboxTable._comboboxContext,
+		"Escape cancels combobox edits through the existing Tablance semantics");
+
 	assert([...cells].every(cell=>cell.classList.contains("tablance-cell-state")),
 		"every rendered main cell receives the canonical state styling hook");
 	assert(table._headerTable.querySelectorAll(".tablance-sort-icon").length===schema.main.columns.length,

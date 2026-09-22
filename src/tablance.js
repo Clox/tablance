@@ -8,6 +8,7 @@ const CONTEXTUAL_HELP_HOVER_DELAY=350;
 const DEFAULT_MENU_COLUMN_WIDTH=48;
 let anchoredPopoverId=0;
 let textareaShortcutHintId=0;
+let comboboxListboxId=0;
 const tabFocusIntentByDocument=new WeakMap();
 
 const getTabFocusIntent=doc=>{
@@ -613,6 +614,10 @@ class TablanceBase {
 	 * 							}
 	 * 							
 	 * 						maxLength int Sets max-length for the string							
+	 * 					----Properties specific to input "combobox"----
+	 * 						options Array|Function Suggestions using the select option shape or callback payload.
+	 * 							Option text is inserted as unrestricted free text and never constrains validity.
+	 * 						noResultsText String Optional text shown when no suggestion matches.
 	 * 					----Properties specific to input "textarea"----
 	 * 						maxHeight int Sets the max-height in pixels that it should be able to be resized to
 	 * 						newLineShortcutHint Bool Shows a platform-specific Ctrl/Cmd+Enter new-line hint while editing
@@ -6373,7 +6378,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._inEditMode=true;
 			this._clearCellRange();
 			this._cellCursor.classList.add("edit-mode");
-			({textarea:this._openTextAreaEdit,date:this._openDateEdit,select:this._openSelectEdit
+			({textarea:this._openTextAreaEdit,date:this._openDateEdit,select:this._openSelectEdit,
+				combobox:this._openComboboxEdit
 				,file:this._openFileEdit}[this._activeSchemaNode.input.type]??this._openTextEdit).call(this,e);
 		} else if (this._activeSchemaNode.type==="group") {
 			this._clearCellRange();
@@ -8097,6 +8103,176 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		input.placeholder=this._activeSchemaNode.input.placeholder??"";
 	}
 
+	_comboboxOptionText(option) {
+		return String(option?.text??option?.value??option??"");
+	}
+
+	_scoreOptionMatch(optionText,inputText) {
+		if (!inputText)
+			return 0;
+		const option=optionText.toLocaleLowerCase().trim();
+		const input=inputText.toLocaleLowerCase().trim();
+		if (!option)
+			return 0;
+		if (option===input)
+			return 2000;
+		let score=option.startsWith(input)?700:option.includes(input)?300:0;
+		for (const [index,word] of option.split(/\s+/).entries()) {
+			if (word===input)
+				score+=600+Math.max(0,100-index*20);
+			else if (word.startsWith(input))
+				score+=350+Math.max(0,70-index*15);
+			else if (word.includes(input))
+				score+=150+Math.max(0,40-index*10);
+		}
+		return score-option.length*.3;
+	}
+
+	_renderComboboxOptions(ctx) {
+		const options=ctx.options.map((option,index)=>({option,index,text:this._comboboxOptionText(option)}));
+		ctx.list.replaceChildren();
+		ctx.highlightIndex=null;
+		ctx.renderedOptions=options;
+		options.forEach((item,index)=>{
+			const option=ctx.list.appendChild(document.createElement("li"));
+			option.id=`${ctx.list.id}-option-${item.index}`;
+			option.setAttribute("role","option");
+			option.textContent=item.text;
+			option.dataset.index=String(index);
+			option.setAttribute("aria-selected","false");
+		});
+		ctx.noResults.style.display=options.length?"none":"block";
+		this._highlightComboboxOption(ctx,null,false);
+	}
+
+	_highlightComboboxOption(ctx,index,scroll=true) {
+		ctx.list.querySelector(".highlighted")?.classList.remove("highlighted");
+		for (const option of ctx.list.children)
+			option.setAttribute("aria-selected","false");
+		const option=index==null?null:ctx.list.children[index];
+		if (!option) {
+			ctx.highlightIndex=null;
+			ctx.input.removeAttribute("aria-activedescendant");
+			return false;
+		}
+		ctx.highlightIndex=index;
+		option.classList.add("highlighted");
+		option.setAttribute("aria-selected","true");
+		ctx.input.setAttribute("aria-activedescendant",option.id);
+		if (scroll)
+			option.scrollIntoView({block:"nearest"});
+		return true;
+	}
+
+	_chooseComboboxOption(ctx,index=ctx.highlightIndex) {
+		const item=index==null?null:ctx.renderedOptions[index];
+		if (!item)
+			return false;
+		ctx.input.value=item.text;
+		this._inputVal=item.text;
+		ctx.settingOption=true;
+		try {
+			ctx.input.dispatchEvent(new Event("input",{bubbles:true}));
+		} finally {
+			ctx.settingOption=false;
+		}
+		ctx.input.focus({preventScroll:true});
+		ctx.input.setSelectionRange(ctx.input.value.length,ctx.input.value.length);
+		return true;
+	}
+
+	_closeComboboxPopup(ctx=this._comboboxContext) {
+		if (!ctx)
+			return;
+		if (typeof ctx.popup.hidePopover==="function") {
+			try { ctx.popup.hidePopover(); } catch(_error) {}
+		}
+		ctx.popup.remove();
+		if (ctx.wheelHandler)
+			ctx.popup.removeEventListener("wheel",ctx.wheelHandler);
+		ctx.input.setAttribute("aria-expanded","false");
+		if (this._comboboxContext===ctx)
+			this._comboboxContext=null;
+	}
+
+	_openComboboxEdit() {
+		const strctInp=this._activeSchemaNode.input;
+		const input=this._appendCellEditor(document.createElement("input"));
+		input.className="text-editor tablance-combobox-input";
+		input.value=this._selectedCellVal??"";
+		this._inputVal=input.value;
+		input.placeholder=strctInp.placeholder??"";
+		if (strctInp.maxLength)
+			input.maxLength=strctInp.maxLength;
+		if (strctInp.format||strctInp.livePattern)
+			this._attachInputFormatter(input,strctInp.format,strctInp.livePattern);
+
+		const popup=document.createElement("div");
+		popup.className="tablance-select-container tablance-combobox-container";
+		const listWrapper=popup.appendChild(document.createElement("div"));
+		const list=listWrapper.appendChild(document.createElement("ul"));
+		list.className="main";
+		list.id=`tablance-combobox-listbox-${++comboboxListboxId}`;
+		list.setAttribute("role","listbox");
+		const noResults=popup.appendChild(document.createElement("div"));
+		noResults.className="no-results";
+		noResults.textContent=strctInp.noResultsText??this.lang.selectNoResultsFound;
+		const options=this._getSelectOptions(strctInp,this._activeSchemaNode,this._cellCursorDataObj,
+			this._mainRowIndex,this._activeDetailsCell).filter(option=>!option?.visibleIf||option.visibleIf({
+				dataContext:this._cellCursorDataObj,schemaNode:this._activeSchemaNode,rowIndex:this._mainRowIndex,
+				instanceNode:this._activeDetailsCell}));
+		const ctx=this._comboboxContext={input,popup,selectContainer:popup,list,noResults,options,renderedOptions:[],
+			highlightIndex:null,wheelHandler:null,settingOption:false};
+		input.setAttribute("role","combobox");
+		input.setAttribute("aria-autocomplete","list");
+		input.setAttribute("aria-controls",list.id);
+		input.setAttribute("aria-expanded","true");
+		input.addEventListener("input",()=>{
+			this._inputVal=input.value;
+			if (!ctx.settingOption)
+				this._highlightComboboxOption(ctx,null,false);
+		});
+		input.addEventListener("keydown",event=>{
+			if (event.key==="ArrowDown"||event.key==="ArrowUp") {
+				event.preventDefault();
+				event.stopPropagation();
+				const count=ctx.renderedOptions.length;
+				if (count) {
+					const next=ctx.highlightIndex==null
+						?(event.key==="ArrowDown"?0:count-1)
+						:(ctx.highlightIndex+(event.key==="ArrowDown"?1:-1)+count)%count;
+					this._highlightComboboxOption(ctx,next);
+					this._chooseComboboxOption(ctx,next);
+				}
+			}
+		});
+		list.addEventListener("mousemove",event=>{
+			const option=event.target.closest("li");
+			if (option)
+				this._highlightComboboxOption(ctx,Number(option.dataset.index),false);
+		});
+		list.addEventListener("mousedown",event=>event.preventDefault());
+		list.addEventListener("click",event=>{
+			const option=event.target.closest("li");
+			if (option)
+				this._chooseComboboxOption(ctx,Number(option.dataset.index));
+		});
+		input.addEventListener("blur",()=>setTimeout(()=>{
+			if (this._inEditMode&&this._comboboxContext===ctx)
+				this._exitEditMode(true);
+		}));
+		this._cellCursor.parentElement.appendChild(popup);
+		if (typeof popup.showPopover==="function") {
+			popup.popover="manual";
+			popup.showPopover();
+		}
+		this._alignDropdown(popup);
+		this._attachSelectWheelHandler(ctx);
+		this._renderComboboxOptions(ctx);
+		input.focus();
+		input.setSelectionRange(input.value.length,input.value.length);
+	}
+
 	/**
 	 * Enter "file edit mode" for a file-input cell.
 	 *
@@ -8373,40 +8549,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		 * @param {Object} ctx
 		 */
 		_handleSelectInputChange(ctx) {
-				const scoreOptionMatch=(optionText,inputText)=>{
-					if (!inputText)
-						return 0;
-					const option=optionText.toLowerCase().trim();
-					const input=inputText.toLowerCase().trim();
-					if (!option)
-						return 0;
-					// absolute winner
-					if (option===input)
-						return 2000;
-					let score=0;
-					if (option.startsWith(input))
-						score+=700;
-					else if (option.includes(input))
-						score+=300;
-					const words=option.split(/\s+/);
-					for (let i=0;i<words.length;i++) {
-						const word=words[i];
-						if (word===input) {
-							score+=600;
-							score+=Math.max(0,100-i*20);
-						} else if (word.startsWith(input)) {
-							score+=350;
-							score+=Math.max(0,70-i*15);
-						} else if (word.includes(input)) {
-							score+=150;
-							score+=Math.max(0,40-i*10);
-						}
-					}
-					// penalize length, but gently
-					score-=option.length*0.3;
-					return score;
-				};
-
 			const value=ctx.input.value;
 			const filter=value.toLowerCase();
 			const hadFilter=!!ctx.filterText;
@@ -8424,7 +8566,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					ctx.looseOpts.splice(i--,1);
 				else if (optText===filter)
 					ctx.canCreate=false;
-				ctx.matchScores?.set(opt,scoreOptionMatch(optText,value));
+				ctx.matchScores?.set(opt,this._scoreOptionMatch(optText,value));
 				}
 				// Reorder by match score so the best matches appear first.
 				ctx.looseOpts.sort((a,b)=>{
@@ -8814,6 +8956,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return this._exitReadOnlyMode();
 		if (!this._inEditMode)
 			return true;
+		if (this._comboboxContext)
+			this._closeComboboxPopup(this._comboboxContext);
 		if (this._editModeController)
 			return this._editModeController.finish(save);
 		if (!this._selectedCellState?.mutable)

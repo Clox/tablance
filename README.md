@@ -165,6 +165,25 @@ clipboard also receives an HTML table when the browser supports rich clipboard w
 representation for cell values containing tabs or line breaks in spreadsheet applications. The plain text fallback
 uses TSV with CSV-style quoting for such values. A one-cell range retains ordinary cell-copy behavior.
 
+## Editable combobox inputs
+
+Use `input.type: "combobox"` when a field stores unrestricted text but should offer common suggestions. Options use
+the same static array or callback form as select options, but they do not define or restrict the stored value. The
+complete suggestion list remains visible while editing. Arrow keys move through suggestions and immediately put the
+active suggestion's text in the focused input; after free typing, Down starts at the first suggestion and Up at the
+last. Pointer selection also inserts suggestion text without committing. Enter, Tab, outside focus, and Escape follow
+the same commit, navigation, and cancel lifecycle as ordinary text inputs.
+
+```js
+{
+  dataKey: "label",
+  input: {
+    type: "combobox",
+    options: [{text: "Mobile"}, {text: "Home"}, {text: "Work"}]
+  }
+}
+```
+
 ## Menu columns
 
 Use a main-table column with `type: "menu"` for row actions that do not represent or edit a data value. Menu columns
