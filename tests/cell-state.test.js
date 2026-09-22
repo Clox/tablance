@@ -3411,7 +3411,20 @@ try {
 	lockedPresentationTable.selectCell(lockedPresentationRow,"lockedMain");
 	key(lockedPresentationTable.rootEl,"c","KeyC",{ctrlKey:true});
 	await Promise.resolve();
-	assert(copied==="Ratsit","whole-cell Ctrl+C remains available for an implicit read-only main cell");
+	const copyFeedback=lockedPresentationTable._cellCursor.querySelector(":scope>.tablance-copy-feedback");
+	const copyFeedbackStyle=getComputedStyle(copyFeedback);
+	const copyIconStyle=getComputedStyle(copyFeedback.querySelector(".tablance-copy-feedback-operation"));
+	const copyCheckStyle=getComputedStyle(copyFeedback.querySelector(".tablance-copy-feedback-success"));
+	assert(copied==="Ratsit"&&copyFeedback?.role==="status"
+		&&copyFeedback.getAttribute("aria-label")===lockedPresentationTable.lang.copiedToClipboard
+		&&copyFeedback.textContent===""&&copyFeedbackStyle.position==="absolute"
+		&&copyFeedbackStyle.animationName==="tablance-copy-feedback"
+		&&(copyIconStyle.maskImage!=="none"||copyIconStyle.webkitMaskImage!=="none")
+		&&(copyCheckStyle.maskImage!=="none"||copyCheckStyle.webkitMaskImage!=="none"),
+		"whole-cell Ctrl+C copies the value and shows icon-only copy-success feedback without affecting layout");
+	lockedPresentationTable.selectCell(lockedPresentationRow,"lockedMain");
+	assert(!lockedPresentationTable._cellCursor.querySelector(".tablance-copy-feedback"),
+		"cell selection clears copy feedback so it remains attached to the copied cell");
 	const doubleClickLockedCursor=()=>lockedPresentationTable._cellCursor.dispatchEvent(
 		new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
 	key(lockedPresentationTable.rootEl,"Enter","Enter");

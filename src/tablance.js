@@ -319,6 +319,8 @@ class TablanceBase {
 	_readOnlyFeedbackTimer;
 	_navigationFeedbackTarget;
 	_navigationFeedbackTimer;
+	_copyFeedbackElement;
+	_copyFeedbackTimer;
 	_navigationCursorTransition;
 	_dropdownAlignmentContainer;
 	lang;//object holding strings used in the table for various purposes. See DEFAULT_LANG for default values					
@@ -4280,7 +4282,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return;
 		const fallback=()=>this._copySelectedCellText_fallback(text);
 		if (navigator?.clipboard?.writeText)
-			navigator.clipboard.writeText(text).then(()=>this._showTooltip?.(this.lang.copiedToClipboard),fallback);
+			navigator.clipboard.writeText(text).then(()=>this._showCopyFeedback(),fallback);
 		else
 			fallback();
 	}
@@ -4296,7 +4298,35 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		try { document.execCommand("copy"); } catch(_e) {}
 		ta.remove();
 		this.rootEl?.focus({preventScroll:true});
-		this._showTooltip?.(this.lang.copiedToClipboard);
+		this._showCopyFeedback();
+	}
+
+	_showCopyFeedback() {
+		this._clearCopyFeedback();
+		const feedback=document.createElement("span");
+		feedback.className="tablance-copy-feedback";
+		feedback.role="status";
+		feedback.setAttribute("aria-label",this.lang.copiedToClipboard);
+		feedback.setAttribute("aria-atomic","true");
+		for (const part of ["operation","success"]) {
+			const icon=feedback.appendChild(document.createElement("span"));
+			icon.className=`tablance-copy-feedback-${part}`;
+			icon.setAttribute("aria-hidden","true");
+		}
+		feedback.addEventListener("animationend",()=>this._clearCopyFeedback(feedback),{once:true});
+		this._cellCursor.appendChild(feedback);
+		this._copyFeedbackElement=feedback;
+		this._copyFeedbackTimer=setTimeout(()=>this._clearCopyFeedback(feedback),1100);
+		return true;
+	}
+
+	_clearCopyFeedback(feedback=this._copyFeedbackElement) {
+		if (!feedback||feedback!==this._copyFeedbackElement)
+			return;
+		clearTimeout(this._copyFeedbackTimer);
+		feedback.remove();
+		this._copyFeedbackElement=null;
+		this._copyFeedbackTimer=null;
 	}
 
 	_insertAtCursor(myField, myValue) {
@@ -8457,6 +8487,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_selectCell(cellEl,schemaNode,dataObj,adjustCursorPosSize=true,instanceNode=null,
 		preserveVerticalPreferredColumn=false,focus=true) {
 		this._cancelNavigationCursorTransition();
+		this._clearCopyFeedback();
 		this._closeHelp();
 		this._closeMenu();
 		this._clearReadOnlyActivationFeedback();
