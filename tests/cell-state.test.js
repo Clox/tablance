@@ -344,13 +344,14 @@ try {
 	firstMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
 	await tick();
 	assert(menuTable._menuState?.rowData===menuRows[0]&&menuActionsResolved===1
+		&&menuTable._menuState.items.length===3
 		&&menuTable._mainRowIndex===0&&menuTable._mainColIndex===1
 		&&menuTable._selectedCellVal===undefined&&!menuTable._inEditMode
 		&&!menuTable._menuState.items.some(item=>item.el===document.activeElement)
 		&&menuTable._menuState.openedFromKeyboard===false
 		&&menuTable._cellCursor.style.display==="block"
 		&&firstMenuTrigger.getAttribute("aria-expanded")==="true",
-		"a pointer click opens the row menu without pre-highlighting an item or changing cell semantics");
+		"a pointer click opens only configured row actions without changing cell semantics");
 	assert(document.activeElement===menuTable._menuPopover
 		&&getComputedStyle(menuTable._menuPopover).outlineStyle==="none",
 		"the internally focused row-menu container has no visible browser focus outline");
@@ -3418,13 +3419,386 @@ try {
 	assert(copied==="Ratsit"&&copyFeedback?.role==="status"
 		&&copyFeedback.getAttribute("aria-label")===lockedPresentationTable.lang.copiedToClipboard
 		&&copyFeedback.textContent===""&&copyFeedbackStyle.position==="absolute"
-		&&copyFeedbackStyle.animationName==="tablance-copy-feedback"
+		&&copyFeedbackStyle.width==="12px"&&copyFeedbackStyle.height==="12px"
+		&&copyIconStyle.position==="absolute"&&copyCheckStyle.position==="absolute"
+		&&copyIconStyle.width==="12px"&&copyIconStyle.height==="12px"
+		&&copyCheckStyle.width==="18px"&&copyCheckStyle.height==="18px"
+		&&copyIconStyle.animationName==="tablance-copy-feedback-operation"
+		&&copyCheckStyle.animationName==="tablance-copy-feedback-success"
+		&&copyIconStyle.animationDuration==="1.35s"&&copyCheckStyle.animationDuration==="1.35s"
+		&&copyIconStyle.backgroundColor==="rgb(13, 43, 89)"
+		&&copyCheckStyle.backgroundColor==="rgb(13, 43, 89)"
 		&&(copyIconStyle.maskImage!=="none"||copyIconStyle.webkitMaskImage!=="none")
 		&&(copyCheckStyle.maskImage!=="none"||copyCheckStyle.webkitMaskImage!=="none"),
 		"whole-cell Ctrl+C copies the value and shows icon-only copy-success feedback without affecting layout");
 	lockedPresentationTable.selectCell(lockedPresentationRow,"lockedMain");
 	assert(!lockedPresentationTable._cellCursor.querySelector(".tablance-copy-feedback"),
 		"cell selection clears copy feedback so it remains attached to the copied cell");
+	let clipboardPayload;
+	let groupClipboardPayload;
+	const clipboardRow={plain:"Raw value",rendered:"source",html:"markup",status:"active",enabled:true,
+		custom:"custom source",dependent:"dependency",profile:{first:"Ada",last:"Lovelace"},
+		secondary:{label:"Secondary"}};
+	const clipboardTable=new Tablance(host(),{
+		main:{columns:[
+			{dataKey:"plain",nodeId:"clipboardPlain"},
+			{dataKey:"rendered",nodeId:"clipboardRendered",render:({value})=>`Rendered ${value}`},
+			{dataKey:"html",nodeId:"clipboardHtml",html:true,
+				render:({value})=>`<strong>Visible ${value}</strong>`},
+			{dataKey:"status",nodeId:"clipboardSelect",input:{type:"select",options:[
+				{text:"Active option",value:"active"},{text:"Inactive option",value:"inactive"},
+			]}},
+			{dataKey:"enabled",nodeId:"clipboardBoolean",input:{type:"select",boolean:true}},
+			{dataKey:"custom",nodeId:"clipboardCustom",dependsOnDataPath:["dependent"],
+				render:({value})=>`Displayed ${value}`,clipboardValue:payload=>{
+					clipboardPayload=payload;
+					return 0;
+				}},
+			{dataKey:"plain",nodeId:"clipboardEmpty",clipboardValue:()=>""},
+			{dataKey:"plain",nodeId:"clipboardNull",clipboardValue:()=>null},
+			{dataKey:"plain",nodeId:"clipboardUndefined",clipboardValue:()=>undefined},
+			{dataKey:"plain",nodeId:"clipboardObject",clipboardValue:()=>({text:"must not serialize"})},
+			{dataKey:"plain",nodeId:"clipboardArray",clipboardValue:()=>["must not serialize"]},
+		]},
+		details:{type:"list",entries:[
+			{type:"group",nodeId:"clipboardGroup",dataPath:"profile",closedRenderHtml:true,
+				closedRender:data=>`<strong>${data.first} ${data.last}</strong>`,entries:[
+					{dataKey:"first",nodeId:"clipboardGroupFirst",input:{type:"text"}},
+				]},
+			{type:"group",nodeId:"clipboardCustomGroup",dataPath:"secondary",
+				closedRender:data=>data.label,clipboardValue:payload=>{
+					groupClipboardPayload=payload;
+					return false;
+				},entries:[]},
+			{type:"group",nodeId:"clipboardGroupWithoutRender",dataPath:"secondary",entries:[]},
+		]},
+	},true,true,{searchbar:false,ordering:false,lang:{booleanTrue:"Yes label",booleanFalse:"No label"}});
+	clipboardTable.setData([clipboardRow]);
+	await tick();
+	const copyLogicalCell=async nodeId=>{
+		copied="not-written";
+		clipboardTable.selectCell(clipboardRow,nodeId);
+		key(clipboardTable.rootEl,"c","KeyC",{ctrlKey:true});
+		await Promise.resolve();
+		return copied;
+	};
+	assert(await copyLogicalCell("clipboardPlain")==="Raw value"
+		&&await copyLogicalCell("clipboardRendered")==="Rendered source",
+		"clipboard defaults use the raw or rendered visible text for ordinary fields");
+	const plainRenderedCell=clipboardTable._mainTbody.rows[0].cells[0];
+	plainRenderedCell.innerText="Tampered DOM text";
+	assert(await copyLogicalCell("clipboardPlain")==="Raw value",
+		"Ctrl+C resolves clipboard text from logical data even when the rendered cell DOM differs");
+	assert(await copyLogicalCell("clipboardHtml")==="Visible markup",
+		"HTML-rendered fields resolve to visible text without markup or a rendered-cell DOM read");
+	assert(await copyLogicalCell("clipboardSelect")==="Active option"
+		&&await copyLogicalCell("clipboardBoolean")==="Yes label",
+		"select and boolean-select clipboard defaults use their visible option text");
+	assert(await copyLogicalCell("clipboardCustom")==="0"
+		&&clipboardPayload.value==="custom source"&&clipboardPayload.idValue==="custom source"
+		&&clipboardPayload.dependedValue==="dependency"
+		&&clipboardPayload.displayValue==="Displayed custom source"
+		&&clipboardPayload.displayText==="Displayed custom source"
+		&&clipboardPayload.rowData===clipboardRow&&clipboardPayload.instanceNode===null,
+		"clipboardValue overrides the default with one primitive and receives the complete logical-cell payload");
+	const representationFor=nodeId=>{
+		const schemaNode=clipboardTable._colSchemaNodes.find(node=>node.nodeId===nodeId);
+		return clipboardTable._resolveClipboardRepresentation(schemaNode,clipboardRow,0,null);
+	};
+	assert(representationFor("clipboardEmpty").available&&representationFor("clipboardEmpty").text===""
+		&&!representationFor("clipboardNull").available&&!representationFor("clipboardUndefined").available,
+		"the clipboard model preserves empty text while null and undefined mean no representation");
+	assert(!representationFor("clipboardObject").available&&!representationFor("clipboardArray").available,
+		"object and array clipboardValue results are rejected instead of being implicitly serialized");
+	for (const nodeId of ["clipboardEmpty","clipboardNull","clipboardUndefined","clipboardObject","clipboardArray"])
+		assert(await copyLogicalCell(nodeId)==="not-written",
+			`${nodeId} does not invoke the clipboard writer without non-empty clipboard text`);
+	const clipboardGroup=clipboardTable.getDetailCell(clipboardRow,"clipboardGroup");
+	clipboardGroup.select();
+	copied="not-written";
+	key(clipboardTable.rootEl,"c","KeyC",{ctrlKey:true});
+	await Promise.resolve();
+	assert(copied==="Ada Lovelace",
+		"a closed group is one logical clipboard cell represented by closedRender text without HTML markup");
+	const closedGroupCopyFeedback=clipboardTable._cellCursor.querySelector(":scope>.tablance-copy-feedback");
+	const closedGroupChevronRight=clipboardGroup.groupChevronEl.getBoundingClientRect().right;
+	assert(Math.abs(closedGroupCopyFeedback.getBoundingClientRect().left-closedGroupChevronRight-6)<1
+		&&closedGroupCopyFeedback.getBoundingClientRect().right
+			<clipboardTable._cellCursor.getBoundingClientRect().right-20,
+		"details group copy feedback sits just after the visible chevron, not at the cell's far edge");
+	clipboardTable._openGroup(clipboardGroup);
+	const clipboardGroupFirst=clipboardTable.getDetailCell(clipboardRow,"clipboardGroupFirst");
+	clipboardGroupFirst.select();
+	copied="not-written";
+	key(clipboardTable.rootEl,"c","KeyC",{ctrlKey:true});
+	await Promise.resolve();
+	const fieldTextRange=document.createRange();
+	fieldTextRange.selectNodeContents(clipboardGroupFirst.el.firstChild);
+	const detailFieldCopyFeedback=clipboardTable._cellCursor.querySelector(":scope>.tablance-copy-feedback");
+	assert(copied==="Ada"
+		&&Math.abs(detailFieldCopyFeedback.getBoundingClientRect().left
+			-fieldTextRange.getBoundingClientRect().right-6)<1,
+		"ordinary details-field feedback follows the rendered value's right edge");
+	const openGroupRepresentation=clipboardTable._resolveClipboardRepresentation(clipboardGroup.schemaNode,
+		clipboardGroup.dataObj,0,clipboardGroup);
+	assert(clipboardTable._isGroupPresentationOpen(clipboardGroup)
+		&&openGroupRepresentation.available&&openGroupRepresentation.text==="Ada Lovelace",
+		"an open group still resolves to its single closedRender representation instead of flattening its children");
+	const clipboardCustomGroup=clipboardTable.getDetailCell(clipboardRow,"clipboardCustomGroup");
+	clipboardCustomGroup.select();
+	copied="not-written";
+	key(clipboardTable.rootEl,"c","KeyC",{ctrlKey:true});
+	await Promise.resolve();
+	assert(copied==="false"&&groupClipboardPayload.value===clipboardRow.secondary
+		&&groupClipboardPayload.rowData===clipboardRow.secondary
+		&&groupClipboardPayload.displayValue==="Secondary"
+		&&groupClipboardPayload.displayText==="Secondary"
+		&&groupClipboardPayload.instanceNode===clipboardCustomGroup,
+		"clipboardValue is available on groups and receives their scoped data and instance node");
+	const clipboardGroupWithoutRender=clipboardTable.getDetailCell(clipboardRow,"clipboardGroupWithoutRender");
+	assert(!clipboardTable._resolveClipboardRepresentation(clipboardGroupWithoutRender.schemaNode,
+		clipboardGroupWithoutRender.dataObj,0,clipboardGroupWithoutRender).available,
+		"a group without closedRender has no implicit clipboard representation");
+	const rowClipboardData={name:"Ada",status:"active",hiddenMain:"secret",empty:"",profile:{
+		readOnly:"Shown",disabled:"Still shown",showConditional:true,conditional:"Visible dependent",
+		hidden:"Not presented",child:"child",shieldChild:"must not leak",emptyShieldChild:"must not leak",
+		items:[{label:"Second",rank:2},{label:"First",rank:1}],unpresented:"not in schema"
+	}};
+	const rowClipboardSchema={
+		main:{columns:[
+			{type:"expand"},{title:"Name",dataKey:"name"},
+			{title:"State",dataKey:"status",input:{type:"select",options:[
+				{text:"Active label",value:"active"},{text:"Inactive label",value:"inactive"},
+			]}},
+			{title:"Hidden main",dataKey:"hiddenMain",visible:false},
+			{title:"Empty main",dataKey:"empty"},
+		]},
+		details:{type:"list",dataPath:"profile",entries:[
+			{type:"group",title:"Profile",entries:[
+				{title:"Read only",dataKey:"readOnly",readOnly:true},
+				{title:"Disabled",dataKey:"disabled",disabled:true},
+				{title:"Conditional switch",dataKey:"showConditional",visibleIf:()=>false},
+				{title:"Conditional",dataKey:"conditional",dependsOn:"showConditional",
+					visibleIf:({dependedValue})=>dependedValue===true},
+				{title:"Hidden conditional",dataKey:"hidden",visibleIf:()=>false},
+				{title:"Empty detail",dataKey:"missing"},
+				{type:"group",title:"Ungrouped",nodeId:"rowClipboardUngrouped",
+					entries:[{title:"Child",dataKey:"child"}]},
+				{type:"group",title:"Override",nodeId:"rowClipboardOverride",
+					clipboardValue:()=>"whole group",entries:[
+					{title:"Shielded child",dataKey:"shieldChild"},
+				]},
+				{type:"group",title:"Empty override",clipboardValue:()=>"",entries:[
+					{title:"Empty-shielded child",dataKey:"emptyShieldChild"},
+				]},
+				{type:"repeated",title:"Entries",dataKey:"items",sortCompare:(a,b)=>a.rank-b.rank,
+					entry:{type:"group",closedRender:data=>data.label,entries:[
+						{title:"Label",dataKey:"label"},
+					]}},
+			]},
+		]},
+	};
+	const rowClipboardTable=new Tablance(host(),rowClipboardSchema,true,true,{searchbar:false,ordering:false});
+	rowClipboardTable.setData([rowClipboardData]);
+	await tick();
+	const rowRepresentation=rowClipboardTable._resolveClipboardRowRepresentation(rowClipboardData,0);
+	const expectedRowText=[
+		"Name: Ada","State: Active label","","Profile:","  Read only: Shown","  Disabled: Still shown",
+		"  Conditional: Visible dependent","  Ungrouped:","    Child: child","  Override: whole group",
+		"  Entries:","    First","    Second",
+	].join("\n");
+	assert(rowRepresentation.available&&rowRepresentation.text===expectedRowText
+		&&Object.keys(rowClipboardTable._openDetailsPanes).length===0,
+		"row clipboard defaults traverse unrendered details, visible data columns and presented repeated order");
+	assert(!rowRepresentation.text.includes("secret")&&!rowRepresentation.text.includes("Not presented")
+		&&!rowRepresentation.text.includes("must not leak")&&!rowRepresentation.text.includes("not in schema")
+		&&!rowRepresentation.text.includes("Empty main")&&!rowRepresentation.text.includes("Empty detail"),
+		"row clipboard defaults omit hidden, empty and unpresented data while group representations shield children");
+	const selectOptsCache=new WeakMap;
+	assert(rowClipboardTable._rowSatisfiesFilters("First",rowClipboardData,0,selectOptsCache,true)
+		&&!rowClipboardTable._rowSatisfiesFilters("not in schema",rowClipboardData,0,selectOptsCache,true),
+		"search and row clipboard share the logical details traversal without exposing unschematized data");
+	rowClipboardTable.expandRow(0);
+	assert(rowClipboardTable._resolveClipboardRowRepresentation(rowClipboardData,0).text===expectedRowText,
+		"row clipboard text is independent of whether details is open and rendered");
+	let customRowResult=0;
+	let customRowPayload;
+	const customRowTable=new Tablance(host(),{
+		clipboardRowValue:payload=>{customRowPayload=payload;return customRowResult;},
+		main:{columns:[{title:"Name",dataKey:"name"}]},
+		details:{type:"list",entries:[]},
+	},true,true,{searchbar:false,ordering:false});
+	customRowTable.setData([rowClipboardData]);
+	await tick();
+	let customRowRepresentation=customRowTable._resolveClipboardRowRepresentation(rowClipboardData,0);
+	assert(customRowRepresentation.available&&customRowRepresentation.text==="0"
+		&&customRowPayload.defaultText==="Name: Ada"&&customRowPayload.rowData===rowClipboardData
+		&&customRowPayload.schemaNode===customRowTable._schema
+		&&customRowPayload.schemaTree===customRowTable._schema&&customRowPayload.mainIndex===0
+		&&customRowPayload.visibleColumns[0]===customRowTable._colSchemaNodes[0]
+		&&customRowPayload.detailsSchema===customRowTable._schema.details,
+		"clipboardRowValue replaces the default and receives root row/schema context plus defaultText");
+	customRowResult="";
+	customRowRepresentation=customRowTable._resolveClipboardRowRepresentation(rowClipboardData,0);
+	assert(customRowRepresentation.available&&customRowRepresentation.text==="",
+		"clipboardRowValue preserves an explicit empty-string representation");
+	for (const rejected of [null,undefined,{text:"no"},["no"]]) {
+		customRowResult=rejected;
+		assert(!customRowTable._resolveClipboardRowRepresentation(rowClipboardData,0).available,
+			"clipboardRowValue treats nullish values as missing and rejects objects and arrays");
+	}
+	const copyMenuShortcut=table=>key(table.rootEl,"C","KeyC",{ctrlKey:true,shiftKey:true});
+	rowClipboardTable.selectCell(rowClipboardData,"name");
+	const mainCopyCell=rowClipboardTable._selectedCell;
+	const mainCellSize={width:mainCopyCell.offsetWidth,height:mainCopyCell.offsetHeight};
+	const mainCopyShortcut=copyMenuShortcut(rowClipboardTable);
+	const mainCopyState=rowClipboardTable._copyMenuState;
+	const mainCopyMenu=mainCopyState?.controller.el;
+	assert(mainCopyShortcut.defaultPrevented&&mainCopyState?.items.length===1
+		&&mainCopyState.items[0].label==="Copy whole row"
+		&&mainCopyMenu.children.length===1&&!mainCopyMenu.querySelector("h1,h2,h3")
+		&&mainCopyMenu.getAttribute("role")==="menu"
+		&&mainCopyMenu.getAttribute("aria-label")===rowClipboardTable.lang.copyMenuLabel
+		&&document.activeElement===mainCopyState.items[0].el
+		&&mainCopyMenu.matches(":popover-open")
+		&&mainCopyMenu.getBoundingClientRect().width>0
+		&&mainCopyCell.offsetWidth===mainCellSize.width&&mainCopyCell.offsetHeight===mainCellSize.height,
+		"Ctrl+Shift+C opens one anchored, keyboard-focused whole-row action without changing cell layout");
+	key(document.activeElement,"ArrowDown","ArrowDown");
+	key(document.activeElement,"ArrowUp","ArrowUp");
+	assert(document.activeElement===mainCopyState.items[0].el,
+		"arrow navigation remains on the only copy scope without moving the cell cursor");
+	key(document.activeElement,"Escape","Escape");
+	assert(!rowClipboardTable._copyMenuState&&document.activeElement===rowClipboardTable._focusEl
+		&&rowClipboardTable._selectedCell===mainCopyCell,
+		"Escape closes the copy menu and restores focus to the active main cell");
+	copyMenuShortcut(rowClipboardTable);
+	const outsideCopyState=rowClipboardTable._copyMenuState;
+	document.body.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
+	await tick();
+	assert(!rowClipboardTable._copyMenuState&&outsideCopyState.controller.el.hidden
+		&&rowClipboardTable._selectedCell===mainCopyCell,
+		"outside pointer input dismisses the copy popover without changing the logical selection");
+	copyMenuShortcut(rowClipboardTable);
+	copied="not-written";
+	key(document.activeElement,"Enter","Enter");
+	await Promise.resolve();
+	assert(copied===expectedRowText&&!rowClipboardTable._copyMenuState
+		&&document.activeElement===rowClipboardTable._focusEl
+		&&rowClipboardTable._selectedCell===mainCopyCell
+		&&!rowClipboardTable._cellCursor.querySelector(":scope>.tablance-copy-feedback"),
+		"Enter copies the complete row and closes the popover without cell-specific success feedback");
+	const detailsCopyGroup=rowClipboardTable.getDetailCell(rowClipboardData,"rowClipboardOverride");
+	detailsCopyGroup.select();
+	const detailsCopyCell=rowClipboardTable._selectedCell;
+	copyMenuShortcut(rowClipboardTable);
+	assert(rowClipboardTable._copyMenuState?.trigger===detailsCopyCell
+		&&rowClipboardTable._copyMenuState.target===detailsCopyGroup.groupChevronEl
+		&&rowClipboardTable._copyMenuState.items[0].disabled===false
+		&&rowClipboardTable._mainRowIndex===0,
+		"copy scope resolves the root row from details and anchors beside the group's title chevron");
+	copied="not-written";
+	key(document.activeElement,"Enter","Enter");
+	await Promise.resolve();
+	assert(copied===expectedRowText&&!rowClipboardTable._copyMenuState
+		&&rowClipboardTable._selectedCell===detailsCopyCell
+		&&document.activeElement===rowClipboardTable._focusEl
+		&&!rowClipboardTable._cellCursor.querySelector(":scope>.tablance-copy-feedback"),
+		"details-group whole-row copy retains the active group without cell-specific feedback");
+	copied="not-written";
+	key(rowClipboardTable.rootEl,"c","KeyC",{ctrlKey:true});
+	await Promise.resolve();
+	assert(copied==="whole group"&&!rowClipboardTable._copyMenuState
+		&&!!rowClipboardTable._cellCursor.querySelector(":scope>.tablance-copy-feedback"),
+		"ordinary Ctrl+C still copies only the selected group directly and shows cell feedback");
+	const successfulClipboard=navigator.clipboard;
+	const originalExecCommand=document.execCommand;
+	let fallbackCopied="not-written";
+	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{
+		writeText:()=>Promise.reject(new Error("Clipboard permission denied")),
+	}});
+	document.execCommand=command=>{
+		if (command==="copy")
+			fallbackCopied=document.activeElement.value;
+		return true;
+	};
+	copyMenuShortcut(rowClipboardTable);
+	key(document.activeElement,"Enter","Enter");
+	await tick();
+	assert(fallbackCopied===expectedRowText&&!rowClipboardTable._copyMenuState
+		&&!rowClipboardTable._cellCursor.querySelector(":scope>.tablance-copy-feedback"),
+		"row copy clears prior cell feedback and retains the rejection fallback without new feedback");
+	document.execCommand=originalExecCommand;
+	Object.defineProperty(navigator,"clipboard",{configurable:true,value:successfulClipboard});
+	customRowResult=null;
+	customRowTable.selectCell(rowClipboardData,"name");
+	copyMenuShortcut(customRowTable);
+	const disabledCopyState=customRowTable._copyMenuState;
+	copied="not-written";
+	assert(disabledCopyState?.items[0].disabled
+		&&disabledCopyState.items[0].el.getAttribute("aria-disabled")==="true",
+		"a row without clipboard representation exposes a disabled whole-row action");
+	key(document.activeElement,"Enter","Enter");
+	assert(copied==="not-written"&&customRowTable._copyMenuState===disabledCopyState,
+		"activating the disabled row action cannot write to the clipboard or close the menu");
+	key(document.activeElement,"Escape","Escape");
+	customRowResult="";
+	copyMenuShortcut(customRowTable);
+	assert(!customRowTable._copyMenuState.items[0].disabled,
+		"an explicit empty row representation is available rather than missing");
+	key(document.activeElement,"Escape","Escape");
+	const menuCopyRows=[{name:"Cursor row",rowText:"First row"},
+		{name:"Menu row",rowText:"Second row"},{name:"Unavailable",rowText:null}];
+	const rowMenuCopyTable=new Tablance(host(),{
+		clipboardRowValue:({rowData})=>rowData.rowText,
+		main:{columns:[{title:"Name",dataKey:"name"},{type:"menu",actions:[
+			{type:"copyRow"},{label:"Ordinary action",onSelect:()=>{}},
+		]}]},
+	},true,true,{searchbar:false,ordering:false});
+	rowMenuCopyTable.setData(menuCopyRows);
+	await tick();
+	rowMenuCopyTable.selectCell(menuCopyRows[0],"name");
+	const cursorBeforeMenu=rowMenuCopyTable._selectedCell;
+	const otherRowMenuCell=rowMenuCopyTable._mainTbody.rows[1].cells[1];
+	otherRowMenuCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
+	otherRowMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
+	await tick();
+	assert(rowMenuCopyTable._menuState?.rowData===menuCopyRows[1]
+		&&rowMenuCopyTable._menuState.mainIndex===1
+		&&rowMenuCopyTable._selectedCell===cursorBeforeMenu
+		&&rowMenuCopyTable._mainRowIndex===0
+		&&rowMenuCopyTable._menuState.items[0].label===rowMenuCopyTable.lang.copyWholeRow
+		&&rowMenuCopyTable._menuState.items[0].el.querySelector(".tablance-icon-copy.tablance-menu-item-icon")
+		&&!rowMenuCopyTable._menuState.items[0].disabled
+		&&rowMenuCopyTable._menuState.items[1].label==="Ordinary action",
+		"explicit copyRow uses the menu row while preserving a cursor on another row and other actions");
+	const originalRowCopy=rowMenuCopyTable._copyRowClipboardText;
+	let rowCopyCall;
+	rowMenuCopyTable._copyRowClipboardText=function(...args) {
+		rowCopyCall=args;
+		return originalRowCopy.apply(this,args);
+	};
+	copied="not-written";
+	rowMenuCopyTable._menuState.items[0].el.click();
+	await Promise.resolve();
+	assert(copied==="Second row"&&rowCopyCall[0]===menuCopyRows[1]&&rowCopyCall[1]===1
+		&&!rowMenuCopyTable._menuState&&rowMenuCopyTable._selectedCell===cursorBeforeMenu
+		&&!rowMenuCopyTable._cellCursor.querySelector(":scope>.tablance-copy-feedback"),
+		"copyRow reuses the shortcut's row-copy operation for the menu row without cell feedback");
+	rowMenuCopyTable._copyRowClipboardText=originalRowCopy;
+	const unavailableMenuCell=rowMenuCopyTable._mainTbody.rows[2].cells[1];
+	unavailableMenuCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
+	unavailableMenuCell.dispatchEvent(new MouseEvent("click",{bubbles:true,button:0,detail:1,cancelable:true}));
+	await tick();
+	const unavailableCopyItem=rowMenuCopyTable._menuState.items[0];
+	copied="not-written";
+	assert(unavailableCopyItem.disabled&&unavailableCopyItem.el.getAttribute("aria-disabled")==="true",
+		"copyRow follows the existing disabled menu-action pattern when its row has no representation");
+	unavailableCopyItem.el.click();
+	assert(copied==="not-written"&&!!rowMenuCopyTable._menuState
+		&&rowMenuCopyTable._selectedCell===cursorBeforeMenu,
+		"a disabled copyRow action cannot write or disturb the existing cursor");
+	rowMenuCopyTable._closeMenu(true);
 	const doubleClickLockedCursor=()=>lockedPresentationTable._cellCursor.dispatchEvent(
 		new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
 	key(lockedPresentationTable.rootEl,"Enter","Enter");

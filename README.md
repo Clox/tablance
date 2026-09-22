@@ -95,6 +95,61 @@ rendered field:
 }
 ```
 
+## Clipboard representations
+
+Ctrl+C resolves the selected logical cell from schema and row data; it does not read text from the rendered cell DOM.
+Ordinary fields use their rendered text, selects use the visible option text, and trusted HTML renderers are reduced to
+visible text without markup. A group is always one clipboard cell: it uses `closedRender` even while open, and has no
+default representation when `closedRender` is absent.
+
+Set `clipboardValue(payload)` on any logical cell node to override that default. The payload contains the standard
+cell context plus `value`, `idValue`, `dependedValue`, `displayValue`, `displayText`, `rowData`, and `instanceNode`.
+Return a string, number, bigint, or boolean for that one cell. `null` and `undefined` mean that no clipboard
+representation exists; objects and arrays are not serialized. An empty string remains a valid, distinct
+representation in the resolver, although direct Ctrl+C does not write empty clipboard text.
+
+```js
+{
+  dataKey: "identityNumber",
+  clipboardValue: ({value, displayText}) => value ?? displayText
+}
+```
+
+### Row clipboard representations
+
+Tablance can also resolve a DOM-independent, human-readable representation of a complete logical row. The generic
+default uses the currently visible main-table data columns followed by presented details content, whether details is
+open or not. Control columns and data outside the schema are excluded. Empty fields are omitted; read-only and
+disabled presentation fields remain eligible. Details traversal honors `dataPath`, `visibleIf`, repeated data and its
+presented sorting.
+
+For a details group, Tablance first resolves the group's own clipboard representation using `clipboardValue` or
+`closedRender`. When one exists—even an explicit empty string—it represents the complete subtree and the group's
+children are not included. A group without a representation contributes its presented children instead. This row
+behavior does not change ordinary Ctrl+C: direct group copy still treats the group as one logical cell and never
+implicitly flattens it.
+
+Set synchronous `clipboardRowValue(payload)` on the root schema to replace the generic row text completely. Its
+payload is the standard root callback context (`tablance`, `schemaTree`, root `schemaNode`, `rowData`, `mainIndex`,
+and lifecycle context), plus `defaultText`, `visibleColumns`, and `detailsSchema`. Return a string, number, bigint, or
+boolean. As with `clipboardValue`, `null` and `undefined` mean no representation, objects and arrays are rejected,
+and an empty string remains distinct from a missing representation.
+
+```js
+{
+  clipboardRowValue: ({rowData, defaultText}) =>
+    rowData.reference ? `Reference: ${rowData.reference}\n\n${defaultText}` : defaultText,
+  main: {columns: [/* ... */]},
+  details: {/* ... */}
+}
+```
+
+Ctrl+Shift+C opens a small copy menu at the active cell. Its first command, "Copy whole row", uses the row resolver
+even when the selected cell is in details; the item is disabled if the root row has no clipboard representation.
+Enter copies the row without cell-specific success feedback, and Escape closes the menu. Ctrl+C remains direct
+cell/group copy with its usual feedback. The menu is currently internal and does not expose a public
+`clipboardScopes` API; range selection is separate and not implemented here.
+
 ## Menu columns
 
 Use a main-table column with `type: "menu"` for row actions that do not represent or edit a data value. Menu columns
@@ -106,6 +161,12 @@ Use `label` (or the existing `text`/`title`) to set the visible copy and optiona
 `"trash"` or `"restore"`, or an `Element`; both fields may be callbacks receiving the action payload. Icons are
 cloned before rendering, so descriptors remain reusable. Omit `icon` for a text-only action. Built-in trash actions
 use `lang.trashAction`/`lang.restoreAction` and the corresponding icons by default; `label` and `icon` override them.
+Add `{type: "copyRow"}` explicitly to a row menu to offer the same whole-row copy operation as Ctrl+Shift+C.
+Its default label is `lang.copyWholeRow` ("Copy whole row") with the same copy icon used by cell feedback;
+the icon can be overridden with `icon`. The action is disabled when that row has no clipboard
+representation. It uses the menu row, not the current cell cursor, and does not show cell-specific copy feedback.
+A menu column never adds this action automatically. A custom `label` and the usual action-level `disabled` rule may
+further customize it, but cannot enable a row with no clipboard representation.
 Pointer opening leaves all actions unfocused until the pointer actually hovers an item or keyboard navigation begins.
 Keyboard opening with Enter/Space focuses the first action immediately. After pointer opening, Arrow Down starts at
 the first action and Arrow Up at the last. Hover and keyboard focus are independent visual states, including for
@@ -117,6 +178,7 @@ disabled actions; disabled actions remain navigable and explanatory but cannot b
   width: 45,
   ariaLabel: ({rowData}) => `Actions for ${rowData.name}`,
   actions: ({rowData}) => [
+    {type: "copyRow"},
     {
       id: "open",
       text: "Open",

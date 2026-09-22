@@ -243,27 +243,33 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			z-index: 2;
 			top: 4px;
 			right: 6px;
-			display: inline-flex;
-			width: 26px;
+			display: block;
+			width: 12px;
 			height: 12px;
-			align-items: center;
-			gap: 2px;
-			opacity: 0;
 			pointer-events: none;
-			animation: tablance-copy-feedback 1050ms ease-out forwards;
 			>span {
 				display: block;
+				position: absolute;
+				inset: 0;
 				width: 12px;
 				height: 12px;
-				flex: 0 0 12px;
+				opacity: 0;
 			}
 			>.tablance-copy-feedback-operation {
 				@include tablance-mask-icon($tablance-copy-icon);
-				background-color: var(--tablance-muted-color);
+				background-color: var(--tablance-indicator-color);
+				animation: tablance-copy-feedback-operation 1350ms linear forwards;
 			}
 			>.tablance-copy-feedback-success {
 				@include tablance-mask-icon($tablance-check-icon);
-				background-color: var(--tablance-accent-color);
+				inset: auto;
+				top: 50%;
+				left: 50%;
+				width: 18px;
+				height: 18px;
+				background-color: var(--tablance-indicator-color);
+				transform: translate(-50%, -50%);
+				animation: tablance-copy-feedback-success 1350ms linear forwards;
 			}
 		}
 		&:not(.details) {
@@ -458,10 +464,15 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		from { rotate: 0deg; }
 		to { rotate: -360deg; }
 	}
-	@keyframes tablance-copy-feedback {
-		0% { opacity: 0; transform: translateY(1px); }
-		8%, 62% { opacity: .82; transform: translateY(0); }
-		100% { opacity: 0; transform: translateY(-1px); }
+	@keyframes tablance-copy-feedback-operation {
+		0% { opacity: 0; }
+		5%, 58% { opacity: 1; }
+		74%, 100% { opacity: 0; }
+	}
+	@keyframes tablance-copy-feedback-success {
+		0%, 22% { opacity: 0; }
+		34%, 78% { opacity: 1; }
+		100% { opacity: 0; }
 	}
 	.cell-cursor.editable-indicator:not(.edit-mode)::before,
 	.editable-indicator:not(.cell-cursor):hover::before {
@@ -571,10 +582,13 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		.tablance-cell-state.read-only.read-only-activation-feedback>span.title::after {
 			animation: none;
 		}
-		.cell-cursor>.tablance-copy-feedback {
+		.cell-cursor>.tablance-copy-feedback>.tablance-copy-feedback-operation {
 			animation: none;
-			opacity: .82;
-			transform: none;
+			opacity: 0;
+		}
+		.cell-cursor>.tablance-copy-feedback>.tablance-copy-feedback-success {
+			animation: none;
+			opacity: 1;
 		}
 	}
 	.search {
@@ -800,6 +814,10 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 
 			.tablance-icon-trash {
 				@include tablance-mask-icon($tablance-trash-icon);
+			}
+
+			.tablance-icon-copy {
+				@include tablance-mask-icon($tablance-copy-icon);
 			}
 
 			.tablance-icon-restore {

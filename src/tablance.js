@@ -107,6 +107,8 @@ const DEFAULT_LANG=Object.freeze({
 	booleanTrue:"Yes",
 	booleanFalse:"No",
 	copiedToClipboard:"Copied to clipboard!",
+	copyMenuLabel:"Copy...",
+	copyWholeRow:"Copy whole row",
 	insertEntry:"Insert new",
 	insertRow:"Insert new",
 	creationValidationFailed:"Invalid entry. Please check the fields and try again.",
@@ -230,9 +232,10 @@ class TablanceBase {
 	_selectedGroupEl;//the group table whose existing chevron represents the selected logical group
 	_cellStates=new WeakMap();//canonical functional state for every currently rendered cell element
 	_selectedCellState;//canonical state for the selected cell; DOM classes are styling hooks only
-	_activeAnchoredPopover=null;//internal shared lifecycle owner for help/menu anchored popovers
+	_activeAnchoredPopover=null;//internal shared lifecycle owner for help/menu/copy anchored popovers
 	_helpPopoverController;
 	_menuPopoverController;
+	_copyMenuPopoverController;
 	_activeVerticalLayout=null;//logical layout whose preferred column is active during vertical navigation
 	_activeVerticalLayoutColumnKey=null;
 	_pendingColumnCursorRemap=null;//row/column anchor restored after an effective column-set rebuild
@@ -1828,18 +1831,262 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_getDisplayValue(schemaNode,dataObj,mainIndex,stripHtml=false,instanceNode=null) {
+		if (!schemaNode)
+			return;
 		const {value,idValue,dependedValue}=this._getCellValueBundle(schemaNode,dataObj,mainIndex,instanceNode);
 		const payload=this._makeCallbackPayload(instanceNode??null,{value,idValue,dependedValue,rowData: dataObj},{
 			schemaNode,mainIndex,rowData: dataObj});
-		let displayVal=schemaNode?.render?schemaNode.render(payload):value;
-		if (stripHtml&&schemaNode?.html&&typeof displayVal==="string") {
-			const htmlToTextDiv=this._htmlToTextDiv??=(typeof document!=="undefined"?document.createElement("div"):null);
+		let displayVal;
+		if (schemaNode.type==="group")
+			displayVal=schemaNode.closedRender?.(dataObj);
+		else if (schemaNode.render)
+			displayVal=schemaNode.render(payload);
+		else if (schemaNode.input?.type==="select") {
+			// Dynamic selects without render deliberately have no closed-cell presentation;
+			// preserve that existing rule.
+			if (typeof schemaNode.input.options==="function"&&!schemaNode.input.boolean)
+				displayVal="";
+			else {
+				const normalizedValue=this._getSelectValue(value);
+				const option=this._getSelectOptions(schemaNode.input,schemaNode,dataObj,mainIndex,instanceNode)
+					.find(candidate=>schemaNode.input.boolean
+						?this._getSelectValue(candidate)===normalizedValue
+						:this._getSelectValue(candidate)==normalizedValue);
+				displayVal=option?.text??value??"";
+			}
+		} else
+			displayVal=value;
+		if (stripHtml)
+			return this._clipboardPrimitiveRepresentation(displayVal,
+				schemaNode.type==="group"?schemaNode.closedRenderHtml===true:schemaNode.html===true).text;
+		return displayVal;
+	}
+
+	_clipboardPrimitiveRepresentation(value,html=false) {
+		if (value==null)
+			return {available:false,text:""};
+		if (!["string","number","bigint","boolean"].includes(typeof value))
+			return {available:false,text:""};
+		let text=String(value);
+		if (html&&typeof value==="string") {
+			const htmlToTextDiv=this._htmlToTextDiv??=(typeof document!=="undefined"
+				?document.createElement("div"):null);
 			if (htmlToTextDiv) {
-				htmlToTextDiv.innerHTML=displayVal;
-				displayVal=htmlToTextDiv.textContent??"";
+				htmlToTextDiv.innerHTML=text;
+				text=htmlToTextDiv.textContent??"";
 			}
 		}
-		return displayVal;
+		return {available:true,text:text.trim()};
+	}
+
+	_resolveClipboardRepresentation(schemaNode,dataObj,mainIndex,instanceNode=null) {
+		if (!schemaNode)
+			return {available:false,text:""};
+		const valueBundle=this._getCellValueBundle(schemaNode,dataObj,mainIndex,instanceNode);
+		if (schemaNode.type==="group")
+			valueBundle.value=dataObj;
+		const displayValue=this._getDisplayValue(schemaNode,dataObj,mainIndex,false,instanceNode);
+		const displayIsHtml=schemaNode.type==="group"
+			?schemaNode.closedRenderHtml===true:schemaNode.html===true;
+		const displayRepresentation=this._clipboardPrimitiveRepresentation(displayValue,displayIsHtml);
+		const payload=this._makeCallbackPayload(instanceNode,{...valueBundle,displayValue,
+			displayText:displayRepresentation.available?displayRepresentation.text:undefined,rowData:dataObj},{
+			schemaNode,mainIndex,rowData:dataObj});
+		if (typeof schemaNode.clipboardValue==="function")
+			return this._clipboardPrimitiveRepresentation(schemaNode.clipboardValue(payload));
+		if (schemaNode.type==="field"||(schemaNode.type==="group"&&schemaNode.closedRender))
+			return displayRepresentation;
+		return {available:false,text:""};
+	}
+
+	_applyLogicalDataPath(schemaNode,dataObj) {
+		if (!schemaNode?.dataPath)
+			return dataObj;
+		const path=Array.isArray(schemaNode.dataPath)?schemaNode.dataPath
+			:String(schemaNode.dataPath).split(".").filter(Boolean);
+		return this._getValueByPath(dataObj,path);
+	}
+
+	_orderLogicalRepeatedEntries(repeated) {
+		const entries=[...(repeated.children??[])];
+		const compare=repeated.schemaNode?.sortCompare;
+		const grouping=this._getRepeatedGrouping(repeated);
+		if (!grouping&&typeof compare!=="function")
+			return entries;
+		const previousOrder=new Map(entries.map((entry,index)=>[entry,index]));
+		if (!grouping)
+			return entries.sort((a,b)=>compare(a.dataObj,b.dataObj,repeated.parent?.dataObj,repeated)
+				||(previousOrder.get(a)-previousOrder.get(b)));
+		const buckets=new Map;
+		const keyByEntry=new Map;
+		for (const entry of entries) {
+			const key=this._getRepeatedGroupKey(grouping,entry,repeated.parent?.dataObj,repeated);
+			keyByEntry.set(entry,key);
+			if (!buckets.has(key))
+				buckets.set(key,[]);
+			buckets.get(key).push(entry);
+		}
+		const orderedKeys=[];
+		const includedKeys=new Set;
+		for (const definition of grouping.definitions)
+			if (buckets.has(definition.key)) {
+				orderedKeys.push(definition.key);
+				includedKeys.add(definition.key);
+			}
+		for (const entry of entries) {
+			const key=keyByEntry.get(entry);
+			if (!includedKeys.has(key)) {
+				orderedKeys.push(key);
+				includedKeys.add(key);
+			}
+		}
+		const definitionByKey=new Map(grouping.definitions.map(definition=>[definition.key,definition]));
+		repeated.presentationGroups=orderedKeys.map(key=>{
+			const groupEntries=buckets.get(key);
+			if (typeof compare==="function")
+				groupEntries.sort((a,b)=>compare(a.dataObj,b.dataObj,repeated.parent?.dataObj,repeated)
+					||(previousOrder.get(a)-previousOrder.get(b)));
+			return {key,title:definitionByKey.get(key)?.title??String(key??""),entries:groupEntries};
+		});
+		return repeated.presentationGroups.flatMap(group=>group.entries);
+	}
+
+	_buildLogicalDetailsTree(schemaNode,rowData,mainIndex) {
+		const build=(nodeSchema,dataObj,parent=null,index=null)=>{
+			const scopedData=this._applyLogicalDataPath(nodeSchema,dataObj);
+			const presentedData=scopedData&&typeof scopedData==="object"?scopedData:{};
+			const proto=nodeSchema.type==="field"?FIELD_INSTANCE_NODE_PROTOTYPE
+				:nodeSchema.type==="group"?GROUP_INSTANCE_NODE_PROTOTYPE
+				:nodeSchema.type==="repeated"?REPEATED_INSTANCE_NODE_PROTOTYPE
+				:INSTANCE_NODE_PROTOTYPE;
+			const node=Object.assign(this._createInstanceNode(parent,index,proto),{
+				schemaNode:nodeSchema,dataObj:presentedData,rowIndex:mainIndex,children:[]
+			});
+			if (nodeSchema.type==="repeated") {
+				const dataArray=presentedData[nodeSchema.dataKey];
+				node.dataObj=Array.isArray(dataArray)?dataArray:[];
+				node.dataArray=Array.isArray(dataArray)?dataArray:undefined;
+				node.parentData=!Array.isArray(presentedData)?presentedData:null;
+				node.children=node.dataObj.map((entry,entryIndex)=>build(nodeSchema.entry,entry,node,entryIndex));
+				node.children=this._orderLogicalRepeatedEntries(node);
+				node.children.forEach((entry,entryIndex)=>entry.index=entryIndex);
+			} else if (Array.isArray(nodeSchema.entries)) {
+				node.children=nodeSchema.entries.map((child,childIndex)=>build(child,presentedData,node,childIndex));
+			}
+			return node;
+		};
+		return schemaNode?build(schemaNode,rowData):null;
+	}
+
+	_isLogicalDetailsNodeVisible(instanceNode,mainIndex) {
+		const schemaNode=instanceNode?.schemaNode;
+		if (typeof schemaNode?.visibleIf!=="function")
+			return true;
+		let value=this._getTargetVal(false,schemaNode,instanceNode,instanceNode.dataObj);
+		if (schemaNode.input?.type==="select"&&value?.value)
+			value=value.value;
+		const idValue=schemaNode.dataKey!=null?instanceNode.dataObj?.[schemaNode.dataKey]:undefined;
+		const dependedValue=(schemaNode.dependsOnDataPath||schemaNode.dependsOnDataPaths
+			||schemaNode.dependsOnCellPaths)?value:undefined;
+		return !!schemaNode.visibleIf(this._makeCallbackPayload(instanceNode,{value,idValue,dependedValue},{
+			schemaNode,mainIndex,rowData:instanceNode.dataObj
+		}));
+	}
+
+	_walkLogicalDetails(root,visitor,{includeHidden=false,mainIndex=root?.rowIndex??0}={}) {
+		const enter=typeof visitor==="function"?visitor:visitor?.enter;
+		const leave=typeof visitor==="object"?visitor?.leave:null;
+		const visit=node=>{
+			if (!node||(!includeHidden&&!this._isLogicalDetailsNodeVisible(node,mainIndex)))
+				return;
+			const descend=enter?.(node)!==false;
+			if (descend)
+				for (const child of node.children??[])
+					visit(child);
+			leave?.(node,{descended:descend});
+		};
+		visit(root);
+	}
+
+	_clipboardRowTitle(schemaNode) {
+		const representation=this._clipboardPrimitiveRepresentation(schemaNode?.title,
+			schemaNode?.titleHtml===true);
+		return representation.available?representation.text:"";
+	}
+
+	_formatClipboardRowLine(title,text,depth=0,heading=false) {
+		const indent="  ".repeat(depth);
+		if (heading)
+			return [`${indent}${title}:`];
+		const valueLines=String(text).split(/\r?\n/);
+		if (!title)
+			return valueLines.map(line=>line?`${indent}${line}`:"");
+		if (valueLines.length===1)
+			return [`${indent}${title}: ${valueLines[0]}`];
+		return [`${indent}${title}:`,...valueLines.map(line=>line?`${indent}  ${line}`:"")];
+	}
+
+	_defaultClipboardRowText(rowData,mainIndex) {
+		const mainLines=[];
+		for (const schemaNode of this._colSchemaNodes??[]) {
+			if (schemaNode.type!=="field"||schemaNode.input?.type==="button")
+				continue;
+			const representation=this._resolveClipboardRepresentation(schemaNode,rowData,mainIndex,null);
+			if (!representation.available||representation.text==="")
+				continue;
+			const title=this._clipboardRowTitle(schemaNode)||String(schemaNode.dataKey??"");
+			mainLines.push(...this._formatClipboardRowLine(title,representation.text));
+		}
+		const detailsRoot=this._buildLogicalDetailsTree(this._schema.details,rowData,mainIndex);
+		const detailsLinesByNode=new Map;
+		const depthByNode=new Map;
+		this._walkLogicalDetails(detailsRoot,{
+			enter:node=>{
+				const parentDepth=depthByNode.get(node.parent)??0;
+				const title=this._clipboardRowTitle(node.schemaNode);
+				const depth=node.parent?parentDepth:0;
+				depthByNode.set(node,depth+(title?1:0));
+				if (node.schemaNode.type!=="field"&&node.schemaNode.type!=="group")
+					return;
+				const representation=this._resolveClipboardRepresentation(
+					node.schemaNode,node.dataObj,mainIndex,node);
+				if (!representation.available&&node.schemaNode.type==="group")
+					return;
+				const fieldTitle=title||(node.schemaNode.type==="field"?String(node.schemaNode.dataKey??""):"");
+				detailsLinesByNode.set(node,representation.available&&representation.text!==""
+					?this._formatClipboardRowLine(fieldTitle,representation.text,depth):[]);
+				return false;
+			},
+			leave:node=>{
+				if (detailsLinesByNode.has(node))
+					return;
+				const childLines=(node.children??[]).flatMap(child=>detailsLinesByNode.get(child)??[]);
+				const title=this._clipboardRowTitle(node.schemaNode);
+				const parentDepth=depthByNode.get(node.parent)??0;
+				detailsLinesByNode.set(node,childLines.length&&title
+					?[...this._formatClipboardRowLine(title,"",node.parent?parentDepth:0,true),...childLines]
+					:childLines);
+			}
+		},{mainIndex});
+		const detailsLines=detailsLinesByNode.get(detailsRoot)??[];
+		return [...mainLines,...(mainLines.length&&detailsLines.length?[""]:[]),...detailsLines].join("\n");
+	}
+
+	_resolveClipboardRowRepresentation(rowData,mainIndex=this._filteredData?.indexOf(rowData)??-1) {
+		if (!rowData||mainIndex<0)
+			return {available:false,text:""};
+		const defaultText=this._defaultClipboardRowText(rowData,mainIndex);
+		if (typeof this._schema.clipboardRowValue!=="function")
+			return {available:true,text:defaultText};
+		const payload=this._makeCallbackPayload(null,{defaultText,
+			visibleColumns:[...(this._colSchemaNodes??[])],detailsSchema:this._schema.details},{
+			schemaNode:this._schema,rowData,mainIndex
+		});
+		return this._clipboardPrimitiveRepresentation(this._schema.clipboardRowValue(payload));
+	}
+
+	_resolveRowClipboardRepresentation(rowData,mainIndex=this._filteredData?.indexOf(rowData)??-1) {
+		return this._resolveClipboardRowRepresentation(rowData,mainIndex);
 	}
 
 	/**
@@ -3153,6 +3400,19 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				onSelect:rowAction?({rowData})=>this.trashRow(rowData,operation)
 					:()=>this.setLifecycleMode(this._isTrashMode()?"active":"trash"),
 			};
+		} else if (action.type==="copyRow") {
+			if (!payload.rowData)
+				throw new Error('A menu action with type "copyRow" requires a row menu.');
+			const representation=this._resolveRowClipboardRepresentation(payload.rowData,payload.mainIndex);
+			const hasLabel=["label","text","title"].some(key=>Object.prototype.hasOwnProperty.call(action,key));
+			const configuredDisabled=action.disabled;
+			action={...action,...(!hasLabel?{text:this.lang.copyWholeRow}:{}),
+				...(!Object.prototype.hasOwnProperty.call(action,"icon")?{icon:"copy"}:{}),
+				disabled:actionPayload=>!representation.available
+					||(typeof configuredDisabled==="function"
+						?configuredDisabled(actionPayload):configuredDisabled)===true,
+				onSelect:({rowData,mainIndex})=>this._copyRowClipboardText(rowData,mainIndex,representation),
+			};
 		}
 		const actionPayload={...payload,action};
 		const resolve=value=>typeof value==="function"?value(actionPayload):value;
@@ -3340,6 +3600,62 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_closeMenu(restoreFocus=false) {
 		return this._closeAnchoredPopover(this._menuPopoverController,restoreFocus);
+	}
+
+	_ensureCopyMenuPopover() {
+		return this._ensureAnchoredPopover("_copyMenuPopoverController",{
+			className:"tablance-menu-popover tablance-copy-menu-popover",idPrefix:"tablance-copy-menu",
+		}).el;
+	}
+
+	_copyMenuActions(representation,rowData,mainIndex) {
+		return [{label:this.lang.copyWholeRow,disabled:!representation.available,
+			onSelect:()=>this._copyRowClipboardText(rowData,mainIndex,representation)}];
+	}
+
+	_openCopyMenu(event=null) {
+		const context=this._getActiveClipboardCellContext();
+		if (!context)
+			return false;
+		const trigger=this._selectedCell;
+		const groupChevron=context.instanceNode?.schemaNode?.type==="group"
+			?context.instanceNode.groupChevronEl:null;
+		const target=groupChevron?.isConnected&&groupChevron.getClientRects().length
+			?groupChevron:trigger;
+		if (this._copyMenuState?.trigger===trigger) {
+			this._closeCopyMenu(true);
+			return true;
+		}
+		this._closeHelp();
+		this._closeMenu();
+		const rowData=this._filteredData?.[context.mainIndex];
+		const representation=this._resolveRowClipboardRepresentation(rowData,context.mainIndex);
+		const menu=this._ensureCopyMenuPopover();
+		menu.setAttribute("role","menu");
+		menu.setAttribute("aria-label",this.lang.copyMenuLabel);
+		menu.tabIndex=-1;
+		const controller=this._copyMenuPopoverController;
+		const payload=this._makeCallbackPayload(context.instanceNode,{event},{
+			schemaNode:context.schemaNode,mainIndex:context.mainIndex,rowData
+		});
+		const state={controller,payload,actions:this._copyMenuActions(representation,rowData,context.mainIndex),
+			items:[],kind:"copy",
+			close:restore=>this._closeCopyMenu(restore)};
+		this._renderMenuActions(menu,state);
+		this._copyMenuState=this._openAnchoredPopover(controller,{
+			trigger,target,viewportMargin:8,state,
+			onKeyDown:(e,openState)=>this._handleMenuKeyDown(e,openState),
+			onClose:()=>this._copyMenuState=null,
+			restoreFocusOnOutsidePointer:true,
+		});
+		if (!this._copyMenuState)
+			return false;
+		this._initializeMenuFocus(this._copyMenuState,event);
+		return true;
+	}
+
+	_closeCopyMenu(restoreFocus=false) {
+		return this._closeAnchoredPopover(this._copyMenuPopoverController,restoreFocus);
 	}
 
 	_ensureTableMenuPopover() {
@@ -4242,9 +4558,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			break; case "NumpadSubtract":
 				this._contractRow(this._selectedCell.closest(".main-table>tbody>tr"));
 			break; case "KeyC":
-				if (e.ctrlKey&&!e.metaKey&&!e.shiftKey) {
+				if (e.ctrlKey&&!e.metaKey) {
 					e.preventDefault();
-					this._copySelectedCellText();
+					if (e.shiftKey)
+						this._openCopyMenu(e);
+					else
+						this._copySelectedCellText();
 				}
 			break; case "Enter": case "NumpadEnter": case "Space":
 				if (e.code=="Space")
@@ -4273,21 +4592,42 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_copySelectedCellText() {
-		// Copy displayed text of the selected field when not in edit mode.
+		const context=this._getActiveClipboardCellContext();
+		if (!context)
+			return;
+		const representation=this._resolveClipboardRepresentation(context.schemaNode,context.dataObj,
+			context.mainIndex,context.instanceNode);
+		if (!representation.available||representation.text==="")
+			return;
+		this._writeClipboardText(representation.text);
+	}
+
+	_copyRowClipboardText(rowData,mainIndex,
+		representation=this._resolveRowClipboardRepresentation(rowData,mainIndex)) {
+		if (!representation.available)
+			return false;
+		this._clearCopyFeedback();
+		this._writeClipboardText(representation.text,{showFeedback:false});
+		return true;
+	}
+
+	_getActiveClipboardCellContext() {
 		if (this._inEditMode||this._selectedCellState?.selectable===false
-			||this._activeSchemaNode?.type!=="field"||!this._selectedCell)
-			return;
-		const text=this._getDisplayedCellText();
-		if (!text)
-			return;
-		const fallback=()=>this._copySelectedCellText_fallback(text);
+			||!this._activeSchemaNode||!this._selectedCell)
+			return null;
+		return {schemaNode:this._activeSchemaNode,dataObj:this._cellCursorDataObj,
+			mainIndex:this._mainRowIndex,instanceNode:this._activeDetailsCell};
+	}
+
+	_writeClipboardText(text,{showFeedback=true}={}) {
+		const fallback=()=>this._copySelectedCellText_fallback(text,showFeedback);
 		if (navigator?.clipboard?.writeText)
-			navigator.clipboard.writeText(text).then(()=>this._showCopyFeedback(),fallback);
+			navigator.clipboard.writeText(text).then(()=>showFeedback&&this._showCopyFeedback(),fallback);
 		else
 			fallback();
 	}
 
-	_copySelectedCellText_fallback(text) {
+	_copySelectedCellText_fallback(text,showFeedback=true) {
 		// Fallback using a hidden textarea; refocus table afterward so the cursor stays visible.
 		const ta=document.createElement("textarea");
 		ta.value=text;
@@ -4298,7 +4638,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		try { document.execCommand("copy"); } catch(_e) {}
 		ta.remove();
 		this.rootEl?.focus({preventScroll:true});
-		this._showCopyFeedback();
+		if (showFeedback)
+			this._showCopyFeedback();
 	}
 
 	_showCopyFeedback() {
@@ -4313,11 +4654,47 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			icon.className=`tablance-copy-feedback-${part}`;
 			icon.setAttribute("aria-hidden","true");
 		}
+		if (this._activeDetailsCell) {
+			const anchor=this._getDetailsCopyFeedbackAnchor(this._activeDetailsCell);
+			if (anchor) {
+				const cursorRect=this._cellCursor.getBoundingClientRect();
+				feedback.style.left=`${Math.min(anchor.right-cursorRect.left+6,cursorRect.width-18)}px`;
+				feedback.style.top=`${Math.max(0,Math.min(anchor.top-cursorRect.top+(anchor.height-12)/2,
+					cursorRect.height-12))}px`;
+				feedback.style.right="auto";
+			}
+		}
 		feedback.addEventListener("animationend",()=>this._clearCopyFeedback(feedback),{once:true});
 		this._cellCursor.appendChild(feedback);
 		this._copyFeedbackElement=feedback;
-		this._copyFeedbackTimer=setTimeout(()=>this._clearCopyFeedback(feedback),1100);
+		this._copyFeedbackTimer=setTimeout(()=>this._clearCopyFeedback(feedback),1400);
 		return true;
+	}
+
+	_getDetailsCopyFeedbackAnchor(instanceNode) {
+		if (instanceNode.schemaNode?.type==="group"&&instanceNode.groupChevronEl
+			&&!instanceNode.groupChevronEl.hidden) {
+			const rect=instanceNode.groupChevronEl.getBoundingClientRect();
+			if (rect.width&&rect.height)
+				return rect;
+		}
+		const content=instanceNode.schemaNode?.type==="group"
+			?instanceNode.el.querySelector(":scope>tbody>tr.group-render .group-closed-content")
+				??instanceNode.el:instanceNode.el;
+		if (!content)
+			return null;
+		const walker=document.createTreeWalker(content,NodeFilter.SHOW_TEXT);
+		let textNode,lastRect;
+		while ((textNode=walker.nextNode())) {
+			if (!textNode.textContent.trim())
+				continue;
+			const range=document.createRange();
+			range.selectNodeContents(textNode);
+			for (const rect of range.getClientRects())
+				if (rect.width&&rect.height)
+					lastRect=rect;
+		}
+		return lastRect??content.getBoundingClientRect();
 	}
 
 	_clearCopyFeedback(feedback=this._copyFeedbackElement) {
@@ -9375,9 +9752,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_rowSatisfiesFilters(filterString,dataRow,mainIndex,selectOptsCache,includeDetails=true,caseSensitive=false) {
 		const normalizedFilter=normalizeSearchWhitespace(filterString);
 		const filterNeedle=caseSensitive?normalizedFilter:normalizedFilter.toLowerCase();
-		const shouldSkipField=schemaNode=>
-			schemaNode?.input?.type==="button"//buttons carry no filterable text
-			||schemaNode?.dependsOnCellPaths;//needs live instance nodes; skip for now
+		const shouldSkipField=schemaNode=>schemaNode?.input?.type==="button";//buttons carry no filterable text
 		const normalizeRepresentation=(value,html=false)=>{
 			if (value==null)
 				return null;
@@ -9396,25 +9771,25 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 			return normalizeSearchWhitespace(text);
 		};
-		const fieldRepresentations=(schemaNode,dataObj,mainIndex)=>{
+		const fieldRepresentations=(schemaNode,dataObj,mainIndex,instanceNode=null)=>{
 			if (!schemaNode||shouldSkipField(schemaNode)||dataObj==null)
 				return [];
-			const {value,idValue,dependedValue}=this._getCellValueBundle(schemaNode,dataObj,mainIndex);
+			const {value,idValue,dependedValue}=this._getCellValueBundle(schemaNode,dataObj,mainIndex,instanceNode);
 			let renderedValue;
 			if (schemaNode.render) {
-				const renderPayload=this._makeCallbackPayload(null,{value,idValue,dependedValue,rowData:dataObj},{
+				const renderPayload=this._makeCallbackPayload(instanceNode,{value,idValue,dependedValue,rowData:dataObj},{
 					schemaNode,mainIndex,rowData:dataObj});
 				renderedValue=schemaNode.render(renderPayload);
 			} else if (schemaNode.input?.type==="select") {
 				if (schemaNode.input.boolean) {
-					const option=this._getSelectOptions(schemaNode.input,schemaNode,dataObj,mainIndex)
+					const option=this._getSelectOptions(schemaNode.input,schemaNode,dataObj,mainIndex,instanceNode)
 						.find(opt=>this._getSelectValue(opt)===this._getSelectValue(value));
 					renderedValue=option?.text;
 				} else {
 					const optionsSrc=schemaNode.input.options;
 					if (typeof optionsSrc==="function") {
 						if (schemaNode.searchValue) {
-							const option=this._getSelectOptions(schemaNode.input,schemaNode,dataObj,mainIndex)
+							const option=this._getSelectOptions(schemaNode.input,schemaNode,dataObj,mainIndex,instanceNode)
 								.find(opt=>this._getSelectValue(opt)===this._getSelectValue(value));
 							renderedValue=option?.text;
 						}
@@ -9425,7 +9800,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				}
 			} else
 				renderedValue=value;
-			const payload=this._makeCallbackPayload(null,
+			const payload=this._makeCallbackPayload(instanceNode,
 				{value,idValue,dependedValue,renderedValue,rowData:dataObj},{schemaNode,mainIndex,rowData:dataObj});
 			const result=schemaNode.searchValue?schemaNode.searchValue(payload):renderedValue;
 			const candidates=Array.isArray(result)?result:[result];
@@ -9436,44 +9811,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					representations.push(normalized);
 			}
 			return representations;
-		};
-		// Some details containers re-root their data with dataPath; adjust before reading children.
-		const applyDataPath=(schemaNode,dataObj)=>{
-			if (!schemaNode?.dataPath)
-				return dataObj;
-			const path=Array.isArray(schemaNode.dataPath)?schemaNode.dataPath:String(schemaNode.dataPath).split(".").filter(Boolean);
-			let cur=dataObj;
-			for (const key of path) {
-				if (!cur||typeof cur!=="object")
-					return undefined;
-				cur=cur[key];
-			}
-			return cur;
-		};
-		// Depth-first walk of details schema; repeated nodes fan out across all entries.
-		const collectDetails=(schemaNode,dataObj,mainIndex,representations)=>{
-			if (!schemaNode)
-				return;
-			const scopedData=applyDataPath(schemaNode,dataObj);
-			switch (schemaNode.type) {
-				case "field":
-					representations.push(...fieldRepresentations(schemaNode,scopedData,mainIndex));
-					return;
-				case "repeated": {
-					const repeatArr=scopedData?.[schemaNode.dataKey];
-					if (!Array.isArray(repeatArr))
-						return;
-					for (const item of repeatArr)//fan out over each repeated entry
-						collectDetails(schemaNode.entry,item,mainIndex,representations);
-					return;
-				}
-				case "group":
-				case "list":
-				case "lineup":
-					for (const child of schemaNode.entries)//depth-first search down details schema
-						collectDetails(child,scopedData,mainIndex,representations);
-					return;
-			}
 		};
 		const colsToFilterBy=[];
 		for (let col of this._colSchemaNodes)
@@ -9491,8 +9828,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		if (includeDetails&&cacheEntry.details==null) {
 			cacheEntry.details=[];
-			if (this._schema.details)
-				collectDetails(this._schema.details,dataRow,mainIndex,cacheEntry.details);
+			const detailsRoot=this._buildLogicalDetailsTree(this._schema.details,dataRow,mainIndex);
+			this._walkLogicalDetails(detailsRoot,instanceNode=>{
+				if (instanceNode.schemaNode.type==="field")
+					cacheEntry.details.push(...fieldRepresentations(instanceNode.schemaNode,
+						instanceNode.dataObj,mainIndex,instanceNode));
+			},{includeHidden:true,mainIndex});
 		}
 		const matches=representation=>{
 			const haystack=caseSensitive?representation:representation.toLowerCase();
@@ -10163,22 +10504,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (schemaNode.input?.type==="button") {
 			this._generateButton(schemaNode,mainIndex,el,scopedData,instanceNode);
 		} else if (schemaNode.input?.type==="select"&&schemaNode.input.boolean&&!schemaNode.render) {
-			const rawVal=scopedData[schemaNode.dataKey];
-			const option=this._getSelectOptions(schemaNode.input,schemaNode,scopedData,mainIndex,instanceNode)
-				.find(opt=>this._getSelectValue(opt)===this._getSelectValue(rawVal));
-			this._renderBooleanSelectValue(el,this._getSelectValue(rawVal),option?.text);
+			this._renderBooleanSelectValue(el,this._getSelectValue(valueBundle.value),
+				this._getDisplayValue(schemaNode,scopedData,mainIndex,false,instanceNode));
 		} else {
-			let newCellContent;
-			if (schemaNode.render||schemaNode.input?.type!="select") {
-				if (schemaNode.render) {
-					const payload=this._makeCallbackPayload(instanceNode,{...valueBundle,rowData: scopedData},{
-						schemaNode,mainIndex,rowData: scopedData});
-					newCellContent=schemaNode.render(payload);
-				} else
-					newCellContent=valueBundle.value;
-			} else { //if (schemaNode.input?.type==="select") {
-				const rawVal=scopedData[schemaNode.dataKey];
-				if (typeof schemaNode.input?.options==="function") {
+			if (!schemaNode.render&&schemaNode.input?.type==="select"
+				&&typeof schemaNode.input.options==="function") {
 					console.warn("Performance notice:\n" +
 						"This select field uses dynamic options but does not define render().\n\n" +
 						"As a result, closed-cell rendering may regenerate the full options list, " +
@@ -10186,14 +10516,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 						"Adding render() is recommended.\n" +
 						"This warning can be suppressed by setting " +
 						"`allowDynamicOptionsWithoutRender: true` on the input configuration.");
-						console.log(schemaNode);
-					newCellContent="";
-				} else {
-					const selOptObj=this._getSelectOptions(schemaNode.input,schemaNode,scopedData,mainIndex,instanceNode)
-						.find(opt=>this._getSelectValue(opt)==this._getSelectValue(rawVal));
-					newCellContent=selOptObj?.text??rawVal??"";
-				}
+					console.log(schemaNode);
 			}
+			const newCellContent=this._getDisplayValue(schemaNode,scopedData,mainIndex,false,instanceNode);
 			if (schemaNode.html)
 				el.innerHTML=newCellContent??"";
 			else
