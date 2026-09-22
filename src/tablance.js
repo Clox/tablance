@@ -5649,7 +5649,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			target.classList.remove("navigation-activation-feedback");
 			if (this._navigationFeedbackTarget===target)
 				this._navigationFeedbackTarget=null;
-		},180);
+		},320);
 		return true;
 	}
 
@@ -5743,7 +5743,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				return;
 			this._cellCursor.classList.add("tablance-navigation-cursor-animating");
 			this._cellCursor.style.transform="translate(0px, 0px)";
-			transition.fallback=setTimeout(()=>this._finishNavigationCursorTransition(transition),210);
+			transition.fallback=setTimeout(()=>this._finishNavigationCursorTransition(transition),285);
 		});
 		return true;
 	}

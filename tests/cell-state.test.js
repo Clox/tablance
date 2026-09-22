@@ -3230,13 +3230,13 @@ try {
 	assert(navigationAnimationTable._activeSchemaNode.dataKey==="target"
 		&&navigationTransition&&navigationSource.classList.contains("navigation-activation-feedback")
 		&&arrowFeedback.animationName==="tablance-navigation-arrow-feedback"
-		&&arrowFeedback.animationDuration==="0.14s"
+		&&arrowFeedback.animationDuration==="0.28s"
 		&&Math.abs(cursorDestination.left-cursorBeforeNavigation.left)<.5,
 		"activating a navigation cell updates logical selection immediately while its arrow and cursor start visually at the source");
 	await new Promise(resolve=>requestAnimationFrame(resolve));
 	assert(navigationAnimationTable._cellCursor.classList.contains("tablance-navigation-cursor-animating")
-		&&getComputedStyle(navigationAnimationTable._cellCursor).transitionDuration==="0.15s",
-		"navigation cursor movement uses the same short ease-out timing as group presentation");
+		&&getComputedStyle(navigationAnimationTable._cellCursor).transitionDuration==="0.225s",
+		"navigation cursor movement uses its configured ease-out timing");
 	navigationAnimationTable._cellCursor.dispatchEvent(
 		new TransitionEvent("transitioncancel",{propertyName:"transform"}));
 	assert(!navigationAnimationTable._navigationCursorTransition

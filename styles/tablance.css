@@ -185,7 +185,7 @@
   position: absolute;
 }
 .tablance .cell-cursor.tablance-navigation-cursor-animating {
-  transition: transform 150ms ease-out;
+  transition: transform 225ms ease-out;
   will-change: transform;
 }
 .tablance .cell-cursor.tablance-group-animation-clipped {
@@ -381,7 +381,7 @@
 }
 .tablance .action-indicator.navigation-activation-feedback::before,
 .tablance .tablance-cell-state.action-indicator.navigation-activation-feedback > span.title::after {
-  animation: tablance-navigation-arrow-feedback 140ms ease-out;
+  animation: tablance-navigation-arrow-feedback 280ms ease-out;
   transform-origin: center;
 }
 @keyframes tablance-navigation-arrow-feedback {

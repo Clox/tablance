@@ -228,7 +228,7 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 		//transition: left .15s ease-out,top .15s ease-out,height .15s ease-out,width .15s ease-out;
 		position: absolute;
 		&.tablance-navigation-cursor-animating {
-			transition: transform 150ms ease-out;
+			transition: transform 225ms ease-out;
 			will-change: transform;
 		}
 		&.tablance-group-animation-clipped {
@@ -421,7 +421,7 @@ $tablance-edit-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/200
 	}
 	.action-indicator.navigation-activation-feedback::before,
 	.tablance-cell-state.action-indicator.navigation-activation-feedback>span.title::after {
-		animation: tablance-navigation-arrow-feedback 140ms ease-out;
+		animation: tablance-navigation-arrow-feedback 280ms ease-out;
 		transform-origin: center;
 	}
 	@keyframes tablance-navigation-arrow-feedback {
