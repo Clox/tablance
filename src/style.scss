@@ -2255,6 +2255,85 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	}
 }
 
+.tablance .main-table>tbody>tr:not(.details)>td.tablance-range-cell,
+.tablance .details-grid>span.tablance-range-cell {
+	--tablance-range-edge: color-mix(in srgb, var(--tablance-accent-color) 65%, transparent);
+	--tablance-range-top-edge: transparent;
+	--tablance-range-bottom-edge: transparent;
+	--tablance-range-left-edge: transparent;
+	--tablance-range-right-edge: transparent;
+	background-color: color-mix(in srgb, var(--tablance-accent-color) 13%, var(--tablance-cell-background));
+	box-shadow: inset 0 1px var(--tablance-range-top-edge),
+		inset 0 -1px var(--tablance-range-bottom-edge),
+		inset 1px 0 var(--tablance-range-left-edge),
+		inset -1px 0 var(--tablance-range-right-edge);
+	&.tablance-range-top { --tablance-range-top-edge: var(--tablance-range-edge); }
+	&.tablance-range-bottom { --tablance-range-bottom-edge: var(--tablance-range-edge); }
+	&.tablance-range-left { --tablance-range-left-edge: var(--tablance-range-edge); }
+	&.tablance-range-right { --tablance-range-right-edge: var(--tablance-range-edge); }
+}
+
+.tablance .details-grid:has(>.tablance-grid-range-overlay)>span {
+	z-index: 1;
+}
+
+.tablance .details-grid>.tablance-grid-range-overlay {
+	z-index: 0;
+	box-sizing: border-box;
+	border: 1px solid color-mix(in srgb, var(--tablance-accent-color) 65%, transparent);
+	background-color: color-mix(in srgb, var(--tablance-accent-color) 13%, var(--tablance-cell-background));
+	pointer-events: none;
+}
+
+.tablance-range-copy-feedback-anchor {
+	position: fixed;
+	z-index: 10001;
+	pointer-events: none;
+	>.tablance-copy-feedback {
+		position: absolute;
+		top: 4px;
+		right: 3px;
+		display: block;
+		width: 12px;
+		height: 12px;
+		>span {
+			display: block;
+			position: absolute;
+			inset: 0;
+			width: 12px;
+			height: 12px;
+			opacity: 0;
+		}
+		>.tablance-copy-feedback-operation {
+			@include tablance-mask-icon($tablance-copy-icon);
+			background-color: var(--tablance-indicator-color);
+			animation: tablance-copy-feedback-operation 1350ms linear forwards;
+		}
+		>.tablance-copy-feedback-success {
+			@include tablance-mask-icon($tablance-check-icon);
+			inset: auto;
+			top: 50%;
+			left: 50%;
+			width: 18px;
+			height: 18px;
+			background-color: var(--tablance-indicator-color);
+			transform: translate(-50%, -50%);
+			animation: tablance-copy-feedback-success 1350ms linear forwards;
+		}
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tablance-range-copy-feedback-anchor .tablance-copy-feedback-operation {
+		animation: none;
+		opacity: 0;
+	}
+	.tablance-range-copy-feedback-anchor .tablance-copy-feedback-success {
+		animation: none;
+		opacity: 1;
+	}
+}
+
 
 
 .pika-container {//added by clox

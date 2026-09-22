@@ -6248,6 +6248,160 @@ try {
 				&&nativeFocusTable._mainColIndex===1,
 				"a non-Tab navigation key exits whole-table focus mode and resumes cell interaction");
 	};
+	const rangeHost=host();
+	rangeHost.style.height="190px";
+	const rangeTable=new Tablance(rangeHost,{
+		main:{columns:[{type:"select"},{dataKey:"a",input:{type:"text"}},{type:"menu",actions:[]},
+			{dataKey:"b"},{dataKey:"c"}]},
+		details:{type:"list",entries:[{dataKey:"detail"}]},
+	},true,true,{searchbar:false,ordering:false});
+	rangeTable.setData(Array.from({length:40},(_value,index)=>({
+		a:`A${index}`,b:`B${index}`,c:`C${index}`,detail:`D${index}`,
+	})));
+	await tick();
+	rangeTable.selectCell(0,"a");
+	key(rangeTable.rootEl,"ArrowRight","ArrowRight",{shiftKey:true});
+	assert(rangeTable._cellRange?.surface==="main"&&rangeTable._cellRange.anchor.col===0
+		&&rangeTable._cellRange.head.col===1&&rangeTable._mainColIndex===3,
+		"Shift+Right skips control columns and retains the main-table anchor");
+	key(rangeTable.rootEl,"ArrowDown","ArrowDown",{shiftKey:true});
+	assert(rangeTable._cellRange.head.row===1&&rangeTable._mainRowIndex===1
+		&&!rangeTable._activeDetailsCell&&rangeTable._rangeBounds().bottom===1,
+		"Shift+Down grows within main data cells instead of entering open details");
+	key(rangeTable.rootEl,"ArrowLeft","ArrowLeft",{shiftKey:true});
+	key(rangeTable.rootEl,"ArrowUp","ArrowUp",{shiftKey:true});
+	assert(rangeTable._cellRange.anchor.row===0&&rangeTable._cellRange.head.row===0
+		&&rangeTable._cellRange.head.col===0,
+		"Shift arrows contract to the fixed anchor");
+	key(rangeTable.rootEl,"ArrowDown","ArrowDown",{shiftKey:true});
+	key(rangeTable.rootEl,"ArrowDown","ArrowDown",{shiftKey:true});
+	assert(rangeTable._cellRange.anchor.row===0&&rangeTable._cellRange.head.row===2,
+		"Shift arrows expand past the anchor without changing it");
+	const rangeCopyOriginal=navigator.clipboard;
+	let rangeCopied="not-written";
+	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:text=>{
+		rangeCopied=text;return Promise.resolve();
+	}}});
+	key(rangeTable.rootEl,"c","KeyC",{ctrlKey:true});
+	await Promise.resolve();
+	const mainRangeFeedback=document.querySelector(".tablance-range-copy-feedback-anchor>.tablance-copy-feedback");
+	assert(rangeCopied==="A0\nA1\nA2"
+		&&!rangeTable._cellCursor.querySelector(":scope>.tablance-copy-feedback")
+		&&mainRangeFeedback?.querySelector(".tablance-copy-feedback-operation")
+		&&mainRangeFeedback.querySelector(".tablance-copy-feedback-success"),
+		"multi-cell Ctrl+C uses logical TSV and shows shared feedback on the range rather than the head cell");
+	const rangeRows=[...rangeTable._mainTbody.querySelectorAll(":scope>tr:not(.details)")];
+	assert(rangeRows.some(row=>row.dataset.dataRowIndex==="1"
+		&&row.cells[1].classList.contains("tablance-range-cell"))
+		&&rangeRows.every(row=>!row.cells[0].classList.contains("tablance-range-cell")
+			&&!row.cells[2].classList.contains("tablance-range-cell")),
+		"painted range excludes checkmark and menu control cells");
+	const shiftClickMain=rangeTable._mainTbody.querySelector('[data-data-row-index="2"]:not(.details)').cells[4];
+	rangeTable.selectCell(0,"a");
+	const mainShiftClick=new MouseEvent("mousedown",{bubbles:true,cancelable:true,button:0,shiftKey:true});
+	shiftClickMain.dispatchEvent(mainShiftClick);
+	assert(rangeTable._cellRange?.anchor.row===0&&rangeTable._cellRange.head.row===2
+		&&rangeTable._cellRange.head.col===2&&rangeTable._rangeBounds().right===2
+		&&mainShiftClick.defaultPrevented,
+		"Shift+click selects the main rectangle and suppresses native text selection");
+	rangeCopied="not-written";
+	key(rangeTable.rootEl,"c","KeyC",{ctrlKey:true});
+	await Promise.resolve();
+	assert(rangeCopied==="A0\tB0\tC0\nA1\tB1\tC1\nA2\tB2\tC2",
+		"main-table range clipboard is a rectangular TSV matrix");
+	const firstRangeRow=rangeTable._filteredData[0];
+	firstRangeRow.a="A\t1";
+	firstRangeRow.b='Line 1\nLine "2"';
+	rangeTable._setCellRange({surface:"main",row:0,col:0},{surface:"main",row:0,col:1});
+	const specialMatrix=rangeTable._resolveCellRangeMatrix();
+	assert(rangeTable._serializeCellRange(specialMatrix)==='"A\t1"\t"Line 1\nLine ""2"""'
+		&&rangeTable._cellRangeClipboardHtml(specialMatrix).includes("Line 1<br>Line &quot;2&quot;"),
+		"range clipboard supplies quoted TSV fallback and an HTML table for tabs, line breaks, and quotes");
+	firstRangeRow.a="A0";
+	firstRangeRow.b="B0";
+	key(rangeTable.rootEl,"ArrowLeft","ArrowLeft");
+	assert(!rangeTable._cellRange,"unmodified arrow navigation collapses range");
+	rangeTable.selectCell(0,"a");
+	key(rangeTable.rootEl,"ArrowDown","ArrowDown",{shiftKey:true});
+	key(rangeTable.rootEl,"Enter","Enter");
+	assert(rangeTable._inEditMode&&!rangeTable._cellRange,"entering edit mode collapses range");
+	key(rangeTable.rootEl,"Escape","Escape");
+	rangeTable.selectCell(0,"a");
+	const checkedBefore=rangeTable._selectedRows.length;
+	const checkCell=rangeTable._mainTbody.querySelector('[data-data-row-index="1"]:not(.details)').cells[0];
+	checkCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,shiftKey:true}));
+	assert(rangeTable._selectedRows.length>checkedBefore&&!rangeTable._cellRange,
+		"Shift+click on checkmark retains bulk selection without starting a cell range");
+	rangeTable.selectCell(0,"a");
+	key(rangeTable.rootEl,"ArrowDown","ArrowDown",{shiftKey:true});
+	rangeTable._sortingCols=[{index:1,type:"field",order:"asc"}];
+	rangeTable._sortData();
+	assert(!rangeTable._cellRange,"sorting invalidates the range");
+	rangeTable.selectCell(0,"a");
+	key(rangeTable.rootEl,"ArrowDown","ArrowDown",{shiftKey:true});
+	rangeTable._applyFilters("A",false);
+	assert(!rangeTable._cellRange,"filter changes invalidate the range");
+	rangeTable._applyFilters("",false);
+	rangeTable.selectCell(0,"a");
+	for (let index=0;index<25;index++)
+		key(rangeTable.rootEl,"ArrowDown","ArrowDown",{shiftKey:true});
+	assert(rangeTable._cellRange?.head.row===25&&rangeTable._mainRowIndex===25
+		&&rangeTable._selectedCell.classList.contains("tablance-range-cell"),
+		"main range survives virtualized scrolling and repaints the rendered head row");
+	rangeTable._declaredColSchemaNodes.find(node=>node.dataKey==="b").visible=false;
+	rangeTable._syncVisibleColumns();
+	assert(!rangeTable._cellRange,"visible main-column changes invalidate range coordinates");
+	Object.defineProperty(navigator,"clipboard",{configurable:true,value:rangeCopyOriginal});
+
+	gridA1.select();
+	key(gridTable.rootEl,"ArrowDown","ArrowDown",{shiftKey:true});
+	assert(gridTable._activeDetailsCell===gridSpan&&gridTable._cellRange?.surface===grid
+		&&gridTable._rangeBounds().left===0&&gridTable._rangeBounds().right===1
+		&&gridSpan.outerContainerEl.classList.contains("tablance-range-cell")
+		&&gridTable._gridRangeOverlay?.parentElement===grid.containerEl
+		&&gridTable._gridRangeOverlay.style.gridColumn==="1 / 3",
+		"grid Shift+Down selects a span once and expands range bounds to its full width");
+	assert(gridTable._serializeCellRange()==="A1\tB1\nSpan\t",
+		"spanned cell occupies its first TSV slot and leaves its covered slot empty");
+	gridB1.select();
+	key(gridTable.rootEl,"ArrowDown","ArrowDown",{shiftKey:true});
+	key(gridTable.rootEl,"ArrowDown","ArrowDown",{shiftKey:true});
+	assert(gridTable._activeDetailsCell===gridB2&&gridTable._cellRange.head.col===1,
+		"vertical range navigation retains its logical column while crossing a spanning cell");
+	gridA1.select();
+	const readOnlyPointer=gridReadOnly.selEl??gridReadOnly.el;
+	const gridShiftClick=new MouseEvent("mousedown",{bubbles:true,cancelable:true,button:0,shiftKey:true});
+	readOnlyPointer.dispatchEvent(gridShiftClick);
+	assert(gridTable._cellRange?.head.row===3&&gridTable._rangeBounds().right===1
+		&&gridTable._serializeCellRange().endsWith("Disabled\tRead only")
+		&&gridShiftClick.defaultPrevented,
+		"grid Shift+click includes disabled/read-only data and suppresses native text selection");
+	let gridRangeCopied="not-written";
+	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:text=>{
+		gridRangeCopied=text;return Promise.resolve();
+	}}});
+	key(gridTable.rootEl,"c","KeyC",{ctrlKey:true});
+	await Promise.resolve();
+	const gridRangeFeedback=document.querySelector(".tablance-range-copy-feedback-anchor>.tablance-copy-feedback");
+	const gridFeedbackRect=gridRangeFeedback?.parentElement.getBoundingClientRect();
+	const gridRangeRect=gridTable._gridRangeOverlay.getBoundingClientRect();
+	assert(gridRangeCopied.endsWith("Disabled\tRead only")&&gridRangeFeedback
+		&&Math.abs(gridFeedbackRect.right-gridRangeRect.right)<1
+		&&Math.abs(gridFeedbackRect.top-gridRangeRect.top)<1,
+		"grid copy feedback anchors to the range's visible top-right corner independently of the head");
+	window.dispatchEvent(new Event("scroll"));
+	assert(!document.querySelector(".tablance-range-copy-feedback-anchor"),
+		"range feedback clears if scrolling could invalidate its viewport position");
+	Object.defineProperty(navigator,"clipboard",{configurable:true,value:rangeCopyOriginal});
+	gridTable.getDetailCell(0,"gridBefore").select();
+	assert(!gridTable._cellRange,"moving from grid to an ordinary details field collapses range");
+	gridA1.select();
+	key(gridTable.rootEl,"ArrowRight","ArrowRight",{shiftKey:true});
+	gridA1.parent.schemaNode.entries[0].visibleIf=()=>false;
+	gridTable._applyVisibleIf(gridA1);
+	assert(!gridTable._cellRange,"structural grid visibleIf changes invalidate range coordinates");
+	delete gridA1.parent.schemaNode.entries[0].visibleIf;
+
 	result.textContent="awaiting trusted table focus navigation";
 	result.dataset.status="awaiting-native-table-focus";
 	await new Promise(resolve=>window.finishNativeTableFocus=resolve);

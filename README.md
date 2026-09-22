@@ -148,7 +148,22 @@ Ctrl+Shift+C opens a small copy menu at the active cell. Its first command, "Cop
 even when the selected cell is in details; the item is disabled if the root row has no clipboard representation.
 Enter copies the row without cell-specific success feedback, and Escape closes the menu. Ctrl+C remains direct
 cell/group copy with its usual feedback. The menu is currently internal and does not expose a public
-`clipboardScopes` API; range selection is separate and not implemented here.
+`clipboardScopes` API; range selection remains a separate interaction model.
+
+### Cell ranges
+
+Shift+Arrow and Shift+click select one rectangular range in either the main table's presented data columns or one
+details `grid`. The ordinary cell cursor is the range head; the first cell remains its fixed anchor. Unmodified
+navigation or pointer selection collapses the range. Main-table control columns, ordinary details cells, and movement
+between separate grids are never part of a range. Grid `columnSpan` cells expand the logical bounds to cover their
+complete span while remaining one clipboard value.
+
+Ctrl+C on a multi-cell range resolves every logical data cell through the same DOM-independent clipboard resolver
+and writes a tab/newline matrix. Copy success uses the ordinary copy/check animation at the visible range's upper-right
+corner rather than attaching it to the head cell. Missing values and covered span positions are empty fields. The
+clipboard also receives an HTML table when the browser supports rich clipboard writes; this is the interoperable
+representation for cell values containing tabs or line breaks in spreadsheet applications. The plain text fallback
+uses TSV with CSV-style quoting for such values. A one-cell range retains ordinary cell-copy behavior.
 
 ## Menu columns
 

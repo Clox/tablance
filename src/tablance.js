@@ -232,6 +232,7 @@ class TablanceBase {
 	_selectedGroupEl;//the group table whose existing chevron represents the selected logical group
 	_cellStates=new WeakMap();//canonical functional state for every currently rendered cell element
 	_selectedCellState;//canonical state for the selected cell; DOM classes are styling hooks only
+	_cellRange=null;//logical rectangular selection; the existing cell cursor remains its head
 	_activeAnchoredPopover=null;//internal shared lifecycle owner for help/menu/copy anchored popovers
 	_helpPopoverController;
 	_menuPopoverController;
@@ -1087,6 +1088,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (previousColumns.length===nextColumns.length
 			&&previousColumns.every((column,index)=>column===nextColumns[index]))
 			return false;
+		this._clearCellRange();
 
 		this._closeHelp();
 		this._closeMenu();
@@ -1178,6 +1180,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	/**Reset all per-dataset state to an empty baseline. */
 	_resetDataState({clearFilter=true}={}) {
+		this._clearCellRange();
 		this._cancelNavigationCursorTransition?.();
 		this._clearNavigationActivationFeedback?.();
 		this._closeHelp();
@@ -3789,6 +3792,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_moveCellCursor(hSign,vSign,e) {
+		if (this._cellRange)
+			this._clearCellRange();
 		
 		if (!this._exitEditMode(true))//try to exit-mode and commit any changes.
 			return false;//if exiting edit-mode was denied then do nothing more
@@ -4180,6 +4185,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_moveCellCursorHomeEnd(toEnd,ctrlKey=false,e=null) {
+		if (this._cellRange)
+			this._clearCellRange();
 		if (this._mainRowIndex==null&&this._mainColIndex==null)
 			return false;
 		e?.preventDefault();
@@ -4517,6 +4524,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_spreadsheetKeyDown_non_edit_mode(e) {
 		const code=this._expansionShortcutCode(e);
+		if (e.shiftKey&&!e.ctrlKey&&!e.metaKey&&!e.altKey) {
+			const direction={ArrowUp:{row:-1,col:0},ArrowDown:{row:1,col:0},
+				ArrowLeft:{row:0,col:-1},ArrowRight:{row:0,col:1}}[code];
+			if (direction&&this._extendCellRange(direction,e))
+				return;
+		}
 		if (code!==e.code&&e.altKey)
 			e.preventDefault();
 		// Arrow/Home/End navigation performs its own destination-based scroll after selection. Scrolling here would
@@ -4592,6 +4605,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_copySelectedCellText() {
+		if (this._cellRange&&this._copyCellRangeText())
+			return;
 		const context=this._getActiveClipboardCellContext();
 		if (!context)
 			return;
@@ -4600,6 +4615,228 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!representation.available||representation.text==="")
 			return;
 		this._writeClipboardText(representation.text);
+	}
+
+	_rangeMainColumns() {
+		return (this._colSchemaNodes??[]).flatMap((node,index)=>
+			node.type==="field"&&node.input?.type!=="button"?[index]:[]);
+	}
+
+	_rangePosition() {
+		if (this._inEditMode||this._selectedCellState?.selectable===false)
+			return null;
+		const grid=this._activeDetailsCell?.parent;
+		if (grid?.schemaNode.type==="grid") {
+			this._refreshGridLayout(grid);
+			const cell=this._activeDetailsCell;
+			if (cell.gridRow==null||cell.gridColumn==null)
+				return null;
+			const retainedHead=this._cellRange?.surface===grid?this._cellRange.head:null;
+			if (retainedHead&&grid.gridRows?.[retainedHead.row]?.[retainedHead.col]===cell)
+				return {surface:grid,row:retainedHead.row,col:retainedHead.col};
+			return {surface:grid,row:cell.gridRow,col:cell.gridColumn};
+		}
+		if (this._activeDetailsCell||!Number.isInteger(this._mainRowIndex))
+			return null;
+		const col=this._rangeMainColumns().indexOf(this._mainColIndex);
+		return col<0?null:{surface:"main",row:this._mainRowIndex,col};
+	}
+
+	_rangeBounds(range=this._cellRange) {
+		if (!range)
+			return null;
+		let top=Math.min(range.anchor.row,range.head.row);
+		let bottom=Math.max(range.anchor.row,range.head.row);
+		let left=Math.min(range.anchor.col,range.head.col);
+		let right=Math.max(range.anchor.col,range.head.col);
+		if (range.surface!=="main") {
+			const rows=range.surface.gridRows??[];
+			let changed;
+			do {
+				changed=false;
+				for (let row=top;row<=bottom;row++)
+					for (let col=left;col<=right;col++) {
+						const cell=rows[row]?.[col];
+						if (!cell)
+							continue;
+						const nextLeft=Math.min(left,cell.gridColumn);
+						const nextRight=Math.max(right,cell.gridColumn+cell.gridColumnSpan-1);
+						if (nextLeft!==left||nextRight!==right) {
+							left=nextLeft;right=nextRight;changed=true;
+						}
+					}
+			} while (changed);
+		}
+		return {top,bottom,left,right};
+	}
+
+	_clearCellRange() {
+		this._clearCopyFeedback();
+		this._cellRange=null;
+		this._paintCellRange();
+	}
+
+	_setCellRange(anchor,head) {
+		if (!anchor||!head||anchor.surface!==head.surface)
+			return this._clearCellRange();
+		this._cellRange={surface:anchor.surface,anchor:{row:anchor.row,col:anchor.col},
+			head:{row:head.row,col:head.col}};
+		this._paintCellRange();
+	}
+
+	_paintCellRange() {
+		if (this._copyFeedbackElement?.closest(".tablance-range-copy-feedback-anchor"))
+			this._clearCopyFeedback();
+		this._gridRangeOverlay?.remove();
+		this._gridRangeOverlay=null;
+		for (const element of this._rangePaintedEls??[])
+			element.classList.remove("tablance-range-cell","tablance-range-top",
+				"tablance-range-bottom","tablance-range-left","tablance-range-right");
+		this._rangePaintedEls=new Set;
+		const range=this._cellRange;
+		if (!range)
+			return;
+		const bounds=this._rangeBounds(range);
+		const mark=(el,row,start,end)=>{
+			if (!el?.isConnected)
+				return;
+			el.classList.add("tablance-range-cell");
+			if (row===bounds.top) el.classList.add("tablance-range-top");
+			if (row===bounds.bottom) el.classList.add("tablance-range-bottom");
+			if (start===bounds.left) el.classList.add("tablance-range-left");
+			if (end===bounds.right) el.classList.add("tablance-range-right");
+			this._rangePaintedEls.add(el);
+		};
+		if (range.surface==="main") {
+			const columns=this._rangeMainColumns();
+			for (const tr of this._mainTbody?.querySelectorAll(":scope>tr:not(.details)")??[]) {
+				const row=Number(tr.dataset.dataRowIndex);
+				if (row<bounds.top||row>bounds.bottom)
+					continue;
+				for (let col=bounds.left;col<=bounds.right;col++)
+					mark(tr.cells[columns[col]],row,col,col);
+			}
+		} else {
+			const grid=range.surface;
+			const overlay=this._gridRangeOverlay=grid.containerEl.appendChild(document.createElement("div"));
+			overlay.className="tablance-grid-range-overlay";
+			overlay.style.gridRow=`${bounds.top*2+1} / ${bounds.bottom*2+2}`;
+			overlay.style.gridColumn=`${bounds.left+1} / ${bounds.right+2}`;
+			for (const cell of grid.children??[]) {
+				if (cell.gridRow==null||cell.gridColumn==null)
+					continue;
+				const start=cell.gridColumn,end=start+cell.gridColumnSpan-1;
+				if (cell.gridRow>=bounds.top&&cell.gridRow<=bounds.bottom
+						&&start<=bounds.right&&end>=bounds.left)
+					mark(cell.outerContainerEl,cell.gridRow,start,end);
+			}
+		}
+	}
+
+	_selectRangeHead(position) {
+		if (position.surface==="main") {
+			const rowData=this._filteredData[position.row];
+			const index=this._rangeMainColumns()[position.col];
+			if (!rowData||index==null)
+				return false;
+			let tr=this._mainTbody.querySelector(`[data-data-row-index="${position.row}"]:not(.details)`);
+			if (!tr) {
+				this.scrollToDataRow(rowData,false,false);
+				this._scrollMethod();
+				tr=this._mainTbody.querySelector(`[data-data-row-index="${position.row}"]:not(.details)`);
+			}
+			const cell=tr?.cells[index];
+			return cell&&this._selectMainTableCell(cell)!==false;
+		}
+		const grid=position.surface;
+		const cell=grid.gridRows?.[position.row]?.[position.col];
+		return cell&&this._selectDetailsCell(cell)!==false;
+	}
+
+	_extendCellRange(direction,e) {
+		const current=this._rangePosition();
+		if (!current)
+			return false;
+		e.preventDefault();
+		const anchor=this._cellRange?.surface===current.surface
+			?{...this._cellRange.anchor,surface:current.surface}:current;
+		const rowCount=current.surface==="main"?this._filteredData.length:current.surface.gridRows.length;
+		const colCount=current.surface==="main"?this._rangeMainColumns().length:current.surface.gridColumns;
+		let row=current.row,col=current.col;
+		while (true) {
+			row+=direction.row;col+=direction.col;
+			if (row<0||row>=rowCount||col<0||col>=colCount)
+				return true;
+			const candidate=current.surface==="main"?null:current.surface.gridRows[row]?.[col];
+			if (current.surface!=="main"&&(!candidate||candidate===this._activeDetailsCell))
+				continue;
+			if (candidate&&(!["field","group"].includes(candidate.schemaNode.type)
+					||!this._isNavigableDetailsInstance(candidate)))
+				continue;
+			const next={surface:current.surface,row,col};
+			if (this._selectRangeHead(next)) {
+				this._setCellRange(anchor,next);
+				this._scrollToCursor();
+				return true;
+			}
+			if (current.surface!=="main")
+				return true;
+		}
+	}
+
+	_resolveCellRangeMatrix() {
+		const range=this._cellRange,bounds=this._rangeBounds(range);
+		if (!bounds)
+			return null;
+		const columns=range.surface==="main"?this._rangeMainColumns():null;
+		const matrix=[];
+		for (let row=bounds.top;row<=bounds.bottom;row++) {
+			const fields=[];
+			for (let col=bounds.left;col<=bounds.right;col++) {
+				let representation;
+				if (columns) {
+					const node=this._colSchemaNodes[columns[col]];
+					representation=this._resolveClipboardRepresentation(node,this._filteredData[row],row,null);
+				} else {
+					const cell=range.surface.gridRows[row]?.[col];
+					if (cell?.gridColumn===col&&["field","group"].includes(cell.schemaNode.type))
+						representation=this._resolveClipboardRepresentation(cell.schemaNode,cell.dataObj,
+							cell.rowIndex,cell);
+				}
+				fields.push(representation?.available?representation.text:"");
+			}
+			matrix.push(fields);
+		}
+		return matrix;
+	}
+
+	_serializeCellRange(matrix=this._resolveCellRangeMatrix()) {
+		if (!matrix)
+			return null;
+		const quote=text=>/[\t\r\n"]/.test(text)?`"${text.replaceAll('"','""')}"`:text;
+		return matrix.map(row=>row.map(quote).join("\t")).join("\n");
+	}
+
+	_cellRangeClipboardHtml(matrix=this._resolveCellRangeMatrix()) {
+		if (!matrix)
+			return null;
+		const escape=text=>text.replaceAll("&","&amp;").replaceAll("<","&lt;")
+			.replaceAll(">","&gt;").replaceAll('"',"&quot;")
+			.replace(/\r\n?|\n/g,"<br>");
+		return `<table><tbody>${matrix.map(row=>`<tr>${row.map(value=>
+			`<td style="white-space:pre-wrap;mso-data-placement:same-cell">${escape(value)}</td>`)
+			.join("")}</tr>`).join("")}</tbody></table>`;
+	}
+
+	_copyCellRangeText() {
+		const range=this._cellRange;
+		if (!range||range.anchor.row===range.head.row&&range.anchor.col===range.head.col)
+			return false;
+		this._clearCopyFeedback();
+		const matrix=this._resolveCellRangeMatrix();
+		this._writeClipboardText(this._serializeCellRange(matrix),{
+			showFeedback:()=>this._showRangeCopyFeedback(),html:this._cellRangeClipboardHtml(matrix)});
+		return true;
 	}
 
 	_copyRowClipboardText(rowData,mainIndex,
@@ -4619,12 +4856,51 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			mainIndex:this._mainRowIndex,instanceNode:this._activeDetailsCell};
 	}
 
-	_writeClipboardText(text,{showFeedback=true}={}) {
-		const fallback=()=>this._copySelectedCellText_fallback(text,showFeedback);
-		if (navigator?.clipboard?.writeText)
-			navigator.clipboard.writeText(text).then(()=>showFeedback&&this._showCopyFeedback(),fallback);
+	_writeClipboardText(text,{showFeedback=true,html=null}={}) {
+		const success=()=>typeof showFeedback==="function"?showFeedback()
+			:showFeedback&&this._showCopyFeedback();
+		const fallback=()=>html?this._copyClipboardHtmlFallback(text,html,showFeedback)
+			:this._copySelectedCellText_fallback(text,showFeedback);
+		if (html&&navigator?.clipboard?.write&&typeof ClipboardItem!=="undefined") {
+			try {
+				const item=new ClipboardItem({
+					"text/plain":new Blob([text],{type:"text/plain"}),
+					"text/html":new Blob([html],{type:"text/html"}),
+				});
+				navigator.clipboard.write([item]).then(success,fallback);
+			} catch(_error) { fallback(); }
+		} else if (navigator?.clipboard?.writeText)
+			navigator.clipboard.writeText(text).then(success,fallback);
 		else
 			fallback();
+	}
+
+	_copyClipboardHtmlFallback(text,html,showFeedback=true) {
+		const container=document.createElement("div");
+		container.contentEditable="true";
+		container.style.position="fixed";
+		container.style.left="-9999px";
+		container.innerHTML=html;
+		document.body.appendChild(container);
+		const selection=window.getSelection();
+		const range=document.createRange();
+		range.selectNodeContents(container);
+		selection.removeAllRanges();
+		selection.addRange(range);
+		let copied=false;
+		try { copied=document.execCommand("copy"); } catch(_e) {}
+		if (!copied) {
+			container.remove();
+			selection.removeAllRanges();
+			return this._copySelectedCellText_fallback(text,showFeedback);
+		}
+		container.remove();
+		selection.removeAllRanges();
+		this.rootEl?.focus({preventScroll:true});
+		if (typeof showFeedback==="function")
+			showFeedback();
+		else if (showFeedback)
+			this._showCopyFeedback();
 	}
 
 	_copySelectedCellText_fallback(text,showFeedback=true) {
@@ -4638,12 +4914,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		try { document.execCommand("copy"); } catch(_e) {}
 		ta.remove();
 		this.rootEl?.focus({preventScroll:true});
-		if (showFeedback)
+		if (typeof showFeedback==="function")
+			showFeedback();
+		else if (showFeedback)
 			this._showCopyFeedback();
 	}
 
-	_showCopyFeedback() {
-		this._clearCopyFeedback();
+	_createCopyFeedback() {
 		const feedback=document.createElement("span");
 		feedback.className="tablance-copy-feedback";
 		feedback.role="status";
@@ -4654,6 +4931,20 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			icon.className=`tablance-copy-feedback-${part}`;
 			icon.setAttribute("aria-hidden","true");
 		}
+		return feedback;
+	}
+
+	_startCopyFeedback(feedback,parent) {
+		feedback.addEventListener("animationend",()=>this._clearCopyFeedback(feedback),{once:true});
+		parent.appendChild(feedback);
+		this._copyFeedbackElement=feedback;
+		this._copyFeedbackTimer=setTimeout(()=>this._clearCopyFeedback(feedback),1400);
+		return true;
+	}
+
+	_showCopyFeedback() {
+		this._clearCopyFeedback();
+		const feedback=this._createCopyFeedback();
 		if (this._activeDetailsCell) {
 			const anchor=this._getDetailsCopyFeedbackAnchor(this._activeDetailsCell);
 			if (anchor) {
@@ -4664,11 +4955,49 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				feedback.style.right="auto";
 			}
 		}
-		feedback.addEventListener("animationend",()=>this._clearCopyFeedback(feedback),{once:true});
-		this._cellCursor.appendChild(feedback);
-		this._copyFeedbackElement=feedback;
-		this._copyFeedbackTimer=setTimeout(()=>this._clearCopyFeedback(feedback),1400);
-		return true;
+		return this._startCopyFeedback(feedback,this._cellCursor);
+	}
+
+	_visibleCellRangeRect() {
+		if (!this._cellRange)
+			return null;
+		const elements=this._cellRange.surface==="main"?[...(this._rangePaintedEls??[])]:
+			this._gridRangeOverlay?[this._gridRangeOverlay]:[];
+		const viewport=this._scrollBody?.getBoundingClientRect()??this.rootEl.getBoundingClientRect();
+		let top=Infinity,left=Infinity,right=-Infinity,bottom=-Infinity;
+		for (const element of elements) {
+			if (!element?.isConnected)
+				continue;
+			const rect=element.getBoundingClientRect();
+			const visible={top:Math.max(rect.top,viewport.top),left:Math.max(rect.left,viewport.left),
+				right:Math.min(rect.right,viewport.right),bottom:Math.min(rect.bottom,viewport.bottom)};
+			if (visible.right<=visible.left||visible.bottom<=visible.top)
+				continue;
+			top=Math.min(top,visible.top);left=Math.min(left,visible.left);
+			right=Math.max(right,visible.right);bottom=Math.max(bottom,visible.bottom);
+		}
+		return Number.isFinite(top)?{top,left,right,bottom,width:right-left,height:bottom-top}:null;
+	}
+
+	_showRangeCopyFeedback() {
+		this._clearCopyFeedback();
+		const rect=this._visibleCellRangeRect();
+		if (!rect)
+			return false;
+		const anchor=document.body.appendChild(document.createElement("span"));
+		anchor.className="tablance-range-copy-feedback-anchor";
+		anchor.style.left=`${Math.max(rect.left,rect.right-18)}px`;
+		anchor.style.top=`${rect.top}px`;
+		anchor.style.width=`${Math.min(18,rect.width)}px`;
+		anchor.style.height=`${Math.min(20,rect.height)}px`;
+		anchor.style.setProperty("--tablance-indicator-color",
+			getComputedStyle(this.rootEl).getPropertyValue("--tablance-indicator-color"));
+		const clear=()=>this._clearCopyFeedback();
+		this._rangeFeedbackScrollHandler=clear;
+		this._scrollBody?.addEventListener("scroll",clear,{passive:true,once:true});
+		window.addEventListener("scroll",clear,{passive:true,once:true,capture:true});
+		window.addEventListener("resize",clear,{once:true});
+		return this._startCopyFeedback(this._createCopyFeedback(),anchor);
 	}
 
 	_getDetailsCopyFeedbackAnchor(instanceNode) {
@@ -4701,7 +5030,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!feedback||feedback!==this._copyFeedbackElement)
 			return;
 		clearTimeout(this._copyFeedbackTimer);
+		const rangeAnchor=feedback.closest(".tablance-range-copy-feedback-anchor");
 		feedback.remove();
+		rangeAnchor?.remove();
+		if (this._rangeFeedbackScrollHandler) {
+			this._scrollBody?.removeEventListener("scroll",this._rangeFeedbackScrollHandler);
+			window.removeEventListener("scroll",this._rangeFeedbackScrollHandler,{capture:true});
+			window.removeEventListener("resize",this._rangeFeedbackScrollHandler);
+			this._rangeFeedbackScrollHandler=null;
+		}
 		this._copyFeedbackElement=null;
 		this._copyFeedbackTimer=null;
 	}
@@ -5319,6 +5656,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_refreshGridLayout(grid) {
 		if (grid?.schemaNode?.type!=="grid")
 			return;
+		const oldRows=grid.gridRows;
 		const columns=grid.gridColumns;
 		const rows=[];
 		let row=0,column=0;
@@ -5349,6 +5687,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 		}
 		grid.gridRows=rows;
+		if (this._cellRange?.surface===grid&&oldRows
+			&&(oldRows.length!==rows.length||oldRows.some((oldRow,index)=>
+				oldRow.length!==rows[index]?.length||oldRow.some((cell,col)=>cell!==rows[index]?.[col]))))
+			this._clearCellRange();
 		const separatorCount=Math.max(0,rows.length-1);
 		grid.gridRowSeparators??=[];
 		while (grid.gridRowSeparators.length<separatorCount) {
@@ -5653,6 +5995,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return;
 		if (e.which===3)//if right click
 			return;
+		const rangeAnchor=e.shiftKey&&!e.ctrlKey&&!e.metaKey&&e.button===0
+			?(this._cellRange?.anchor?{...this._cellRange.anchor,surface:this._cellRange.surface}
+				:this._rangePosition()):null;
 		const mainTr=e.target.closest(".main-table>tbody>tr");
 		if (this._onlyDetails||mainTr?.classList.contains("details")) {//in details
 			const extension=e.target.closest(".grid-row-extension,.lineup-row-extension");
@@ -5662,13 +6007,21 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (!interactiveEl)
 				return directInstance?this._selectDetailsCell(directInstance):undefined;
 			const instanceNode=directInstance??this._resolvePointerDetailsInstance(interactiveEl,mainTr);
-			this._selectDetailsCell(instanceNode);
+			if (rangeAnchor&&instanceNode?.parent===rangeAnchor.surface
+					&&instanceNode.parent.schemaNode.type==="grid")
+				e.preventDefault();
+			if (this._selectDetailsCell(instanceNode)&&rangeAnchor) {
+				const head=this._rangePosition();
+				if (head?.surface===rangeAnchor.surface)
+					this._setCellRange(rangeAnchor,head);
+			}
 		} else {//not in details
 			const td=e.target.closest(".main-table>tbody>tr>td");
 			if (this._getCellState(td)?.selectable===false)
 				return;
 			if (td?.classList.contains("expand-col")||td?.classList.contains("select-col")
 				||td?.classList.contains("menu-col")) {
+				this._clearCellRange();
 				if (e.shiftKey)
 					e.preventDefault();//prevent text-selection when shift-clicking checkboxes
 				if (!this._establishMainActionCellCursor(td))
@@ -5679,7 +6032,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					return this._toggleRowExpanded(td.parentElement);
 				return this._rowCheckboxChange(td,e.shiftKey);
 			}
-			this._selectMainTableCell(td);
+			if (rangeAnchor?.surface==="main"&&this._rangeMainColumns().includes(td?.cellIndex))
+				e.preventDefault();
+			if (this._selectMainTableCell(td)&&rangeAnchor) {
+				const head=this._rangePosition();
+				if (head?.surface===rangeAnchor.surface)
+					this._setCellRange(rangeAnchor,head);
+			}
 		}
 	}
 
@@ -6012,11 +6371,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._clearStaticCellOverflowPreview();
 			this._inputVal=this._selectedCellVal;
 			this._inEditMode=true;
+			this._clearCellRange();
 			this._cellCursor.classList.add("edit-mode");
 			({textarea:this._openTextAreaEdit,date:this._openDateEdit,select:this._openSelectEdit
 				,file:this._openFileEdit}[this._activeSchemaNode.input.type]??this._openTextEdit).call(this,e);
-		} else if (this._activeSchemaNode.type==="group")
+		} else if (this._activeSchemaNode.type==="group") {
+			this._clearCellRange();
 			this._openGroup(this._activeDetailsCell);
+		}
 	}
 
 	_showReadOnlyActivationFeedback() {
@@ -7218,6 +7580,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			finish:save=>this._finishRepeatedReorderEdit(save),
 		};
 		this._inEditMode=true;
+		this._clearCellRange();
 		this._setRepeatedReorderPeerPresentation(entry.parent,entry);
 		this._cellCursor.classList.add("edit-mode","repeated-reorder-editor");
 		const control=this._cellCursor.appendChild(document.createElement("span"));
@@ -8873,6 +9236,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const cellState=this._getCellState(cellEl,instanceNode);
 		if (cellState?.selectable===false)
 			return false;
+		if (this._cellRange)
+			this._clearCellRange();
 		if (focus) {
 			this._focusEl.focus({preventScroll:true});
 			// Selecting a cell is an explicit transition into table interaction, including through the public select API.
@@ -9164,6 +9529,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const sortCols=this._sortingCols;
 		if (!sortCols.length)
 			return false;
+		this._clearCellRange();
 		const mainIndexMap=new WeakMap();
 		for (let i=0;i<this._viewData.length;i++)
 			mainIndexMap.set(this._viewData[i],i);
@@ -9645,6 +10011,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_refreshAfterViewRowsChanged(previousRows=this._filteredData) {
+		this._clearCellRange();
 		const selectedData=this._cellCursorDataObj;
 		const selectedRowIndex=selectedData?this._filteredData.indexOf(selectedData):-1;
 		const previousSelectedRowIndex=selectedData?previousRows.indexOf(selectedData):-1;
@@ -10169,6 +10536,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			delete this._highlightRowsOnView[mainIndex];
 			this._highlightRowIndex(mainIndex);
 		}
+		if (this._cellRange?.surface==="main")
+			this._paintCellRange();
 		return tr;
 	}
 
