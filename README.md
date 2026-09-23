@@ -233,12 +233,67 @@ Clicking the cell or its `⋮` control opens the menu. Enter and Space do the sa
 menu, Arrow Up/Down, Home/End, Enter/Space, Escape, and Tab follow the table's keyboard and focus model. Closing the
 menu returns focus to the table cursor unless focus is intentionally moving elsewhere through an outside click.
 
+## Commit lifecycle
+
+Every edit uses one `prepare → handoff → finalize` lifecycle. Direct fields produce a one-commit transaction. Nested
+groups belong to the implicitly outermost open group transaction and are handed off once in root-to-leaf order. Live
+group drafts remain in `rowData`, but snapshots distinguish draft state from finalized state; no post-commit effect,
+snapshot cleanup, or committed closed presentation runs before handoff succeeds.
+
+```js
+{
+  commit: (transaction, context) => outbox.journalAtomically(transaction.commits),
+  afterCommit: (transaction, context) => updateExternalUi(transaction),
+  details: {type: "list", entries: [{
+    type: "group",
+    validate: payload => payload.data.valid || payload.preventClose("Invalid value"),
+    afterDiscard: payload => updateUiAfterRestore(payload),
+    entries: []
+  }]}
+}
+```
+
+`validate(payload)` is synchronous and side-effect free. It may call `payload.preventClose(message)` or return
+`false`/`{valid:false, message}`. The optional root `commit(transaction, context)` receives the complete transaction:
+
+- without `commit`, Tablance finalizes immediately;
+- a synchronous return finalizes immediately after return;
+- a Promise locks the editor/group and finalizes after resolution;
+- a throw or rejection keeps the draft and snapshots available for retry or Ctrl+Escape.
+
+A Promise is a local durability boundary only; it must not wait for a server response. For a direct field, Tablance
+keeps the editor open and the final `rowData` value unchanged until resolution. A group retains its live draft model
+while pending and marks the transaction boundary `aria-busy`.
+
+Commits use immutable `update`, `create`, `delete`, or `reorder` kinds. Structural commits provide
+`collection: {nodeId, dataKey}`, `itemIndex`, and `visualIndex`. A create followed by more edits in the same transaction
+is represented once with its final data, while create followed by delete cancels before handoff. A reorder descriptor
+contains immutable `baselineOrder` and final `order`; consumers that cannot persist semantic set-order safely should
+reject that transaction. The transaction, descriptors, cloned `rowData`, `data`, `sourceData`, `parentData`, `changes`,
+and `instancePath` are frozen. Each descriptor also provides `index`, `depth`,
+`parentCommitIndex`, `nodeId`, `schemaNode`, and `mainIndex`.
+For group transactions, immutable `baselineRowData` contains the row snapshot captured when the outer group opened;
+aggregate consumers can compare it with final `rowData` and avoid journaling semantic no-ops. Standalone field
+transactions expose `baselineRowData: null`.
+`schemaNode` is an immutable metadata snapshot (`nodeId`, `type`, `dataKey`, `dataPath`, and `meta`), not the live
+schema facade.
+
+`context` deliberately stays ephemeral and is not journal data. It provides `tablance`, the live `rowData`, and
+`dataFor(commit)`, `sourceDataFor(commit)`, `parentDataFor(commit)`, `schemaNodeFor(commit)`, and
+`closestMetaFor(commit, key)` for integrations that must resolve live objects while handing off the immutable command.
+
+After successful handoff, synchronous root `afterCommit(transaction, context)` runs exactly once. It is only for
+post-commit effects. An error is reported as `transactionpostcommiterror` and cannot roll back a durable commit.
+`afterDiscard(payload)` runs after actual snapshot restoration and must also be synchronous. Repeated deletion may be
+guarded by synchronous `validateDelete(payload)` before mutation. The removed callbacks `onDataCommit`, `onClose`,
+`onCreate`, `onDelete`, and their transactional-mode variants are not part of this lifecycle.
+
 ## Trash lifecycle and table actions
 
 Trash is opt-in and uses the same `setData`/`addData` source array as active rows. Tablance does not fetch rows or
 assume a field name. `isTrashed` classifies a row; `getChanges` returns a non-empty, shallow root-row update diff that
-must make `isTrashed` reflect the requested operation. Tablance applies that diff immediately and sends it through
-the root `onDataCommit` hook as `mode: "update"`, with `operation: "trash" | "restore"`. The consumer persists it;
+must make `isTrashed` reflect the requested operation. Tablance applies that diff and sends an `update` descriptor
+through the root `commit` hook with `operation: "trash" | "restore"`. The consumer persists it;
 there is no built-in asynchronous confirmation or rollback. Related entries are not changed.
 
 ```js
@@ -249,7 +304,7 @@ there is no built-in asynchronous confirmation or rollback. Related entries are 
       removedOn: operation === "trash" ? new Date().toISOString() : null
     })
   },
-  onDataCommit: ({data, changes, mode, operation}) => persist(data, changes, mode, operation),
+  commit: (transaction, context) => persist(transaction, context),
   main: {
     toolbar: {tableActions: [{type: "trash"}]},
     columns: [

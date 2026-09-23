@@ -112,8 +112,6 @@ const DEFAULT_LANG=Object.freeze({
 	copyWholeRow:"Copy whole row",
 	insertEntry:"Insert new",
 	insertRow:"Insert new",
-	creationValidationFailed:"Invalid entry. Please check the fields and try again.",
-	creationValidationFailedCancelInfo:"\n Select Delete to cancel.",
 	fieldValidationFailedHint:"Press Esc to cancel.",
 	groupValidationFailedHint:"Press Ctrl+Esc to discard changes and back out.",
 	helpLabel:"Help",
@@ -291,6 +289,7 @@ class TablanceBase {
 		//row gets scrolled into view, in short whenever the details-elements are generated. Then it gets unset when
 		//creation finishes. The reason for having this flag is so that update */
 	_editTransaction;//tracks buffered group commits so inner scopes can still be cancelled
+	_pendingGroupTransaction;//pending handoff state for the implicit outermost group transaction
 	_ignoreClicksUntil;//when being inside an open group and trying to double-click on another cell further down to
 
 
@@ -687,48 +686,10 @@ class TablanceBase {
 	 * 					return the initial data object and receives a standard callback payload plus dataArray,
 	 * 					itemIndex and repeatedSchemaNode. Use this for context-dependent defaults; the returned object
 	 * 					remains pending until the user commits data in the entry.
-	 * 				onCreate Function Callback fired when the user has created an entry via the interface available if
-	 * 					"create" is true. It is considered committed when the cell-cursor has left the repeat-row after
-	 * 					having created it. Receives a single object:
-	 * 					- newDataItem: the newly created data object
-	 * 					- dataKey: optional key for the repeated array (creation context)
-	 * 					- dataArray: optional repeated array reference (creation context)
-	 * 					- itemIndex: index of the new item within dataArray
-	 * 					- visualIndex: visual position before any post-commit sort
-	 * 					- repeatedSchemaNode: the repeated container schema node
-	 * 					- entrySchemaNode: the schema node for the created entry (often a group)
-	 * 					- newInstanceNode: the instance node for the created entry
-	 * 					- mainIndex: index of the root row
-	 * 					- bulkEdit: true if triggered from bulk-edit
-	 * 					- closestMeta: function(key) to read meta data closest to the schema node
-	 * 					- cancelCreate: function() to abort the creation (removes the new item)
-	 * 				onCreateOpen Function If the entry of the repeated is group and "create" is set to true, then this
-	 * 					callback-function will be called when a new group is added, i.e. when the user interacts with
-	 * 					insertEntry-cell, not when the data is actually created, that triggers "onCreate".
-	 * 					It will get passed arguments: 1:instanceNode of the repeated-object
-	 * 				onCreateCancel Function If the entry of the repeated is group and "create" is set to true, then this
-	 * 					callback-function will be called when the creation of a new entry is canceled, either by leaving
-	 * 					the group with no data inserted, or by pressing the delete/cancel-button.
-	 * 					It will get passed arguments: 1:instanceNode of the repeated-object
-	 * 				beforeDelete Function Synchronous callback fired before an entry is deleted. It receives the same
-	 * 					context as onDelete plus remainingData (a shallow copy without the candidate) and
-	 * 					preventDelete(message?).
-	 * 					Call preventDelete or return false to leave the data, instance tree and DOM unchanged.
-	 * 				onDelete Function Lifecycle callback fired after the user has successfully deleted an entry via the
-	 * 					interface available if "create" is true. Persistence is emitted once through root
-	 * 					`onDataCommit`;
-	 * 					use this callback only for local follow-up effects. Receives a payload object:
-	 * 					- deletedDataItem: the deleted data object
-	 * 					- dataKey: optional key for the repeated array (creation context)
-	 * 					- dataArray: optional repeated array reference
-	 * 					- itemIndex: index the deleted item had before removal
-	 * 					- visualIndex: visual position the deleted item had before removal
-	 * 					- repeatedSchemaNode: the repeated container schema node
-	 * 					- entrySchemaNode: the schema node for the deleted entry (often a group)
-	 * 					- deletedInstanceNode: the instance node for the deleted entry
-	 * 					- mainIndex: index of the root row
-	 * 					- bulkEdit: true if triggered from bulk-edit
-	 * 					- closestMeta: function(key) to read meta data closest to the schema node
+	 * 				validateDelete Function Synchronous validation before an entry is deleted. It receives candidate
+	 * 					context, remainingData (a shallow copy without the candidate), and preventDelete(message?).
+	 * 					Call preventDelete or return false to leave data, instances, DOM, and commit state unchanged.
+	 * 					Successful creates and deletes are emitted as immutable descriptors through the root commit hook.
 	 * 				sortCompare Function Passing in a function allows for sorting the entries. As expected this
 	 * 					function will get called multiple times to compare the entries to one another.
 	 * 					Sorting affects only rendered instances; backing-array order and object identity are unchanged.
@@ -750,10 +711,8 @@ class TablanceBase {
 	 * 					and sortCompare is applied only between entries in the same group.
 	 * 				reorder Object Optional reorder editor for closed repeated entries.
 	 * 					canMove(direction, payload) decides whether "up" or "down" is available.
-	 * 					onCommit(payload) receives the accepted order. While an ancestor group transaction is open,
-	 * 					this callback is buffered until that transaction commits and discarded if it is cancelled.
-	 * 					payload.baselineOrder and payload.order contain data objects; payload.refresh() reapplies
-	 * 					canonical sorting after the callback updates canonical data.
+	 * 					An accepted change emits one immutable reorder descriptor with baselineOrder and final order
+	 * 					through the root commit hook rather than a relative move callback.
 	 * 					The handle is an internal auxiliary cell reached spatially from its entry. It is intentionally
 	 * 					excluded from the repeated entry list and therefore from ordinary Tab/vertical navigation.
 	 * 				creationText String Used if "create" is true. the text of the creation-cell. Default is "Insert new"
@@ -780,19 +739,10 @@ class TablanceBase {
 	 * 								it needs to return a string which will replace the group-content when it is closed
 	 * 				closedRenderHtml Bool Defaults to false. If true, closedRender output is inserted as HTML. Only
 	 * 								enable this for trusted or escaped output; the default text rendering remains injection-safe.
-	 * 				creationValidation Function If this group is placed within a repeated-container with create set to
-	 * 								true then this function will be executed upon commiting the creation. The callback
-	 * 								gets a single payload-object with the following keys:
-	 * 								{
-	 * 									schemaNode: Object - current schema-node
-	 * 									newDataItem: Object - all entered data of the new item
-	 * 									mainIndex: Number - index of the main row
-	 * 									instanceNode: Object - the repeated instance
-	 * 								}
-	 * 								The callback should return either a boolean or an object:
-	 * 									- Boolean: true passes validation; false fails and shows lang.creationValidationFailed
-	 * 									- Object: {valid:Boolean,message:String?}. If no message is supplied,
-	 * 										lang.creationValidationFailed is shown on failure.
+	 * 				validate Function Synchronous, side-effect-free validation before the group crosses its commit
+	 * 					boundary. It applies to creates and updates and may call preventClose(message), return false,
+	 * 					or return {valid:false,message}.
+	 * 				afterDiscard Function Synchronous post-discard hook called after snapshot restoration.
 	 * 				bulkEdit Bool Besides setting bulkEdit on input of fields it can also be set on containers which
 	 * 							will add the container to the bulk-edit-area. Any input-fields in the container that
 	 * 							have bulkEdit true will appear in the container there. Remember that both the container
@@ -808,7 +758,7 @@ class TablanceBase {
 	 * 				onOpenAfter Function Function that fires when the group is opened, but after it has been rendered.
 	 * 					Gets passed the following arguments:
 	 * 					1: group-object
-	 * 				onClose Function Callback that fires when attempting to close the group (create or edit).
+	 * 				validate Function Synchronous, side-effect-free callback before closing a group.
 	 * 					Call payload.preventClose(message?) to keep the group open and skip committing.
 	 * 					If a message is passed it will be shown as a tooltip.
 	 * 					Receives payload:
@@ -827,15 +777,20 @@ class TablanceBase {
 	 * 								until it finds a meta with the specified key or reaches the root.
   	 * 			}
 	 * 			Schema root may also define:
-	 * 				onDataCommit Function Root-level persistence hook fired on the final commit flush (root->leaf).
+	 * 				commit Function Optional root handoff called once with the immutable transaction and ephemeral context.
 	 * 					Receives payload from _makeCallbackPayload plus a changes diff and parentData. parentData is
 	 * 					captured when the node is created so
 	 * 					no ancestor walk is needed; it is always the owning object (never the repeated array), and
 	 * 					null for root rows so persistence never has to inspect schema structure. dataKey/dataArray are
 	 * 					included for creation context only so persistence can avoid inspecting schema shape. The
-	 * 					onDataCommit payload is intentionally strict: legacy flags are not emitted, and creation-only
-	 * 					fields are excluded for updates. Row creation is emitted via onDataCommit before any child
+	 * 					commit descriptors are intentionally strict: presentation-only callback fields are omitted, and creation-only
+	 * 					fields are excluded for updates. Row creation is emitted before any child
 	 * 					commit when the row is still marked new.
+	 * 					The callback may return a Promise for durable local persistence. Direct field edits then keep
+	 * 					the editor pending and leave final rowData unchanged until it resolves. Rejection restores the
+	 * 					previous rowData while retaining the entered editor value. The Promise must cover local
+	 * 					durability only and must never wait for server synchronization.
+	 * 				afterCommit Function Synchronous post-commit hook called once after successful finalize.
 	 * 				schema Object The full schema tree passed to the constructor (wrapper facade).
 	 * 	@param	{Object} opts An object where different options may be set. The following options/keys are valid:
 	 * 							searchbar Bool that defaults to true. If true then there will be a searchbar that
@@ -907,6 +862,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		rootEl.classList.toggle("static-row-height",this._staticRowHeight);
 		rootEl.classList.toggle("natural-row-height",this._naturalAutoHeight);
 		this._schema=this._buildSchemaFacade(schema);
+		this._validateCommitSchema();
 		if (schema.trash!=null) {
 			if (typeof schema.trash?.isTrashed!=="function"||typeof schema.trash?.getChanges!=="function")
 				throw new TypeError("trash requires isTrashed and getChanges callbacks.");
@@ -1688,6 +1644,39 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 	}
 
+	_validateCommitSchema() {
+		for (const removed of ["onDataCommit","onDataCommitTransaction","afterDataCommitTransaction"])
+			if (this._schema[removed]!=null)
+				throw new TypeError(`${removed} is no longer supported; use commit or afterCommit.`);
+		if (this._schema.commit!=null&&typeof this._schema.commit!=="function")
+			throw new TypeError("commit must be a function.");
+		if (this._schema.afterCommit!=null&&typeof this._schema.afterCommit!=="function")
+			throw new TypeError("afterCommit must be a function.");
+		const visit=node=>{
+			if (!node)
+				return;
+			for (const removed of ["groupCommitMode","onClose","validateClose","onCreate","onDelete",
+				"onCreateCancel","onCreateOpen"])
+				if (node[removed]!=null)
+					throw new TypeError(`${removed} is no longer supported by the unified commit lifecycle.`);
+			if (node.validate!=null&&typeof node.validate!=="function")
+				throw new TypeError("validate must be a function.");
+			if (node.afterDiscard!=null&&typeof node.afterDiscard!=="function")
+				throw new TypeError("afterDiscard must be a function.");
+			if (node.type==="repeated"&&node.beforeDelete!=null)
+				throw new TypeError("beforeDelete is no longer supported; use validateDelete.");
+			if (node.type==="repeated"&&node.validateDelete!=null&&typeof node.validateDelete!=="function")
+				throw new TypeError("validateDelete must be a function.");
+			if (node.creationValidation!=null)
+				throw new TypeError("creationValidation is no longer supported; use validate on group entries.");
+			for (const child of [node.main,node.details,node.entry,
+				...(Array.isArray(node.columns)?node.columns:[]),
+				...(Array.isArray(node.entries)?node.entries:[])])
+				visit(child);
+		};
+		visit(this._schema);
+	}
+
 
 	/**
 	 * Collects schema-derived caches used by filtering and searching.
@@ -1820,8 +1809,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		const rowData=overrides.rowData??(Number.isInteger(mainIndex)?this._filteredData?.[mainIndex]:undefined);
 		const bulkEdit=overrides.bulkEdit??!!this.mainInstance;
-		// Base payload is intentionally minimal; creation-only context (dataKey/dataArray) is injected only
-		// for onDataCommit so other callbacks are not burdened with persistence-only fields.
+		// Base callback payload is intentionally minimal; persistence-only collection context belongs to descriptors.
 		return {tablance:this,schemaTree:this._schema,schemaNode,instanceNode,rowData,mainIndex,bulkEdit,
 			lifecycleMode:this._lifecycleMode,
 			closestMeta: key => this._closestMeta(schemaNode,key),...extra};
@@ -3797,6 +3785,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_moveCellCursor(hSign,vSign,e) {
+		if (this._pendingGroupTransaction)
+			return false;
 		if (this._cellRange)
 			this._clearCellRange();
 		
@@ -4431,6 +4421,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 	
 	_spreadsheetKeyDown(e) {
+		if (this._pendingGroupTransaction) {
+			e.preventDefault();
+			return;
+		}
 		//prevent this from running in outer Tablance if an inner Tablance-instance is selected
 		if (this._bulkEditArea?.contains(document.activeElement))
 			return;
@@ -5286,14 +5280,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		});
 		let doDelete=true;
 		let preventMessage;
-		const beforeDelete=repeatedContainer?.schemaNode.beforeDelete;
-		if (beforeDelete) {
+		const validateDelete=repeatedContainer?.schemaNode.validateDelete;
+		if (validateDelete) {
 			const remainingData=Array.isArray(payload.dataArray)
 				?payload.dataArray.filter((_item,index)=>index!==itemIndex):[];
-			const result=beforeDelete({...payload,remainingData,preventDelete:(message)=>{
+			const result=validateDelete({...payload,remainingData,preventDelete:(message)=>{
 				doDelete=false;
 				preventMessage=message??preventMessage;
 			}});
+			if (this._isThenable(result))
+				throw new TypeError("validateDelete must be synchronous.");
 			if (result===false)
 				doDelete=false;
 		}
@@ -5302,9 +5298,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._showTooltip(preventMessage,entryNode.selEl??entryNode.el);
 			return false;
 		}
-		const deletion=this._deleteCell(entryNode);
-		if (!deletion?.wasCreating)
-			repeatedContainer?.schemaNode.onDelete?.(payload);
+		this._deleteCell(entryNode);
 		return true;
 	}
 
@@ -6325,6 +6319,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_enterCell(e) {
+		if (this._pendingGroupTransaction)
+			return false;
 		this._resetVerticalLayoutPreferredColumn();
 		if (this._inEditMode||this._inReadOnlyMode)
 			return;
@@ -6649,6 +6645,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_openGroup(groupObj) {
+		if (this._pendingGroupTransaction)
+			return false;
 		if (this._isTrashMode()) {
 			this._transitionGroupPresentation(groupObj,()=>{
 				this._setGroupPresentationState(groupObj,"open");
@@ -6721,11 +6719,19 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const closeState={doClose:true,preventMessage:undefined};
 		const mode=groupObject.creating?"create":"update";
 		const normalizedChanges=groupObject.creating?null:changes;
+		const repeated=groupObject.creating&&groupObject.parent?.schemaNode?.type==="repeated"
+			?groupObject.parent:null;
 		const basePayload=this._makeCallbackPayload(groupObject,{
 			data: groupObject.dataObj,
 			parentData: groupObject.parentData??null,
 			mode,
 			changes: normalizedChanges
+			,...repeated?{
+				dataArray:repeated.dataObj,
+				itemIndex:Array.isArray(repeated.dataObj)?repeated.dataObj.length:null,
+				visualIndex:groupObject.index,
+				repeatedSchemaNode:repeated.schemaNode,
+			}:{}
 		},{
 			schemaNode: groupObject.schemaNode,
 			mainIndex,
@@ -6733,7 +6739,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			instanceNode: groupObject
 		});
 		const closePayload={...basePayload,
-			// the below are on the onClose payload only; they are not propagated to onDataCommit.
+			// Close-control fields belong to validation only and are not copied into commit descriptors.
 			changed,preventClose:(message)=>{
 				closeState.doClose=false;
 				closeState.preventMessage=message??closeState.preventMessage;
@@ -6779,13 +6785,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!payload.mode)
 			payload.mode="update";
 		// Creation-only context should only be present for create commits.
-		const repeatedContext=payload.mode==="create"
-			?this._getRepeatedAncestors(instanceNode).find(node=>node.schemaNode?.type==="repeated")
-			:null;
-		const intentDataKey=payload.mode==="create"
+		const repeatedContext=this._getRepeatedAncestors(instanceNode)
+			.find(node=>node.schemaNode?.type==="repeated")??null;
+		const intentDataKey=repeatedContext
 			?repeatedContext?.schemaNode?.dataKey??instanceNode?.schemaNode?.dataKey??schema?.dataKey
 			:undefined;
-		const intentDataArray=payload.mode==="create"
+		const intentDataArray=repeatedContext
 			?repeatedContext?.dataObj??instanceNode?.dataArray
 			:undefined;
 		txn.intents.push({
@@ -6794,6 +6799,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			schemaNode: schema,
 			dataKey: intentDataKey,
 			dataArray: intentDataArray,
+			repeatedSchemaNode: repeatedContext?.schemaNode,
 			payload,
 			depth: commitDepth,
 			seq: txn.seq++
@@ -6806,8 +6812,313 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._queueCommitIntent(payload,{group: groupObject, instanceNode: groupObject});
 	}
 
+	_getGroupCommitBoundary(groupObject) {
+		let boundary=null;
+		for (let node=groupObject; node; node=node.parent)
+			if (node.schemaNode?.type==="group"&&this._isGroupPresentationOpen(node))
+				boundary=node;
+		return boundary;
+	}
+
+	_isThenable(value) {
+		return value!=null&&(typeof value==="object"||typeof value==="function")
+			&&typeof value.then==="function";
+	}
+
+	_deepFreeze(value,seen=new WeakSet()) {
+		if (value==null||typeof value!=="object"||seen.has(value))
+			return value;
+		seen.add(value);
+		for (const child of Object.values(value))
+			this._deepFreeze(child,seen);
+		return Object.freeze(value);
+	}
+
+	_commitDescriptor(intent,index,commits) {
+		const {payload,group,schemaNode,repeatedSchemaNode}=intent;
+		const targetedPayload=this._applyCommitTargetToPayload(payload,schemaNode);
+		const parentIndex=commits.findIndex(candidate=>candidate!==intent
+			&&candidate.group&&this._isDescendantGroup(group,candidate.group));
+		const clone=value=>value==null?value:this._cloneGroupData(value);
+		const schemaDescriptor=this._deepFreeze({
+			nodeId:schemaNode?.nodeId??null,
+			type:schemaNode?.type??null,
+			dataKey:schemaNode?.dataKey??null,
+			dataPath:clone(schemaNode?.dataPath??null),
+			meta:clone(schemaNode?.meta??null),
+		});
+		const descriptor={
+			index,
+			kind:payload.mode,
+			depth:intent.depth,
+			parentCommitIndex:parentIndex<0?null:parentIndex,
+			instancePath:[...(intent.instanceNode?.path??group?.path??[])],
+			nodeId:schemaNode?.nodeId??null,
+			schemaNode:schemaDescriptor,
+			mainIndex:payload.mainIndex,
+			rowData:clone(payload.rowData),
+			data:clone(targetedPayload.data),
+			sourceData:clone(targetedPayload.sourceData),
+			parentData:clone(payload.parentData),
+			changes:clone(payload.changes??{}),
+			collection:repeatedSchemaNode?this._deepFreeze({
+				nodeId:repeatedSchemaNode.nodeId??null,
+				dataKey:repeatedSchemaNode.dataKey??intent.dataKey??null,
+			}):null,
+			itemIndex:Number.isInteger(payload.itemIndex)?payload.itemIndex:null,
+			visualIndex:Number.isInteger(payload.visualIndex)?payload.visualIndex:null,
+			operation:payload.operation??null,
+			bulkEdit:!!payload.bulkEdit,
+		};
+		if (payload.mode==="reorder") {
+			descriptor.baselineOrder=clone(payload.baselineOrder??[]);
+			descriptor.order=clone(payload.order??[]);
+		}
+		for (const key of ["instancePath","rowData","data","sourceData","parentData","changes","baselineOrder","order"])
+			this._deepFreeze(descriptor[key]);
+		return Object.freeze(descriptor);
+	}
+
+	_normalizeCommitIntents(intents) {
+		const states=new Map();
+		for (const intent of intents) {
+			const data=intent.payload?.data;
+			if (!data||typeof data!=="object")
+				continue;
+			const state=states.get(data)??{create:null,updates:[],delete:null};
+			if (intent.payload.mode==="create")
+				state.create=intent;
+			else if (intent.payload.mode==="delete")
+				state.delete=intent;
+			else if (intent.payload.mode==="update")
+				state.updates.push(intent);
+			states.set(data,state);
+		}
+		const omitted=new Set();
+		for (const state of states.values()) {
+			if (state.create&&state.delete) {
+				omitted.add(state.create);
+				omitted.add(state.delete);
+				for (const update of state.updates)
+					omitted.add(update);
+			} else if (state.create) {
+				for (const update of state.updates)
+					omitted.add(update);
+			} else if (state.delete)
+				for (const update of state.updates)
+					omitted.add(update);
+		}
+		return intents.filter(intent=>!omitted.has(intent));
+	}
+
+	_prepareCommitTransaction(boundary) {
+		const txn=this._editTransaction;
+		const sorted=txn.intents
+			.sort((a,b)=>a.depth-b.depth||a.seq-b.seq);
+		const real=this._normalizeCommitIntents(sorted.filter(intent=>{
+			const changes=intent.payload?.changes;
+			return intent.payload?.mode!=="update"||changes&&Object.keys(changes).length;
+		}));
+		const unsupported=real.find(intent=>!["update","create","delete","reorder"].includes(intent.payload?.mode));
+		if (unsupported)
+			throw new TypeError(`Commit transactions do not support ${unsupported.payload?.mode??"unknown"} intents.`);
+		const commits=real.map((intent,index)=>this._commitDescriptor(intent,index,real));
+		const intentByCommit=new Map(commits.map((commit,index)=>[commit,real[index]]));
+		const context=Object.freeze({
+			tablance:this,
+			rowData:boundary?.rowIndex!=null?this._filteredData?.[boundary.rowIndex]
+				:real[0]?.payload?.rowData,
+			dataFor:commit=>{
+				const intent=intentByCommit.get(commit);
+				return this._resolveCommitTarget(intent?.schemaNode,intent?.payload?.data);
+			},
+			sourceDataFor:commit=>intentByCommit.get(commit)?.payload?.data,
+			parentDataFor:commit=>intentByCommit.get(commit)?.payload?.parentData??null,
+			schemaNodeFor:commit=>intentByCommit.get(commit)?.schemaNode??null,
+			closestMetaFor:(commit,key)=>this._closestMeta(intentByCommit.get(commit)?.schemaNode,key),
+		});
+		return {
+			boundary,
+			intents:real,
+			context,
+			groupsTouched:new Set([boundary,...txn.intents.map(intent=>intent.group)].filter(Boolean)),
+			transaction:Object.freeze({
+				commits:Object.freeze(commits),
+				mainIndex:commits[0]?.mainIndex??boundary?.rowIndex??null,
+				rowData:this._deepFreeze(this._cloneGroupData(commits[0]?.rowData??boundary?.dataObj??null)),
+				baselineRowData:this._deepFreeze(this._cloneGroupData(boundary?._openSnapshot??null)),
+			}),
+		};
+	}
+
+	_setGroupCommitPending(boundary,pending) {
+		for (const el of [boundary.el,boundary.viewportEl]) {
+			if (!el)
+				continue;
+			el.classList.toggle("transaction-pending",pending);
+			if (pending)
+				el.setAttribute("aria-busy","true");
+			else
+				el.removeAttribute("aria-busy");
+		}
+	}
+
+	_stageGroupClose(groupObject) {
+		groupObject._commitStagedClosed=true;
+		this._transitionGroupPresentation(groupObject,()=>{
+			this._setGroupPresentationState(groupObject,"closed");
+			this._syncGroupChevronVisibility(groupObject);
+		});
+		this._ignoreClicksUntil=Date.now()+500;
+	}
+
+	_finalizeCommitTransaction(prepared) {
+		if (prepared.finalized)
+			return;
+		prepared.finalized=true;
+		for (const intent of prepared.intents)
+			if (intent.payload?.mode==="create"&&intent.instanceNode) {
+				intent.instanceNode.creating=false;
+				delete intent.instanceNode._transactionCreated;
+				this._finalizeRepeatedMutation(intent.instanceNode.parent);
+			}
+		for (const rowData of new Set(prepared.intents.map(intent=>intent.payload?.rowData).filter(Boolean))) {
+			const rowMeta=this._rowMeta.get(rowData);
+			if (rowMeta?.isNew) {
+				rowMeta.isNew=false;
+				delete rowMeta.draftViewModeKey;
+			}
+			this._rowFilterCache?.delete(rowData);
+		}
+		const stagedGroups=[...prepared.groupsTouched]
+			.filter(group=>group!==prepared.boundary&&group._commitStagedClosed&&group.el?.isConnected)
+			.sort((a,b)=>(b.path?.length??0)-(a.path?.length??0));
+		for (const group of stagedGroups)
+			this._finalizeGroupClose(group);
+		for (const group of prepared.groupsTouched) {
+			delete group._openSnapshot;
+			delete group._openRepeatedBaselines;
+			delete group._dirtyFields;
+			delete group._commitStagedClosed;
+		}
+		if (prepared.boundary) {
+			this._finalizeGroupClose(prepared.boundary);
+			this._removeGroupFromTransaction(prepared.boundary);
+		}
+		this._editTransaction=null;
+		if (prepared.transaction.commits.length) {
+			try {
+				const result=this._schema.afterCommit?.(prepared.transaction,prepared.context);
+				if (this._isThenable(result))
+					throw new TypeError("afterCommit must be synchronous.");
+			} catch(error) {
+				console.error("Tablance afterCommit failed after commit handoff.",error);
+				this.rootEl.dispatchEvent(new CustomEvent("transactionpostcommiterror",{detail:{error,
+					transaction:prepared.transaction}}));
+			}
+		}
+		this.refreshView("commit");
+	}
+
+	_captureGroupContinuation(target) {
+		if (!target)
+			return null;
+		if (target.kind)
+			return target;
+		const cell=target.closest?.("td");
+		const row=cell?.parentElement;
+		if (row?.dataset?.dataRowIndex!=null)
+			return {kind:"main",rowData:this._filteredData[Number(row.dataset.dataRowIndex)],
+				schemaNode:this._colSchemaNodes[cell.cellIndex]};
+		return null;
+	}
+
+	_resumeGroupContinuation(continuation) {
+		if (!continuation)
+			return;
+		// The old subtree has already crossed its commit boundary. Do not try to close it a second time while
+		// resolving the logical destination captured before the asynchronous handoff.
+		this._activeDetailsCell=null;
+		if (continuation.kind==="main") {
+			const rowIndex=this._filteredData.indexOf(continuation.rowData);
+			const colIndex=this._colSchemaNodes.indexOf(continuation.schemaNode);
+			const cell=this._mainTbody.querySelector(`tr[data-data-row-index="${rowIndex}"]`)?.cells[colIndex];
+			if (cell)
+				this._selectMainTableCell(cell,continuation.focus??true);
+			return;
+		}
+		if (continuation.kind==="details") {
+			const rowIndex=this._filteredData.indexOf(continuation.rowData);
+			let instanceNode=this._openDetailsPanes[rowIndex]??this.expandRow(rowIndex);
+			for (const step of continuation.path??[])
+				instanceNode=instanceNode?.children?.[step];
+			if (instanceNode)
+				this._selectDetailsCell(instanceNode,continuation.preserveVerticalPreferredColumn);
+		}
+	}
+
+	_resetCommitAfterFailure(prepared) {
+		const txn=this._editTransaction;
+		if (!txn)
+			return;
+		// Updates can be rebuilt from the still-open live draft when their groups close again. Structural intents
+		// must survive: accepted creates are no longer marked `creating`, while deletes and reorders may no longer
+		// have enough live presentation state to reconstruct the exact prepared operation.
+		txn.intents=txn.intents.filter(intent=>["create","delete","reorder"].includes(intent.payload?.mode)
+			||!this._isDescendantGroup(intent.group,prepared.boundary));
+		const groups=[...prepared.groupsTouched]
+			.filter(group=>this._isDescendantGroup(group,prepared.boundary)&&group.el?.isConnected)
+			.sort((a,b)=>(a.path?.length??0)-(b.path?.length??0));
+		txn.stack=txn.stack.filter(group=>!this._isDescendantGroup(group,prepared.boundary));
+		for (const group of groups) {
+			if (!txn.stack.includes(group))
+				txn.stack.push(group);
+			if (group._commitStagedClosed) {
+				this._setGroupPresentationState(group,"open");
+				delete group._commitStagedClosed;
+			}
+		}
+		this._syncDetailsPresentation(prepared.boundary);
+	}
+
+	_startGroupCommitHandoff(prepared,continuation=null) {
+		let result;
+		try {
+			result=this._schema.commit?.(prepared.transaction,prepared.context);
+		} catch(error) {
+			this._resetCommitAfterFailure(prepared);
+			this._showTooltip(error?.message??"The changes could not be saved locally.",prepared.boundary.el);
+			return false;
+		}
+		if (!this._isThenable(result)) {
+			this._finalizeCommitTransaction(prepared);
+			return true;
+		}
+		prepared.continuation=continuation;
+		this._pendingGroupTransaction=prepared;
+		this._setGroupCommitPending(prepared.boundary,true);
+		Promise.resolve(result).then(()=>{
+			if (this._pendingGroupTransaction!==prepared)
+				return;
+			this._pendingGroupTransaction=null;
+			this._setGroupCommitPending(prepared.boundary,false);
+			this._finalizeCommitTransaction(prepared);
+			this._resumeGroupContinuation(prepared.continuation);
+		}).catch(error=>{
+			if (this._pendingGroupTransaction!==prepared)
+				return;
+			this._pendingGroupTransaction=null;
+			this._setGroupCommitPending(prepared.boundary,false);
+			this._resetCommitAfterFailure(prepared);
+			this._showTooltip(error?.message??"The changes could not be saved locally.",prepared.boundary.el);
+			this._focusEl.focus({preventScroll:true});
+			this._adjustCursorPosSize(this._getCursorGeometryEl(this._activeDetailsCell??prepared.boundary));
+		});
+		return false;
+	}
+
 	_queueDataCommit(payload,instanceNode=null,depthOverride=null) {
-		// Queue a non-group commit and flush immediately when no outer transactions are open.
+		// Queue a commit inside the implicit outer group transaction, or hand a standalone transaction off immediately.
 		// parentData must already be captured on the instance; we avoid searching ancestors here.
 		if (payload.parentData===undefined) {
 			const capturedParent=instanceNode?.parentData??null;
@@ -6820,20 +7131,48 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (const repeated of this._getRepeatedAncestors(instanceNode))
 			this._finalizeRepeatedMutation(repeated);
 		const transactionGroup=this._getOpenGroupAncestor(instanceNode?.parent);
-		const txn=this._queueCommitIntent(payload,{group:transactionGroup,instanceNode,depth: depthOverride});
-		if (!txn.stack.length)
-			this._flushBufferedGroupCommits();
-	}
-
-	_queueTransactionEffect(callback,instanceNode) {
-		const group=this._getOpenGroupAncestor(instanceNode?.parent);
-		const txn=this._editTransaction;
-		if (!group||!txn?.stack.length) {
-			callback();
+		let txn=this._editTransaction??(this._editTransaction={stack:[],intents:[],seq:0});
+		const rowData=payload.rowData;
+		const rowMeta=rowData?this._rowMeta.get(rowData):undefined;
+		if (rowMeta?.isNew&&!txn.intents.some(intent=>intent.payload?.data===rowData
+				&&intent.payload?.mode==="create")) {
+			const rowPayload=this._makeCallbackPayload(null,{data:rowData,parentData:null,mode:"create",changes:null},{
+				schemaNode:this._schema,mainIndex:payload.mainIndex,rowData,bulkEdit:payload.bulkEdit,
+			});
+			txn=this._queueCommitIntent(rowPayload,{group:transactionGroup,schemaNode:this._schema,depth:0});
+		}
+		if (!(rowMeta?.isNew&&payload.data===rowData))
+			txn=this._queueCommitIntent(payload,{group:transactionGroup,instanceNode,depth:depthOverride});
+		if (txn.stack.length)
+			return;
+		const prepared=this._prepareCommitTransaction(null);
+		if (!prepared.transaction.commits.length) {
+			this._finalizeCommitTransaction(prepared);
 			return;
 		}
-		txn.intents.push({kind:"effect",effect:callback,group,instanceNode,
-			depth:instanceNode?.path?.length??group.path?.length??0,seq:txn.seq++});
+		let result;
+		try {
+			result=this._schema.commit?.(prepared.transaction,prepared.context);
+		} catch(error) {
+			result=Promise.reject(error);
+		}
+		if (this._isThenable(result))
+			return {prepared,promise:Promise.resolve(result)};
+		this._finalizeCommitTransaction(prepared);
+	}
+
+	_queueReorderCommit(payload,instanceNode) {
+		payload.mode="reorder";
+		const group=this._getOpenGroupAncestor(instanceNode?.parent);
+		const txn=this._queueCommitIntent(payload,{group,instanceNode,
+			schemaNode:instanceNode?.parent?.schemaNode});
+		if (txn.stack.length)
+			return;
+		const prepared=this._prepareCommitTransaction(null);
+		const result=this._schema.commit?.(prepared.transaction,prepared.context);
+		if (this._isThenable(result))
+			throw new TypeError("Standalone reorder handoff must be synchronous until reorder pending UI is implemented.");
+		this._finalizeCommitTransaction(prepared);
 	}
 
 	_removeGroupFromTransaction(groupObject,discardIntents=false) {
@@ -6848,117 +7187,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._editTransaction=null;
 	}
 
-	_flushBufferedGroupCommits() {
-		// Emit commits in root->leaf order once no open groups remain; repeated nodes are structural only.
-		// Commit emission is centralized here.
-		const txn=this._editTransaction;
-		if (!txn?.intents.length)
-			return;
-		// Flush only after the outermost group commits so parents fire before children and cancels can discard safely.
-		// Deferred effects (for example an accepted repeated reorder) run after all create/update/delete intents,
-		// allowing the consumer to map stable local object identities to any canonical identities it assigns.
-		const commits=txn.intents.filter(intent=>intent.kind!=="effect"&&intent.schemaNode?.type!=="repeated")
-			.sort((a,b)=>a.depth-b.depth||a.seq-b.seq);
-		const effects=txn.intents.filter(intent=>intent.kind==="effect").sort((a,b)=>a.seq-b.seq);
-		const groupsTouched=new Set(commits.map(({group})=>group).filter(Boolean));
-		const isRevertedUpdate=intent=>{
-			const {group,payload}=intent;
-			if (payload?.mode!=="update"||!group?._openSnapshot)
-				return false;
-			try {
-				return JSON.stringify(group._openSnapshot)===JSON.stringify(group.dataObj);
-			} catch(_e) {
-				return false;
-			}
-		};
-		const hasAnyRealCommit=effects.length>0||commits.some(intent=>{
-			const {payload}=intent;
-			if (!payload)
-				return false;
-			if (payload.mode!=="update")
-				return true;
-			const changes=payload.changes;
-			if (!changes||!Object.keys(changes).length)
-				return false;
-			return !isRevertedUpdate(intent);
-		});
-		if (!hasAnyRealCommit) {
-			for (const group of groupsTouched) {
-				delete group?._openSnapshot;
-				delete group?._openRepeatedBaselines;
-			}
-			txn.intents.length=0;
-			this._editTransaction=null;
-			return;
-		}
-		const onDataCommit=this._schema?.onDataCommit;
-		const emitDataCommit=(payload,dataKey,dataArray,schemaNode)=>{
-			if (!onDataCommit)
-				return;
-			const targetedPayload=this._applyCommitTargetToPayload(payload,schemaNode);
-			const creationContext=payload.mode==="create"?{
-				...(dataKey!==undefined?{dataKey}:{}),
-				...(dataArray!==undefined?{dataArray}:{}),
-			}:{};
-			onDataCommit({...targetedPayload,
-				changes: targetedPayload?.changes==null?null:{...(targetedPayload?.changes??{})},
-				...creationContext});
-		};
-		for (const intent of commits) {
-			const {payload,dataKey,dataArray}=intent;
-			if (payload?.mode==="update") {
-				const payloadChanges=payload?.changes;
-				if (!payloadChanges||!Object.keys(payloadChanges).length)
-					continue;
-				if (isRevertedUpdate(intent))
-					continue;
-			}
-			const rowData=payload.rowData;
-			const rowMeta=rowData?this._rowMeta.get(rowData):undefined;
-			if (rowMeta?.isNew) {
-				// Persist the owning row first
-				const rowPayload=this._makeCallbackPayload(null,{
-					data: rowData,
-					parentData: null,
-					mode: "create",
-					changes: null
-				},{
-					schemaNode: this._schema,
-					mainIndex: payload.mainIndex,
-					rowData,
-					bulkEdit: payload.bulkEdit
-				});
-				emitDataCommit(rowPayload,undefined,undefined,this._schema);
-				if (rowData)
-					this._rowFilterCache?.delete(rowData);
-				rowMeta.isNew=false;
-				delete rowMeta.draftViewModeKey;
-				// If this payload is the row itself, skip it; child commits still emit after the row create.
-				if (payload.data===rowData)
-					continue;
-			}
-			emitDataCommit(payload,dataKey,dataArray,intent.schemaNode);
-			if (rowData)
-				this._rowFilterCache?.delete(rowData);
-		}
-		for (const {effect} of effects)
-			effect();
-		for (const group of groupsTouched) {
-			delete group?._openSnapshot;
-			delete group?._openRepeatedBaselines;
-		}
-		txn.intents.length=0;
-		this._editTransaction=null;
-		this.refreshView("commit");
-	}
-
-	_closeGroup(groupObject,targetCell=null,suppressTooltip=false) {
+	_closeGroup(groupObject,targetCell=null,suppressTooltip=false,continuation=null) {
+		if (this._pendingGroupTransaction)
+			return false;
 		if (this._isTrashMode()) {
 			this._finalizeGroupClose(groupObject);
 			this._removeGroupFromTransaction(groupObject,true);
 			return true;
 		}
-		// An untouched creation is a disposable draft, not a commit attempt. Remove it before onClose/creation
+		// An untouched creation is a disposable draft, not a commit attempt. Remove it before group validation
 		// validation; ordinary navigation can then continue to its requested target.
 		if (this._isUntouchedCreatingGroup(groupObject)) {
 			this._deleteCell(groupObject,false,false);
@@ -6967,7 +7204,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._enterEditTransaction(groupObject);
 		const {payload,closePayload,closeState,changed}=this._buildGroupPayload(groupObject);
 		const commitPayload={...payload};
-		groupObject.schemaNode.onClose?.(closePayload);
+		const commitBoundary=this._getGroupCommitBoundary(groupObject)??groupObject;
+		try {
+			const validationResult=groupObject.schemaNode.validate?.(closePayload);
+			if (this._isThenable(validationResult))
+				throw new TypeError("validate must be synchronous.");
+			if (validationResult===false)
+				closePayload.preventClose();
+			else if (validationResult&&typeof validationResult==="object"&&validationResult.valid===false)
+				closePayload.preventClose(validationResult.message);
+		} catch(error) {
+			closePayload.preventClose(error?.message??String(error));
+		}
 		if (!closeState.doClose) {
 			if (!suppressTooltip) {
 				const tooltipMessage=[closeState.preventMessage,this.lang.groupValidationFailedHint]
@@ -6976,18 +7224,39 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 			return false;
 		}
-		if (groupObject.creating&&groupObject.parent?.schemaNode.type==="repeated"
-			&&!this._closeRepeatedInsertion(groupObject))
-			return false;
-		this._finalizeGroupClose(groupObject);
+		if (groupObject.creating&&groupObject.parent?.schemaNode.type==="repeated") {
+			if (!this._closeRepeatedInsertion(groupObject))
+				return false;
+			// The entry is now an accepted part of the surrounding live draft, so it may be reopened and reordered.
+			// It does not become committed until the outer transaction's handoff succeeds.
+			groupObject.creating=false;
+			groupObject._transactionCreated=true;
+		}
+		if (groupObject!==commitBoundary)
+			this._stageGroupClose(groupObject);
 		if (changed)
 			for (const repeated of this._getRepeatedAncestors(groupObject))
 				this._finalizeRepeatedMutation(repeated);
 		// Buffer commit so outer groups can still cancel; flush once the outermost edit scope commits.
 		this._bufferGroupCommit(groupObject,commitPayload);
+		if (groupObject===commitBoundary) {
+			let prepared;
+			try {
+				prepared=this._prepareCommitTransaction(commitBoundary);
+			} catch(error) {
+				this._editTransaction.intents.pop();
+				if (!suppressTooltip)
+					this._showTooltip(error?.message??String(error),groupObject.el);
+				return false;
+			}
+			if (!prepared.transaction.commits.length) {
+				this._finalizeCommitTransaction(prepared);
+				return true;
+			}
+			return this._startGroupCommitHandoff(prepared,
+				continuation??this._captureGroupContinuation(targetCell));
+		}
 		this._removeGroupFromTransaction(groupObject);
-		if (!this._editTransaction?.stack.length)
-			this._flushBufferedGroupCommits();
 		return true;
 	}
 
@@ -7401,9 +7670,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (newObj.schemaNode.closedRender)
 				newObj.updateRenderOnClose=true;
 			this._selectFirstSelectableDetailsCell(newObj,true,true);
-			repeated.schemaNode.onCreateOpen?.(repeated);
 			// Capture the canonical draft baseline after the complete creation lifecycle, so createData values, objects
-			// initialized declaratively while rendering, and synchronous onCreateOpen defaults are all untouched state.
+			// initialized declaratively while rendering are all untouched state.
 			newObj._openSnapshot=this._cloneGroupData(newObj.dataObj);
 		}
 		return newObj.el;
@@ -7430,8 +7698,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (repeated?.schemaNode?.type!=="repeated"||config==null)
 			return null;
 		if (!config||typeof config!=="object"||Array.isArray(config)
-			||typeof config.canMove!=="function"||typeof config.onCommit!=="function")
-			throw new TypeError("Repeated reorder requires canMove and onCommit callbacks.");
+			||typeof config.canMove!=="function")
+			throw new TypeError("Repeated reorder requires a canMove callback.");
 		return config;
 	}
 
@@ -7649,7 +7917,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._adjustCursorPosSize(this._selectedCell);
 		this._highlightOnFocus=false;
 		if (payload)
-			this._queueTransactionEffect(()=>config.onCommit(payload),entry);
+			this._queueReorderCommit(payload,entry);
 		return true;
 	}
 
@@ -8053,8 +8321,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._activeDetailsCell=null;
 				break;
 			}
+		const commitBoundary=this._getGroupCommitBoundary(instanceNode);
 		if (instanceNode.schemaNode?.type==="group")
-			this._removeGroupFromTransaction(instanceNode,true);
+			this._removeGroupFromTransaction(instanceNode,!commitBoundary);
 
 		// Commit deletion after mutation/reindex
 		if (!programatically&&parent?.schemaNode?.type==="repeated"&&dataIndex>-1) {
@@ -8080,7 +8349,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		let newSelectedCell=parent.children[visualIndex]??parent.children[visualIndex-1];
 		if (!programatically&&selectNext)
 			this._selectDetailsCell(newSelectedCell??parent.parent);
-		instanceNode.creating&&parent.schemaNode.onCreateCancel?.(parent);
 		return {deletedDataItem:deletedData,itemIndex:dataIndex,visualIndex,wasCreating};
 	}
 
@@ -8956,6 +9224,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return this._exitReadOnlyMode();
 		if (!this._inEditMode)
 			return true;
+		if (this._pendingDataCommit)
+			return false;
 		if (this._comboboxContext)
 			this._closeComboboxPopup(this._comboboxContext);
 		if (this._editModeController)
@@ -8967,17 +9237,66 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			input.value=input.value.replaceAll(this._activeSchemaNode.input.format.delimiter, "");
 		if (this._activeSchemaNode.input.validation&&save&&!this._validateInput(input.value))
 			return false;
-		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
-		this._focusEl.focus({preventScroll:true});//so that #inputVal gets updated-
-
-
-		this._inEditMode=false;
-		this._cellCursor.classList.remove("edit-mode");
 		const inputValNorm=this._normalizeCommitValue(this._activeSchemaNode,this._inputVal);
 		const selectedValNorm=this._normalizeCommitValue(this._activeSchemaNode,this._selectedCellVal);
 		if (save&&inputValNorm!=selectedValNorm) {
-			this._doEditSave();
+			const dataObj=this._cellCursorDataObj;
+			const schemaNode=this._activeSchemaNode;
+			const activeDetailsCell=this._activeDetailsCell;
+			const selectedCell=this._selectedCell;
+			const previousValue=this._selectedCellVal;
+			const proposedValue=this._inputVal;
+			const commitResult=this._doEditSave();
+			if (commitResult?.promise&&typeof commitResult.promise.then==="function") {
+				// Promise-returning hooks represent local durable persistence. Keep the editor and restore the
+				// committed row model until that handoff has completed.
+				dataObj[schemaNode.dataKey]=previousValue;
+				this._selectedCellVal=previousValue;
+				this._refreshPendingCommitCell(selectedCell,schemaNode,activeDetailsCell,dataObj);
+				this._pendingDataCommit=commitResult.promise;
+				this._cellCursor.classList.add("commit-pending");
+				if (input)
+					input.disabled=true;
+				this._pendingDataCommit.then(()=>{
+					dataObj[schemaNode.dataKey]=proposedValue;
+					this._selectedCellVal=proposedValue;
+					this._finalizeCommitTransaction(commitResult.prepared);
+					this._refreshPendingCommitCell(selectedCell,schemaNode,activeDetailsCell,dataObj);
+					this._pendingDataCommit=null;
+					this._cellCursor.classList.remove("commit-pending");
+					this._finishEditModeExit();
+				}).catch(error=>{
+					this._editTransaction=null;
+					this._pendingDataCommit=null;
+					this._cellCursor.classList.remove("commit-pending");
+					this._inputVal=proposedValue;
+					if (input) {
+						input.disabled=false;
+						input.value=proposedValue??"";
+						input.focus({preventScroll:true});
+					}
+					this._showTooltip(error?.message??this._lang.dataCommitFailed
+						??"The change could not be saved locally.");
+				});
+				return false;
+			}
 		}
+		return this._finishEditModeExit();
+	}
+
+	_refreshPendingCommitCell(selectedCell,schemaNode,activeDetailsCell,dataObj) {
+		if (activeDetailsCell)
+			this._updateDetailsCell(activeDetailsCell,dataObj);
+		else if (selectedCell)
+			this._updateMainRowCell(selectedCell,schemaNode);
+		this._updateDependentCells(schemaNode,activeDetailsCell);
+	}
+
+	_finishEditModeExit() {
+		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
+		this._focusEl.focus({preventScroll:true});
+		this._inEditMode=false;
+		this._cellCursor.classList.remove("edit-mode");
 		this._cellCursor.replaceChildren();
 		this._restoreInlineEditorLayout();
 		//if (this._activeSchemaNode.input.type==="textarea")//also needed for file..
@@ -9170,15 +9489,29 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * restores data from snapshot, repaints dirty fields, refreshes main row, and closes.
 	 */
 	_discardActiveGroupEdits() {
+		if (this._pendingGroupTransaction)
+			return false;
 		const group=this._getOpenGroupAncestor(this._activeDetailsCell);
 		if (!group)
 			return;
 		this._removeGroupFromTransaction(group,true);
 		const {payload,closePayload}=this._buildGroupPayload(group);
 		closePayload.reason=payload.reason="discard";
-		if (group.creating) {
-			group.schemaNode.onClose?.(closePayload);
-			return this._deleteCell(group);
+		if (group.creating||group._transactionCreated) {
+			const repeated=group.parent;
+			const dataIndex=this._getRepeatedDataIndex(group);
+			if (dataIndex>-1)
+				repeated.dataObj.splice(dataIndex,1);
+			const result=this._deleteCell(group,true);
+			this._finalizeRepeatedMutation(repeated);
+			try {
+				const hookResult=group.schemaNode.afterDiscard?.(closePayload);
+				if (this._isThenable(hookResult))
+					throw new TypeError("afterDiscard must be synchronous.");
+			} catch(error) {
+				console.error("Tablance afterDiscard failed.",error);
+			}
+			return result;
 		}
 
 		// Restore data back to snapshot. It *should* only be needed if there are dirty fields so probably could run in
@@ -9188,13 +9521,17 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._restoreRepeatedBaselines(group);
 		
 		this._rerenderDirtyFields(group);
-		group.schemaNode.onClose?.(closePayload);
+		try {
+			const result=group.schemaNode.afterDiscard?.(closePayload);
+			if (this._isThenable(result))
+				throw new TypeError("afterDiscard must be synchronous.");
+		} catch(error) {
+			console.error("Tablance afterDiscard failed.",error);
+		}
 		this._finalizeGroupClose(group);
 		this._selectCell(group.el,group.schemaNode,group.dataObj);
 		this._activeDetailsCell=group;
 		delete group._openRepeatedBaselines;
-		if (!this._editTransaction?.stack?.length)
-			this._flushBufferedGroupCommits();
 	}
 
 	/**
@@ -9214,65 +9551,20 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_scrollElementIntoView(){}//default is to do nothing. Tablance (main) overrides this.
 
 	_closeRepeatedInsertion(repeatEntry) {
-		let message=this.lang.creationValidationFailed;//message to show to the user if creation was unsucessful
-		for (var root=repeatEntry; root.parent; root=root.parent);//get root-object in order to retrieve rowIndex
 		const creationContainer=repeatEntry.schemaNode.type=="group"?repeatEntry:repeatEntry.parent;
 		const repeatedContainer=creationContainer.parent;
-		const parentDataContext=repeatedContainer?.parent?.dataObj??this._filteredData[root.rowIndex];
-		let doCreate=true;
-		if (repeatEntry.schemaNode.creationValidation) {
-			const payload=this._makeCallbackPayload(repeatEntry,{
-				newDataItem:repeatEntry.dataObj
-			},{
-				mainIndex: root.rowIndex
-			});
-			const res=repeatEntry.schemaNode.creationValidation(payload);
-			if (typeof res==="boolean")
-				doCreate=res;
-			else {
-				doCreate=!!res.valid;
-				message=res.message??message;
-			}
-		}
-		if (!doCreate) {
-			message+=this.lang.creationValidationFailedCancelInfo
-			this._showTooltip(message,repeatEntry.el);
-			return false;//prevent commiting/closing the group
-		}
 		this._ensureRepeatedEntryInsertion(repeatEntry);
-		const insertedIndex=this._getRepeatedDataIndex(repeatEntry);
-		const payload=this._makeCallbackPayload(repeatEntry,{
-			newDataItem: repeatEntry.dataObj,
-			itemIndex: insertedIndex,
-			visualIndex: repeatEntry.index,
-			repeatedSchemaNode: repeatedContainer?.schemaNode,
-			entrySchemaNode: creationContainer.schemaNode,
-			newInstanceNode: repeatEntry,
-			cancelCreate: ()=>doCreate=false,
-			dataArray: repeatedContainer?.dataObj,
-			dataKey: repeatedContainer?.schemaNode?.dataKey
-		},{
-			mainIndex: root.rowIndex,
-			rowData: parentDataContext,
-			bulkEdit: false
-		});
-		repeatEntry.creating=false;
-		repeatedContainer.schemaNode.onCreate?.(payload);
-		if (!doCreate) {
-			if (insertedIndex>-1)
-				repeatedContainer.dataObj.splice(insertedIndex,1);
-			repeatEntry.creating=true;
-			this._deleteCell(repeatEntry,true);
-			return false;
-		}
+		this._finalizeRepeatedMutation(repeatedContainer);
 		return true;
 	}
 
-	_closeActiveDetailsCell(targetCell) {
+	_closeActiveDetailsCell(targetCell,continuation=null) {
+		if (this._pendingGroupTransaction)
+			return false;
 		if (this._activeDetailsCell) {
 			for (let oldCellParent=this._activeDetailsCell; oldCellParent=oldCellParent.parent;) {
 				if (oldCellParent.schemaNode.type==="group") {
-					if (!this._closeGroup(oldCellParent,targetCell))//close any open group above old cell
+					if (!this._closeGroup(oldCellParent,targetCell,false,continuation))//close any open group above old cell
 						return false;
 					this._ignoreClicksUntil=Date.now()+500;
 				}
@@ -9286,6 +9578,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 
 	_selectMainTableCell(cell,focus=true) {
+		if (this._pendingGroupTransaction)
+			return false;
 		if (!cell)	//in case of trying to move up from top row etc,
 			return;
 		if (this._getCellState(cell)?.selectable===false)
@@ -9298,7 +9592,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const mainRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);//save it here rather than setting it 
 					//directly because we do not want it to change if #selectCell returns false, preventing the select
 					
-		if (this._closeActiveDetailsCell(cell)) {
+		const continuation={kind:"main",rowData:this._filteredData[mainRowIndex],
+			schemaNode:this._colSchemaNodes[this._mainColIndex],focus};
+		if (this._closeActiveDetailsCell(cell,continuation)) {
 			const selected=this._selectCell(cell,this._colSchemaNodes[this._mainColIndex],
 				this._filteredData[mainRowIndex],true,null,false,focus);
 			this._mainRowIndex=mainRowIndex;
@@ -9307,6 +9603,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_selectDetailsCell(instanceNode,preserveVerticalPreferredColumn=false) {
+		if (this._pendingGroupTransaction)
+			return false;
 		if (!instanceNode)
 			return false;
 		instanceNode=this._getCreatorEmptyTarget(instanceNode)??instanceNode;
@@ -9336,7 +9634,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 							break;
 						}
 					if (oldParnt) {
-						if (oldParnt.schemaNode.type==="group"&&!this._closeGroup(oldParnt,instanceNode.selEl??instanceNode.el))
+						if (oldParnt.schemaNode.type==="group"&&!this._closeGroup(oldParnt,instanceNode.selEl??instanceNode.el,
+							false,{kind:"details",rowData:this._filteredData[mainRowIndex],path:[...instanceNode.path],
+								preserveVerticalPreferredColumn}))
 							return false;
 						if (oldParnt.schemaNode.onBlur)
 							oldParnt.schemaNode.onBlur?.(oldParnt,mainRowIndex);
@@ -11259,6 +11559,7 @@ export default class Tablance extends TablanceBase {
 			if (!this._selectedCellState?.mutable)
 				return false;
 			let doUpdate=true;//if false then the data will not actually change in either dataObject or the html
+			let commitResult;
 			const inputVal=this._activeSchemaNode.input.type==="select"
 				?this._getSelectValue(this._inputVal):this._inputVal;
 			const openGroup=this._getOpenGroupAncestor(this._activeDetailsCell);
@@ -11314,7 +11615,7 @@ export default class Tablance extends TablanceBase {
 						mainIndex,
 						instanceNode: this._activeDetailsCell
 					});
-					this._queueDataCommit(payload,this._activeDetailsCell);
+					commitResult=this._queueDataCommit(payload,this._activeDetailsCell);
 				}
 				if (isRepeatedCreate)
 					this._activeDetailsCell.creating=false;
@@ -11323,6 +11624,7 @@ export default class Tablance extends TablanceBase {
 				this._cellCursorDataObj[this._activeSchemaNode.dataKey]=prevVal;
 				this._inputVal=this._selectedCellVal;
 		}
+		return commitResult;
 	}
 
 	_scrollToCursor() {

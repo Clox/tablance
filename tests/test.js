@@ -91,7 +91,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 			{type:"field",title:"File3",dataKey:"file",input:{type:"file", onOpenFile:payload=>console.log(payload)},commitDataTarget:"file"}}
 	]},
 
-	{type:"group",dataKey:"innergrejer",title:"Inre grej",onClose:({preventClose})=>preventClose("nope!"),
+	{type:"group",dataKey:"innergrejer",title:"Inre grej",validate:({preventClose})=>preventClose("nope!"),
 		entries:[{type:"field",dataKey:"innerFoo"}]},
 		{type:"field",title:"File4",dataKey:"file",input:{type:"file",fileUploadHandler:xhr=>{
 				xhr.open("POST", "http://localhost:3000/tests/serve.php", true);
@@ -124,11 +124,9 @@ document.addEventListener("DOMContentLoaded", ()=>{
 		 {type:"group",title:"förordnande1",bulkEdit:true,entries:[
 			{type:"repeated",dataKey:"custodianshipChanges",bulkEdit:true,create:true,nodeId:"förordnande1",
 			sortCompare:(a,b)=>a.date>b.date?1:-1
-			,onCreate:payload=>console.log(payload)
-			,onDelete:(...args)=>console.log(args)
 			,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
 			,areYouSureYesText:"Ja",areYouSureNoText:"Nej",entry:
-				{type:"group"/* ,onClose:({preventClose})=>preventClose("nope!") */,closedRender:data=>{
+				{type:"group",closedRender:data=>{
 						return `${{trustee:"God Man", administrator:"Förvaltare"}[data.type]} sedan ${data.date??""}`;
 					},entries:[
 						{type:"field",title:"Datum",dataKey:"date",input:{type:"date",bulkEdit:true}},
@@ -142,7 +140,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 							options:[{text:"Ja",value:true},{text:"Nej",value:false}]
 						},dependsOn:"type",visibleIf:typeVal=>typeVal&&typeVal!="end"}
 					],
-					creationValidation:({newDataItem:data})=>{
+					validate:({data})=>{
 						return !!(data.date&&data.type);
 					}
 				}
@@ -162,8 +160,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 
 
 /* 		{type:"list",title:"förordnande-lista",titlesColWidth:0,entries:[
-			{type:"repeated",dataKey:"custodianshipChanges",create:true,onCreate:payload=>console.log(payload)
-			,onDelete:(...args)=>console.log(args)
+			{type:"repeated",dataKey:"custodianshipChanges",create:true
 			,sortCompare:(a,b)=>a.date>b.date?1:-1
 			,creationText:"Lägg till",deleteAreYouSureText:"Är du säker?",deleteText:"Ta bort"
 			,areYouSureYesText:"Ja",areYouSureNoText:"Nej",entry:
@@ -175,7 +172,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 							options:[{text:"God Man",value:"trustee"},{text:"Förvaltare",value:"administrator"}]
 							,allowSelectEmpty:false
 						}}],
-					creationValidation:({newDataItem:data})=>{
+					validate:({data})=>{
 						return !!(data.date&&data.type);
 					}
 				}
@@ -222,7 +219,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 	const tablanceContainer=document.getElementById("tablanceContainer1");
 
 	const schema={
-		onDataCommit:payload=>console.log(payload),
+		commit:transaction=>console.log(transaction),
 		main:{columns:myTablanceCols, toolbar:{
 		defaultInsert:true,
 		items:[]
@@ -231,7 +228,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 //					,onRowCommit:payload=>console.log("onRowCommit",payload)
 					,onChange:payload=>console.log("root.onChange",payload)
 					,onCommit:payload=>console.log("group.onCommit",payload)
-					,onClose:payload=>console.log("group.onClose",payload)};
+					,afterDiscard:payload=>console.log("group.afterDiscard",payload)};
 	
 	const myTablance=new Tablance(tablanceContainer,schema, true, true
 					,{defaultFileMetasToShow:{filename:false},lang:lang, useFakeFileUploadTest:true});

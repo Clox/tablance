@@ -7,6 +7,11 @@ const assert=(condition,message)=>{
 		throw new Error(message);
 	assertions.push(message);
 };
+const assertThrows=(callback,pattern,message)=>{
+	let error;
+	try { callback(); } catch(caught) { error=caught; }
+	assert(error&&pattern.test(String(error.message??error)),message);
+};
 const tick=()=>new Promise(resolve=>setTimeout(resolve,20));
 const waitFor=async (condition,message,timeout=1000)=>{
 	const deadline=performance.now()+timeout;
@@ -31,6 +36,15 @@ const host=()=>{
 	const element=document.body.appendChild(document.createElement("div"));
 	element.className="host";
 	return element;
+};
+const commitEach=callback=>(transaction,context)=>{
+	for (const commit of transaction.commits)
+		callback({
+			...commit,mode:commit.kind,
+			data:context.dataFor(commit),sourceData:context.sourceDataFor(commit),
+			parentData:context.parentDataFor(commit),rowData:context.rowData,
+			schemaNode:context.schemaNodeFor(commit),tablance:context.tablance,
+		});
 };
 
 try {
@@ -504,7 +518,7 @@ try {
 			getChanges:({operation})=>({deletedOn:operation==="trash"?"2026-09-16":null}),
 		},
 		views:{default:{title:"Left",filter:row=>row.group==="left"},all:{title:"All",filter:()=>true}},
-		onDataCommit:payload=>lifecycleCommits.push(payload),
+		commit:commitEach(payload=>lifecycleCommits.push(payload)),
 		main:{toolbar:{defaultInsert:true,viewSwitcher:true,tableActions:[{type:"trash"}]},columns:[
 			{type:"expand",width:40},
 			{dataKey:"name",title:"Name",input:{type:"text"}},
@@ -645,7 +659,11 @@ try {
 		&&lifecycleCommits[0].changes.deletedOn===null
 		&&lifecycleCommits[0].data===lifecycleRows[2]
 		&&JSON.stringify(lifecycleRows[2].entries)==='[{"value":"old child"}]',
-		"Restore updates the shared row immediately and dispatches a normal update commit");
+		`Restore updates the shared row immediately and dispatches a normal update commit (${JSON.stringify({
+			deletedOn:lifecycleRows[2].deletedOn,filtered:lifecycleTable._filteredData.length,
+			txn:{stack:lifecycleTable._editTransaction?.stack?.length,intents:lifecycleTable._editTransaction?.intents?.length},
+			commits:lifecycleCommits.map(({mode,operation,changes,data})=>({mode,operation,changes,same:data===lifecycleRows[2]})),
+		})})`);
 	lifecycleTable._searchInput.value="Closed";
 	lifecycleTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
 	tableMenuButton.click();
@@ -1109,7 +1127,7 @@ try {
 			all:{title:"Alla",filter:()=>true},
 			archived:row=>row.active===false,
 		},
-		onDataCommit:payload=>viewCommits.push(payload),
+		commit:commitEach(payload=>viewCommits.push(payload)),
 		main:{toolbar:{defaultInsert:true,viewSwitcher:true},columns:[
 			{dataKey:"name",render:({value})=>{ viewNameRenders++; return value; },input:{type:"text"}},
 			{dataKey:"active",input:{type:"text"}},
@@ -1736,7 +1754,7 @@ try {
 		history:[{date:"2026-01-01",event:"Appointment"},{date:"2026-02-01",event:"Change"}],
 		file:{name:"report.pdf",lastModified:"2026-08-30T10:00:00Z",size:1024,type:"application/pdf"}};
 	const schema={
-		onDataCommit:()=>commits++,
+		commit:()=>commits++,
 		main:{columns:[
 			{dataKey:"editable",title:"Editable",input:{type:"text",onChange:()=>changes++}},
 			{dataKey:"computed",title:"Computed",render:()=>"Rendered age: 31",readOnlyPresentation:true},
@@ -2192,22 +2210,22 @@ try {
 	assert(homeEndDetails._activeDetailsCell===homeEndGroup&&!homeEndGroup.el.classList.contains("open"),
 		"details Ctrl+End descends from the root but never opens or descends through a group terminal");
 
-	let deleteDecision="prevent",beforeDeleteCalls=0,afterDeleteCalls=0,deleteCommits=0;
+	let deleteDecision="prevent",validateDeleteCalls=0,deleteCommits=0;
 	const repeatedRows=[{name:"keep"},{name:"candidate"}];
 	const guardedDeleteTable=new Tablance(host(),{
-		onDataCommit:({mode})=>mode==="delete"&&deleteCommits++,
+		commit:commitEach(({mode})=>mode==="delete"&&deleteCommits++),
 		details:{type:"list",entries:[{type:"repeated",dataKey:"items",nodeId:"items",create:true,
 			deleteAreYouSureText:"Remove this candidate?",
-			beforeDelete:({deletedDataItem,remainingData,preventDelete})=>{
-				beforeDeleteCalls++;
+			validateDelete:({deletedDataItem,remainingData,preventDelete})=>{
+				validateDeleteCalls++;
 				assert(deletedDataItem===repeatedRows[1]&&remainingData.length===1&&remainingData[0]===repeatedRows[0],
-					"beforeDelete receives the candidate and a non-mutating view of the remaining data");
+					"validateDelete receives the candidate and a non-mutating view of the remaining data");
 				if (deleteDecision==="prevent")
 					preventDelete("Deletion blocked");
 				else if (deleteDecision==="returnFalse")
 					return false;
 			},
-			onDelete:()=>afterDeleteCalls++,entry:{dataKey:"name",input:{type:"text"}},
+			entry:{dataKey:"name",input:{type:"text"}},
 		}]},
 	},true,true,{searchbar:false});
 	guardedDeleteTable.setData([{items:repeatedRows}]);
@@ -2287,41 +2305,35 @@ try {
 	const deleteControl={parent:{parent:guardedEntry}};
 	assert(guardedDeleteTable._repeatedOnDelete({instanceNode:deleteControl})===false
 		&&repeatedRows.length===2&&guardedRepeated.children.includes(guardedEntry)
-		&&afterDeleteCalls===0&&deleteCommits===0,
-		"beforeDelete can veto deletion before data, instances, DOM, callbacks, or persistence change");
+		&&deleteCommits===0,
+		"validateDelete can veto deletion before data, instances, DOM, callbacks, or persistence change");
 	deleteDecision="returnFalse";
 	assert(guardedDeleteTable._repeatedOnDelete({instanceNode:deleteControl})===false
-		&&repeatedRows.length===2&&afterDeleteCalls===0&&deleteCommits===0,
-		"returning false from beforeDelete also vetoes deletion");
+		&&repeatedRows.length===2&&deleteCommits===0,
+		"returning false from validateDelete also vetoes deletion");
 	deleteDecision="allow";
 	assert(guardedDeleteTable._repeatedOnDelete({instanceNode:deleteControl})===true
-		&&beforeDeleteCalls===3&&repeatedRows.length===1&&!guardedRepeated.children.includes(guardedEntry)
-		&&afterDeleteCalls===1&&deleteCommits===1,
-		"an allowed deletion continues through mutation, onDelete, and persistence");
+		&&validateDeleteCalls===3&&repeatedRows.length===1&&!guardedRepeated.children.includes(guardedEntry)
+		&&deleteCommits===1,
+		"an allowed deletion continues through mutation, validation, and commit handoff");
 
 	const sortedBacking=[{id:1,order:30,label:"thirty"},{id:2,order:10,label:"ten"},
 		{id:3,order:20,label:"twenty"}];
 	const sortedCommits=[];
-	let sortedCreatePayload,sortedDeletePayload,sortedDeleteLifecycleCalls=0,sortedCreateCancelCalls=0;
-	let cancelSortedCreate=false,compareContextValid=true;
+	let sortedDeletePayload;
+	let compareContextValid=true;
 	const sortedIdentityTable=new Tablance(host(),{
-		onDataCommit:payload=>sortedCommits.push(payload),main:{columns:[{dataKey:"title"}]},
+		commit:commitEach(payload=>sortedCommits.push(payload)),main:{columns:[{dataKey:"title"}]},
 		details:{type:"list",entries:[
 			{type:"repeated",dataKey:"items",nodeId:"sortedItems",create:true,
 				createData:()=>({order:7,label:"new"}),
-				onCreate:payload=>{
-					sortedCreatePayload=payload;
-					if (cancelSortedCreate)
-						payload.cancelCreate();
-				},
-				onCreateCancel:()=>sortedCreateCancelCalls++,
 				sortCompare:(a,b,rowData,instanceNode)=>{
 					compareContextValid&&=rowData?.items===sortedBacking
 						&&instanceNode?.schemaNode?.nodeId==="sortedItems";
 					return a.order-b.order;
 				},
-				beforeDelete:payload=>sortedDeletePayload=payload,
-				onDelete:()=>sortedDeleteLifecycleCalls++,entry:{type:"group",entries:[
+			validateDelete:payload=>sortedDeletePayload=payload,
+			entry:{type:"group",entries:[
 					{title:"Order",dataKey:"order",nodeId:"sortedOrder",input:{type:"text"}},
 					{title:"Label",dataKey:"label",input:{type:"text"}},
 					{title:"Collection state",dataKey:"state",dependsOn:"sortedItems",
@@ -2353,8 +2365,7 @@ try {
 		&&sortedDeletePayload.visualIndex===1
 		&&JSON.stringify(sortedDeletePayload.remainingData.map(entry=>entry.id))===JSON.stringify([1,2])
 		&&sortedCommits.filter(payload=>payload.mode==="delete").length===1
-		&&sortedCommits.find(payload=>payload.mode==="delete").data.id===3
-		&&sortedDeleteLifecycleCalls===1,
+		&&sortedCommits.find(payload=>payload.mode==="delete").data.id===3,
 		"sorted deletion mutates, validates, and persists exactly once by object identity");
 	const identityOne=visualEntries().find(entry=>entry.dataObj.id===1);
 	const identityOneElement=identityOne.outerContainerEl;
@@ -2384,7 +2395,8 @@ try {
 	assert(sortedIdentityTable._closeGroup(pendingSortedEntry)
 		&&JSON.stringify(sortedBacking.map(entry=>entry.id??"new"))===JSON.stringify([1,2,"new"])
 		&&visualEntries()[1]===pendingSortedEntry&&pendingSortedEntry.outerContainerEl===pendingSortedElement
-		&&sortedCreatePayload.itemIndex===2&&sortedCreatePayload.visualIndex===2
+		&&sortedCommits.find(payload=>payload.mode==="create")?.itemIndex===2
+		&&sortedCommits.find(payload=>payload.mode==="create")?.visualIndex===2
 		&&collectionState.hidden&&collectionEdit.cellState.kind==="readOnly",
 		"accepted creation appends to backing data, sorts the existing instance visually, "
 			+"and invalidates collection dependents");
@@ -2398,18 +2410,6 @@ try {
 	assert(sortedBacking[1].id===2&&sortedBacking[1].order===1&&visualEntries()[0].dataObj.id===2
 		&&JSON.stringify(sortedBacking.map(entry=>entry.id??"new"))===JSON.stringify([1,2,"new"]),
 		"updateData addresses a backing-array index by object identity and then re-sorts only the presentation");
-	const createCommitsBeforeCancel=sortedCommits.filter(payload=>payload.mode==="create").length;
-	cancelSortedCreate=true;
-	sortedRepeated.createNewEntry();
-	const cancelledSortedEntry=sortedRepeated.children.find(entry=>entry.creating);
-	cancelledSortedEntry.dataObj.label="cancelled";
-	sortedIdentityTable._markDirtyField(cancelledSortedEntry.children[1]);
-	assert(sortedIdentityTable._closeGroup(cancelledSortedEntry)===false
-		&&!sortedRepeated.children.includes(cancelledSortedEntry)&&sortedCreateCancelCalls===1
-		&&sortedCommits.filter(payload=>payload.mode==="create").length===createCommitsBeforeCancel
-		&&JSON.stringify(sortedBacking.map(entry=>entry.id??"new"))===JSON.stringify([1,2,"new"]),
-		"cancelCreate removes the pending object and instance without persistence or backing-array residue");
-
 	const groupedBacking=[
 		{id:"b-2",kind:"b",order:2,label:"B two"},
 		{id:"a-3",kind:"a",order:3,label:"A three"},
@@ -2590,19 +2590,32 @@ try {
 		&&previewTable._getFirstSelectableDetailsCell(previewRepeated,true)===previewEntry("a-first"),
 		"preview-hidden repeated entries are excluded from logical keyboard navigation");
 	const previewBackingSnapshot=[...previewBacking];
+	const closedPreviewHeight=previewViewport.getBoundingClientRect().height;
 	previewEntry("a-second").select();
-	const openingPreviewTransition=previewViewport._tablanceGroupTransition;
-	assert(previewOuter.el.classList.contains("open")&&openingPreviewTransition
-		&&openingPreviewTransition.targetHeight===previewTable._groupNaturalHeight(previewOuter)
+	const immediateOpeningTransition=previewViewport._tablanceGroupTransition;
+	assert(previewOuter.el.classList.contains("open")&&immediateOpeningTransition
+		&&immediateOpeningTransition.targetHeight===previewTable._groupNaturalHeight(previewOuter)
 		&&previewEntries().every(entry=>!entry.previewHidden)
 		&&JSON.stringify(previewTitles())===JSON.stringify(["Alphas","Betas","Empty group","unknown"]),
 		"programmatic opening synchronizes full presentation before measuring and animating its viewport");
-	await tick();
-	assert(previewOuter.el.classList.contains("open")
+	assert(Math.abs(previewViewport.getBoundingClientRect().height-closedPreviewHeight)<.75,
+		"the opening transition has not moved visually before its first animation frame");
+	previewTable._finalizeGroupClose(previewOuter);
+	assert(!previewOuter.el.classList.contains("open")&&!previewViewport._tablanceGroupTransition
+		&&!previewViewport.style.height&&!previewViewport.style.overflow
+		&&JSON.stringify(previewTitles())===JSON.stringify(["Alpha","Beta","unknown"]),
+		"closing before visual opening movement applies compact state without retaining a no-op transition");
+
+	const reversalClosedHeight=previewViewport.getBoundingClientRect().height;
+	previewEntry("a-second").select();
+	const openingPreviewTransition=previewViewport._tablanceGroupTransition;
+	assert(previewOuter.el.classList.contains("open")&&openingPreviewTransition
 		&&previewEntries().every(entry=>!entry.previewHidden)
 		&&JSON.stringify(previewTitles())===JSON.stringify(["Alphas","Betas","Empty group","unknown"])
 		&&previewTable._activeDetailsCell===previewEntry("a-second"),
-		"programmatic selection opens the enclosing group and restores full repeated rendering");
+		"programmatic selection starts reopening the enclosing group with full repeated rendering");
+	await waitFor(()=>Math.abs(previewViewport.getBoundingClientRect().height-reversalClosedHeight)>=.75,
+		"group opening animation to make visual progress");
 	previewTable._finalizeGroupClose(previewOuter);
 	const reversedPreviewTransition=previewViewport._tablanceGroupTransition;
 	assert(reversedPreviewTransition&&reversedPreviewTransition!==openingPreviewTransition
@@ -2711,7 +2724,7 @@ try {
 		{type:"group",nodeId:"hiddenReorderOuter",entries:[
 			{type:"repeated",dataKey:"items",nodeId:"hiddenReorderItems",create:true,
 				grouping:{by:"kind",order:[{key:"a",title:"Grouped entries"}]},
-				reorder:{canMove:()=>false,onCommit:()=>{}},entry:{type:"group",
+				reorder:{canMove:()=>false},entry:{type:"group",
 					closedRender:({label})=>label,entries:[{title:"Label",dataKey:"label",input:{type:"text"}}]}},
 		]},
 	]}},true,true,{searchbar:false});
@@ -2825,13 +2838,11 @@ try {
 		{id:"new",position:3,label:"New"},
 	];
 	const reorderCommits=[];
-	const reorderTable=new Tablance(host(),{details:{type:"list",entries:[
+	const reorderTable=new Tablance(host(),{commit:transaction=>reorderCommits.push(
+		...transaction.commits.filter(commit=>commit.kind==="reorder")),details:{type:"list",entries:[
 		{type:"repeated",dataKey:"items",nodeId:"reorderItems",create:true,
 			 sortCompare:(a,b)=>b.position-a.position,
-			reorder:{
-				canMove:(_direction,{target})=>!!target,
-				onCommit:payload=>reorderCommits.push(payload),
-			},
+			reorder:{canMove:(_direction,{target})=>!!target},
 			entry:{type:"group",closedRender:data=>data.label,entries:[
 				{title:"Label",dataKey:"label",input:{type:"text"}},
 			]}},
@@ -3073,12 +3084,12 @@ try {
 	const transactionalRows=[{id:"older",position:1,label:"Older"},{id:"newer",position:2,label:"Newer"}];
 	const transactionalEvents=[];
 	const transactionalTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},
-		onDataCommit:payload=>transactionalEvents.push(`data:${payload.mode}:${payload.data.label}`),
+		commit:transaction=>transactionalEvents.push(...transaction.commits.map(commit=>
+			`${commit.kind}:${commit.data?.label??"collection"}`)),
 		details:{type:"list",entries:[{type:"group",nodeId:"transactionalOuter",entries:[
 			{type:"repeated",dataKey:"items",nodeId:"transactionalItems",create:true,
 				createData:()=>({position:3,label:"Draft"}),sortCompare:(a,b)=>b.position-a.position,
-				reorder:{canMove:(_direction,{target})=>!!target,
-					onCommit:payload=>transactionalEvents.push(`reorder:${payload.data.label}`)},
+				reorder:{canMove:(_direction,{target})=>!!target},
 				entry:{type:"group",closedRender:data=>data.label,entries:[
 					{title:"Label",dataKey:"label",input:{type:"text"}},
 				]}},
@@ -3159,7 +3170,7 @@ try {
 	key(transactionalTable.rootEl,"Enter","Enter");
 	transactionalTable._closeGroup(transactionalOuter);
 	assert(JSON.stringify(transactionalEvents)===JSON.stringify(
-		["data:create:Created and committed","reorder:Created and committed"]),
+		["create:Created and committed","reorder:Created and committed"]),
 		"parent commit emits create before its buffered reorder effect in deterministic order");
 
 	const nestedDependencyRenders={};
@@ -4037,7 +4048,7 @@ try {
 		"double-click cannot activate an explicitly locked editor");
 	table._inputVal="illegal";
 	assert(table._doEditSave()===false&&row.explicit==="locked","final save guard rejects readOnly mutation");
-	assert(changes===0&&commits===0&&validations===0,"readOnly triggers no validation, onChange, or onDataCommit callbacks");
+	assert(changes===0&&commits===0&&validations===0,"readOnly triggers no validation, onChange, or commit callbacks");
 
 	table.selectCell(row,"editable");
 	key(table.rootEl,"Enter","Enter");
@@ -4141,6 +4152,53 @@ try {
 	table._exitEditMode(false);
 	assert(!table._cellCursor.querySelector(".tablance-textarea-shortcut-hint"),
 		"the new-line shortcut hint is removed when textarea edit mode closes");
+
+	let durableResolve;
+	let durableReject;
+	let durableAttempt=0;
+	const durableRow={title:"Durable",notes:"Server value"};
+	const durableTable=new Tablance(host(),{
+		commit:()=>new Promise((resolve,reject)=>{
+			durableAttempt++;
+			durableResolve=resolve;
+			durableReject=reject;
+		}),
+		main:{columns:[{dataKey:"title"}]},
+		details:{type:"list",entries:[{title:"Notes",dataKey:"notes",nodeId:"durableNotes",
+			input:{type:"textarea"}}]},
+	},true,true,{searchbar:false});
+	durableTable.setData([durableRow]);
+	durableTable.expandRow(0,false);
+	await tick();
+	durableTable.getDetailCell(0,"durableNotes").select();
+	key(durableTable.rootEl,"Enter","Enter");
+	let durableEditor=durableTable._cellCursor.querySelector("textarea");
+	durableEditor.value="Durable local value";
+	durableEditor.dispatchEvent(new Event("change",{bubbles:true}));
+	const durableExit=durableTable._exitEditMode(true);
+	assert(durableExit===false&&durableAttempt===1
+		&&durableRow.notes==="Server value"&&durableTable._inEditMode&&durableEditor.disabled,
+		`a Promise persistence hook keeps final rowData and the editor pending until local durability: ${JSON.stringify({durableExit,durableAttempt,notes:durableRow.notes,inEdit:durableTable._inEditMode,disabled:durableEditor.disabled})}`);
+	durableResolve();
+	await tick();
+	assert(durableRow.notes==="Durable local value"&&!durableTable._inEditMode
+		&&!durableTable._cellCursor.querySelector("textarea"),
+		"resolving durable persistence finalizes rowData and closes the editor");
+
+	durableTable.getDetailCell(0,"durableNotes").select();
+	key(durableTable.rootEl,"Enter","Enter");
+	durableEditor=durableTable._cellCursor.querySelector("textarea");
+	durableEditor.value="Value whose journal failed";
+	durableEditor.dispatchEvent(new Event("change",{bubbles:true}));
+	assert(durableTable._exitEditMode(true)===false&&durableRow.notes==="Durable local value",
+		"a second durable commit also leaves committed rowData untouched while pending");
+	durableReject(new Error("Local journal unavailable"));
+	await tick();
+	durableEditor=durableTable._cellCursor.querySelector("textarea");
+	assert(durableRow.notes==="Durable local value"&&durableTable._inEditMode
+		&&durableEditor?.value==="Value whose journal failed"&&!durableEditor.disabled,
+		"rejecting durable persistence restores prior rowData and preserves the entered editor value");
+	durableTable._exitEditMode(false);
 
 	const textareaHeightRow={label:"Textarea heights",empty:"",oneLine:"One line",
 		multiLine:"First line\nSecond line\nThird line",preset:"Preset height"};
@@ -5338,7 +5396,7 @@ try {
 		{title:"Label",dataKey:"label",input:{type:"text"}},
 	]};
 	const creatorEmptyCommits=[];
-	const creatorEmptyTable=new Tablance(host(),{onDataCommit:payload=>creatorEmptyCommits.push(payload),
+	const creatorEmptyTable=new Tablance(host(),{commit:commitEach(payload=>creatorEmptyCommits.push(payload)),
 		details:{type:"list",entries:[
 		{title:"Before",dataKey:"before",nodeId:"creatorEmptyBefore"},
 		{type:"group",title:"Empty repeated",nodeId:"creatorEmptyGroup",entries:[
@@ -5511,9 +5569,9 @@ try {
 	assert(firstCreatorEmptyCommit?.data===creatorEmptyDraft.dataObj
 		&&firstCreatorEmptyCommit.data.label==="First"
 		&&!Object.prototype.hasOwnProperty.call(firstCreatorEmptyCommit.data,"undefined")
-		&&firstCreatorEmptyCommit.dataKey==="emptyItems"
-		&&firstCreatorEmptyCommit.dataArray===creatorEmptyRow.emptyItems,
-		"the first creator-empty commit preserves field and repeated data keys in its ordinary create payload");
+		&&firstCreatorEmptyCommit.collection?.dataKey==="emptyItems"
+		&&firstCreatorEmptyCommit.itemIndex===0,
+		"the first creator-empty commit preserves its immutable repeated collection context");
 
 	creatorEmptyTable._openGroup(creatorEmptyGroup);
 	const firstEntry=creatorEmptyRepeated.children.find(child=>!child.schemaNode.creator&&!child.creating);
@@ -5936,18 +5994,19 @@ try {
 			.some(button=>button.querySelector("button")),
 		"refreshSubtree reuses repeated-entry controls without nesting new buttons inside them");
 
-	let untouchedCreateClosePayload,untouchedCreateCloseCalls=0,untouchedCreateCommits=0;
+	let untouchedCreateClosePayload,untouchedCreateDiscardPayload,untouchedCreateCloseCalls=0,
+		untouchedCreateCommits=0;
 	const untouchedCreateRows=[];
 	const untouchedCreateTable=new Tablance(host(),{
-		onDataCommit:()=>untouchedCreateCommits++,details:{type:"list",entries:[
+		commit:()=>untouchedCreateCommits++,details:{type:"list",entries:[
 			{type:"repeated",dataKey:"history",nodeId:"untouchedCreateHistory",create:true,
 				createData:()=>({event:"change",scope:null,capacities:["none","none"]}),entry:{type:"group",
-					closedRender:data=>`${data.event}:${data.scope??"missing"}`,onClose:payload=>{
+					closedRender:data=>`${data.event}:${data.scope??"missing"}`,validate:payload=>{
 						untouchedCreateCloseCalls++;
 						untouchedCreateClosePayload=payload;
 						if (!payload.data.scope)
 							payload.preventClose("A scope is required");
-					},entries:[
+					},afterDiscard:payload=>untouchedCreateDiscardPayload=payload,entries:[
 						{title:"Event",dataKey:"event",input:{type:"text"}},
 						{title:"Scope",dataKey:"scope",input:{type:"text"}},
 						{type:"group",dataPath:"renderDefaults",entries:[
@@ -6022,7 +6081,7 @@ try {
 	untouchedCreateTable._markDirtyField(forcedEntry.children[0]);
 	key(untouchedCreateTable.rootEl,"Escape","Escape",{ctrlKey:true});
 	assert(!untouchedRepeated.children.includes(forcedEntry)&&untouchedCreateRows.length===1
-		&&untouchedCreateClosePayload.reason==="discard"&&untouchedCreateCommits===1,
+		&&untouchedCreateDiscardPayload.reason==="discard"&&untouchedCreateCommits===1,
 		"Ctrl+Escape retains its force-discard behavior for a changed creation draft");
 
 	const guardedActionEditorTable=new Tablance(host(),{main:{columns:[
@@ -6063,7 +6122,7 @@ try {
 	let booleanSelectCommit;
 	const booleanSelectRows=[{enabled:false,name:"First"},{enabled:true,name:"Second"}];
 	const booleanSelectTable=new Tablance(host(),{
-		onDataCommit:payload=>booleanSelectCommit=payload,
+		commit:commitEach(payload=>booleanSelectCommit=payload),
 		main:{columns:[
 			{dataKey:"enabled",input:{type:"select",boolean:true}},
 			{dataKey:"name",input:{type:"text"}},
@@ -6466,6 +6525,298 @@ try {
 	gridTable._applyVisibleIf(gridA1);
 	assert(!gridTable._cellRange,"structural grid visibleIf changes invalidate range coordinates");
 	delete gridA1.parent.schemaNode.entries[0].visibleIf;
+
+	let resolveTransactional,rejectTransactional,transactionCalls=0,postCommitCalls=0;
+	const transactionalPayloads=[];
+	const durableGroupTable=new Tablance(host(),{
+		commit:transaction=>{
+			transactionCalls++;
+			transactionalPayloads.push(transaction);
+			return new Promise((resolve,reject)=>{
+				resolveTransactional=resolve;
+				rejectTransactional=reject;
+			});
+		},
+		afterCommit:()=>postCommitCalls++,
+		details:{type:"list",entries:[
+			{type:"group",nodeId:"transactionRoot",dataPath:"outer",
+				closedRender:data=>data.a,validate:payload=>{
+					if (payload.data.a==="invalid")
+						payload.preventClose("Invalid value");
+				},afterDiscard:payload=>payload.rowData.discarded=true,entries:[
+					{dataKey:"a",nodeId:"transactionA",input:{type:"text"}},
+					{type:"group",nodeId:"transactionChild",dataPath:"inner",closedRender:data=>data.b,
+						entries:[{dataKey:"b",nodeId:"transactionB",input:{type:"text"}}]},
+				]},
+			{dataKey:"after",nodeId:"afterTransaction"},
+		]},
+	},true,true,{searchbar:false});
+	const transactionRow={outer:{a:"A",inner:{b:"B"}},after:"after"};
+	durableGroupTable.setData([transactionRow]);
+	await tick();
+	const transactionRoot=durableGroupTable.getDetailCell(0,"transactionRoot");
+	durableGroupTable._openGroup(transactionRoot);
+	const transactionA=durableGroupTable.getDetailCell(0,"transactionA",transactionRoot);
+	const transactionChild=durableGroupTable.getDetailCell(0,"transactionChild",transactionRoot);
+	durableGroupTable._openGroup(transactionChild);
+	const transactionB=durableGroupTable.getDetailCell(0,"transactionB",transactionChild);
+	const transactionChildClosedRenderBefore=transactionChild.el.tBodies[0]
+		.querySelector("tr.group-render .group-closed-content")?.textContent;
+	transactionRow.outer.a="A2";
+	transactionRow.outer.inner.b="B2";
+	transactionRoot.updateRenderOnClose=true;
+	transactionChild.updateRenderOnClose=true;
+	durableGroupTable._markDirtyField(transactionA);
+	durableGroupTable._markDirtyField(transactionB);
+	assert(durableGroupTable._getGroupCommitBoundary(transactionChild)===transactionRoot,
+		"nested instance nodes resolve their implicit outer commit boundary");
+	assert(durableGroupTable._closeGroup(transactionChild),
+		"nested transactional groups stage their close without durable handoff");
+	const transactionalCloseResult=durableGroupTable._closeGroup(transactionRoot);
+	assert(transactionCalls===1&&transactionalCloseResult===false
+		&&transactionRoot.el.getAttribute("aria-busy")==="true",
+		`the transactional root performs one locked durable handoff (calls=${transactionCalls}, close=${transactionalCloseResult}, busy=${transactionRoot.el.getAttribute("aria-busy")})`);
+	const firstTransaction=transactionalPayloads[0];
+	assert(firstTransaction.commits.map(commit=>commit.nodeId).join(",")==="transactionRoot,transactionChild"
+		&&firstTransaction.commits.every(commit=>commit.kind==="update")
+		&&Object.isFrozen(firstTransaction)&&Object.isFrozen(firstTransaction.commits)
+		&&Object.isFrozen(firstTransaction.commits[0].changes)
+		&&Object.isFrozen(firstTransaction.commits[0].schemaNode),
+		"transaction commits are immutable updates in stable root-to-leaf order");
+	assert(postCommitCalls===0&&transactionRoot._openSnapshot&&transactionChild._openSnapshot,
+		"pending handoff preserves snapshots and emits no post-commit effects");
+	const stagedClosedText=transactionChild.el.tBodies[0]
+		.querySelector(":scope>tr.group-render .group-closed-content")?.textContent;
+	assert(stagedClosedText===transactionChildClosedRenderBefore,
+		`a staged nested close does not expose its new closed render before durable handoff (${stagedClosedText})`);
+	assert(durableGroupTable._enterCell(new Event("enter",{cancelable:true}))===false
+		&&durableGroupTable._discardActiveGroupEdits()===false
+		&&transactionRow.outer.a==="A2",
+		"pending transactional handoff locks edits and discard without changing the draft");
+	rejectTransactional(new Error("IndexedDB unavailable"));
+	await Promise.resolve();await Promise.resolve();
+	assert(!durableGroupTable._pendingGroupTransaction&&transactionRoot._openSnapshot
+		&&transactionChild._openSnapshot&&transactionRow.outer.a==="A2"
+		&&transactionRow.outer.inner.b==="B2"&&postCommitCalls===0
+		&&durableGroupTable._isGroupPresentationOpen(transactionChild),
+		"handoff rejection keeps the live draft and all snapshots retryable");
+	durableGroupTable._closeGroup(transactionChild);
+	durableGroupTable._closeGroup(transactionRoot);
+	assert(transactionCalls===2,"a rejected transactional handoff can be retried once");
+	resolveTransactional();
+	await Promise.resolve();await Promise.resolve();
+	assert(!durableGroupTable._pendingGroupTransaction&&!transactionRoot._openSnapshot
+		&&!transactionChild._openSnapshot&&postCommitCalls===1
+		&&transactionRoot.el.getAttribute("aria-busy")===null
+		&&transactionChild.el.tBodies[0]
+			.querySelector("tr.group-render .group-closed-content")?.textContent!==transactionChildClosedRenderBefore,
+		"successful retry finalizes once and clears pending state and snapshots");
+
+	durableGroupTable._openGroup(transactionRoot);
+	transactionRow.outer.a="A3";
+	transactionRoot.updateRenderOnClose=true;
+	durableGroupTable._markDirtyField(transactionA);
+	const afterTransaction=durableGroupTable.getDetailCell(0,"afterTransaction");
+	afterTransaction.select();
+	assert(transactionCalls===3&&durableGroupTable._pendingGroupTransaction
+		&&durableGroupTable._activeDetailsCell!==afterTransaction,
+		"navigation waits at its logical destination while durable handoff is pending");
+	resolveTransactional();
+	await Promise.resolve();await Promise.resolve();
+	assert(durableGroupTable._activeDetailsCell===afterTransaction&&postCommitCalls===2,
+		"successful handoff resumes the captured logical details destination exactly once");
+
+	durableGroupTable._openGroup(transactionRoot);
+	transactionRow.outer.a="invalid";
+	durableGroupTable._markDirtyField(transactionA);
+	assert(durableGroupTable._closeGroup(transactionRoot)===false&&transactionCalls===3
+		&&transactionRoot._openSnapshot,
+		"synchronous transactional validation blocks before durable handoff");
+	durableGroupTable._activeDetailsCell=transactionA;
+	durableGroupTable._discardActiveGroupEdits();
+	assert(transactionRow.outer.a==="A3"&&transactionRow.discarded===true&&transactionCalls===3,
+		"transactional discard restores the snapshot, runs afterDiscard, and never journals");
+
+
+	const structuralTransactions=[];
+	let rejectStructuralHandoff=null;
+	const structuralTable=new Tablance(host(),{
+		commit:transaction=>{
+			structuralTransactions.push(transaction);
+			if (rejectStructuralHandoff)
+				return new Promise((_resolve,reject)=>rejectStructuralHandoff=reject);
+		},
+		details:{type:"list",entries:[
+			{type:"group",nodeId:"structuralRoot",entries:[
+				{type:"repeated",nodeId:"structuralItems",dataKey:"items",create:true,
+					createData:()=>({localId:"new-local",label:""}),entry:{type:"group",
+						nodeId:"structuralEntry",entries:[
+							{dataKey:"label",nodeId:"structuralLabel",input:{type:"text"}},
+						]}},
+			]},
+		]},
+	},true,true,{searchbar:false});
+	const structuralRow={items:[{id:7,localId:"existing-local",label:"Before"}]};
+	structuralTable.setData([structuralRow]);
+	await tick();
+	let structuralRoot=structuralTable.getDetailCell(0,"structuralRoot");
+	structuralTable._openGroup(structuralRoot);
+	let structuralRepeated=structuralTable.getDetailCell(0,"structuralItems",structuralRoot);
+	let existingStructuralEntry=structuralRepeated.children.find(child=>!child.schemaNode.creator);
+	structuralTable._openGroup(existingStructuralEntry);
+	existingStructuralEntry.dataObj.label="Updated before delete";
+	structuralTable._markDirtyField(existingStructuralEntry.children[0]);
+	assert(structuralTable._closeGroup(existingStructuralEntry),
+		"an existing repeated update stages inside the transactional collection");
+	structuralRepeated.createNewEntry();
+	const createdStructuralEntry=structuralRepeated.children.find(child=>child.creating);
+	createdStructuralEntry.dataObj.label="Created final value";
+	structuralTable._markDirtyField(createdStructuralEntry.children[0]);
+	assert(structuralTable._closeGroup(createdStructuralEntry)&&!createdStructuralEntry.creating
+		&&createdStructuralEntry._transactionCreated,
+		"an accepted structural create stays transaction-draft state until durable handoff succeeds");
+	structuralTable._deleteCell(existingStructuralEntry,false,false);
+	assert(structuralTable._closeGroup(structuralRoot)===true&&structuralTransactions.length===1,
+		"create and delete are handed off atomically when the transactional collection closes");
+	const structuralCommits=structuralTransactions[0].commits;
+	assert(structuralCommits.map(commit=>commit.kind).join(",")==="create,delete"
+		&&structuralCommits[0].data.label==="Created final value"
+		&&structuralCommits.every(commit=>commit.collection?.dataKey==="items")
+		&&structuralCommits.every(commit=>Object.isFrozen(commit.collection))
+		&&!createdStructuralEntry.creating,
+		"prepared structural intents are immutable, serializable and normalize update-before-delete");
+
+	structuralRoot=structuralTable.getDetailCell(0,"structuralRoot");
+	structuralTable._openGroup(structuralRoot);
+	structuralRepeated=structuralTable.getDetailCell(0,"structuralItems",structuralRoot);
+	structuralRepeated.createNewEntry();
+	const cancelledStructuralEntry=structuralRepeated.children.find(child=>child.creating);
+	cancelledStructuralEntry.dataObj.label="Never durable";
+	structuralTable._markDirtyField(cancelledStructuralEntry.children[0]);
+	structuralTable._closeGroup(cancelledStructuralEntry);
+	structuralTable._deleteCell(cancelledStructuralEntry,false,false);
+	assert(structuralTable._closeGroup(structuralRoot)===true&&structuralTransactions.length===1
+		&&structuralRow.items.length===1,
+		"create followed by delete in one prepared transaction cancels without durable handoff");
+
+	structuralRoot=structuralTable.getDetailCell(0,"structuralRoot");
+	structuralTable._openGroup(structuralRoot);
+	structuralRepeated=structuralTable.getDetailCell(0,"structuralItems",structuralRoot);
+	structuralRepeated.createNewEntry();
+	const discardedStructuralEntry=structuralRepeated.children.find(child=>child.creating);
+	discardedStructuralEntry.dataObj.label="Discard me";
+	structuralTable._ensureRepeatedEntryInsertion(discardedStructuralEntry);
+	structuralTable._markDirtyField(discardedStructuralEntry.children[0]);
+	structuralTable._activeDetailsCell=discardedStructuralEntry.children[0];
+	structuralTable._discardActiveGroupEdits();
+	assert(!structuralRow.items.includes(discardedStructuralEntry.dataObj)
+		&&structuralRow.items.length===1&&structuralTransactions.length===1,
+		"Ctrl+Escape removes a staged create without journaling it");
+
+	structuralRoot=structuralTable.getDetailCell(0,"structuralRoot");
+	structuralTable._openGroup(structuralRoot);
+	structuralRepeated=structuralTable.getDetailCell(0,"structuralItems",structuralRoot);
+	existingStructuralEntry=structuralRepeated.children.find(child=>!child.schemaNode.creator);
+	rejectStructuralHandoff=true;
+	structuralTable._deleteCell(existingStructuralEntry,false,false);
+	assert(structuralTable._closeGroup(structuralRoot)===false&&structuralTable._pendingGroupTransaction,
+		"a structural delete waits for the same durable transaction boundary");
+	rejectStructuralHandoff(new Error("IndexedDB unavailable"));
+	await Promise.resolve();await Promise.resolve();
+	assert(structuralRow.items.length===0&&structuralRoot._openSnapshot
+		&&structuralTable._editTransaction.intents.some(intent=>intent.payload?.mode==="delete"),
+		"a rejected delete remains a staged, retryable intent with its collection snapshot intact");
+	rejectStructuralHandoff=null;
+	assert(structuralTable._closeGroup(structuralRoot)===true
+		&&structuralTransactions.length===3&&!structuralRoot._openSnapshot,
+		"retrying a rejected structural delete finalizes it exactly once after durability");
+
+	const mixedStructuralTransactions=[];
+	const mixedStructuralTable=new Tablance(host(),{
+		commit:transaction=>mixedStructuralTransactions.push(transaction),
+		details:{type:"list",entries:[{type:"group",nodeId:"mixedRoot",entries:[
+			{type:"repeated",nodeId:"mixedItems",dataKey:"items",create:true,
+				createData:()=>({localId:"created",partition:"a",label:"Created"}),
+				reorder:{canMove:()=>true},entry:{type:"group",entries:[
+					{dataKey:"label",input:{type:"text"}},
+				]}},
+		]}]},
+	},true,true,{searchbar:false});
+	const mixedStructuralRow={items:[
+		{localId:"a1",partition:"a",label:"A1"},
+		{localId:"a2",partition:"a",label:"A2"},
+		{localId:"b1",partition:"b",label:"B1"},
+		{localId:"b2",partition:"b",label:"B2"},
+	]};
+	mixedStructuralTable.setData([mixedStructuralRow]);
+	await tick();
+	const mixedRoot=mixedStructuralTable.getDetailCell(0,"mixedRoot");
+	mixedStructuralTable._openGroup(mixedRoot);
+	const mixedRepeated=mixedStructuralTable.getDetailCell(0,"mixedItems",mixedRoot);
+	mixedRepeated.createNewEntry();
+	const mixedCreated=mixedRepeated.children.find(child=>child.creating);
+	mixedCreated.dataObj.label="Created final";
+	mixedStructuralTable._markDirtyField(mixedCreated.children[0]);
+	mixedStructuralTable._closeGroup(mixedCreated);
+	const queueSemanticReorder=(entry,baselineOrder,order)=>{
+		const payload=mixedStructuralTable._makeCallbackPayload(entry,{
+			data:entry.dataObj,dataArray:mixedRepeated.dataObj,dataKey:"items",
+			baselineOrder,order,repeatedSchemaNode:mixedRepeated.schemaNode,mode:"reorder",
+		},{schemaNode:mixedRepeated.schemaNode,mainIndex:0,rowData:mixedStructuralRow});
+		mixedStructuralTable._queueReorderCommit(payload,entry);
+	};
+	const mixedA1=mixedRepeated.children.find(child=>child.dataObj.localId==="a1");
+	const mixedA2=mixedRepeated.children.find(child=>child.dataObj.localId==="a2");
+	const mixedB1=mixedRepeated.children.find(child=>child.dataObj.localId==="b1");
+	const mixedB2=mixedRepeated.children.find(child=>child.dataObj.localId==="b2");
+	queueSemanticReorder(mixedCreated,[mixedA1.dataObj,mixedA2.dataObj,mixedCreated.dataObj],
+		[mixedCreated.dataObj,mixedA1.dataObj,mixedA2.dataObj]);
+	queueSemanticReorder(mixedB2,[mixedB1.dataObj,mixedB2.dataObj],[mixedB2.dataObj,mixedB1.dataObj]);
+	mixedStructuralTable._deleteCell(mixedA2,false,false);
+	mixedStructuralTable._closeGroup(mixedRoot);
+	const mixedTransaction=mixedStructuralTransactions[0];
+	assert(mixedTransaction.commits.map(commit=>commit.kind).join(",")==="create,reorder,reorder,delete"
+		&&mixedTransaction.commits.filter(commit=>commit.kind==="reorder").length===2
+		&&mixedTransaction.commits.find(commit=>commit.kind==="delete").data.localId==="a2"
+		&&mixedTransaction.baselineRowData.items.map(item=>item.localId).join(",")==="a1,a2,b1,b2"
+		&&Object.isFrozen(mixedTransaction.baselineRowData),
+		"create→reorder, partitioned reorders, and reorder→delete retain immutable semantic descriptors and the original row baseline");
+
+	let postCommitErrorEvent=0;
+	const postCommitTable=new Tablance(host(),{
+		commit:()=>{},
+		afterCommit:()=>{ throw new Error("post-effect failed"); },
+		details:{type:"list",entries:[{type:"group",nodeId:"postCommitGroup",dataPath:"group",
+			closedRender:data=>data.value,
+			entries:[{dataKey:"value",nodeId:"postCommitValue",input:{type:"text"}}]}]},
+	},true,true,{searchbar:false});
+	postCommitTable.rootEl.addEventListener("transactionpostcommiterror",()=>postCommitErrorEvent++);
+	const postCommitRow={group:{value:"before"}};
+	postCommitTable.setData([postCommitRow]);
+	await tick();
+	const postCommitGroup=postCommitTable.getDetailCell(0,"postCommitGroup");
+	postCommitTable._openGroup(postCommitGroup);
+	const postCommitValue=postCommitTable.getDetailCell(0,"postCommitValue",postCommitGroup);
+	postCommitRow.group.value="after";
+	postCommitTable._markDirtyField(postCommitValue);
+	assert(postCommitTable._closeGroup(postCommitGroup)===true&&postCommitErrorEvent===1
+		&&!postCommitGroup._openSnapshot&&!postCommitTable._editTransaction,
+		"a throwing post-commit hook reports its error without undoing or duplicating durable finalization");
+
+	const noHandoffTable=new Tablance(host(),{details:{type:"list",entries:[
+		{type:"group",nodeId:"noHandoffGroup",dataPath:"group",closedRender:data=>data.value,
+			entries:[{dataKey:"value",nodeId:"noHandoffValue",input:{type:"text"}}]},
+	]}},true,true,{searchbar:false});
+	const noHandoffRow={group:{value:"before"}};
+	noHandoffTable.setData([noHandoffRow]);
+	await tick();
+	const noHandoffGroup=noHandoffTable.getDetailCell(0,"noHandoffGroup");
+	noHandoffTable._openGroup(noHandoffGroup);
+	noHandoffRow.group.value="after";
+	noHandoffTable._markDirtyField(noHandoffTable.getDetailCell(0,"noHandoffValue",noHandoffGroup));
+	assert(noHandoffTable._closeGroup(noHandoffGroup)===true&&!noHandoffGroup._openSnapshot
+		&&!noHandoffTable._editTransaction,
+		"a group without a commit callback finalizes immediately through the same state machine");
 
 	result.textContent="awaiting trusted table focus navigation";
 	result.dataset.status="awaiting-native-table-focus";
