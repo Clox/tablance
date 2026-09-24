@@ -1149,11 +1149,11 @@
 .tablance .details .details-grid > .grid-row-separator {
   box-sizing: border-box;
   width: 100%;
-  width: 100cqw;
   height: 0;
   margin: 0;
   border: 0;
   border-top: 1px solid var(--tablance-row-border-color);
+  width: 100cqw;
 }
 .tablance .details .details-grid.details-affordances-suppressed > .grid-row-separator {
   display: none;
@@ -1920,7 +1920,12 @@
   display: block;
 }
 .tablance .group-cell > :where(.tablance-group-viewport) > table.open > tbody > tr > td > .separator {
-  border-top-style: solid;
+  box-sizing: border-box;
+  width: 100%;
+  height: 0;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--tablance-row-border-color);
 }
 .tablance .group-cell > :where(.tablance-group-viewport) > table.closed-render:is(.open, .creator-empty) > tbody > tr.group-render {
   display: none;

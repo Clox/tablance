@@ -4679,8 +4679,8 @@ try {
 		"a locked titled group field cannot activate an editor or involve its label via double-click");
 	assert(getComputedStyle(firstHistorySeparator).borderTopStyle==="solid"
 		&&getComputedStyle(firstHistorySeparator).marginLeft==="0px"
-		&&getComputedStyle(firstHistorySeparator).marginRight==="4px",
-		"open inner cell separators become solid while retaining the same indentation");
+		&&getComputedStyle(firstHistorySeparator).marginRight==="0px",
+		"open inner cell separators use the same full-width geometry as Grid separators");
 	table._setGroupPresentationState(historyEntries[0],"closed");
 	table._syncGroupChevronVisibility(historyEntries[0]);
 	assert(getComputedStyle(firstHistorySeparator).display==="none"
@@ -4695,13 +4695,18 @@ try {
 	const openGroupTitleStyle=getComputedStyle(historyEntries[0].children[0].selEl.querySelector(":scope>span.title"));
 	const openGroupValueStyle=getComputedStyle(historyEntries[0].children[0].selEl.querySelector(":scope>div"));
 	const openGroupSeparatorStyle=getComputedStyle(historyEntries[0].children[0].selEl.querySelector(":scope>.separator"));
+	const gridSeparatorStyle=getComputedStyle(hierarchyGrid.gridRowSeparators[0]);
 	assert(openGroupTitleStyle.marginLeft==="4px"&&openGroupTitleStyle.marginRight==="6px"
 		&&openGroupTitleStyle.marginBottom==="4px"&&openGroupTitleStyle.fontSize==="13px"
 		&&openGroupTitleStyle.fontWeight==="500"&&openGroupTitleStyle.color==="rgb(100, 116, 139)"
 		&&openGroupValueStyle.marginLeft==="4px"
 		&&openGroupValueStyle.marginRight==="6px"&&openGroupSeparatorStyle.marginLeft==="0px"
-		&&openGroupSeparatorStyle.marginRight==="4px",
-		"group field content gains subtle horizontal breathing room without changing separators");
+		&&openGroupSeparatorStyle.marginRight==="0px",
+		"group field content gains subtle horizontal breathing room without changing field geometry");
+	assert(openGroupSeparatorStyle.borderTopWidth===gridSeparatorStyle.borderTopWidth
+		&&openGroupSeparatorStyle.borderTopStyle===gridSeparatorStyle.borderTopStyle
+		&&openGroupSeparatorStyle.borderTopColor===gridSeparatorStyle.borderTopColor,
+		"group section separators use the same line styling as Grid row separators");
 	historyEntries[1].select();
 	table._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
 	assert(historyEntries[1].el.classList.contains("open")&&table._activeSchemaNode.title==="Date",
