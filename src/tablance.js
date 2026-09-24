@@ -1878,7 +1878,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return {available:true,text:text.trim()};
 	}
 
-	_resolveClipboardRepresentation(schemaNode,dataObj,mainIndex,instanceNode=null) {
+	_resolveOwnClipboardRepresentation(schemaNode,dataObj,mainIndex,instanceNode=null) {
 		if (!schemaNode)
 			return {available:false,text:""};
 		const valueBundle=this._getCellValueBundle(schemaNode,dataObj,mainIndex,instanceNode);
@@ -1896,6 +1896,39 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (schemaNode.type==="field"||(schemaNode.type==="group"&&schemaNode.closedRender))
 			return displayRepresentation;
 		return {available:false,text:""};
+	}
+
+	_resolveClipboardRepresentation(schemaNode,dataObj,mainIndex,instanceNode=null) {
+		const ownRepresentation=this._resolveOwnClipboardRepresentation(
+			schemaNode,dataObj,mainIndex,instanceNode);
+		if (schemaNode?.type!=="group"||ownRepresentation.available)
+			return ownRepresentation;
+		const root=this._buildLogicalDetailsTree(schemaNode,dataObj,mainIndex,{rootDataScoped:true});
+		const texts=[];
+		let available=false;
+		this._walkLogicalDetails(root,node=>{
+			if (node===root)
+				return;
+			if (node.schemaNode.type==="field") {
+				const representation=this._resolveOwnClipboardRepresentation(
+					node.schemaNode,node.dataObj,mainIndex,node);
+				if (representation.available) {
+					available=true;
+					texts.push(representation.text);
+				}
+				return false;
+			}
+			if (node.schemaNode.type!=="group")
+				return;
+			const representation=this._resolveOwnClipboardRepresentation(
+				node.schemaNode,node.dataObj,mainIndex,node);
+			if (!representation.available)
+				return;
+			available=true;
+			texts.push(representation.text);
+			return false;
+		},{mainIndex});
+		return available?{available:true,text:texts.join("\n")}:{available:false,text:""};
 	}
 
 	_applyLogicalDataPath(schemaNode,dataObj) {
@@ -1950,9 +1983,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return repeated.presentationGroups.flatMap(group=>group.entries);
 	}
 
-	_buildLogicalDetailsTree(schemaNode,rowData,mainIndex) {
-		const build=(nodeSchema,dataObj,parent=null,index=null)=>{
-			const scopedData=this._applyLogicalDataPath(nodeSchema,dataObj);
+	_buildLogicalDetailsTree(schemaNode,rowData,mainIndex,{rootDataScoped=false}={}) {
+		const build=(nodeSchema,dataObj,parent=null,index=null,dataAlreadyScoped=false)=>{
+			const scopedData=dataAlreadyScoped?dataObj:this._applyLogicalDataPath(nodeSchema,dataObj);
 			const presentedData=scopedData&&typeof scopedData==="object"?scopedData:{};
 			const proto=nodeSchema.type==="field"?FIELD_INSTANCE_NODE_PROTOTYPE
 				:nodeSchema.type==="group"?GROUP_INSTANCE_NODE_PROTOTYPE
@@ -1974,7 +2007,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 			return node;
 		};
-		return schemaNode?build(schemaNode,rowData):null;
+		return schemaNode?build(schemaNode,rowData,null,null,rootDataScoped):null;
 	}
 
 	_isLogicalDetailsNodeVisible(instanceNode,mainIndex) {
@@ -2047,7 +2080,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				depthByNode.set(node,depth+(title?1:0));
 				if (node.schemaNode.type!=="field"&&node.schemaNode.type!=="group")
 					return;
-				const representation=this._resolveClipboardRepresentation(
+				const representation=this._resolveOwnClipboardRepresentation(
 					node.schemaNode,node.dataObj,mainIndex,node);
 				if (!representation.available&&node.schemaNode.type==="group")
 					return;
@@ -7150,6 +7183,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_stageGroupClose(groupObject) {
 		groupObject._commitStagedClosed=true;
 		this._transitionGroupPresentation(groupObject,()=>{
+			this._refreshClosedRenderPresentations(groupObject,true);
 			this._setGroupPresentationState(groupObject,"closed");
 			this._syncGroupChevronVisibility(groupObject);
 		});
@@ -7836,6 +7870,33 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			content.innerText=renderText;
 		cell.replaceChildren(content);
 		this._placeGroupChevron(groupObject);
+	}
+
+	_refreshClosedRenderPresentations(instanceNode,includeAncestors=false) {
+		const refresh=node=>{
+			for (const child of node.children??[])
+				refresh(child);
+			if (node.schemaNode?.type==="group"&&node.schemaNode.closedRender)
+				this._setClosedRender(node,node.schemaNode.closedRender(node.dataObj));
+		};
+		refresh(instanceNode);
+		if (includeAncestors)
+			for (let ancestor=instanceNode.parent;ancestor;ancestor=ancestor.parent)
+				if (ancestor.schemaNode?.type==="group"&&ancestor.schemaNode.closedRender)
+					this._setClosedRender(ancestor,ancestor.schemaNode.closedRender(ancestor.dataObj));
+	}
+
+	_clearDiscardedGroupState(instanceNode) {
+		const clear=node=>{
+			for (const child of node.children??[])
+				clear(child);
+			delete node._openSnapshot;
+			delete node._openRepeatedBaselines;
+			delete node._dirtyFields;
+			delete node._commitStagedClosed;
+			delete node.updateRenderOnClose;
+		};
+		clear(instanceNode);
 	}
 
 	_repeatInsert(repeated,creating,data,entrySchemaNode=null) {
@@ -9772,6 +9833,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._restoreRepeatedBaselines(group);
 		
 		this._rerenderDirtyFields(group);
+		this._refreshClosedRenderPresentations(group,true);
 		try {
 			const result=group.schemaNode.afterDiscard?.(closePayload);
 			if (this._isThenable(result))
@@ -9780,9 +9842,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			console.error("Tablance afterDiscard failed.",error);
 		}
 		this._finalizeGroupClose(group);
+		this._clearDiscardedGroupState(group);
 		this._selectCell(group.el,group.schemaNode,group.dataObj);
 		this._activeDetailsCell=group;
-		delete group._openRepeatedBaselines;
 	}
 
 	/**
@@ -9790,13 +9852,23 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * @param {*} group Instance node of the open group
 	 */
 	_rerenderDirtyFields(group) {
-		// Repaint only nodes that were dirtied while open, after data restore.
-		const dirty=group._dirtyFields;
-		if (!dirty?.size)
-			return;
-		for (const node of dirty)
-			this._updateDetailsCell(node,node.dataObj);
-		dirty.clear();
+		// Nested groups keep their own minimal dirty sets. An outer rollback restores the whole
+		// transaction, so repaint every dirty set in that subtree after restoring its snapshots.
+		const repainted=new Set;
+		const visit=node=>{
+			const dirty=node._dirtyFields;
+			if (dirty?.size) {
+				for (const field of dirty)
+					if (!repainted.has(field)) {
+						this._updateDetailsCell(field,field.dataObj);
+						repainted.add(field);
+					}
+				dirty.clear();
+			}
+			for (const child of node.children??[])
+				visit(child);
+		};
+		visit(group);
 	}
 
 	_scrollElementIntoView(){}//default is to do nothing. Tablance (main) overrides this.

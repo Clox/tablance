@@ -99,8 +99,11 @@ rendered field:
 
 Ctrl+C resolves the selected logical cell from schema and row data; it does not read text from the rendered cell DOM.
 Ordinary fields use their rendered text, selects use the visible option text, and trusted HTML renderers are reduced to
-visible text without markup. A group is always one clipboard cell: it uses `closedRender` even while open, and has no
-default representation when `closedRender` is absent.
+visible text without markup. A group is always one clipboard cell. It uses its own `clipboardValue` or `closedRender`
+even while open; when neither provides a representation, Tablance recursively collects the presented logical child
+representations in order. A represented child group remains one value and shields its subtree; an unrepresented child
+group is traversed in the same way. This works independently of rendered/open state and never expands the group into
+multiple clipboard cells.
 
 Set `clipboardValue(payload)` on any logical cell node to override that default. The payload contains the standard
 cell context plus `value`, `idValue`, `dependedValue`, `displayValue`, `displayText`, `rowData`, and `instanceNode`.
@@ -126,8 +129,8 @@ presented sorting.
 For a details group, Tablance first resolves the group's own clipboard representation using `clipboardValue` or
 `closedRender`. When one exists—even an explicit empty string—it represents the complete subtree and the group's
 children are not included. A group without a representation contributes its presented children instead. This row
-behavior does not change ordinary Ctrl+C: direct group copy still treats the group as one logical cell and never
-implicitly flattens it.
+same resolution rule is used by ordinary Ctrl+C; direct group copy still returns the recursive result as one logical
+clipboard cell rather than expanding it into multiple table cells.
 
 Set synchronous `clipboardRowValue(payload)` on the root schema to replace the generic row text completely. Its
 payload is the standard root callback context (`tablance`, `schemaTree`, root `schemaNode`, `rowData`, `mainIndex`,

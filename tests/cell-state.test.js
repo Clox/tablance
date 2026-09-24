@@ -3217,6 +3217,51 @@ try {
 		&&nestedDependencyRenders["outer:outer-a"]===1&&nestedDependencyRenders["outer:outer-b"]===1,
 		"closing the outer group flushes the already-finalized nested commit without another invalidation");
 
+	let stagedRenderCommitCount=0;
+	const stagedRenderData={title:"Staged render",transaction:{items:[{label:"Before"}]}};
+	const stagedRenderTable=new Tablance(host(),{
+		commit:()=>{stagedRenderCommitCount++;},
+		main:{columns:[{dataKey:"title"}]},details:{type:"list",entries:[
+			{type:"group",nodeId:"stagedRenderOuter",dataPath:"transaction",entries:[
+					{type:"repeated",dataKey:"items",nodeId:"stagedRenderItems",entry:{type:"group",
+						nodeId:"stagedRenderInner",closedRender:data=>data.label,entries:[
+							{dataKey:"label",nodeId:"stagedRenderLabel",input:{type:"text"}},
+						]}},
+				]},
+		]},
+	},true,true,{searchbar:false,ordering:false});
+	stagedRenderTable.setData([stagedRenderData]);
+	await tick();
+	stagedRenderTable.expandRow(0);
+	const stagedRenderOuter=stagedRenderTable.getDetailCell(0,"stagedRenderOuter");
+	stagedRenderTable._openGroup(stagedRenderOuter);
+	const stagedRenderInner=stagedRenderTable.getDetailCell(0,"stagedRenderInner");
+	stagedRenderTable._openGroup(stagedRenderInner);
+	const stagedRenderLabel=stagedRenderTable.getDetailCell(0,"stagedRenderLabel");
+	stagedRenderInner.dataObj.label="After";
+	stagedRenderTable._markDirtyField(stagedRenderLabel);
+	for (let node=stagedRenderLabel.parent;node;node=node.parent)
+		if (node.schemaNode.closedRender)
+			node.updateRenderOnClose=true;
+	const stagedCloseResult=stagedRenderTable._closeGroup(stagedRenderInner);
+	const closedText=group=>[...group.containerEl.children]
+		.find(row=>row.classList.contains("group-render"))?.querySelector(".group-closed-content")?.textContent;
+	const stagedInnerText=closedText(stagedRenderInner);
+	assert(stagedCloseResult&&stagedInnerText==="After"
+		&&stagedRenderOuter.el.classList.contains("open")&&stagedRenderCommitCount===0,
+		`closing a nested group refreshes its staged closedRender without crossing the outer commit boundary (${stagedCloseResult}/${stagedInnerText}/${stagedRenderCommitCount})`);
+	stagedRenderTable._finalizeDiscardActiveGroupEdits(stagedRenderOuter);
+	assert(stagedRenderData.transaction.items[0].label==="Before"
+		&&closedText(stagedRenderInner)==="Before"
+		&&!stagedRenderInner._commitStagedClosed&&!stagedRenderInner._openSnapshot
+		&&stagedRenderCommitCount===0,
+		"outer rollback restores nested closedRender presentation and clears staged presentation state without persistence");
+	stagedRenderTable._openGroup(stagedRenderOuter);
+	stagedRenderTable._openGroup(stagedRenderInner);
+	assert(stagedRenderLabel.el.textContent==="Before",
+		"outer rollback repaints fields tracked by nested group dirty sets");
+	stagedRenderTable._finalizeDiscardActiveGroupEdits(stagedRenderOuter);
+
 	const duplicateIdentity={id:"duplicate"};
 	const duplicateIdentityTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},
 		details:{type:"list",entries:[{type:"repeated",dataKey:"items",entry:{dataKey:"id"}}]}},
@@ -3634,7 +3679,47 @@ try {
 	const clipboardGroupWithoutRender=clipboardTable.getDetailCell(clipboardRow,"clipboardGroupWithoutRender");
 	assert(!clipboardTable._resolveClipboardRepresentation(clipboardGroupWithoutRender.schemaNode,
 		clipboardGroupWithoutRender.dataObj,0,clipboardGroupWithoutRender).available,
-		"a group without closedRender has no implicit clipboard representation");
+		"an empty group without its own representation or copyable descendants has no clipboard representation");
+	const recursiveClipboardData={title:"Recursive",collection:{items:[
+		{label:"Second",rank:2},{label:"First",rank:1},
+	],fallback:"Visible fallback",hidden:"Hidden fallback",shielded:"Shielded child"}};
+	const recursiveClipboardTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},
+		details:{type:"list",entries:[
+			{type:"group",nodeId:"recursiveClipboardGroup",dataPath:"collection",entries:[
+				{type:"repeated",dataKey:"items",sortCompare:(a,b)=>a.rank-b.rank,
+					entry:{type:"group",closedRender:data=>data.label,entries:[
+						{dataKey:"label"},
+					]}},
+				{type:"group",entries:[
+					{dataKey:"fallback"},
+					{dataKey:"hidden",visibleIf:()=>false},
+				]},
+				{type:"group",clipboardValue:()=>"Explicit child",entries:[
+					{dataKey:"shielded"},
+				]},
+				{type:"group",clipboardValue:()=>"",entries:[
+					{dataKey:"emptyShielded"},
+				]},
+			]},
+		]},
+	},true,true,{searchbar:false,ordering:false});
+	recursiveClipboardData.collection.emptyShielded="Must not leak";
+	recursiveClipboardTable.setData([recursiveClipboardData]);
+	await tick();
+	const recursiveSchema=recursiveClipboardTable._schema.details.entries[0];
+	const expectedRecursiveClipboard="First\nSecond\nVisible fallback\nExplicit child\n";
+	assert(recursiveClipboardTable._resolveClipboardRepresentation(recursiveSchema,
+		recursiveClipboardData.collection,0,null).text===expectedRecursiveClipboard
+		&&!recursiveClipboardTable._openDetailsPanes[0],
+		"group clipboard defaults recursively traverse unrendered repeated and nested logical content in presentation order while preserving explicit empty child representations");
+	recursiveClipboardTable.expandRow(0);
+	const recursiveClipboardGroup=recursiveClipboardTable.getDetailCell(0,"recursiveClipboardGroup");
+	recursiveClipboardGroup.select();
+	copied="not-written";
+	key(recursiveClipboardTable.rootEl,"c","KeyC",{ctrlKey:true});
+	await Promise.resolve();
+	assert(copied===expectedRecursiveClipboard,
+		"Ctrl+C copies a collection group as one recursively resolved logical clipboard cell");
 	const rowClipboardData={name:"Ada",status:"active",hiddenMain:"secret",empty:"",profile:{
 		readOnly:"Shown",disabled:"Still shown",showConditional:true,conditional:"Visible dependent",
 		hidden:"Not presented",child:"child",shieldChild:"must not leak",emptyShieldChild:"must not leak",
@@ -6676,8 +6761,9 @@ try {
 	const transactionChild=durableGroupTable.getDetailCell(0,"transactionChild",transactionRoot);
 	durableGroupTable._openGroup(transactionChild);
 	const transactionB=durableGroupTable.getDetailCell(0,"transactionB",transactionChild);
-	const transactionChildClosedRenderBefore=transactionChild.el.tBodies[0]
-		.querySelector("tr.group-render .group-closed-content")?.textContent;
+	const transactionClosedText=group=>[...group.containerEl.children]
+		.find(row=>row.classList.contains("group-render"))?.querySelector(".group-closed-content")?.textContent;
+	const transactionChildClosedRenderBefore=transactionClosedText(transactionChild);
 	transactionRow.outer.a="A2";
 	transactionRow.outer.inner.b="B2";
 	transactionRoot.updateRenderOnClose=true;
@@ -6701,10 +6787,9 @@ try {
 		"transaction commits are immutable updates in stable root-to-leaf order");
 	assert(postCommitCalls===0&&transactionRoot._openSnapshot&&transactionChild._openSnapshot,
 		"pending handoff preserves snapshots and emits no post-commit effects");
-	const stagedClosedText=transactionChild.el.tBodies[0]
-		.querySelector(":scope>tr.group-render .group-closed-content")?.textContent;
-	assert(stagedClosedText===transactionChildClosedRenderBefore,
-		`a staged nested close does not expose its new closed render before durable handoff (${stagedClosedText})`);
+	const stagedClosedText=transactionClosedText(transactionChild);
+	assert(transactionChildClosedRenderBefore==="A"&&stagedClosedText==="A2",
+		`a staged nested close immediately refreshes the visible ancestor presentation without crossing the durable handoff (${transactionChildClosedRenderBefore}/${stagedClosedText})`);
 	assert(durableGroupTable._enterCell(new Event("enter",{cancelable:true}))===false
 		&&durableGroupTable._discardActiveGroupEdits()===false
 		&&transactionRow.outer.a==="A2",
