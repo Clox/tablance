@@ -546,6 +546,17 @@
     rotate: 0deg;
   }
 }
+@keyframes tablance-transaction-attention {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(26, 115, 232, 0);
+  }
+  20%, 65% {
+    box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.55);
+  }
+}
+.tablance .transaction-attention {
+  animation: tablance-transaction-attention 1.5s ease-out;
+}
 @media (prefers-reduced-motion: reduce) {
   .tablance .cell-cursor.tablance-navigation-cursor-animating {
     transition: none;

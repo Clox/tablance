@@ -570,6 +570,15 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			rotate: 0deg;
 		}
 	}
+
+	@keyframes tablance-transaction-attention {
+		0%, 100% { box-shadow: 0 0 0 0 rgba(26, 115, 232, 0); }
+		20%, 65% { box-shadow: 0 0 0 3px rgba(26, 115, 232, .55); }
+	}
+
+	.transaction-attention {
+		animation: tablance-transaction-attention 1.5s ease-out;
+	}
 	@media (prefers-reduced-motion: reduce) {
 		.cell-cursor.tablance-navigation-cursor-animating {
 			transition: none;

@@ -288,6 +288,25 @@ post-commit effects. An error is reported as `transactionpostcommiterror` and ca
 guarded by synchronous `validateDelete(payload)` before mutation. The removed callbacks `onDataCommit`, `onClose`,
 `onCreate`, `onDelete`, and their transactional-mode variants are not part of this lifecycle.
 
+### Open group transactions and navigation
+
+An open group is an uncommitted user transaction. Leaving an editor inside it only updates the live draft; it does
+not call `commit`, create a persistence operation, or make the draft recoverable after reload. Ctrl+Escape restores
+the group's snapshot and runs `afterDiscard` without persistence.
+
+Applications that navigate without first moving the Tablance cursor can call `await commitOpenTransaction()`. It
+closes nested groups from leaf to root, performs the normal synchronous validation, invokes the ordinary root
+`commit` hook once with the complete transaction, waits only for that local durability handoff, then finalizes and
+runs `afterCommit`. It resolves to `{status: "committed" | "none"}` or
+`{status: "blocked", reason: "validation" | "persistence", ...}`. A blocked transaction keeps its live draft and
+snapshots intact. `revealOpenTransaction()` scrolls the relevant boundary into view, restores focus, shows existing
+validation feedback, and briefly highlights it.
+
+`getOpenTransactionState()` returns the current outer boundary and whether a durability handoff is pending.
+`needsExitProtection()` is true while an uncommitted group is open or a local handoff is pending. Tablance emits
+`transactionstatechange` from its root whenever that state changes. These APIs contain no browser lifecycle or
+storage policy; integrations decide how internal navigation and `beforeunload` should use them.
+
 ## Trash lifecycle and table actions
 
 Trash is opt-in and uses the same `setData`/`addData` source array as active rows. Tablance does not fetch rows or

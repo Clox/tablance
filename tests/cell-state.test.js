@@ -6818,6 +6818,95 @@ try {
 		&&!noHandoffTable._editTransaction,
 		"a group without a commit callback finalizes immediately through the same state machine");
 
+	let resolveOpenGroupNavCommit;
+	const openGroupNavTransactions=[];
+	const openGroupNavTable=new Tablance(host(),{
+		commit:transaction=>{
+			openGroupNavTransactions.push(transaction);
+			return new Promise(resolve=>resolveOpenGroupNavCommit=resolve);
+		},
+		details:{type:"list",entries:[{type:"group",nodeId:"openGroupNavRoot",dataPath:"outer",
+			closedRender:data=>data.value,entries:[
+				{dataKey:"value",nodeId:"openGroupNavValue",input:{type:"text"}},
+				{type:"group",nodeId:"openGroupNavNested",dataPath:"nested",closedRender:data=>data.value,
+					entries:[{dataKey:"value",nodeId:"openGroupNavNestedValue",input:{type:"text"}}]},
+			]}]},
+	},true,true,{searchbar:false});
+	const openGroupNavRow={outer:{value:"baseline",nested:{value:"nested baseline"}}};
+	openGroupNavTable.setData([openGroupNavRow]);
+	await tick();
+	const openGroupNavRoot=openGroupNavTable.getDetailCell(0,"openGroupNavRoot");
+	openGroupNavTable._openGroup(openGroupNavRoot);
+	const openGroupNavValue=openGroupNavTable.getDetailCell(0,"openGroupNavValue",openGroupNavRoot);
+	openGroupNavValue.select();
+	openGroupNavTable._enterCell(new Event("enter",{cancelable:true}));
+	openGroupNavTable._inputVal="staged";
+	assert(openGroupNavTable._exitEditMode(true)===true&&openGroupNavRow.outer.value==="staged"
+		&&openGroupNavTransactions.length===0&&openGroupNavTable.needsExitProtection(),
+		"leaving an editor inside an open group stages the value without crossing the commit boundary");
+	const openGroupNavNested=openGroupNavTable.getDetailCell(0,"openGroupNavNested",openGroupNavRoot);
+	openGroupNavTable._openGroup(openGroupNavNested);
+	const openGroupNavNestedValue=openGroupNavTable.getDetailCell(0,"openGroupNavNestedValue",openGroupNavNested);
+	openGroupNavRow.outer.value="staged";
+	openGroupNavRow.outer.nested.value="nested staged";
+	openGroupNavTable._markDirtyField(openGroupNavValue);
+	openGroupNavTable._markDirtyField(openGroupNavNestedValue);
+	assert(openGroupNavTransactions.length===0&&openGroupNavTable.needsExitProtection(),
+		"staged edits in an open outer group remain uncommitted and request exit protection");
+	const openGroupNavCompletion=openGroupNavTable.commitOpenTransaction();
+	assert(openGroupNavTransactions.length===1
+		&&openGroupNavTransactions[0].commits.map(commit=>commit.nodeId).join(",")==="openGroupNavRoot,openGroupNavNested"
+		&&openGroupNavTable.getOpenTransactionState().pending,
+		"programmatic navigation uses the normal root-to-leaf transaction and waits for its durable handoff");
+	resolveOpenGroupNavCommit();
+	const openGroupNavResult=await openGroupNavCompletion;
+	assert(openGroupNavResult.status==="committed"&&!openGroupNavTable.needsExitProtection()
+		&&!openGroupNavTable._editTransaction,
+		"successful navigation handoff finalizes the open transaction exactly once");
+
+	let allowNavigationCommit=false;
+	const blockedNavigationTable=new Tablance(host(),{
+		commit:()=>allowNavigationCommit?Promise.resolve():Promise.reject(new Error("IndexedDB unavailable")),
+		details:{type:"list",entries:[{type:"group",nodeId:"blockedNavigationRoot",dataPath:"group",
+			closedRender:data=>data.value,entries:[
+				{dataKey:"value",nodeId:"blockedNavigationValue",input:{type:"text"}},
+			]}]},
+	},true,true,{searchbar:false});
+	const blockedNavigationRow={group:{value:"before"}};
+	blockedNavigationTable.setData([blockedNavigationRow]);
+	await tick();
+	const blockedNavigationRoot=blockedNavigationTable.getDetailCell(0,"blockedNavigationRoot");
+	blockedNavigationTable._openGroup(blockedNavigationRoot);
+	const blockedNavigationValue=blockedNavigationTable.getDetailCell(0,"blockedNavigationValue",
+		blockedNavigationRoot);
+	blockedNavigationRow.group.value="draft";
+	blockedNavigationTable._markDirtyField(blockedNavigationValue);
+	let blockedNavigationResult=await blockedNavigationTable.commitOpenTransaction();
+	assert(blockedNavigationResult.status==="blocked"&&blockedNavigationResult.reason==="persistence"
+		&&blockedNavigationRoot._openSnapshot.value==="before"
+		&&blockedNavigationRow.group.value==="draft"&&blockedNavigationTable.needsExitProtection(),
+		"a rejected navigation handoff blocks navigation and preserves the draft and snapshot for retry");
+	allowNavigationCommit=true;
+	blockedNavigationResult=await blockedNavigationTable.commitOpenTransaction();
+	assert(blockedNavigationResult.status==="committed"&&!blockedNavigationTable.needsExitProtection(),
+		"the same open transaction can be committed after local persistence recovers");
+
+	const invalidNavigationTable=new Tablance(host(),{
+		commit:()=>{ throw new Error("validation must run first"); },
+		details:{type:"list",entries:[{type:"group",nodeId:"invalidNavigationRoot",dataPath:"group",
+			validate:payload=>payload.preventClose("Required value is missing"),
+			entries:[{dataKey:"value",nodeId:"invalidNavigationValue",input:{type:"text"}}]}]},
+	},true,true,{searchbar:false});
+	const invalidNavigationRow={group:{value:""}};
+	invalidNavigationTable.setData([invalidNavigationRow]);
+	await tick();
+	const invalidNavigationRoot=invalidNavigationTable.getDetailCell(0,"invalidNavigationRoot");
+	invalidNavigationTable._openGroup(invalidNavigationRoot);
+	const invalidNavigationResult=await invalidNavigationTable.commitOpenTransaction();
+	assert(invalidNavigationResult.status==="blocked"&&invalidNavigationResult.reason==="validation"
+		&&invalidNavigationTable.needsExitProtection()&&invalidNavigationRoot._openSnapshot,
+		"validation failure blocks programmatic navigation without persistence or snapshot cleanup");
+
 	result.textContent="awaiting trusted table focus navigation";
 	result.dataset.status="awaiting-native-table-focus";
 	await new Promise(resolve=>window.finishNativeTableFocus=resolve);

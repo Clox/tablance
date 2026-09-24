@@ -290,6 +290,7 @@ class TablanceBase {
 		//creation finishes. The reason for having this flag is so that update */
 	_editTransaction;//tracks buffered group commits so inner scopes can still be cancelled
 	_pendingGroupTransaction;//pending handoff state for the implicit outermost group transaction
+	_lastTransactionBlock;//latest validation/persistence failure for programmatic transaction completion
 	_ignoreClicksUntil;//when being inside an open group and trying to double-click on another cell further down to
 
 
@@ -3785,7 +3786,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_moveCellCursor(hSign,vSign,e) {
-		if (this._pendingGroupTransaction)
+		if (this._hasPendingCommitHandoff())
 			return false;
 		if (this._cellRange)
 			this._clearCellRange();
@@ -4421,7 +4422,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 	
 	_spreadsheetKeyDown(e) {
-		if (this._pendingGroupTransaction) {
+		if (this._hasPendingCommitHandoff()) {
 			e.preventDefault();
 			return;
 		}
@@ -6319,7 +6320,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_enterCell(e) {
-		if (this._pendingGroupTransaction)
+		if (this._hasPendingCommitHandoff())
 			return false;
 		this._resetVerticalLayoutPreferredColumn();
 		if (this._inEditMode||this._inReadOnlyMode)
@@ -6645,7 +6646,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_openGroup(groupObj) {
-		if (this._pendingGroupTransaction)
+		if (this._hasPendingCommitHandoff())
 			return false;
 		if (this._isTrashMode()) {
 			this._transitionGroupPresentation(groupObj,()=>{
@@ -6750,10 +6751,107 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_enterEditTransaction(groupObject) {
 		// Track the currently open group stack; outermost close will flush buffered commits.
-		const txn=this._editTransaction??(this._editTransaction={stack:[],intents:[],seq:0});
-		if (!txn.stack.includes(groupObject))
+		const txn=this._ensureEditTransaction();
+		if (!txn.stack.includes(groupObject)) {
 			txn.stack.push(groupObject);
+			this._notifyTransactionStateChange();
+		}
 		return txn;
+	}
+
+	_ensureEditTransaction() {
+		if (!this._editTransaction)
+			this._editTransaction={stack:[],intents:[],seq:0};
+		return this._editTransaction;
+	}
+
+	_hasPendingCommitHandoff() {
+		return !!(this._pendingGroupTransaction||this._pendingDataCommit);
+	}
+
+	_notifyTransactionStateChange() {
+		this.rootEl.dispatchEvent(new CustomEvent("transactionstatechange",{
+			detail:this.getOpenTransactionState(),
+		}));
+	}
+
+	getOpenTransactionState() {
+		const boundary=this._pendingGroupTransaction?.boundary??this._editTransaction?.stack?.[0]??null;
+		const mainIndex=boundary?this._getInstanceMainIndex(boundary):this._mainRowIndex;
+		return Object.freeze({
+			open:!!this._editTransaction?.stack?.length,
+			pending:!!(this._pendingGroupTransaction||this._pendingDataCommit),
+			boundary,
+			mainIndex:Number.isInteger(mainIndex)?mainIndex:null,
+			rowData:Number.isInteger(mainIndex)?this._filteredData?.[mainIndex]??null:null,
+		});
+	}
+
+	needsExitProtection() {
+		const state=this.getOpenTransactionState();
+		return state.open||state.pending;
+	}
+
+	async commitOpenTransaction() {
+		this._lastTransactionBlock=null;
+		if (this._pendingGroupTransaction)
+			return this._pendingGroupTransaction.completion;
+		if (this._pendingDataCommit) {
+			try {
+				await this._pendingDataCommit;
+			} catch(error) {
+				return {status:"blocked",reason:"persistence",error};
+			}
+		}
+		if (this._inEditMode) {
+			const exited=this._exitEditMode(true);
+			if (!exited&&this._pendingDataCommit) {
+				try {
+					await this._pendingDataCommit;
+				} catch(error) {
+					return {status:"blocked",reason:"persistence",error};
+				}
+			} else if (!exited)
+				return {status:"blocked",reason:"validation",
+					boundary:this._getOpenGroupAncestor(this._activeDetailsCell)??null};
+		}
+		const stack=[...(this._editTransaction?.stack??[])]
+			.sort((a,b)=>(b.path?.length??0)-(a.path?.length??0));
+		if (!stack.length)
+			return {status:"none"};
+		for (const group of stack) {
+			if (!this._editTransaction?.stack?.includes(group))
+				continue;
+			const closed=this._closeGroup(group,null,true);
+			if (closed)
+				continue;
+			if (this._pendingGroupTransaction)
+				return this._pendingGroupTransaction.completion;
+			return this._lastTransactionBlock??{status:"blocked",reason:"validation",boundary:group};
+		}
+		return {status:"committed"};
+	}
+
+	revealOpenTransaction({highlight=true}={}) {
+		const boundary=this._lastTransactionBlock?.boundary??this._pendingGroupTransaction?.boundary
+			??this._editTransaction?.stack?.[0]??null;
+		if (!boundary)
+			return false;
+		if (!this._isGroupPresentationOpen(boundary))
+			this._setGroupPresentationState(boundary,"open");
+		const target=boundary.viewportEl??boundary.el;
+		target?.scrollIntoView?.({block:"center",inline:"nearest"});
+		if (highlight&&target) {
+			target.classList.remove("transaction-attention");
+			void target.offsetWidth;
+			target.classList.add("transaction-attention");
+			setTimeout(()=>target.classList.remove("transaction-attention"),1600);
+		}
+		const message=this._lastTransactionBlock?.message;
+		if (message)
+			this._showTooltip(message,boundary.el);
+		this._focusEl.focus({preventScroll:true});
+		return true;
 	}
 
 	_isDescendantGroup(group,ancestor) {
@@ -6774,7 +6872,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_queueCommitIntent(payload,{group=null,instanceNode=null,depth=null,schemaNode=null}={}) {
 		// Central place to collect commit payloads so flush ordering stays deterministic.
-		const txn=this._editTransaction??(this._editTransaction={stack:[],intents:[],seq:0});
+		const txn=this._ensureEditTransaction();
 		const schema=schemaNode??payload?.schemaNode??instanceNode?.schemaNode??group?.schemaNode;
 		const commitDepth=depth??instanceNode?.path?.length??group?.path?.length??0;
 		if (payload.parentData===undefined) {
@@ -6818,6 +6916,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (node.schemaNode?.type==="group"&&this._isGroupPresentationOpen(node))
 				boundary=node;
 		return boundary;
+	}
+
+	_getInstanceMainIndex(instanceNode) {
+		let mainIndex=null;
+		for (let node=instanceNode;node;node=node.parent)
+			if (node.rowIndex!=null)
+				mainIndex=node.rowIndex;
+		return mainIndex;
 	}
 
 	_isThenable(value) {
@@ -6913,7 +7019,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_prepareCommitTransaction(boundary) {
 		const txn=this._editTransaction;
-		const sorted=txn.intents
+		const sorted=[...txn.intents]
 			.sort((a,b)=>a.depth-b.depth||a.seq-b.seq);
 		const real=this._normalizeCommitIntents(sorted.filter(intent=>{
 			const changes=intent.payload?.changes;
@@ -6926,7 +7032,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const intentByCommit=new Map(commits.map((commit,index)=>[commit,real[index]]));
 		const context=Object.freeze({
 			tablance:this,
-			rowData:boundary?.rowIndex!=null?this._filteredData?.[boundary.rowIndex]
+			rowData:this._getInstanceMainIndex(boundary)!=null
+				?this._filteredData?.[this._getInstanceMainIndex(boundary)]
 				:real[0]?.payload?.rowData,
 			dataFor:commit=>{
 				const intent=intentByCommit.get(commit);
@@ -6944,8 +7051,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			groupsTouched:new Set([boundary,...txn.intents.map(intent=>intent.group)].filter(Boolean)),
 			transaction:Object.freeze({
 				commits:Object.freeze(commits),
-				mainIndex:commits[0]?.mainIndex??boundary?.rowIndex??null,
-				rowData:this._deepFreeze(this._cloneGroupData(commits[0]?.rowData??boundary?.dataObj??null)),
+				mainIndex:commits[0]?.mainIndex??this._getInstanceMainIndex(boundary)??null,
+				rowData:this._deepFreeze(this._cloneGroupData(this._getInstanceMainIndex(boundary)!=null
+					?this._filteredData?.[this._getInstanceMainIndex(boundary)]
+					:commits[0]?.rowData??boundary?.dataObj??null)),
 				baselineRowData:this._deepFreeze(this._cloneGroupData(boundary?._openSnapshot??null)),
 			}),
 		};
@@ -7006,6 +7115,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._removeGroupFromTransaction(prepared.boundary);
 		}
 		this._editTransaction=null;
+		this._lastTransactionBlock=null;
+		this._notifyTransactionStateChange();
 		if (prepared.transaction.commits.length) {
 			try {
 				const result=this._schema.afterCommit?.(prepared.transaction,prepared.context);
@@ -7087,6 +7198,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			result=this._schema.commit?.(prepared.transaction,prepared.context);
 		} catch(error) {
 			this._resetCommitAfterFailure(prepared);
+			this._lastTransactionBlock={status:"blocked",reason:"persistence",boundary:prepared.boundary,error};
 			this._showTooltip(error?.message??"The changes could not be saved locally.",prepared.boundary.el);
 			return false;
 		}
@@ -7095,8 +7207,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return true;
 		}
 		prepared.continuation=continuation;
+		prepared.completion=new Promise(resolve=>prepared.resolveCompletion=resolve);
 		this._pendingGroupTransaction=prepared;
 		this._setGroupCommitPending(prepared.boundary,true);
+		this._notifyTransactionStateChange();
 		Promise.resolve(result).then(()=>{
 			if (this._pendingGroupTransaction!==prepared)
 				return;
@@ -7104,15 +7218,19 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._setGroupCommitPending(prepared.boundary,false);
 			this._finalizeCommitTransaction(prepared);
 			this._resumeGroupContinuation(prepared.continuation);
+			prepared.resolveCompletion({status:"committed"});
 		}).catch(error=>{
 			if (this._pendingGroupTransaction!==prepared)
 				return;
 			this._pendingGroupTransaction=null;
 			this._setGroupCommitPending(prepared.boundary,false);
 			this._resetCommitAfterFailure(prepared);
+			this._lastTransactionBlock={status:"blocked",reason:"persistence",boundary:prepared.boundary,error};
+			this._notifyTransactionStateChange();
 			this._showTooltip(error?.message??"The changes could not be saved locally.",prepared.boundary.el);
 			this._focusEl.focus({preventScroll:true});
 			this._adjustCursorPosSize(this._getCursorGeometryEl(this._activeDetailsCell??prepared.boundary));
+			prepared.resolveCompletion({status:"blocked",reason:"persistence",boundary:prepared.boundary,error});
 		});
 		return false;
 	}
@@ -7131,7 +7249,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (const repeated of this._getRepeatedAncestors(instanceNode))
 			this._finalizeRepeatedMutation(repeated);
 		const transactionGroup=this._getOpenGroupAncestor(instanceNode?.parent);
-		let txn=this._editTransaction??(this._editTransaction={stack:[],intents:[],seq:0});
+		let txn=this._ensureEditTransaction();
 		const rowData=payload.rowData;
 		const rowMeta=rowData?this._rowMeta.get(rowData):undefined;
 		if (rowMeta?.isNew&&!txn.intents.some(intent=>intent.payload?.data===rowData
@@ -7183,12 +7301,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		txn.stack=txn.stack.filter(openGroup=>!this._isDescendantGroup(openGroup,groupObject));
 		if (discardIntents)
 			txn.intents=txn.intents.filter(({group})=>!this._isDescendantGroup(group,groupObject));
-		if (!txn.stack.length&&(!txn.intents.length))
+		if (!txn.stack.length&&(!txn.intents.length)) {
 			this._editTransaction=null;
+			this._notifyTransactionStateChange();
+		}
 	}
 
 	_closeGroup(groupObject,targetCell=null,suppressTooltip=false,continuation=null) {
-		if (this._pendingGroupTransaction)
+		if (this._hasPendingCommitHandoff())
 			return false;
 		if (this._isTrashMode()) {
 			this._finalizeGroupClose(groupObject);
@@ -7217,6 +7337,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			closePayload.preventClose(error?.message??String(error));
 		}
 		if (!closeState.doClose) {
+			this._lastTransactionBlock={status:"blocked",reason:"validation",boundary:groupObject,
+				message:closeState.preventMessage??this.lang.groupValidationFailedHint};
 			if (!suppressTooltip) {
 				const tooltipMessage=[closeState.preventMessage,this.lang.groupValidationFailedHint]
 					.filter(Boolean).join("\n");
@@ -7245,6 +7367,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				prepared=this._prepareCommitTransaction(commitBoundary);
 			} catch(error) {
 				this._editTransaction.intents.pop();
+				this._lastTransactionBlock={status:"blocked",reason:"configuration",boundary:groupObject,error};
 				if (!suppressTooltip)
 					this._showTooltip(error?.message??String(error),groupObject.el);
 				return false;
@@ -7916,8 +8039,20 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._focusEl.focus({preventScroll:true});
 		this._adjustCursorPosSize(this._selectedCell);
 		this._highlightOnFocus=false;
-		if (payload)
-			this._queueReorderCommit(payload,entry);
+		if (payload) {
+			const intentCount=this._editTransaction?.intents.length??0;
+			const result=this._queueReorderCommit(payload,entry);
+			if (result?.promise)
+				result.promise.catch(error=>{
+					if (this._editTransaction)
+						this._editTransaction.intents.length=intentCount;
+					repeated.children=[...baselineEntries];
+					this._arrangeRepeatedInstances(repeated,true);
+					for (const item of repeated.children)
+						this._syncRepeatedReorderEntry(item);
+					this._showTooltip(error?.message??"The staged order could not be saved locally.",entry.el);
+				});
+		}
 		return true;
 	}
 
@@ -8299,6 +8434,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				mainIndex=root.rowIndex;
 		const rowData=Number.isInteger(mainIndex)?this._filteredData?.[mainIndex]:undefined;
 		const parentData=instanceNode.parentData??null;
+		const transactionBoundary=this._getGroupCommitBoundary(instanceNode);
+		const beforeBoundaryData=!programatically&&transactionBoundary
+			?this._cloneGroupData(transactionBoundary.dataObj):null;
+		const intentCount=this._editTransaction?.intents.length??0;
 
 		// Mutate data array
 		if (!programatically&&parent?.schemaNode?.type==="repeated"&&Array.isArray(dataArray)&&dataIndex>-1)
@@ -8321,7 +8460,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._activeDetailsCell=null;
 				break;
 			}
-		const commitBoundary=this._getGroupCommitBoundary(instanceNode);
+		const commitBoundary=transactionBoundary;
 		if (instanceNode.schemaNode?.type==="group")
 			this._removeGroupFromTransaction(instanceNode,!commitBoundary);
 
@@ -8340,7 +8479,20 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			});
 			payload.mode="delete";
 			payload.parentData=parentData;
-			this._queueDataCommit(payload,instanceNode);
+			const result=this._queueDataCommit(payload,instanceNode);
+			if (result?.promise)
+				result.promise.catch(error=>{
+					if (this._editTransaction)
+						this._editTransaction.intents.length=intentCount;
+					if (transactionBoundary&&beforeBoundaryData)
+						this._restoreGroupSnapshot(transactionBoundary.dataObj,beforeBoundaryData);
+					if (parent?.schemaNode?.type==="repeated") {
+						this._reconcileRepeatedData(parent,parent.dataObj);
+						this._arrangeRepeatedInstances(parent,true);
+					}
+					this._showTooltip(error?.message??"The staged deletion could not be saved locally.",
+						transactionBoundary?.el??parent?.el);
+				});
 		}
 		else if (parent?.schemaNode?.type==="repeated"&&wasCreating)
 			this._finalizeRepeatedMutation(parent);
@@ -9254,20 +9406,23 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._selectedCellVal=previousValue;
 				this._refreshPendingCommitCell(selectedCell,schemaNode,activeDetailsCell,dataObj);
 				this._pendingDataCommit=commitResult.promise;
+				this._notifyTransactionStateChange();
 				this._cellCursor.classList.add("commit-pending");
-				if (input)
-					input.disabled=true;
+					if (input)
+						input.disabled=true;
 				this._pendingDataCommit.then(()=>{
 					dataObj[schemaNode.dataKey]=proposedValue;
 					this._selectedCellVal=proposedValue;
 					this._finalizeCommitTransaction(commitResult.prepared);
 					this._refreshPendingCommitCell(selectedCell,schemaNode,activeDetailsCell,dataObj);
 					this._pendingDataCommit=null;
+					this._notifyTransactionStateChange();
 					this._cellCursor.classList.remove("commit-pending");
 					this._finishEditModeExit();
 				}).catch(error=>{
 					this._editTransaction=null;
 					this._pendingDataCommit=null;
+					this._notifyTransactionStateChange();
 					this._cellCursor.classList.remove("commit-pending");
 					this._inputVal=proposedValue;
 					if (input) {
@@ -9489,11 +9644,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * restores data from snapshot, repaints dirty fields, refreshes main row, and closes.
 	 */
 	_discardActiveGroupEdits() {
-		if (this._pendingGroupTransaction)
+		if (this._hasPendingCommitHandoff())
 			return false;
 		const group=this._getOpenGroupAncestor(this._activeDetailsCell);
 		if (!group)
 			return;
+		return this._finalizeDiscardActiveGroupEdits(group);
+	}
+
+	_finalizeDiscardActiveGroupEdits(group) {
 		this._removeGroupFromTransaction(group,true);
 		const {payload,closePayload}=this._buildGroupPayload(group);
 		closePayload.reason=payload.reason="discard";
@@ -9559,7 +9718,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_closeActiveDetailsCell(targetCell,continuation=null) {
-		if (this._pendingGroupTransaction)
+		if (this._hasPendingCommitHandoff())
 			return false;
 		if (this._activeDetailsCell) {
 			for (let oldCellParent=this._activeDetailsCell; oldCellParent=oldCellParent.parent;) {
@@ -9578,7 +9737,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 
 	_selectMainTableCell(cell,focus=true) {
-		if (this._pendingGroupTransaction)
+		if (this._hasPendingCommitHandoff())
 			return false;
 		if (!cell)	//in case of trying to move up from top row etc,
 			return;
@@ -9603,7 +9762,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_selectDetailsCell(instanceNode,preserveVerticalPreferredColumn=false) {
-		if (this._pendingGroupTransaction)
+		if (this._hasPendingCommitHandoff())
 			return false;
 		if (!instanceNode)
 			return false;
