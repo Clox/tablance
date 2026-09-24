@@ -4153,6 +4153,117 @@ try {
 	assert(!table._cellCursor.querySelector(".tablance-textarea-shortcut-hint"),
 		"the new-line shortcut hint is removed when textarea edit mode closes");
 
+	const enterCommits=[];
+	const enterRows=[{value:"Before"},{value:"Second"}];
+	const enterTable=new Tablance(host(),{
+		commit:transaction=>enterCommits.push(transaction),
+		main:{columns:[{dataKey:"value",nodeId:"enterMainValue",input:{type:"text"}}]},
+	},true,true,{searchbar:false,ordering:false});
+	enterTable.setData(enterRows);
+	await tick();
+	enterTable._selectMainTableCell(enterTable._mainTbody.rows[0].cells[0]);
+	key(enterTable.rootEl,"Enter","Enter");
+	let enterEditor=enterTable._cellCursor.querySelector("input");
+	enterEditor.value="Committed by Enter";
+	key(enterEditor,"Enter","Enter");
+	assert(enterRows[0].value==="Committed by Enter"&&enterCommits.length===1
+		&&enterCommits[0].commits[0].changes.value==="Committed by Enter"&&enterTable._mainRowIndex===1,
+		"Enter captures the live main-cell editor value, commits it once, and performs normal vertical navigation");
+
+	const detailCommits=[];
+	const detailEnterRow={title:"Details",first:"Before",second:"After"};
+	const detailEnterTable=new Tablance(host(),{
+		commit:transaction=>detailCommits.push(transaction),
+		main:{columns:[{dataKey:"title"}]},
+		details:{type:"list",entries:[
+			{dataKey:"first",nodeId:"enterDetailFirst",input:{type:"text"}},
+			{dataKey:"second",nodeId:"enterDetailSecond",input:{type:"text"}},
+		]},
+	},true,true,{searchbar:false,ordering:false});
+	detailEnterTable.setData([detailEnterRow]);
+	detailEnterTable.expandRow(0,false);
+	await tick();
+	detailEnterTable.getDetailCell(0,"enterDetailFirst").select();
+	key(detailEnterTable.rootEl,"Enter","Enter");
+	enterEditor=detailEnterTable._cellCursor.querySelector("input");
+	enterEditor.value="Detail committed by Enter";
+	key(enterEditor,"Enter","Enter");
+	assert(detailEnterRow.first==="Detail committed by Enter"&&detailCommits.length===1
+		&&detailEnterTable._activeDetailsCell?.schemaNode.nodeId==="enterDetailSecond",
+		"Enter captures and commits a live details editor outside groups before details navigation");
+
+	const stagedEnterCommits=[];
+	const stagedEnterRow={group:{first:"Before",second:"After"}};
+	const stagedEnterTable=new Tablance(host(),{
+		commit:transaction=>stagedEnterCommits.push(transaction),
+		details:{type:"list",entries:[{type:"group",nodeId:"enterGroup",dataPath:"group",
+			closedRender:data=>data.first,entries:[
+				{dataKey:"first",nodeId:"enterGroupFirst",input:{type:"text"}},
+				{dataKey:"second",nodeId:"enterGroupSecond",input:{type:"text"}},
+			]}]},
+	},true,true,{searchbar:false,ordering:false});
+	stagedEnterTable.setData([stagedEnterRow]);
+	await tick();
+	const stagedEnterGroup=stagedEnterTable.getDetailCell(0,"enterGroup");
+	stagedEnterTable._openGroup(stagedEnterGroup);
+	stagedEnterTable.getDetailCell(0,"enterGroupFirst",stagedEnterGroup).select();
+	key(stagedEnterTable.rootEl,"Enter","Enter");
+	enterEditor=stagedEnterTable._cellCursor.querySelector("input");
+	enterEditor.value="Staged by Enter";
+	key(enterEditor,"Enter","Enter");
+	assert(stagedEnterRow.group.first==="Staged by Enter"&&stagedEnterCommits.length===0
+		&&stagedEnterTable.needsExitProtection()
+		&&stagedEnterTable._activeDetailsCell?.schemaNode.nodeId==="enterGroupSecond",
+		"Enter stages the live editor value inside an open group without crossing its commit boundary");
+
+	let asyncEnterResolve;
+	let asyncEnterReject;
+	const asyncEnterTransactions=[];
+	const asyncEnterRows=[{value:"Committed baseline"},{value:"Destination"}];
+	const asyncEnterTable=new Tablance(host(),{
+		commit:transaction=>{
+			asyncEnterTransactions.push(transaction);
+			return new Promise((resolve,reject)=>{
+				asyncEnterResolve=resolve;
+				asyncEnterReject=reject;
+			});
+		},
+		main:{columns:[{dataKey:"value",nodeId:"asyncEnterValue",input:{type:"text"}}]},
+	},true,true,{searchbar:false,ordering:false});
+	asyncEnterTable.setData(asyncEnterRows);
+	await tick();
+	asyncEnterTable._selectMainTableCell(asyncEnterTable._mainTbody.rows[0].cells[0]);
+	key(asyncEnterTable.rootEl,"Enter","Enter");
+	enterEditor=asyncEnterTable._cellCursor.querySelector("input");
+	enterEditor.value="Durable Enter value";
+	key(enterEditor,"Enter","Enter");
+	assert(asyncEnterTransactions.length===1
+		&&asyncEnterTransactions[0].commits[0].changes.value==="Durable Enter value"
+		&&asyncEnterRows[0].value==="Committed baseline"&&asyncEnterTable._mainRowIndex===0
+		&&asyncEnterTable._inEditMode&&enterEditor.disabled,
+		"async Enter hands off the live candidate once while preserving committed state and navigation until durability");
+	asyncEnterResolve();
+	await tick();
+	assert(asyncEnterRows[0].value==="Durable Enter value"&&asyncEnterTable._mainRowIndex===1
+		&&!asyncEnterTable._inEditMode&&asyncEnterTransactions.length===1,
+		"successful async Enter finalizes the candidate once and resumes normal vertical navigation");
+
+	asyncEnterTable._selectMainTableCell(asyncEnterTable._mainTbody.rows[0].cells[0]);
+	key(asyncEnterTable.rootEl,"Enter","Enter");
+	enterEditor=asyncEnterTable._cellCursor.querySelector("input");
+	enterEditor.value="Rejected Enter value";
+	key(enterEditor,"Enter","Enter");
+	assert(asyncEnterTransactions.length===2&&asyncEnterRows[0].value==="Durable Enter value",
+		"a later async Enter starts exactly one new handoff without changing committed state early");
+	asyncEnterReject(new Error("IndexedDB unavailable"));
+	await tick();
+	enterEditor=asyncEnterTable._cellCursor.querySelector("input");
+	assert(asyncEnterRows[0].value==="Durable Enter value"&&asyncEnterTable._mainRowIndex===0
+		&&asyncEnterTable._inEditMode&&enterEditor?.value==="Rejected Enter value"&&!enterEditor.disabled
+		&&asyncEnterTransactions.length===2,
+		"rejected async Enter keeps the prior committed value and the candidate editor in place for retry");
+	asyncEnterTable._exitEditMode(false);
+
 	let durableResolve;
 	let durableReject;
 	let durableAttempt=0;
@@ -6840,7 +6951,7 @@ try {
 	const openGroupNavValue=openGroupNavTable.getDetailCell(0,"openGroupNavValue",openGroupNavRoot);
 	openGroupNavValue.select();
 	openGroupNavTable._enterCell(new Event("enter",{cancelable:true}));
-	openGroupNavTable._inputVal="staged";
+	openGroupNavTable._cellCursor.querySelector("input").value="staged";
 	assert(openGroupNavTable._exitEditMode(true)===true&&openGroupNavRow.outer.value==="staged"
 		&&openGroupNavTransactions.length===0&&openGroupNavTable.needsExitProtection(),
 		"leaving an editor inside an open group stages the value without crossing the commit boundary");
@@ -6853,6 +6964,31 @@ try {
 	openGroupNavTable._markDirtyField(openGroupNavNestedValue);
 	assert(openGroupNavTransactions.length===0&&openGroupNavTable.needsExitProtection(),
 		"staged edits in an open outer group remain uncommitted and request exit protection");
+	openGroupNavTable._activeDetailsCell=openGroupNavNestedValue;
+	const capturedOpenTransaction=openGroupNavTable.captureOpenTransactionReference();
+	assert(capturedOpenTransaction?.nodeId==="openGroupNavNested"
+		&&capturedOpenTransaction.rowData===openGroupNavRow
+		&&Object.isFrozen(capturedOpenTransaction)&&Object.isFrozen(capturedOpenTransaction.path),
+		"an exit reveal captures the most recently active nested group as an immutable logical reference");
+	openGroupNavTable._activeDetailsCell=null;
+	assert(openGroupNavTable.captureOpenTransactionReference()?.nodeId==="openGroupNavNested",
+		"multiple open groups fall back deterministically to the most recently opened group");
+	openGroupNavTable._activeDetailsCell=openGroupNavNestedValue;
+	openGroupNavTable._setGroupPresentationState(openGroupNavNested,"closed");
+	openGroupNavTable._setGroupPresentationState(openGroupNavRoot,"closed");
+	const exitExplanation="This group has unsaved staged changes";
+	assert(openGroupNavTable.revealOpenTransaction({reference:capturedOpenTransaction,
+		message:exitExplanation,messageDuration:10})
+		&&openGroupNavTable._isGroupPresentationOpen(openGroupNavRoot)
+		&&openGroupNavTable._isGroupPresentationOpen(openGroupNavNested)
+		&&openGroupNavNested.viewportEl.classList.contains("transaction-attention")
+		&&getComputedStyle(openGroupNavNested.viewportEl).animationDuration==="2.4s"
+		&&openGroupNavTable._tooltip.textContent===exitExplanation
+		&&openGroupNavRow.outer.nested.value==="nested staged",
+		"the shared reveal mechanism reopens parent groups, preserves staged data, runs the full attention pulse, and explains the block");
+	await tick();
+	assert(openGroupNavTable._tooltip.style.visibility==="hidden",
+		"the exit explanation is temporary rather than a persistent validation tooltip");
 	const openGroupNavCompletion=openGroupNavTable.commitOpenTransaction();
 	assert(openGroupNavTransactions.length===1
 		&&openGroupNavTransactions[0].commits.map(commit=>commit.nodeId).join(",")==="openGroupNavRoot,openGroupNavNested"

@@ -547,15 +547,20 @@
   }
 }
 @keyframes tablance-transaction-attention {
-  0%, 100% {
+  0%, 32%, 64% {
     box-shadow: 0 0 0 0 rgba(26, 115, 232, 0);
+    animation-timing-function: cubic-bezier(0.12, 0.78, 0.2, 1);
   }
-  20%, 65% {
-    box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.55);
+  6%, 38%, 70% {
+    box-shadow: 0 0 0 4px rgba(26, 115, 232, 0.62), 0 0 14px 2px rgba(26, 115, 232, 0.22);
+    animation-timing-function: cubic-bezier(0.2, 0.65, 0.3, 1);
+  }
+  28%, 60%, 96%, 100% {
+    box-shadow: 0 0 0 0 rgba(26, 115, 232, 0), 0 0 0 0 rgba(26, 115, 232, 0);
   }
 }
 .tablance .transaction-attention {
-  animation: tablance-transaction-attention 1.5s ease-out;
+  animation: tablance-transaction-attention 2.4s linear;
 }
 @media (prefers-reduced-motion: reduce) {
   .tablance .cell-cursor.tablance-navigation-cursor-animating {

@@ -290,7 +290,9 @@ class TablanceBase {
 		//creation finishes. The reason for having this flag is so that update */
 	_editTransaction;//tracks buffered group commits so inner scopes can still be cancelled
 	_pendingGroupTransaction;//pending handoff state for the implicit outermost group transaction
+	_pendingDataCommitNavigation;//logical keyboard destination resumed after a direct durable field handoff
 	_lastTransactionBlock;//latest validation/persistence failure for programmatic transaction completion
+	_transactionRevealTooltipTimer;//temporary explanatory tooltip shown when an open transaction blocks navigation/exit
 	_ignoreClicksUntil;//when being inside an open group and trying to double-click on another cell further down to
 
 
@@ -3791,8 +3793,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (this._cellRange)
 			this._clearCellRange();
 		
-		if (!this._exitEditMode(true))//try to exit-mode and commit any changes.
+		if (!this._exitEditMode(true)) {//try to exit-mode and commit any changes.
+			if (this._pendingDataCommit&&!this._pendingDataCommitNavigation) {
+				this._pendingDataCommitNavigation=Object.freeze({hSign,vSign,key:e?.key,code:e?.code,
+					shiftKey:!!e?.shiftKey});
+				e?.preventDefault();
+			}
 			return false;//if exiting edit-mode was denied then do nothing more
+		}
 		//it's important to run this here before deciding on the cell to move to, because exiting edit-mode may have
 		//triggered visibleIf changes that may have changed which cells are selectable.
 
@@ -6770,8 +6778,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_notifyTransactionStateChange() {
+		const state=this.getOpenTransactionState();
+		if (!state.open&&!state.pending) {
+			clearTimeout(this._transactionRevealTooltipTimer);
+			this._tooltip.style.visibility="hidden";
+			for (const target of this.rootEl.querySelectorAll(".transaction-attention"))
+				target.classList.remove("transaction-attention");
+		}
 		this.rootEl.dispatchEvent(new CustomEvent("transactionstatechange",{
-			detail:this.getOpenTransactionState(),
+			detail:state,
 		}));
 	}
 
@@ -6790,6 +6805,28 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	needsExitProtection() {
 		const state=this.getOpenTransactionState();
 		return state.open||state.pending;
+	}
+
+	_relevantOpenTransactionGroup() {
+		const stack=this._editTransaction?.stack??[];
+		const active=this._getOpenGroupAncestor(this._activeDetailsCell);
+		if (active&&stack.includes(active))
+			return active;
+		return this._pendingGroupTransaction?.boundary??stack.at(-1)??null;
+	}
+
+	captureOpenTransactionReference() {
+		const group=this._relevantOpenTransactionGroup();
+		if (!group)
+			return null;
+		const mainIndex=this._getInstanceMainIndex(group);
+		return Object.freeze({
+			rowData:Number.isInteger(mainIndex)?this._filteredData?.[mainIndex]??null:null,
+			mainIndex:Number.isInteger(mainIndex)?mainIndex:null,
+			path:Object.freeze([...(group.path??[])]),
+			nodeId:group.schemaNode?.nodeId??null,
+			instanceNode:group,
+		});
 	}
 
 	async commitOpenTransaction() {
@@ -6832,24 +6869,62 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return {status:"committed"};
 	}
 
-	revealOpenTransaction({highlight=true}={}) {
-		const boundary=this._lastTransactionBlock?.boundary??this._pendingGroupTransaction?.boundary
-			??this._editTransaction?.stack?.[0]??null;
+	_resolveOpenTransactionReference(reference) {
+		if (!reference)
+			return null;
+		let mainIndex=reference.rowData?this._filteredData.indexOf(reference.rowData):reference.mainIndex;
+		if (!Number.isInteger(mainIndex)||mainIndex<0)
+			return reference.instanceNode??null;
+		if (!this._onlyDetails) {
+			this.scrollToDataRow(reference.rowData??this._filteredData[mainIndex],false,false);
+			this._scrollMethod?.();
+		}
+		let node=this._openDetailsPanes[mainIndex]??this.expandRow(mainIndex);
+		for (const step of reference.path??[])
+			node=node?.children?.[step];
+		return node?.schemaNode?.type==="group"?node:reference.instanceNode??null;
+	}
+
+	_revealGroupParents(group) {
+		const parents=[];
+		for (let parent=group?.parent;parent;parent=parent.parent)
+			if (parent.schemaNode?.type==="group")
+				parents.push(parent);
+		for (const parent of parents.reverse()) {
+			if (!this._isGroupPresentationOpen(parent))
+				this._setGroupPresentationState(parent,"open");
+			this._syncGroupChevronVisibility(parent);
+		}
+	}
+
+	revealOpenTransaction({highlight=true,reference=null,message=null,messageDuration=5000}={}) {
+		const boundary=reference?this._resolveOpenTransactionReference(reference)
+			:this._lastTransactionBlock?.boundary??this._pendingGroupTransaction?.boundary
+				??this._relevantOpenTransactionGroup();
 		if (!boundary)
 			return false;
+		this._revealGroupParents(boundary);
 		if (!this._isGroupPresentationOpen(boundary))
 			this._setGroupPresentationState(boundary,"open");
+		this._syncGroupChevronVisibility(boundary);
 		const target=boundary.viewportEl??boundary.el;
-		target?.scrollIntoView?.({block:"center",inline:"nearest"});
+		if (target?.isConnected)
+			this._scrollElementIntoView(target);
 		if (highlight&&target) {
 			target.classList.remove("transaction-attention");
 			void target.offsetWidth;
 			target.classList.add("transaction-attention");
-			setTimeout(()=>target.classList.remove("transaction-attention"),1600);
+			setTimeout(()=>target.classList.remove("transaction-attention"),2500);
 		}
-		const message=this._lastTransactionBlock?.message;
-		if (message)
-			this._showTooltip(message,boundary.el);
+		const tooltipMessage=message??this._lastTransactionBlock?.message;
+		if (tooltipMessage) {
+			clearTimeout(this._transactionRevealTooltipTimer);
+			this._showTooltip(tooltipMessage,boundary.el);
+			this._transactionRevealTooltipTimer=setTimeout(()=>{
+				if (this._tooltip.firstChild?.innerText===tooltipMessage)
+					this._tooltip.style.visibility="hidden";
+			},messageDuration);
+		}
 		this._focusEl.focus({preventScroll:true});
 		return true;
 	}
@@ -8510,7 +8585,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		//for when blurring by clicking outside of table etc. exit edit-mode and commit the change but keep the cell
 		//selected. not sure why the timeout is needed but it is.
-		input.addEventListener("blur",()=>setTimeout(this._exitEditMode.bind(this,true)));
+		input.addEventListener("blur",()=>setTimeout(()=>{
+			// A rejected durable handoff restores focus to this same editor. Ignore the delayed blur task caused by
+			// temporarily disabling it while pending, otherwise it would immediately start an unrequested retry.
+			if (input.ownerDocument.activeElement!==input)
+				this._exitEditMode(true);
+		}));
 		
 		input.addEventListener("change",()=>this._inputVal=input.value);
 		input.value=this._selectedCellVal??"";
@@ -8678,7 +8758,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._chooseComboboxOption(ctx,Number(option.dataset.index));
 		});
 		input.addEventListener("blur",()=>setTimeout(()=>{
-			if (this._inEditMode&&this._comboboxContext===ctx)
+			if (input.ownerDocument.activeElement!==input&&this._inEditMode&&this._comboboxContext===ctx)
 				this._exitEditMode(true);
 		}));
 		this._cellCursor.parentElement.appendChild(popup);
@@ -9387,6 +9467,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const input=this._cellCursor.querySelector("input,textarea");
 		if (this._activeSchemaNode.input.format?.stripDelimiterOnSave&&this._activeSchemaNode.input.format.delimiter)
 			input.value=input.value.replaceAll(this._activeSchemaNode.input.format.delimiter, "");
+		// Enter/Tab/arrow navigation is handled on keydown, before a text control's blur/change event. Read the
+		// live control here so the commit candidate cannot lag one interaction behind the editor. Select editors
+		// keep an option object in _inputVal and file editors keep a File, so their canonical values must not be
+		// replaced with the auxiliary/native input string.
+		if (input&&!['select','file'].includes(this._activeSchemaNode.input.type))
+			this._inputVal=input.value;
 		if (this._activeSchemaNode.input.validation&&save&&!this._validateInput(input.value))
 			return false;
 		const inputValNorm=this._normalizeCommitValue(this._activeSchemaNode,this._inputVal);
@@ -9415,12 +9501,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					this._selectedCellVal=proposedValue;
 					this._finalizeCommitTransaction(commitResult.prepared);
 					this._refreshPendingCommitCell(selectedCell,schemaNode,activeDetailsCell,dataObj);
+					const navigation=this._pendingDataCommitNavigation;
+					this._pendingDataCommitNavigation=null;
 					this._pendingDataCommit=null;
 					this._notifyTransactionStateChange();
 					this._cellCursor.classList.remove("commit-pending");
 					this._finishEditModeExit();
+					if (navigation)
+						this._moveCellCursor(navigation.hSign,navigation.vSign,{key:navigation.key,
+							code:navigation.code,shiftKey:navigation.shiftKey,preventDefault(){}});
 				}).catch(error=>{
 					this._editTransaction=null;
+					this._pendingDataCommitNavigation=null;
 					this._pendingDataCommit=null;
 					this._notifyTransactionStateChange();
 					this._cellCursor.classList.remove("commit-pending");
