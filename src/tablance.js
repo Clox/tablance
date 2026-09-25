@@ -8351,8 +8351,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (repeated?.schemaNode?.type!=="repeated")
 			return false;
 		const creators=(repeated.children??[]).filter(entry=>entry.schemaNode?.creator);
-		const hasPresentedEntry=(repeated.children??[]).some(entry=>!entry.schemaNode?.creator
+		const presentedEntries=(repeated.children??[]).filter(entry=>!entry.schemaNode?.creator
 			&&!entry.hidden&&!entry.previewHidden);
+		const hasPresentedEntry=presentedEntries.length>0;
+		const firstUngroupedEntry=this._getRepeatedGrouping(repeated)?null:presentedEntries[0];
+		for (const entry of repeated.children??[])
+			entry.outerContainerEl?.classList.toggle("repeated-entry-first",entry===firstUngroupedEntry);
 		for (const creator of creators)
 			creator.outerContainerEl?.classList.toggle("repeated-creator-after-entry",hasPresentedEntry);
 		return hasPresentedEntry;

@@ -2348,12 +2348,15 @@ try {
 	await tick();
 	const sortedRepeated=sortedIdentityTable.getDetailCell(0,"sortedItems");
 	const visualEntries=()=>sortedRepeated.children.filter(child=>!child.schemaNode.creator);
+	const sortedCreator=sortedRepeated.children.find(entry=>entry.schemaNode.creator);
 	assert(JSON.stringify(visualEntries().map(entry=>entry.dataObj.id))===JSON.stringify([2,3,1])
 		&&JSON.stringify(sortedBacking.map(entry=>entry.id))===JSON.stringify([1,2,3])&&compareContextValid,
 		"sortCompare creates a visual order without mutating backing-array order and receives full context");
-	assert(!sortedRepeated.children.find(entry=>entry.schemaNode.creator).outerContainerEl
-		.classList.contains("grouped-repeated-creator"),
-		"an ungrouped repeated creator does not receive grouped separation styling");
+	const sortedCreatorStyle=getComputedStyle(sortedCreator.outerContainerEl.cells[0]);
+	assert(!sortedCreator.outerContainerEl.classList.contains("grouped-repeated-creator")
+		&&sortedCreatorStyle.paddingTop==="5px"&&sortedCreatorStyle.paddingRight==="0px"
+		&&sortedCreatorStyle.paddingBottom==="8px"&&sortedCreatorStyle.paddingLeft==="4px",
+		"an ungrouped repeated creator receives balanced spacing without grouped indentation");
 	const sortedCandidate=visualEntries()[1];
 	assert(sortedCandidate.dataObj.id===3&&sortedCandidate.index===1,
 		"the deletion candidate can have a visual index different from its backing-array index");
@@ -2473,10 +2476,53 @@ try {
 		&&initialGroupHeadingRects.every(rect=>rect.left===groupedCollectionRect.left),
 		"each visible group keeps its heading at the repeated baseline while indentation and spacing remain presentational");
 	assert(initialGroupedCreator.outerContainerEl.classList.contains("grouped-repeated-creator")
-		&&parseFloat(getComputedStyle(initialGroupedCreator.outerContainerEl.cells[0]).paddingTop)>0
+		&&parseFloat(getComputedStyle(initialGroupedCreator.outerContainerEl.cells[0]).paddingTop)===7
+		&&parseFloat(getComputedStyle(initialGroupedCreator.outerContainerEl.cells[0]).paddingRight)===4
 		&&parseFloat(getComputedStyle(initialGroupedCreator.outerContainerEl.cells[0]).paddingLeft)===10
-		&&parseFloat(getComputedStyle(initialGroupedCreator.outerContainerEl.cells[0]).paddingBottom)>0,
+		&&parseFloat(getComputedStyle(initialGroupedCreator.outerContainerEl.cells[0]).paddingBottom)===8,
 		"a grouped creator remains at the repeated baseline with breathing room below it");
+	const spanCreatorHost=host();
+	spanCreatorHost.style.width="320px";
+	const spanCreatorTable=new Tablance(spanCreatorHost,{details:{type:"lineup",entries:[
+		{type:"repeated",dataKey:"items",nodeId:"spanCreatorItems",create:true,
+			creationText:"Add another span entry with a longer descriptive label",
+			createData:()=>({label:"New"}),entry:{type:"group",closedRender:({label})=>label,entries:[
+				{title:"Label",dataKey:"label",input:{type:"text"}},
+			]}},
+	]}},true,true,{searchbar:false});
+	spanCreatorTable.setData([{items:[{label:"Existing"}]}]);
+	await tick();
+	const spanCreatorRepeated=spanCreatorTable.getDetailCell(0,"spanCreatorItems");
+	const spanCreator=spanCreatorRepeated.children.find(entry=>entry.schemaNode.creator);
+	const spanCreatorStyle=getComputedStyle(spanCreator.outerContainerEl);
+	const spanCreatorCollectionRect=spanCreatorRepeated.parent.containerEl.getBoundingClientRect();
+	const spanCreatorRect=spanCreator.el.getBoundingClientRect();
+	assert(spanCreator.outerContainerEl.tagName==="SPAN"
+		&&spanCreatorStyle.marginTop==="7px"&&spanCreatorStyle.marginBottom==="8px"
+		&&spanCreatorRect.left-spanCreatorCollectionRect.left>=8
+		&&spanCreatorCollectionRect.right-spanCreatorRect.right>=8
+		&&spanCreator.el.scrollWidth<=spanCreator.el.clientWidth,
+		"a span creator keeps matching visual insets and wraps a longer label without overflow");
+	const groupedSpanCreatorHost=host();
+	groupedSpanCreatorHost.style.width="320px";
+	const groupedSpanCreatorTable=new Tablance(groupedSpanCreatorHost,{details:{type:"lineup",entries:[
+		{type:"repeated",dataKey:"items",nodeId:"groupedSpanCreatorItems",create:true,
+			creationText:"Add grouped span entry",createData:()=>({kind:"a",label:"New"}),
+			grouping:{by:"kind",order:[{key:"a",title:"Alpha"}]},
+			entry:{type:"group",closedRender:({label})=>label,entries:[
+				{title:"Label",dataKey:"label",input:{type:"text"}},
+			]}},
+	]}},true,true,{searchbar:false});
+	groupedSpanCreatorTable.setData([{items:[{kind:"a",label:"Existing"}]}]);
+	await tick();
+	const groupedSpanCreatorRepeated=groupedSpanCreatorTable.getDetailCell(0,"groupedSpanCreatorItems");
+	const groupedSpanCreator=groupedSpanCreatorRepeated.children.find(entry=>entry.schemaNode.creator);
+	const groupedSpanCreatorStyle=getComputedStyle(groupedSpanCreator.outerContainerEl);
+	assert(groupedSpanCreator.outerContainerEl.tagName==="SPAN"
+		&&groupedSpanCreator.outerContainerEl.classList.contains("grouped-repeated-creator")
+		&&groupedSpanCreatorStyle.marginTop==="7px"&&groupedSpanCreatorStyle.marginBottom==="8px"
+		&&groupedSpanCreatorStyle.paddingLeft==="6px"&&groupedSpanCreatorStyle.paddingRight==="4px",
+		"a grouped span creator preserves its baseline while adding a corresponding right inset");
 	const groupedIdentity=groupedEntries().find(entry=>entry.dataObj.id==="a-3");
 	const groupedIdentityElement=groupedIdentity.outerContainerEl;
 	const groupedKind=groupedIdentity.children[0];
@@ -4578,8 +4624,10 @@ try {
 		&&historyEntries.every(entry=>!entry.groupChevronEl.hidden)
 		&&historyGroup.el.querySelector("td").getBoundingClientRect().left===selectedHistoryGroupTextPosition,
 		"opening a group hides its own chevron and exposes its closed child groups without moving content");
-	assert(historyEntries.every(entry=>getComputedStyle(entry.viewportEl.parentElement.parentElement).paddingTop==="2px"),
-		"every nested group row reserves the same space above its selection outline");
+	assert(getComputedStyle(historyEntries[0].viewportEl.parentElement.parentElement).paddingTop==="6px"
+		&&historyEntries.slice(1).every(entry=>
+			getComputedStyle(entry.viewportEl.parentElement.parentElement).paddingTop==="2px"),
+		"the first nested group has an outer top inset while following rows retain their compact inter-entry spacing");
 	const groupStyles=[getComputedStyle(historyGroup.el),getComputedStyle(historyEntries[0].el)];
 	assert(groupStyles.every(style=>["Top","Right","Bottom","Left"].every(side=>
 		style[`border${side}Width`]==="1px"&&style[`border${side}Style`]==="solid"
@@ -4703,9 +4751,16 @@ try {
 		&&getComputedStyle(table._cellCursor).outlineOffset==="-1px",
 		"a selected details group draws its outline one pixel inward on every side");
 	const closedGroupRenderStyle=getComputedStyle(historyEntries[0].el.querySelector("tbody>tr.group-render>td"));
-	assert(closedGroupRenderStyle.paddingLeft==="4px"&&closedGroupRenderStyle.paddingTop==="2px"
-		&&closedGroupRenderStyle.paddingBottom==="2px",
-		"a closed group render uses compact horizontal and vertical padding");
+	assert(closedGroupRenderStyle.paddingLeft==="9px"&&closedGroupRenderStyle.paddingRight==="5px"
+		&&closedGroupRenderStyle.paddingTop==="5px"&&closedGroupRenderStyle.paddingBottom==="5px",
+		"a closed group render uses consistent horizontal and vertical content padding");
+	const closedGroupRenderCells=[safeTextRender,trustedHtmlRender,nestedClosedRender,
+		longSummaryContent.closest("td")];
+	assert(closedGroupRenderCells.every(cell=>{
+		const style=getComputedStyle(cell);
+		return style.paddingLeft==="9px"&&style.paddingRight==="5px"
+			&&style.paddingTop==="5px"&&style.paddingBottom==="5px";
+	}),"short, HTML, nested repeated, and wrapping closed groups share the same content padding");
 	const nestedGroupCellStyle=getComputedStyle(historyEntries[0].viewportEl.parentElement);
 	assert(nestedGroupCellStyle.paddingRight==="4px"&&getComputedStyle(historyEntries[0].el).boxSizing==="border-box",
 		"a nested group keeps visible space between its right border and its parent border");
@@ -5655,6 +5710,25 @@ try {
 		&&populatedRepeated.children.find(child=>child.schemaNode.creator).outerContainerEl
 			.classList.contains("repeated-creator-after-entry"),
 		"a repeated group with an existing entry retains ordinary closed presentation");
+	creatorEmptyTable._openGroup(populatedRepeatedGroup);
+	await tick();
+	const populatedEntry=populatedRepeated.children.find(child=>!child.schemaNode.creator&&!child.creating);
+	const populatedCreator=populatedRepeated.children.find(child=>child.schemaNode.creator);
+	const populatedOuterRect=populatedRepeatedGroup.el.getBoundingClientRect();
+	const populatedEntryRect=populatedEntry.el.getBoundingClientRect();
+	const populatedCreatorRect=populatedCreator.el.getBoundingClientRect();
+	const populatedInsets=[populatedEntryRect.left-populatedOuterRect.left,
+		populatedOuterRect.right-populatedEntryRect.right,
+		populatedCreatorRect.left-populatedOuterRect.left,
+		populatedOuterRect.right-populatedCreatorRect.right,
+		populatedEntryRect.top-populatedOuterRect.top,
+		populatedCreatorRect.top-populatedEntryRect.bottom,
+		populatedOuterRect.bottom-populatedCreatorRect.bottom];
+	assert(populatedEntry.outerContainerEl.classList.contains("repeated-entry-first")
+		&&populatedInsets.slice(0,4).every(inset=>Math.abs(inset-5)<.1)
+		&&Math.abs(populatedInsets[4]-7)<.1&&Math.abs(populatedInsets[5]-7)<.1
+		&&Math.abs(populatedInsets[6]-9)<.1,
+		`an open ungrouped repeated collection aligns its first entry and creator within balanced outer insets (${populatedInsets})`);
 	assert(noCreatorRepeatedGroup.presentationState==="closed"
 		&&!noCreatorRepeatedGroup.el.classList.contains("open"),
 		"an empty repeated group without a creator remains unchanged and closed");
@@ -5680,9 +5754,9 @@ try {
 	const draftCreatorGap=creator.el.getBoundingClientRect().top
 		-creatorEmptyDraft.el.getBoundingClientRect().bottom;
 	assert(creator.outerContainerEl.classList.contains("repeated-creator-after-entry")
-		&&parseFloat(getComputedStyle(creator.outerContainerEl.cells[0]).paddingTop)===5
-		&&draftCreatorGap>=4.5&&draftCreatorGap<=5.5,
-		"a draft receives one compact visual gap before its following creator without inserting a spacer node");
+		&&parseFloat(getComputedStyle(creator.outerContainerEl.cells[0]).paddingTop)===7
+		&&draftCreatorGap>=6.5&&draftCreatorGap<=7.5,
+		"a draft receives one clear visual gap before its following creator without inserting a spacer node");
 	key(creatorEmptyTable.rootEl,"Enter","Enter");
 	const creatorEmptyEditor=creatorEmptyTable._cellCursor.querySelector("input.text-editor");
 	const editorRect=creatorEmptyEditor.getBoundingClientRect();

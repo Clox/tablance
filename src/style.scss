@@ -1542,20 +1542,31 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			padding-top: 2px;
 		}
 		table.details-group>tbody>tr.group-render>td {
-			padding-top: 2px;
+			padding: 5px 5px 5px 9px;
 		}
 		.repeat-insertion td{
 			padding: 0;
 			color: gray;
 		}
 		tr.repeat-insertion.repeated-creator-after-entry:not(.grouped-repeated-creator)>td {
+			padding: 7px 0 8px 4px;
+		}
+		tr.repeat-insertion.repeated-creator-after-entry:not(.grouped-repeated-creator):not(.details-affordances-suppressed)>td {
+			// Ordinary nested rows already reserve 2px after the preceding entry.
 			padding-top: 5px;
 		}
+		table.details-group>tbody>tr:has(>td>div.group-cell>.tablance-group-viewport>.details-group.open)
+			+tr.repeat-insertion.repeated-creator-after-entry:not(.grouped-repeated-creator)>td {
+			// An open draft consumes that row inset, so keep the complete gap on the creator itself.
+			padding-top: 7px;
+		}
 		span.repeat-insertion.repeated-creator-after-entry:not(.grouped-repeated-creator) {
-			margin-top: 5px;
+			margin-top: 7px;
+			margin-bottom: 8px;
 		}
 		tr.repeat-insertion.grouped-repeated-creator:not(.details-affordances-suppressed)>td {
 			padding-top: 7px;
+			padding-right: 4px;
 			padding-left: 10px;
 			padding-bottom: 8px;
 		}
@@ -1565,6 +1576,7 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			margin-top: 7px;
 			margin-bottom: 8px;
 			padding-left: 6px;
+			padding-right: 4px;
 			box-sizing: border-box;
 		}
 		.repeated-group-heading {
@@ -1973,6 +1985,9 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 							display: none !important;
 						}
 					}
+				}
+				&.open>tbody>tr.repeated-entry-first>td {
+					padding-top: 6px;
 				}
 			}
 		}
