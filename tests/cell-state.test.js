@@ -323,7 +323,8 @@ try {
 			return [
 				{label:({rowData})=>`Open ${rowData.name}`,icon:"restore",
 					onSelect:actionPayload=>menuActivations.push(actionPayload)},
-				{text:"Conditional action",disabled:({rowData})=>rowData.locked,
+				{text:"Conditional action",icon:"trash",destructive:true,
+					disabled:({rowData})=>rowData.locked,
 					disabledReason:({rowData})=>rowData.locked?`${rowData.name} is locked`:"",
 					onSelect:actionPayload=>menuActivations.push(actionPayload)},
 				{text:"Always unavailable",disabled:true,disabledReason:"Requires permission"},
@@ -371,9 +372,15 @@ try {
 		"the internally focused row-menu container has no visible browser focus outline");
 	assert(menuTable._menuState.items[0].el.querySelector(".tablance-icon-restore.tablance-menu-item-icon")
 		&&menuTable._menuState.items[0].el.querySelector(".tablance-menu-item-label").textContent==="Open Alpha"
-		&&!menuTable._menuState.items[1].el.querySelector(".tablance-menu-item-icon")
+		&&!menuTable._menuState.items[2].el.querySelector(".tablance-menu-item-icon")
 		&&getComputedStyle(menuTable._menuState.items[0].el.querySelector(".tablance-menu-item-icon")).width==="16px",
 		"ordinary actions support callback labels and optional named icons while text-only actions remain icon-free");
+	const enabledDestructiveItem=menuTable._menuState.items[1].el;
+	assert(enabledDestructiveItem.classList.contains("destructive")
+		&&getComputedStyle(enabledDestructiveItem).color==="rgb(185, 28, 28)"
+		&&getComputedStyle(enabledDestructiveItem.querySelector(".tablance-menu-item-icon")).backgroundColor
+			==="rgb(185, 28, 28)",
+		"enabled destructive actions apply the shared destructive color to both text and icons");
 	const pointerOpenFocus=document.activeElement;
 	menuTable._menuState.items[0].el.dispatchEvent(new MouseEvent("mouseenter"));
 	assert(document.activeElement===pointerOpenFocus,
@@ -451,11 +458,21 @@ try {
 		"keyboard opening focuses the first full menu row without a separate blue indicator");
 	key(document.activeElement,"ArrowDown","ArrowDown");
 	const disabledMenuItem=menuTable._menuState.items[1].el;
+	const disabledMenuLabel=disabledMenuItem.querySelector(".tablance-menu-item-label");
+	const disabledMenuIcon=disabledMenuItem.querySelector(".tablance-menu-item-icon");
+	const disabledMenuReason=disabledMenuItem.querySelector(".tablance-menu-item-disabled-reason");
 	assert(document.activeElement===disabledMenuItem
 		&&disabledMenuItem.getAttribute("aria-disabled")==="true"
+		&&!disabledMenuItem.classList.contains("destructive")
+		&&getComputedStyle(disabledMenuItem).color==="rgb(100, 116, 139)"
+		&&getComputedStyle(disabledMenuLabel).color==="rgb(100, 116, 139)"
+		&&getComputedStyle(disabledMenuReason).color==="rgb(100, 116, 139)"
+		&&getComputedStyle(disabledMenuIcon).backgroundColor==="rgb(100, 116, 139)"
+		&&getComputedStyle(disabledMenuIcon).opacity==="0.65"
 		&&disabledMenuItem.textContent.includes("Beta is locked")
-		&&getComputedStyle(disabledMenuItem).backgroundColor!=="rgba(0, 0, 0, 0)",
-		"row-dependent disabled actions remain visible, focused, and expose their reason");
+		&&getComputedStyle(disabledMenuItem).backgroundColor==="rgba(0, 0, 0, 0)"
+		&&getComputedStyle(disabledMenuItem).outlineStyle==="solid",
+		"disabled actions keep legible neutral text and explanation, dim their icon, and avoid an active focus fill");
 	key(disabledMenuItem,"Enter","Enter");
 	key(disabledMenuItem," ","Space");
 	disabledMenuItem.click();
@@ -676,7 +693,8 @@ try {
 		"returning to active rows restores the normal view and its separate search state");
 	lifecycleTable._mainTbody.rows[0].cells[2].click();
 	assert(lifecycleTable._menuState.items[0].action.text==="Flytta till papperskorgen"
-		&&lifecycleTable._menuState.items[0].el.querySelector(".tablance-icon-trash"),
+		&&lifecycleTable._menuState.items[0].el.querySelector(".tablance-icon-trash")
+		&&!lifecycleTable._menuState.items[0].el.classList.contains("destructive"),
 		"trash uses localized copy and the same trash icon primitive as repeated deletion");
 	lifecycleTable._menuState.items[0].el.click();
 	await tick();

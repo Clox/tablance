@@ -15,8 +15,10 @@
   --tablance-selected-hover-background: #E6F0FF;
   --tablance-read-only-active-background: #F7F9FC;
   --tablance-disabled-background: #F2F2F2;
+  --tablance-disabled-text-color: #64748B;
   --tablance-accent-color: #2563EB;
   --tablance-indicator-color: #0D2B59;
+  --tablance-destructive-color: #B91C1C;
   --tablance-radius: 10px;
   position: relative;
   color: var(--tablance-text-color);
@@ -789,8 +791,22 @@
   background: var(--tablance-selected-background);
 }
 .tablance .tablance-menu-popover > .tablance-menu-item.disabled {
-  color: var(--tablance-muted-color);
+  color: var(--tablance-disabled-text-color);
   cursor: default;
+}
+.tablance .tablance-menu-popover > .tablance-menu-item.disabled:hover {
+  background: transparent;
+}
+.tablance .tablance-menu-popover > .tablance-menu-item.disabled:focus-visible {
+  outline: 1px solid var(--tablance-border-color);
+  outline-offset: -1px;
+  background: transparent;
+}
+.tablance .tablance-menu-popover > .tablance-menu-item.disabled .tablance-menu-item-icon {
+  opacity: 0.65;
+}
+.tablance .tablance-menu-popover > .tablance-menu-item.destructive {
+  color: var(--tablance-destructive-color);
 }
 .tablance .tablance-menu-popover > .tablance-menu-item > .tablance-menu-item-content {
   display: inline-flex;

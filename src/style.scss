@@ -75,8 +75,10 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	--tablance-selected-hover-background: #E6F0FF;
 	--tablance-read-only-active-background: #F7F9FC;
 	--tablance-disabled-background: #F2F2F2;
+	--tablance-disabled-text-color: #64748B;
 	--tablance-accent-color: #2563EB;
 	--tablance-indicator-color: #0D2B59;
+	--tablance-destructive-color: #B91C1C;
 	--tablance-radius: 10px;
 	position: relative;//needed for position of .bulk-edit-area to work correctly
 	color: var(--tablance-text-color);
@@ -826,8 +828,26 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			}
 
 			&.disabled {
-				color: var(--tablance-muted-color);
+				color: var(--tablance-disabled-text-color);
 				cursor: default;
+
+				&:hover {
+					background: transparent;
+				}
+
+				&:focus-visible {
+					outline: 1px solid var(--tablance-border-color);
+					outline-offset: -1px;
+					background: transparent;
+				}
+
+				.tablance-menu-item-icon {
+					opacity: .65;
+				}
+			}
+
+			&.destructive {
+				color: var(--tablance-destructive-color);
 			}
 
 			>.tablance-menu-item-content {

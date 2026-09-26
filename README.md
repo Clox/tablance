@@ -50,8 +50,10 @@ The default palette can be themed by overriding CSS custom properties on a `.tab
   --tablance-hover-background: #F3F7FC;
   --tablance-selected-background: #EDF4FF;
   --tablance-selected-hover-background: #E6F0FF;
+  --tablance-disabled-text-color: #64748B;
   --tablance-accent-color: #2563EB;
   --tablance-indicator-color: #0D2B59;
+  --tablance-destructive-color: #B91C1C;
 }
 ```
 
@@ -193,6 +195,9 @@ Use a main-table column with `type: "menu"` for row actions that do not represen
 are never sortable or searchable. Their `actions` may be an array or a callback receiving the standard cell payload.
 Actions use `onSelect` and may set `disabled` to a boolean or a callback. A disabled action remains visible and
 keyboard-navigable; set `disabledReason` to a string or callback to explain why it is unavailable.
+Set `destructive` to `true` (or a callback) for irreversible actions. Enabled destructive actions use
+`--tablance-destructive-color` for their label and icon; disabled styling takes precedence. Reversible built-in
+`{type: "trash"}` actions remain neutral.
 An optional `beforeSelect` callback may return `false` to cancel activation without closing the menu.
 Use `label` (or the existing `text`/`title`) to set the visible copy and optional `icon` for a named icon such as
 `"trash"` or `"restore"`, or an `Element`; both fields may be callbacks receiving the action payload. Icons are
@@ -224,6 +229,7 @@ disabled actions; disabled actions remain navigable and explanatory but cannot b
     {
       id: "archive",
       text: "Archive",
+      destructive: true,
       disabled: rowData.locked,
       disabledReason: rowData.locked ? "The row is locked" : "",
       onSelect: ({rowData}) => archiveRow(rowData)

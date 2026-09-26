@@ -415,7 +415,7 @@ class TablanceBase {
 	 * 				"expand" - The column will be buttons used for expanding/contracting the rows. See param details
 	 * 				"select" - The column will be checkboxes used to (un)select rows
 	 * 				"menu" - A non-data action column. `actions` is an array or callback returning actions with
-	 * 					{text,onSelect,disabled,disabledReason}. `disabled` and `disabledReason` may be callbacks
+	 * 					{text,onSelect,disabled,disabledReason,destructive}. State properties may be callbacks
 	 * 					receiving the standard row payload plus `action`.
 	 * 		}
 	 * 			
@@ -3556,8 +3556,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const disabled=typeof action.disabled==="function"?action.disabled(actionPayload):action.disabled;
 		const disabledReason=disabled===true?(typeof action.disabledReason==="function"
 			?action.disabledReason(actionPayload):action.disabledReason):"";
+		const destructive=resolve(action.destructive)===true;
 		return {action,label:label==null?"":String(label),icon,disabled:disabled===true,
-			disabledReason:disabledReason==null?"":String(disabledReason)};
+			disabledReason:disabledReason==null?"":String(disabledReason),destructive};
 	}
 
 	_createMenuActionIcon(icon) {
@@ -3600,6 +3601,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			label.textContent=resolved.label;
 			item.setAttribute("aria-disabled",String(resolved.disabled));
 			item.classList.toggle("disabled",resolved.disabled);
+			item.classList.toggle("destructive",resolved.destructive&&!resolved.disabled);
 			if (resolved.disabled&&resolved.disabledReason) {
 				const reason=item.appendChild(document.createElement("span"));
 				reason.className="tablance-menu-item-disabled-reason";
