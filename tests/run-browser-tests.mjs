@@ -82,7 +82,7 @@ try {
 	const readResult=()=>evaluate(`(()=>{const el=document.getElementById("test-results");return el
 		?{status:el.dataset.status,text:el.textContent}:null})()`);
 	const waitForStatus=async accepted=>{
-		const deadline=Date.now()+15000;
+		const deadline=Date.now()+25000;
 		while (Date.now()<deadline) {
 			const current=await readResult();
 			if (current?.status==="failed")

@@ -1534,6 +1534,281 @@ try {
 		-(expandedFinalMainRow.getBoundingClientRect().bottom-1))<1,
 		"collapsing final-row details restores the decorative boundary after transition cleanup");
 
+	const detailsScrollSchema={main:{columns:[{type:"expand",width:36},{dataKey:"name"}]},details:{
+		type:"list",entries:[
+			{title:"First",dataKey:"detailA"},{title:"Second",dataKey:"detailB"},
+			{title:"Third",dataKey:"detailC"},{title:"Fourth",dataKey:"detailD"},
+		],
+	}};
+	const detailsScrollRows=Array.from({length:12},(_value,index)=>({
+		name:`Scroll ${index}`,detailA:`A${index}`,detailB:`B${index}`,detailC:`C${index}`,detailD:`D${index}`,
+	}));
+	const fittingDetailsHost=host();
+	fittingDetailsHost.style.height="360px";
+	const fittingDetailsTable=new Tablance(fittingDetailsHost,detailsScrollSchema,true,true,
+		{searchbar:false,ordering:false});
+	fittingDetailsTable.setData(detailsScrollRows.slice(0,2));
+	await tick();
+	const fittingScrollBefore=fittingDetailsTable._scrollBody.scrollTop;
+	fittingDetailsTable.expandRow(0);
+	await waitFor(()=>fittingDetailsTable._mainTbody.querySelector("tr.details .content")?.style.height==="auto",
+		"fitting details expansion cleanup");
+	const fittingDetails=fittingDetailsTable._mainTbody.querySelector("tr.details");
+	assert(fittingDetails.getBoundingClientRect().bottom
+		<=fittingDetailsTable._getVisibleDataViewportRect().bottom+.5
+		&&Math.abs(fittingDetailsTable._scrollBody.scrollTop-fittingScrollBefore)<.5,
+		"details expansion leaves scroll unchanged when its final bottom already fits in the data viewport");
+
+	const overflowingDetailsHost=host();
+	overflowingDetailsHost.style.height="220px";
+	const overflowingDetailsTable=new Tablance(overflowingDetailsHost,detailsScrollSchema,true,true,
+		{searchbar:false,ordering:false});
+	overflowingDetailsTable.setData(detailsScrollRows);
+	await tick();
+	const overflowMain=overflowingDetailsTable._mainTbody.querySelector('[data-data-row-index="2"]');
+	const overflowScrollBefore=overflowingDetailsTable._scrollBody.scrollTop;
+	const overflowViewportBefore=overflowingDetailsTable._getVisibleDataViewportRect();
+	const overflowDesired=overflowScrollBefore+overflowMain.getBoundingClientRect().top-overflowViewportBefore.top;
+	overflowingDetailsTable.expandRow(2);
+	const overflowingContent=overflowMain.nextElementSibling.querySelector(".content");
+	const overflowTarget=Math.max(0,Math.min(overflowDesired,overflowingDetailsTable._scrollBody.scrollHeight
+		-overflowingDetailsTable._scrollBody.clientHeight));
+	const overflowTransitionSamples=[];
+	while (overflowingContent._tablanceDetailsTransition) {
+		overflowTransitionSamples.push(overflowingDetailsTable._scrollBody.scrollTop);
+		await new Promise(resolve=>requestAnimationFrame(resolve));
+	}
+	await waitFor(()=>overflowMain.nextElementSibling?.querySelector(".content")?.style.height==="auto",
+		"overflowing details expansion cleanup");
+	await waitFor(()=>Math.abs(overflowingDetailsTable._scrollBody.scrollTop-overflowTarget)<1,
+		"overflowing details smooth-scroll target");
+	const overflowViewport=overflowingDetailsTable._getVisibleDataViewportRect();
+	assert(overflowTransitionSamples.some(position=>position>overflowScrollBefore+.5)
+		&&overflowTransitionSamples.every(position=>position<=overflowTarget+.5)
+		&&overflowingDetailsTable._scrollBody.scrollTop>overflowScrollBefore
+		&&Math.abs(overflowMain.getBoundingClientRect().top-overflowViewport.top)<1,
+		"overflowing details and scroll animate independently toward the precomputed aligned-row target");
+	const collapseScrollBefore=overflowingDetailsTable._scrollBody.scrollTop;
+	overflowingDetailsTable._contractRow(overflowMain);
+	await waitFor(()=>!overflowMain.nextElementSibling?.matches("tr.details"),
+		"overflowing details collapse cleanup");
+	assert(Math.abs(overflowingDetailsTable._scrollBody.scrollTop-collapseScrollBefore)<.5,
+		"details collapse leaves scroll unchanged when it remains inside the future scroll interval");
+
+	overflowingDetailsTable._scrollBody.scrollTop=0;
+	overflowingDetailsTable._scrollMethod();
+	const stickyMain=overflowingDetailsTable._mainTbody.querySelector('[data-data-row-index="2"]');
+	const realHeaderRect=overflowingDetailsTable._headerTable.getBoundingClientRect.bind(
+		overflowingDetailsTable._headerTable);
+	const dataRect=overflowingDetailsTable._scrollBody.getBoundingClientRect();
+	overflowingDetailsTable._headerTable.style.position="sticky";
+	overflowingDetailsTable._headerTable.getBoundingClientRect=()=>({
+		top:dataRect.top,bottom:dataRect.top+24,left:dataRect.left,right:dataRect.right,
+		width:dataRect.width,height:24,x:dataRect.left,y:dataRect.top,
+	});
+	overflowingDetailsTable.expandRow(2);
+	await waitFor(()=>stickyMain.nextElementSibling?.querySelector(".content")?.style.height==="auto",
+		"sticky-header details expansion cleanup");
+	await waitFor(()=>Math.abs(stickyMain.getBoundingClientRect().top-(dataRect.top+24))<1,
+		"sticky-header smooth-scroll target");
+	assert(Math.abs(stickyMain.getBoundingClientRect().top-(dataRect.top+24))<1,
+		"details expansion aligns below a sticky surface that overlaps the visible data viewport");
+	overflowingDetailsTable._headerTable.getBoundingClientRect=realHeaderRect;
+	overflowingDetailsTable._headerTable.style.removeProperty("position");
+
+	const finalDetailsHost=host();
+	finalDetailsHost.style.height="220px";
+	const finalDetailsTable=new Tablance(finalDetailsHost,{main:{columns:[
+		{type:"expand",width:36},{dataKey:"name"},
+	]},details:{type:"list",entries:[{title:"Detail",dataKey:"detailA"}]}},true,true,
+		{searchbar:false,ordering:false});
+	finalDetailsTable.setData(detailsScrollRows.slice(0,4));
+	await tick();
+	const finalMain=finalDetailsTable._mainTbody.querySelector('[data-data-row-index="3"]');
+	finalDetailsTable.expandRow(3);
+	await waitFor(()=>finalMain.nextElementSibling?.querySelector(".content")?.style.height==="auto",
+		"final-row scroll-limited expansion cleanup");
+	const finalMaximum=Math.max(0,finalDetailsTable._scrollBody.scrollHeight
+		-finalDetailsTable._scrollBody.clientHeight);
+	await waitFor(()=>Math.abs(finalDetailsTable._scrollBody.scrollTop-finalMaximum)<1,
+		"final-row scroll-limited smooth-scroll target");
+	assert(Math.abs(finalDetailsTable._scrollBody.scrollTop-finalMaximum)<1
+		&&finalMain.getBoundingClientRect().top>finalDetailsTable._getVisibleDataViewportRect().top+.5,
+		"last-row expansion clamps at maximum scroll when its main row cannot reach the viewport top");
+	const finalExpandedScrollTop=finalDetailsTable._scrollBody.scrollTop;
+	const finalExpandedScrollHeight=finalDetailsTable._scrollBody.scrollHeight;
+	const finalCollapseTarget=finalDetailsTable._getCollapsedDetailsScrollTarget(finalMain,
+		finalDetailsTable._rowMeta.get(detailsScrollRows[3]));
+	const finalDetailsRow=finalMain.nextElementSibling;
+	finalDetailsTable._contractRow(finalMain);
+	await waitFor(()=>finalDetailsRow.querySelector(".content")?._tablanceDetailsTransition?.phase==="collapsing",
+		"last-row collapse tween start");
+	const finalCollapseSamples=[];
+	while (finalDetailsRow.isConnected
+		&&finalDetailsRow.querySelector(".content")?._tablanceDetailsTransition) {
+		finalCollapseSamples.push({top:finalDetailsTable._scrollBody.scrollTop,
+			height:finalDetailsTable._scrollBody.scrollHeight});
+		await new Promise(resolve=>requestAnimationFrame(resolve));
+	}
+	await waitFor(()=>!finalDetailsRow.isConnected,"last-row collapse tween cleanup");
+	const finalCollapsedMaximum=Math.max(0,finalDetailsTable._scrollBody.scrollHeight
+		-finalDetailsTable._scrollBody.clientHeight);
+	const finalCollapsedScrollTop=finalDetailsTable._scrollBody.scrollTop;
+	await tick();
+	assert(finalCollapseTarget!=null&&finalCollapseTarget<finalExpandedScrollTop
+		&&finalCollapseSamples.some(sample=>sample.top<finalExpandedScrollTop-.5)
+		&&finalCollapseSamples.every(sample=>sample.height===finalExpandedScrollHeight)
+		&&Math.abs(finalCollapsedScrollTop-finalCollapsedMaximum)<1
+		&&Math.abs(finalDetailsTable._scrollBody.scrollTop-finalCollapsedScrollTop)<.5,
+		"last-row collapse tweens toward the future max while expanded sizer reserve prevents a browser clamp jump");
+
+	const virtualDetailsHost=host();
+	virtualDetailsHost.style.height="180px";
+	const virtualDetailsTable=new Tablance(virtualDetailsHost,detailsScrollSchema,true,true,
+		{searchbar:false,ordering:false});
+	const virtualDetailsRows=Array.from({length:80},(_value,index)=>({
+		name:`Virtual scroll ${index}`,detailA:`A${index}`,detailB:`B${index}`,
+		detailC:`C${index}`,detailD:`D${index}`,
+	}));
+	virtualDetailsTable.setData(virtualDetailsRows);
+	await tick();
+	virtualDetailsTable.scrollToDataRow(virtualDetailsRows[60],false,false);
+	virtualDetailsTable._scrollMethod();
+	virtualDetailsTable.expandRow(60);
+	await waitFor(()=>virtualDetailsTable._mainTbody
+		.querySelector('[data-data-row-index="60"]+tr.details .content')?.style.height==="auto",
+		"virtualized details scroll expansion cleanup");
+	await waitFor(()=>{
+		const row=virtualDetailsTable._mainTbody.querySelector('[data-data-row-index="60"]');
+		return row&&Math.abs(row.getBoundingClientRect().top
+			-virtualDetailsTable._getVisibleDataViewportRect().top)<1;
+	},"virtualized details smooth-scroll target");
+	const virtualExpandedMain=virtualDetailsTable._mainTbody.querySelector('[data-data-row-index="60"]');
+	assert(Math.abs(virtualExpandedMain.getBoundingClientRect().top
+		-virtualDetailsTable._getVisibleDataViewportRect().top)<1
+		&&Math.abs(virtualDetailsTable._scrollY-Math.max(
+			virtualDetailsTable._scrollBody.scrollTop-virtualDetailsTable._scrollMarginPx,0))<1,
+		"virtualized expansion aligns the logical row and synchronizes the existing scroll state");
+	virtualDetailsTable._contractRow(virtualExpandedMain);
+	await waitFor(()=>!virtualExpandedMain.nextElementSibling?.matches("tr.details"),
+		"virtualized non-final details collapse cleanup");
+	virtualDetailsTable.scrollToDataRow(virtualDetailsRows.at(-1),false,false);
+	virtualDetailsTable._scrollMethod();
+	virtualDetailsTable.expandRow(79);
+	await waitFor(()=>virtualDetailsTable._detailsScrollTarget==null
+		&&virtualDetailsTable._mainTbody.querySelector('[data-data-row-index="79"]+tr.details .content')
+			?.style.height==="auto","virtualized final details expansion and scroll cleanup");
+	const virtualFinalCollapseMain=virtualDetailsTable._mainTbody.querySelector('[data-data-row-index="79"]');
+	const virtualFinalCollapseTarget=virtualDetailsTable._getCollapsedDetailsScrollTarget(
+		virtualFinalCollapseMain,virtualDetailsTable._rowMeta.get(virtualDetailsRows[79]));
+	const virtualFinalDetailsRow=virtualFinalCollapseMain.nextElementSibling;
+	virtualDetailsTable._contractRow(virtualFinalCollapseMain);
+	await waitFor(()=>!virtualFinalDetailsRow.isConnected,"virtualized final details collapse cleanup");
+	const virtualCollapsedMaximum=Math.max(0,virtualDetailsTable._scrollBody.scrollHeight
+		-virtualDetailsTable._scrollBody.clientHeight);
+	assert(virtualFinalCollapseTarget!=null
+		&&Math.abs(virtualDetailsTable._scrollBody.scrollTop-virtualCollapsedMaximum)<1
+		&&Math.abs(virtualDetailsTable._scrollY-Math.max(
+			virtualDetailsTable._scrollBody.scrollTop-virtualDetailsTable._scrollMarginPx,0))<1,
+		"virtualized final-row collapse reaches the new maximum through the shared synchronized scroll tween");
+	virtualDetailsTable.expandRow(79);
+	await waitFor(()=>virtualDetailsTable._detailsScrollTarget==null
+		&&virtualDetailsTable._mainTbody.querySelector('[data-data-row-index="79"]+tr.details .content')
+			?.style.height==="auto","virtualized details re-expansion before interrupted collapse");
+	const interruptedCollapseMain=virtualDetailsTable._mainTbody.querySelector('[data-data-row-index="79"]');
+	const interruptedCollapseTarget=virtualDetailsTable._getCollapsedDetailsScrollTarget(
+		interruptedCollapseMain,virtualDetailsTable._rowMeta.get(virtualDetailsRows[79]));
+	const interruptedCollapseDetails=interruptedCollapseMain.nextElementSibling;
+	virtualDetailsTable._contractRow(interruptedCollapseMain);
+	await waitFor(()=>virtualDetailsTable._detailsScrollTween?.phase==="collapsing"
+		&&virtualDetailsTable._scrollBody.scrollTop>interruptedCollapseTarget+.5,
+		"virtualized collapse tween before user interruption");
+	virtualDetailsTable._scrollBody.dispatchEvent(new WheelEvent("wheel",{deltaY:-20,bubbles:true}));
+	const userReplacementScroll=Math.max(0,interruptedCollapseTarget-20);
+	virtualDetailsTable._scrollBody.scrollTop=userReplacementScroll;
+	virtualDetailsTable._scrollMethod();
+	await waitFor(()=>!interruptedCollapseDetails.isConnected,"user-interrupted collapse cleanup");
+	await new Promise(resolve=>setTimeout(resolve,240));
+	assert(virtualDetailsTable._detailsScrollTween==null&&virtualDetailsTable._detailsScrollTarget==null
+		&&Math.abs(virtualDetailsTable._scrollBody.scrollTop-userReplacementScroll)<1,
+		"wheel input cancels a collapse tween and prevents a later jump to its obsolete target");
+
+	const userInterruptedScrollHost=host();
+	userInterruptedScrollHost.style.height="220px";
+	const userInterruptedScrollTable=new Tablance(userInterruptedScrollHost,detailsScrollSchema,true,true,
+		{searchbar:false,ordering:false});
+	userInterruptedScrollTable.setData(detailsScrollRows);
+	await tick();
+	userInterruptedScrollTable.expandRow(2);
+	await waitFor(()=>userInterruptedScrollTable._scrollBody.scrollTop>1,
+		"details smooth scroll start before user interruption");
+	userInterruptedScrollTable._scrollBody.dispatchEvent(new WheelEvent("wheel",{deltaY:-20,bubbles:true}));
+	userInterruptedScrollTable._scrollBody.scrollTop=7;
+	userInterruptedScrollTable._scrollMethod();
+	await new Promise(resolve=>setTimeout(resolve,320));
+	assert(Math.abs(userInterruptedScrollTable._scrollBody.scrollTop-7)<1,
+		"wheel input and its replacement scroll interrupt details scrolling without a later jump to the old target");
+
+	const collapsedDuringScrollHost=host();
+	collapsedDuringScrollHost.style.height="220px";
+	const collapsedDuringScrollTable=new Tablance(collapsedDuringScrollHost,detailsScrollSchema,true,true,
+		{searchbar:false,ordering:false});
+	collapsedDuringScrollTable.setData(detailsScrollRows);
+	await tick();
+	const collapsedDuringScrollMain=collapsedDuringScrollTable._mainTbody.querySelector('[data-data-row-index="2"]');
+	collapsedDuringScrollTable.expandRow(2);
+	await waitFor(()=>collapsedDuringScrollTable._scrollBody.scrollTop>1,
+		"details smooth scroll start before collapse interruption");
+	const scrollAtCollapse=collapsedDuringScrollTable._scrollBody.scrollTop;
+	collapsedDuringScrollTable._contractRow(collapsedDuringScrollMain);
+	await waitFor(()=>!collapsedDuringScrollMain.nextElementSibling?.matches("tr.details"),
+		"collapse during details smooth scroll cleanup");
+	await new Promise(resolve=>setTimeout(resolve,320));
+	assert(Math.abs(collapsedDuringScrollTable._scrollBody.scrollTop-scrollAtCollapse)<1,
+		"collapse interrupts an in-flight expansion scroll and never resumes the obsolete target");
+
+	const viewInterruptedScrollHost=host();
+	viewInterruptedScrollHost.style.height="220px";
+	const viewInterruptedScrollTable=new Tablance(viewInterruptedScrollHost,{
+		views:{default:{title:"First",filter:()=>true},other:{title:"Other",filter:()=>true}},
+		...detailsScrollSchema,
+	},true,true,{searchbar:false,ordering:false});
+	viewInterruptedScrollTable.setData(detailsScrollRows);
+	await tick();
+	viewInterruptedScrollTable.expandRow(2);
+	await waitFor(()=>viewInterruptedScrollTable._scrollBody.scrollTop>1,
+		"details smooth scroll start before view interruption");
+	viewInterruptedScrollTable.setViewMode("other");
+	assert(viewInterruptedScrollTable._detailsScrollTarget==null,
+		"view replacement synchronously releases ownership of the expansion scroll target");
+	await new Promise(resolve=>setTimeout(resolve,320));
+	assert(viewInterruptedScrollTable.getViewState().viewModeKey==="other"
+		&&viewInterruptedScrollTable._detailsScrollTarget==null
+		&&!viewInterruptedScrollTable._mainTbody.querySelector("tr.details"),
+		"view replacement stays detached from the obsolete expansion target after its old animation window");
+	viewInterruptedScrollTable.scrollToDataRow(detailsScrollRows.at(-1),false,false);
+	viewInterruptedScrollTable._scrollMethod();
+	viewInterruptedScrollTable.expandRow(11);
+	await waitFor(()=>viewInterruptedScrollTable._detailsScrollTarget==null
+		&&viewInterruptedScrollTable._mainTbody.querySelector('[data-data-row-index="11"]+tr.details .content')
+			?.style.height==="auto","details expansion before collapse view interruption");
+	const viewCollapseMain=viewInterruptedScrollTable._mainTbody
+		.querySelector('[data-data-row-index="11"]');
+	viewInterruptedScrollTable._contractRow(viewCollapseMain);
+	await waitFor(()=>viewInterruptedScrollTable._detailsScrollTween?.phase==="collapsing",
+		"collapse tween before view interruption");
+	viewInterruptedScrollTable.setViewMode("default");
+	const scrollAfterCollapseViewSwitch=viewInterruptedScrollTable._scrollBody.scrollTop;
+	assert(viewInterruptedScrollTable._detailsScrollTween==null
+		&&viewInterruptedScrollTable._detailsScrollTarget==null,
+		"view replacement synchronously cancels an in-flight collapse tween");
+	await new Promise(resolve=>setTimeout(resolve,240));
+	assert(viewInterruptedScrollTable.getViewState().viewModeKey==="default"
+		&&viewInterruptedScrollTable._detailsScrollTween==null
+		&&!viewInterruptedScrollTable._mainTbody.querySelector("tr.details")
+		&&Math.abs(viewInterruptedScrollTable._scrollBody.scrollTop-scrollAfterCollapseViewSwitch)<1,
+		"view replacement cannot receive a delayed jump from the obsolete collapse tween");
+
 	const lifecycleRemainderHost=host();
 	lifecycleRemainderHost.style.height="360px";
 	const lifecycleRemainderRows=[

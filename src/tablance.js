@@ -325,6 +325,8 @@ class TablanceBase {
 	_lineupResizeObserver;
 	_viewportResizeObserver;
 	_viewportResizeFrame;
+	_detailsScrollTween=null;//single cancelable tween shared by outer details expansion and collapse
+	_detailsScrollTarget=null;
 	_readOnlyFeedbackTarget;
 	_readOnlyFeedbackTimer;
 	_navigationFeedbackTarget;
@@ -1222,6 +1224,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	/**Reset all per-dataset state to an empty baseline. */
 	_resetDataState({clearFilter=true}={}) {
+		this._cancelDetailsScrollTween?.();
 		this._dismissTooltip();
 		this._cursorBookmarks.clear();
 		this._clearCellRange();
@@ -1395,6 +1398,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		if (!this._flushValidatedEdits())
 			return this.getViewState();
+		this._cancelDetailsScrollTween();
 		const previousScopeKey=this._cursorScopeKey();
 		const nextScopeKey=this._cursorScopeKey(this._lifecycleMode,viewModeKey);
 		const changesCursorScope=previousScopeKey!==nextScopeKey;
@@ -1433,6 +1437,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return this.getViewState();
 		if (!this._flushValidatedEdits())
 			return this.getViewState();
+		this._cancelDetailsScrollTween();
 		const previousScopeKey=this._cursorScopeKey();
 		this._captureCursorBookmark(previousScopeKey);
 		this._clearCursorForViewTransition();
@@ -2311,6 +2316,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	scrollToDataRow(dataRow,highlight=true,smooth=true) {
+		this._cancelDetailsScrollTween();
 		if (this._naturalAutoHeight) {
 			const mainIndex=this._filteredData.indexOf(dataRow);
 			const tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndex}"]:not(.details)`);
@@ -5299,6 +5305,114 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._updateViewportRemainder();
 	}
 
+	_getVisibleDataViewportRect() {
+		const scrollRect=this._scrollBody.getBoundingClientRect();
+		let top=scrollRect.top+this._scrollBody.clientTop;
+		let bottom=top+this._scrollBody.clientHeight;
+		const left=scrollRect.left+this._scrollBody.clientLeft;
+		const right=left+this._scrollBody.clientWidth;
+		// Header, toolbar, bulk controls, and result status ordinarily sit outside the scroll body. If an integration
+		// makes one sticky/fixed so that it overlaps the data viewport, exclude the actually occluded edge.
+		for (const element of [this._toolbar,this._headerTable,this._bulkEditArea,this._resultStatus]) {
+			if (!element?.isConnected||element.hidden)
+				continue;
+			const style=getComputedStyle(element);
+			if (!['sticky','fixed'].includes(style.position)||style.display==="none"||style.visibility==="hidden")
+				continue;
+			const rect=element.getBoundingClientRect();
+			if (rect.right<=left||rect.left>=right||rect.bottom<=top||rect.top>=bottom)
+				continue;
+			if (rect.top<=top)
+				top=Math.min(bottom,Math.max(top,rect.bottom));
+			else if (rect.bottom>=bottom)
+				bottom=Math.max(top,Math.min(bottom,rect.top));
+		}
+		return {top,bottom,left,right};
+	}
+
+	_getExpandedDetailsScrollTarget(contentDiv) {
+		if (this._onlyDetails||this._opts.autoHeight||!contentDiv?.isConnected)
+			return null;
+		const detailsRow=contentDiv.closest("tr.details");
+		const mainRow=detailsRow?.previousElementSibling;
+		if (!detailsRow||!mainRow)
+			return null;
+		const viewport=this._getVisibleDataViewportRect();
+		if (detailsRow.getBoundingClientRect().bottom<=viewport.bottom+.5)
+			return null;
+		const current=this._scrollBody.scrollTop;
+		const desired=current+mainRow.getBoundingClientRect().top-viewport.top;
+		const maximum=Math.max(0,this._scrollBody.scrollHeight-this._scrollBody.clientHeight);
+		const target=Math.max(0,Math.min(desired,maximum));
+		return Math.abs(target-current)<.5?null:target;
+	}
+
+	_getCollapsedDetailsScrollTarget(mainRow,rowMeta) {
+		if (this._onlyDetails||this._opts.autoHeight||!mainRow?.isConnected||!rowMeta?.h)
+			return null;
+		const mainRowHeight=this._naturalAutoHeight?mainRow.offsetHeight+this._borderSpacingY:this._rowHeight;
+		const collapseDelta=Math.max(0,rowMeta.h-mainRowHeight);
+		const finalScrollHeight=Math.max(this._scrollBody.clientHeight,
+			this._scrollBody.scrollHeight-collapseDelta);
+		const finalMaximum=Math.max(0,finalScrollHeight-this._scrollBody.clientHeight);
+		return this._scrollBody.scrollTop>finalMaximum+.5?finalMaximum:null;
+	}
+
+	_startDetailsScrollTween(target,contentDiv,phase) {
+		this._cancelDetailsScrollTween();
+		const from=this._scrollBody.scrollTop;
+		const detailsDuration=this._detailsTransitionDuration(contentDiv);
+		const duration=detailsDuration>0?Math.min(220,detailsDuration+(phase==="expanding"?30:0)):0;
+		if (!duration) {
+			this._scrollBody.scrollTop=target;
+			this._scrollMethod?.();
+			return;
+		}
+		const animation={from,target,duration,phase,startedAt:null,frame:null};
+		this._detailsScrollTween=animation;
+		this._detailsScrollTarget=target;
+		const step=timestamp=>{
+			if (this._detailsScrollTween!==animation)
+				return;
+			animation.startedAt??=timestamp;
+			const progress=Math.min(1,(timestamp-animation.startedAt)/animation.duration);
+			const eased=1-Math.pow(1-progress,3);
+			this._scrollBody.scrollTop=animation.from+(animation.target-animation.from)*eased;
+			this._scrollMethod?.();
+			if (progress<1)
+				animation.frame=requestAnimationFrame(step);
+			else {
+				this._detailsScrollTween=null;
+				this._detailsScrollTarget=null;
+			}
+		};
+		animation.frame=requestAnimationFrame(step);
+	}
+
+	_cancelDetailsScrollTween() {
+		const animation=this._detailsScrollTween;
+		if (!animation)
+			return false;
+		cancelAnimationFrame(animation.frame);
+		this._detailsScrollTween=null;
+		this._detailsScrollTarget=null;
+		// The current interpolated position is already applied; synchronize virtualization once more and leave it there.
+		this._scrollMethod?.();
+		return true;
+	}
+
+	_finishDetailsScrollTween(phase) {
+		const animation=this._detailsScrollTween;
+		if (!animation||animation.phase!==phase)
+			return false;
+		cancelAnimationFrame(animation.frame);
+		this._scrollBody.scrollTop=animation.target;
+		this._detailsScrollTween=null;
+		this._detailsScrollTarget=null;
+		this._scrollMethod?.();
+		return true;
+	}
+
 	_finishDetailsCollapse(contentDiv,transition) {
 		if (transition.finished||contentDiv._tablanceDetailsTransition!==transition)
 			return;
@@ -5309,6 +5423,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const mainTr=detailsTr?.previousElementSibling;
 		if (!detailsTr?.isConnected||!mainTr)
 			return;
+		// Reach the precomputed collapsed scroll range before removing its temporary expanded-size scroll reserve.
+		this._finishDetailsScrollTween("collapsing");
 		const dataRowIndex=parseInt(mainTr.dataset.dataRowIndex);
 		const rowData=this._filteredData[dataRowIndex];
 		const rowMeta=rowData?this._rowMeta.get(rowData):undefined;
@@ -10490,6 +10606,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		else if (this._staticRowHeight&&this._schema.details)
 			this._scrollMethod=this._onScrollStaticRowHeightDetails;
 		this._scrollBody.addEventListener("scroll",e=>this._scrollMethod(e),{passive:true});
+		for (const eventName of ["wheel","touchstart","pointerdown"])
+			this._scrollBody.addEventListener(eventName,()=>this._cancelDetailsScrollTween(),{passive:true});
+		this.rootEl.addEventListener("keydown",()=>this._cancelDetailsScrollTween(),{capture:true});
 		this._scrollBody.className="scroll-body";
 		
 		this._scrollingContent=this._scrollBody.appendChild(document.createElement("div"));
@@ -11015,6 +11134,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_applyFilters(filterString, includeDetails=true,caseSensitive=false,reason="search") {
+		this._cancelDetailsScrollTween();
 		if (!this._flushValidatedEdits())
 			this._editTransaction=null;
 		const previousRows=[...(this._filteredData??[])];
@@ -12109,6 +12229,7 @@ export default class Tablance extends TablanceBase {
 	}
 
 	_scrollToCursor() {
+		this._cancelDetailsScrollTween();
 		if (this._onlyDetails)
 			return this._cellCursor.scrollIntoView({block: "center"});
 		if (this._naturalAutoHeight)
@@ -12144,6 +12265,7 @@ export default class Tablance extends TablanceBase {
 		const rowMeta=this._rowMeta.get(rowData)??(this._rowMeta.set(rowData,{}),this._rowMeta.get(rowData));
 		if (rowMeta.h>0)
 			return;
+		this._cancelDetailsScrollTween();
 		const expRow=this._renderDetails(tr,dataRowIndex);
 		const mainRowHeight=this._naturalAutoHeight?tr.offsetHeight+this._borderSpacingY:this._rowHeight;
 		const expHeight=mainRowHeight+expRow.offsetHeight+this._borderSpacingY;
@@ -12155,6 +12277,9 @@ export default class Tablance extends TablanceBase {
 			+expHeight-mainRowHeight+"px";//...in height of the table
 		this._updateAutoHeight();
 		if (animate) {
+			// Full details geometry and the final virtual scroll range exist before the content is collapsed to start its
+			// CSS transition. Resolve the independent scroll target now so neither animation has to sample the other.
+			const expansionScrollTarget=this._getExpandedDetailsScrollTarget(contentDiv);
 			this._unsortCol(null,"expand");
 			contentDiv.style.transition="";
 			contentDiv.style.height="0px";//start at 0
@@ -12163,6 +12288,10 @@ export default class Tablance extends TablanceBase {
 				if (contentDiv._tablanceDetailsTransition!==transition)
 					return;
 				contentDiv.style.height=expandedContentHeight;
+				if (expansionScrollTarget!=null)
+					// The target is fixed before either animation starts; the short tween only interpolates scrollTop and reuses
+					// the ordinary virtual-scroll path. Input/state changes cancel its sole animation-frame owner.
+					this._startDetailsScrollTween(expansionScrollTarget,contentDiv,"expanding");
 				this._armDetailsTransitionFallback(contentDiv,transition);
 			});
 			this._animate(()=>this._adjustCursorPosSize(this._selectedCell,true),500,"cellCursor");
@@ -12174,6 +12303,7 @@ export default class Tablance extends TablanceBase {
 	}
 
 	_contractRow(tr) {
+		this._cancelDetailsScrollTween();
 		if (tr.classList.contains("details"))
 			tr=tr.previousSibling;
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
@@ -12201,9 +12331,12 @@ export default class Tablance extends TablanceBase {
 		if (instanceNode)
 			instanceNode.collapsing=true;
 		const contentDiv=tr.nextSibling.querySelector(".content");
+		const collapseScrollTarget=this._getCollapsedDetailsScrollTarget(tr,rowMeta);
 		const startCollapse=()=>{
 			const transition=this._beginDetailsTransition(contentDiv,"collapsing",instanceNode);
 			contentDiv.style.height="0px";
+			if (collapseScrollTarget!=null)
+				this._startDetailsScrollTween(collapseScrollTarget,contentDiv,"collapsing");
 			if (parseFloat(getComputedStyle(contentDiv).height)<=.01)
 				this._finishDetailsCollapse(contentDiv,transition);
 			else
@@ -12220,6 +12353,7 @@ export default class Tablance extends TablanceBase {
 	}
 
 	_scrollElementIntoView(element) {
+		this._cancelDetailsScrollTween();
 		if (this._naturalAutoHeight)
 			return element.scrollIntoView({behavior:"smooth",block:"center",inline:"nearest"});
 		if (!this._onlyDetails) {
