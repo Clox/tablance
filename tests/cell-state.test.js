@@ -1463,10 +1463,19 @@ try {
 		"no decorative remainder is shown when real rows fill and scroll the viewport");
 	const expandedStatusTable=new Tablance(host(),{main:{resultStatus:true,columns:[
 		{type:"expand",width:36},{dataKey:"name"},
-	]},details:{type:"list",entries:[{dataKey:"detail",nodeId:"expandedStatusDetail"}]}},
+	]},details:{type:"list",entries:[
+		{dataKey:"detail",nodeId:"expandedStatusDetail"},
+		{title:"Extra detail",dataKey:"extraDetail"},
+	]}},
 	true,true,{searchbar:false,ordering:false});
-	expandedStatusTable.setData([{name:"Expanded",detail:"Nested"},{name:"After",detail:"Second"}]);
+	expandedStatusTable.setData([
+		{name:"Expanded",detail:"Nested",extraDetail:"First extra value"},
+		{name:"After",detail:"Second",extraDetail:"Second extra value"},
+	]);
 	await tick();
+	assert(getComputedStyle(expandedStatusTable._scrollingContent).isolation==="isolate"
+		&&getComputedStyle(expandedStatusTable._viewportRemainder).zIndex==="-1",
+		"the viewport remainder is isolated behind rendered and interactive scrolling-content layers");
 	expandedStatusTable.expandRow(0);
 	await waitFor(()=>expandedStatusTable._mainTbody.querySelector("tr.details .content")?.style.height==="auto",
 		"details expansion cleanup");
@@ -1475,7 +1484,127 @@ try {
 		&&expandedStatusTable._mainTbody.querySelector("tr.details")
 		&&Math.abs(expandedStatusTable._viewportRemainder.getBoundingClientRect().top
 			-(expandedLastMainRow.getBoundingClientRect().bottom-1))<1,
-		"expanded details share the same single boundary with remaining decorative viewport space");
+		"details on a non-final row leave the decorative viewport boundary after the final painted main row");
+	const expandedFinalMainRow=expandedStatusTable._mainTbody.querySelector('[data-data-row-index="1"]');
+	expandedStatusTable.expandRow(1);
+	const expandingFinalContent=expandedFinalMainRow.nextElementSibling.querySelector(".content");
+	const expansionTargetTop=expandedStatusTable._viewportRemainder.style.top;
+	assert(expandingFinalContent._tablanceDetailsTransition?.phase==="expanding"
+		&&parseFloat(expansionTargetTop)>expandedFinalMainRow.getBoundingClientRect().bottom
+			-expandedStatusTable._scrollingContent.getBoundingClientRect().top-1,
+		"final-row expansion establishes the complete details boundary before its outer transition starts");
+	expandedStatusTable._updateViewportRemainder();
+	expandedStatusTable._updateViewportHeight();
+	expandedStatusTable._updateAutoHeight();
+	assert(expandedStatusTable._viewportRemainder.style.top===expansionTargetTop,
+		"direct and viewport-driven updates cannot sample a moving expansion frame into the remainder");
+	while (expandingFinalContent._tablanceDetailsTransition) {
+		assert(expandedStatusTable._viewportRemainder.style.top===expansionTargetTop,
+			"resize-observer delivery leaves the remainder stable throughout details expansion");
+		await new Promise(resolve=>requestAnimationFrame(resolve));
+	}
+	await waitFor(()=>expandedFinalMainRow.nextElementSibling?.matches("tr.details")
+		&&expandedFinalMainRow.nextElementSibling.querySelector(".content")?.style.height==="auto",
+		"final-row details expansion cleanup");
+	const expandedFinalDetails=expandedFinalMainRow.nextElementSibling;
+	assert(!expandedStatusTable._viewportRemainder.hidden
+		&&expandedFinalDetails.dataset.dataRowIndex===expandedFinalMainRow.dataset.dataRowIndex
+		&&Math.abs(expandedStatusTable._viewportRemainder.getBoundingClientRect().top
+			-(expandedFinalDetails.getBoundingClientRect().bottom-1))<1,
+		"details on the final row place decorative viewport space after the complete painted details row");
+	expandedStatusTable._contractRow(expandedFinalMainRow);
+	await waitFor(()=>expandedFinalDetails.querySelector(".content")?._tablanceDetailsTransition?.phase==="collapsing",
+		"final-row details collapse start");
+	const collapseHeldTop=expandedStatusTable._viewportRemainder.style.top;
+	expandedStatusTable._updateViewportRemainder();
+	expandedStatusTable._updateViewportHeight();
+	expandedStatusTable._updateAutoHeight();
+	assert(collapseHeldTop===expansionTargetTop
+		&&expandedStatusTable._viewportRemainder.style.top===collapseHeldTop,
+		"direct and viewport-driven updates retain the expanded remainder target during collapse");
+	while (expandedFinalDetails.isConnected
+		&&expandedFinalDetails.querySelector(".content")?._tablanceDetailsTransition) {
+		assert(expandedStatusTable._viewportRemainder.style.top===collapseHeldTop,
+			"resize-observer delivery leaves the remainder stable throughout details collapse");
+		await new Promise(resolve=>requestAnimationFrame(resolve));
+	}
+	await waitFor(()=>!expandedFinalMainRow.nextElementSibling?.matches("tr.details"),
+		"final-row details collapse cleanup");
+	assert(Math.abs(expandedStatusTable._viewportRemainder.getBoundingClientRect().top
+		-(expandedFinalMainRow.getBoundingClientRect().bottom-1))<1,
+		"collapsing final-row details restores the decorative boundary after transition cleanup");
+
+	const lifecycleRemainderHost=host();
+	lifecycleRemainderHost.style.height="360px";
+	const lifecycleRemainderRows=[
+		{name:"Active one",activeValue:"A1",trashValue:"",detail:"Active details",deleted:false},
+		{name:"Active two",activeValue:"A2",trashValue:"",detail:"Active final details",deleted:false},
+		{name:"Trash",activeValue:"",trashValue:"T",detail:"Trash details",deleted:true},
+	];
+	const lifecycleRemainderTable=new Tablance(lifecycleRemainderHost,{
+		trash:{isTrashed:({rowData})=>rowData.deleted,
+			getChanges:({operation})=>({deleted:operation==="trash"})},
+		main:{resultStatus:true,columns:[
+			{type:"expand",width:36},{dataKey:"name"},
+			{dataKey:"activeValue",visible:({lifecycleMode})=>lifecycleMode==="active"},
+			{dataKey:"trashValue",visible:({lifecycleMode})=>lifecycleMode==="trash"},
+		]},
+		details:{type:"list",entries:[{title:"Detail",dataKey:"detail"}]},
+	},true,true,{searchbar:false,ordering:false});
+	lifecycleRemainderTable.setData(lifecycleRemainderRows);
+	const activeColumnCount=lifecycleRemainderTable._colSchemaNodes.length;
+	lifecycleRemainderTable.setLifecycleMode("trash");
+	const trashColumnCount=lifecycleRemainderTable._colSchemaNodes.length;
+	lifecycleRemainderTable.expandRow(0);
+	await waitFor(()=>lifecycleRemainderTable._mainTbody.querySelector("tr.details .content")?.style.height==="auto",
+		"trash details expansion cleanup");
+	const lifecycleTrashDetails=lifecycleRemainderTable._mainTbody.querySelector("tr.details");
+	assert(activeColumnCount===trashColumnCount
+		&&lifecycleRemainderTable._colSchemaNodes.some(column=>column.dataKey==="trashValue")
+		&&!lifecycleRemainderTable._colSchemaNodes.some(column=>column.dataKey==="activeValue")
+		&&lifecycleTrashDetails.cells[0].colSpan===trashColumnCount
+		&&Math.abs(lifecycleRemainderTable._viewportRemainder.getBoundingClientRect().top
+			-(lifecycleTrashDetails.getBoundingClientRect().bottom-1))<1,
+		"trash with a different effective column set paints final-row details before the viewport remainder");
+	lifecycleRemainderTable.setLifecycleMode("active");
+	assert(!lifecycleRemainderTable._mainTbody.querySelector("tr.details")
+		&&lifecycleRemainderTable._colSchemaNodes.some(column=>column.dataKey==="activeValue")
+		&&!lifecycleRemainderTable._colSchemaNodes.some(column=>column.dataKey==="trashValue")
+		&&Math.abs(lifecycleRemainderTable._viewportRemainder.getBoundingClientRect().top
+			-(lifecycleRemainderTable._mainTbody.lastElementChild.getBoundingClientRect().bottom-1))<1,
+		"a lifecycle rebuild removes prior details and recomputes the remainder from the incoming view");
+
+	const virtualRemainderHost=host();
+	virtualRemainderHost.style.height="180px";
+	const virtualRemainderRows=Array.from({length:80},(_value,index)=>({
+		name:`Virtual ${index}`,detail:`Details ${index}`,
+	}));
+	const virtualRemainderTable=new Tablance(virtualRemainderHost,{
+		main:{resultStatus:true,columns:[{type:"expand",width:36},{dataKey:"name"}]},
+		details:{type:"list",entries:[{title:"Detail",dataKey:"detail"}]},
+	},true,true,{searchbar:false,ordering:false});
+	virtualRemainderTable.setData(virtualRemainderRows);
+	await tick();
+	const virtualEnd=(parseFloat(virtualRemainderTable._tableSizer.style.top)||0)
+		+(parseFloat(virtualRemainderTable._tableSizer.style.height)||0);
+	assert(virtualRemainderTable._numRenderedRows<virtualRemainderRows.length
+		&&![...virtualRemainderTable._mainTbody.querySelectorAll(":scope>tr:not(.details)")]
+			.some(row=>Number(row.dataset.dataRowIndex)===virtualRemainderRows.length-1)
+		&&Math.abs(parseFloat(virtualRemainderTable._viewportRemainder.style.top)
+			-(virtualEnd-1))<1,
+		"virtualization retains the virtual dataset boundary while the final data row is not rendered");
+	virtualRemainderTable.scrollToDataRow(virtualRemainderRows.at(-1),false,false);
+	virtualRemainderTable._scrollMethod();
+	const virtualFinalMain=virtualRemainderTable._mainTbody.querySelector('[data-data-row-index="79"]');
+	virtualRemainderTable.expandRow(79);
+	await waitFor(()=>virtualFinalMain.nextElementSibling?.querySelector(".content")?.style.height==="auto",
+		"virtual final-row details expansion cleanup");
+	const virtualFinalDetails=virtualFinalMain.nextElementSibling;
+	assert(virtualFinalDetails.matches("tr.details")
+		&&Math.abs(parseFloat(virtualRemainderTable._viewportRemainder.style.top)
+			-(virtualFinalDetails.getBoundingClientRect().bottom
+				-virtualRemainderTable._scrollingContent.getBoundingClientRect().top-1))<1,
+		"virtualization uses the final painted details boundary once the last data row is rendered");
 	const noStatusTable=new Tablance(host(),{main:{columns:[{dataKey:"name"}]}},true,true,
 		{searchbar:false,ordering:false});
 	assert(!noStatusTable._resultStatus&&!noStatusTable._emptyState

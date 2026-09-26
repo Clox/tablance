@@ -10548,15 +10548,26 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._viewportRemainder.hidden=true;
 			return;
 		}
+		// Expansion establishes the final boundary before its outer height transition begins. Collapse retains that
+		// boundary until the details row is removed. Resize observers and other viewport updates must not replace either
+		// stable target with a sampled intermediate CSS-transition frame.
+		if ([...(this._mainTbody?.querySelectorAll(":scope>tr.details>td>.content")??[])]
+			.some(content=>content._tablanceDetailsTransition))
+			return;
 		let contentBottom=Math.max(0,(parseFloat(this._tableSizer.style.top)||0)
 			+(parseFloat(this._tableSizer.style.height)||0));
 		// The virtual sizer is bookkeeping, while the final rendered row is the actual painted boundary. Details use
 		// separate-border table layout and can therefore leave the bookkeeping value a border-spacing away from that
-		// boundary. When the final data row is rendered, prefer its sub-pixel geometry; otherwise retain the virtual end.
+		// boundary. When the final data row is rendered, prefer the final painted main/details row's sub-pixel geometry;
+		// otherwise retain the virtual end.
 		const lastMainRow=[...(this._mainTbody?.querySelectorAll(":scope>tr:not(.details)")??[])].at(-1);
 		if (lastMainRow&&Number(lastMainRow.dataset.dataRowIndex)===this._filteredData.length-1) {
 			const scrollingRect=this._scrollingContent.getBoundingClientRect();
-			contentBottom=lastMainRow.getBoundingClientRect().bottom-scrollingRect.top;
+			const followingRow=lastMainRow.nextElementSibling;
+			const lastPaintedRow=followingRow?.matches("tr.details")
+				&&followingRow.dataset.dataRowIndex===lastMainRow.dataset.dataRowIndex
+				?followingRow:lastMainRow;
+			contentBottom=lastPaintedRow.getBoundingClientRect().bottom-scrollingRect.top;
 		}
 		const remainderHeight=Math.max(0,this._scrollBody.clientHeight-contentBottom);
 		this._viewportRemainder.hidden=remainderHeight<1||this._filteredData.length===0;

@@ -116,6 +116,9 @@
 .tablance > .table-area > .scroll-body > div {
   position: relative;
 }
+.tablance > .table-area > .scroll-body > .scrolling-content {
+  isolation: isolate;
+}
 .tablance > .table-area > .scroll-body > .tablance-empty-state {
   position: absolute;
   z-index: 1;
@@ -138,7 +141,7 @@
 }
 .tablance > .table-area > .scroll-body .tablance-viewport-remainder {
   position: absolute;
-  z-index: 0;
+  z-index: -1;
   right: 0;
   left: 0;
   box-sizing: border-box;

@@ -171,6 +171,11 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		>div {
 			position: relative;
 		}
+		>.scrolling-content {
+			// Keep the decorative viewport surface behind every interactive/rendered table layer without allowing its
+			// negative stack level to escape behind the scroll-body background.
+			isolation: isolate;
+		}
 		>.tablance-empty-state {
 			position: absolute;
 			z-index: 1;
@@ -191,7 +196,7 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		}
 		.tablance-viewport-remainder {
 			position: absolute;
-			z-index: 0;
+			z-index: -1;
 			right: 0;
 			left: 0;
 			box-sizing: border-box;
