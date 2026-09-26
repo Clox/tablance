@@ -239,6 +239,7 @@ class TablanceBase {
 	_activeVerticalLayout=null;//logical layout whose preferred column is active during vertical navigation
 	_activeVerticalLayoutColumnKey=null;
 	_pendingColumnCursorRemap=null;//row/column anchor restored after an effective column-set rebuild
+	_cursorBookmarks=new Map();//logical main-cell cursor anchor per lifecycle/view scope
 	_inEditMode;//whether the user is currently in edit-mode
 	_editModeController;//optional non-field editor participating in the ordinary commit/cancel/navigation lifecycle
 	_inReadOnlyMode=false;//whether a read-only presentation textarea is currently open
@@ -293,6 +294,8 @@ class TablanceBase {
 	_pendingDataCommitNavigation;//logical keyboard destination resumed after a direct durable field handoff
 	_lastTransactionBlock;//latest validation/persistence failure for programmatic transaction completion
 	_transactionRevealTooltipTimer;//temporary explanatory tooltip shown when an open transaction blocks navigation/exit
+	_tooltipShowTimer;//deferred visibility handoff for the shared validation/error tooltip
+	_tooltipGeneration=0;//invalidates delayed tooltip callbacks after dismissal or replacement
 	_ignoreClicksUntil;//when being inside an open group and trying to double-click on another cell further down to
 
 
@@ -1030,6 +1033,92 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return state;
 	}
 
+	_cursorScopeKey(lifecycleMode=this._lifecycleMode,viewModeKey=this._currentViewModeKey) {
+		if (this._trashCapability)
+			return lifecycleMode==="trash"?"trash":`active:${viewModeKey}`;
+		return `view:${viewModeKey}`;
+	}
+
+	_nearestVisibleColumnIndex(schemaNode,fallbackDeclaredIndex=0,visibleColumns=this._colSchemaNodes) {
+		if (!visibleColumns?.length)
+			return -1;
+		const exactIndex=visibleColumns.indexOf(schemaNode);
+		if (exactIndex>=0)
+			return exactIndex;
+		let anchorIndex=this._declaredColSchemaNodes.indexOf(schemaNode);
+		if (anchorIndex<0)
+			anchorIndex=Number.isInteger(fallbackDeclaredIndex)?fallbackDeclaredIndex:0;
+		let bestIndex=0;
+		let bestDistance=Infinity;
+		let bestDeclaredIndex=-1;
+		for (let index=0;index<visibleColumns.length;index++) {
+			const declaredIndex=this._declaredColSchemaNodes.indexOf(visibleColumns[index]);
+			const distance=Math.abs(declaredIndex-anchorIndex);
+			if (distance<bestDistance||(distance===bestDistance&&declaredIndex>bestDeclaredIndex)) {
+				bestIndex=index;
+				bestDistance=distance;
+				bestDeclaredIndex=declaredIndex;
+			}
+		}
+		return bestIndex;
+	}
+
+	_captureCursorBookmark(scopeKey=this._cursorScopeKey()) {
+		if (!Number.isInteger(this._mainRowIndex))
+			return false;
+		const rowData=this._filteredData?.[this._mainRowIndex];
+		if (!rowData)
+			return false;
+		const columnSchema=this._colSchemaNodes?.[this._mainColIndex]??null;
+		this._cursorBookmarks.set(scopeKey,{
+			rowData,
+			rowIndex:this._mainRowIndex,
+			columnSchema,
+			declaredColumnIndex:columnSchema?this._declaredColSchemaNodes.indexOf(columnSchema):0,
+		});
+		return true;
+	}
+
+	_clearCursorForViewTransition() {
+		this._pendingColumnCursorRemap=null;
+		this._mainRowIndex=this._mainColIndex=null;
+		this._activeDetailsCell=null;
+		this._cellCursorDataObj=null;
+		this._selectedCellState=null;
+		this._activeSchemaNode=null;
+		this._selectedCellVal=null;
+		this._setSelectedCellElement(null);
+		this._clearStaticCellOverflowPreview();
+		this._cellCursor.style.display="none";
+	}
+
+	_restoreCursorBookmark(scopeKey=this._cursorScopeKey()) {
+		if (!this._filteredData?.length||!this._colSchemaNodes?.length) {
+			this._clearCursorForViewTransition();
+			return false;
+		}
+		const bookmark=this._cursorBookmarks.get(scopeKey);
+		let rowIndex=bookmark?this._filteredData.indexOf(bookmark.rowData):-1;
+		if (rowIndex<0)
+			rowIndex=bookmark?Math.min(Math.max(bookmark.rowIndex,0),this._filteredData.length-1):0;
+		const rowData=this._filteredData[rowIndex];
+		const preferredColIndex=bookmark
+			?this._nearestVisibleColumnIndex(bookmark.columnSchema,bookmark.declaredColumnIndex):0;
+		let row=this._mainTbody.querySelector(`[data-data-row-index="${rowIndex}"]:not(.details)`);
+		if (!row) {
+			this.scrollToDataRow(rowData,false,false);
+			this._scrollMethod?.();
+			row=this._mainTbody.querySelector(`[data-data-row-index="${rowIndex}"]:not(.details)`);
+		}
+		const target=this._findSelectableMainCellFromRow(row,1,Math.max(preferredColIndex,0));
+		if (!target)
+			return false;
+		const selected=this._selectMainTableCell(target,false);
+		if (selected)
+			this._scrollToCursor();
+		return !!selected;
+	}
+
 	_resolveVisibleColumns() {
 		const viewState=this.getViewState();
 		return (this._declaredColSchemaNodes??[]).filter(schemaNode=>{
@@ -1061,19 +1150,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const previousAnchor=Number.isInteger(this._mainColIndex)
 			?previousColumns[this._mainColIndex]:null;
 		const previousDeclaredIndex=this._declaredColSchemaNodes.indexOf(previousAnchor);
-		let nextAnchorIndex=nextColumns.indexOf(previousAnchor);
-		if (nextAnchorIndex<0&&nextColumns.length) {
-			let bestDistance=Infinity;
-			for (let index=0;index<nextColumns.length;index++) {
-				const declaredIndex=this._declaredColSchemaNodes.indexOf(nextColumns[index]);
-				const distance=Math.abs(declaredIndex-previousDeclaredIndex);
-				if (distance<bestDistance
-					||(distance===bestDistance&&declaredIndex>previousDeclaredIndex)) {
-					bestDistance=distance;
-					nextAnchorIndex=index;
-				}
-			}
-		}
+		const nextAnchorIndex=this._nearestVisibleColumnIndex(previousAnchor,previousDeclaredIndex,nextColumns);
 
 		this._sortingCols=this._sortingCols.flatMap(sortColumn=>{
 			const schemaNode=sortColumn.schemaNode??previousColumns[sortColumn.index];
@@ -1144,6 +1221,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	/**Reset all per-dataset state to an empty baseline. */
 	_resetDataState({clearFilter=true}={}) {
+		this._dismissTooltip();
+		this._cursorBookmarks.clear();
 		this._clearCellRange();
 		this._cancelNavigationCursorTransition?.();
 		this._clearNavigationActivationFeedback?.();
@@ -1313,6 +1392,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const validKeys=Object.keys(this._viewDefinitions).join(", ");
 			throw new Error(`Unknown viewMode "${viewModeKey}". Valid viewModes: ${validKeys}`);
 		}
+		if (!this._flushValidatedEdits())
+			return this.getViewState();
+		const previousScopeKey=this._cursorScopeKey();
+		const nextScopeKey=this._cursorScopeKey(this._lifecycleMode,viewModeKey);
+		const changesCursorScope=previousScopeKey!==nextScopeKey;
+		if (changesCursorScope) {
+			this._captureCursorBookmark(previousScopeKey);
+			this._clearCursorForViewTransition();
+		}
 		this._currentViewModeKey=viewModeKey;
 		const columnsChanged=this._syncVisibleColumns();
 		if (this._isTrashMode()) {
@@ -1326,6 +1414,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._rebuildViewData();
 		this._applyFilters(this._filter,true,false,"view");
 		this._restoreColumnCursorAfterRebuild();
+		if (changesCursorScope)
+			this._restoreCursorBookmark(nextScopeKey);
+		return this.getViewState();
 	}
 
 	_isTrashMode() {
@@ -1341,8 +1432,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return this.getViewState();
 		if (!this._flushValidatedEdits())
 			return this.getViewState();
+		const previousScopeKey=this._cursorScopeKey();
+		this._captureCursorBookmark(previousScopeKey);
+		this._clearCursorForViewTransition();
 		this._lifecycleSearch[this._lifecycleMode]=this._filter??"";
 		this._lifecycleMode=mode;
+		const nextScopeKey=this._cursorScopeKey();
 		this._syncVisibleColumns();
 		this._selectedRows=[];
 		this._numRowsSelected=this._numRowsInViewSelected=0;
@@ -1357,6 +1452,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._rebuildViewData();
 		this._applyFilters(this._filter,true,false,"lifecycle");
 		this._restoreColumnCursorAfterRebuild();
+		this._restoreCursorBookmark(nextScopeKey);
 		this._updateLifecycleControls();
 		return this.getViewState();
 	}
@@ -4487,7 +4583,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return this._readOnlyPresentationKeyDown(e);
 		if (this._handleRepeatedReorderKey(e))
 			return;
-		this._tooltip.style.visibility="hidden";
+		this._dismissTooltip();
 		const keysThatEnterFromOutline=["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Home","End","Escape",
 								"NumpadAdd","NumpadSubtract","Enter","NumpadEnter","Space"];
 		const tableOutlineMode=this._focusEl.classList.contains("show-focus-ring");
@@ -6031,7 +6127,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._highlightOnFocus=false;//see decleration
 		this._focusEl.classList.remove("show-focus-ring");
 		this._focusEl.style.outline="none";//see #spreadsheetOnFocus
-		this._tooltip.style.visibility="hidden";
+		this._dismissTooltip();
 		if (Date.now()<this._ignoreClicksUntil)//see decleration of #ignoreClicksUntil
 			return;
 		if (e.which===3)//if right click
@@ -6813,8 +6909,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_notifyTransactionStateChange() {
 		const state=this.getOpenTransactionState();
 		if (!state.open&&!state.pending) {
-			clearTimeout(this._transactionRevealTooltipTimer);
-			this._tooltip.style.visibility="hidden";
+			this._dismissTooltip();
 			for (const target of this.rootEl.querySelectorAll(".transaction-attention"))
 				target.classList.remove("transaction-attention");
 		}
@@ -6951,12 +7046,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		const tooltipMessage=message??this._lastTransactionBlock?.message;
 		if (tooltipMessage) {
-			clearTimeout(this._transactionRevealTooltipTimer);
 			this._showTooltip(tooltipMessage,boundary.el);
-			this._transactionRevealTooltipTimer=setTimeout(()=>{
-				if (this._tooltip.firstChild?.innerText===tooltipMessage)
-					this._tooltip.style.visibility="hidden";
-			},messageDuration);
+			const tooltipGeneration=this._tooltipGeneration;
+			this._transactionRevealTooltipTimer=setTimeout(
+				()=>this._dismissTooltip(tooltipGeneration),messageDuration);
 		}
 		this._focusEl.focus({preventScroll:true});
 		return true;
@@ -8167,6 +8260,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._exitRepeatedReorderMode();
 		this._editModeController=null;
 		this._inEditMode=false;
+		this._dismissTooltip();
 		this._cellCursor.classList.remove("edit-mode","repeated-reorder-editor");
 		this._cellCursor.replaceChildren();
 		this._setRepeatedReorderPeerPresentation(repeated);
@@ -9606,6 +9700,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_finishEditModeExit() {
 		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
+		this._dismissTooltip();
 		this._focusEl.focus({preventScroll:true});
 		this._inEditMode=false;
 		this._cellCursor.classList.remove("edit-mode");
@@ -9618,12 +9713,37 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_showTooltip(message,target=this._cellCursor,preferredVertical) {
+		this._dismissTooltip();
+		const tooltipGeneration=this._tooltipGeneration;
 		this._cellCursor.parentElement.appendChild(this._tooltip);
-		setTimeout(()=>this._tooltip.style.visibility="visible");//set it on a delay because mouseDownHandler might
-						//otherwise immediately set it back to hidden when bubbling up depending on where the click was
 		this._tooltip.firstChild.innerText=message;
 		this._alignDropdown(this._tooltip,target,preferredVertical);
 		this._scrollElementIntoView(this._tooltip);
+		this._tooltipShowTimer=setTimeout(()=>{
+			this._tooltipShowTimer=null;
+			if (this._tooltipGeneration===tooltipGeneration&&this._tooltip.isConnected)
+				this._tooltip.style.visibility="visible";
+		});//Delay visibility until the originating mousedown has finished bubbling.
+		return true;
+	}
+
+	_dismissTooltip(expectedGeneration=null) {
+		if (expectedGeneration!=null&&expectedGeneration!==this._tooltipGeneration)
+			return false;
+		this._tooltipGeneration++;
+		clearTimeout(this._tooltipShowTimer);
+		clearTimeout(this._transactionRevealTooltipTimer);
+		this._tooltipShowTimer=this._transactionRevealTooltipTimer=null;
+		if (!this._tooltip)
+			return true;
+		this._tooltip.style.visibility="hidden";
+		this._tooltip.remove();
+		this._tooltip.style.removeProperty("top");
+		this._tooltip.style.removeProperty("left");
+		this._tooltip.style.removeProperty("position");
+		this._tooltip.classList.remove("above","below","left","right");
+		if (this._tooltip.firstChild)
+			this._tooltip.firstChild.textContent="";
 		return true;
 	}
 
@@ -10782,6 +10902,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_refreshAfterViewRowsChanged(previousRows=this._filteredData) {
+		this._dismissTooltip();
 		this._clearCellRange();
 		const selectedData=this._cellCursorDataObj;
 		const selectedRowIndex=selectedData?this._filteredData.indexOf(selectedData):-1;

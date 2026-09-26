@@ -706,6 +706,119 @@ try {
 		&&capabilityRows[1].removed===false&&capabilityOnly._filteredData.length===0,
 		"capability-only tables may restore through the public lifecycle mutation method");
 
+	const selectBookmarkMainCell=(table,rowData,schemaNode)=>{
+		const rowIndex=table._filteredData.indexOf(rowData);
+		const colIndex=table._colSchemaNodes.indexOf(schemaNode);
+		table.scrollToDataRow(rowData,false,false);
+		table._scrollMethod?.();
+		const row=table._mainTbody.querySelector(`[data-data-row-index="${rowIndex}"]:not(.details)`);
+		return table._selectMainTableCell(row.cells[colIndex],false);
+	};
+	const bookmarkHost=host();
+	bookmarkHost.style.height="190px";
+	let showTrashSpecial=true;
+	const bookmarkTable=new Tablance(bookmarkHost,{
+		trash:{isTrashed:({rowData})=>rowData.removed,
+			getChanges:({operation})=>({removed:operation==="trash"})},
+		main:{columns:[
+			{dataKey:"name",title:"Name"},
+			{dataKey:"code",title:"Code"},
+			{dataKey:"activeValue",title:"Active",visible:({lifecycleMode})=>lifecycleMode==="active"},
+			{dataKey:"trashValue",title:"Trash",visible:({lifecycleMode})=>
+				lifecycleMode==="trash"&&showTrashSpecial},
+			{dataKey:"tail",title:"Tail"},
+		]},
+		details:{type:"list",entries:[{dataKey:"detail",nodeId:"bookmarkDetail"}]},
+	},true,true,{searchbar:true,ordering:true});
+	const bookmarkRows=[
+		...Array.from({length:12},(_value,index)=>({name:`Active ${String(index).padStart(2,"0")}`,
+			code:`A${index}`,activeValue:`active-${index}`,trashValue:"",tail:`tail-a-${index}`,
+			detail:`detail-a-${index}`,removed:false})),
+		...Array.from({length:3},(_value,index)=>({name:`Trash ${index}`,code:`T${index}`,activeValue:"",
+			trashValue:`trash-${index}`,tail:`tail-t-${index}`,detail:`detail-t-${index}`,removed:true})),
+	];
+	bookmarkTable.setData(bookmarkRows);
+	await tick();
+	const activeBookmarkRow=bookmarkRows[10];
+	const activeBookmarkColumn=bookmarkTable._declaredColSchemaNodes[2];
+	selectBookmarkMainCell(bookmarkTable,activeBookmarkRow,activeBookmarkColumn);
+	bookmarkTable._headerTr.cells[0].click();
+	assert(bookmarkTable._cellCursorDataObj===activeBookmarkRow
+		&&bookmarkTable._activeSchemaNode===activeBookmarkColumn,
+		"sorting inside one logical view retains the selected row object and schema column");
+	bookmarkTable._searchInput.value=activeBookmarkRow.code;
+	bookmarkTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
+	assert(bookmarkTable._filteredData.length===1&&bookmarkTable._cellCursorDataObj===activeBookmarkRow
+		&&bookmarkTable._activeSchemaNode===activeBookmarkColumn,
+		"search filtering inside one logical view retains a surviving logical cursor");
+	bookmarkTable._searchInput.value="";
+	bookmarkTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
+	bookmarkTable.setLifecycleMode("trash");
+	assert(bookmarkTable._mainRowIndex===0
+		&&bookmarkTable._cellCursorDataObj===bookmarkTable._filteredData[0]
+		&&bookmarkTable._mainColIndex===0
+		&&bookmarkTable._activeSchemaNode===bookmarkTable._declaredColSchemaNodes[0],
+		"a first lifecycle visit selects its own first reasonable main cell instead of an outgoing index");
+	const firstTrashBookmarkRow=bookmarkTable._filteredData[1];
+	const trashBookmarkColumn=bookmarkTable._declaredColSchemaNodes[3];
+	selectBookmarkMainCell(bookmarkTable,firstTrashBookmarkRow,trashBookmarkColumn);
+	bookmarkTable.setLifecycleMode("active");
+	assert(bookmarkTable._cellCursorDataObj===activeBookmarkRow
+		&&bookmarkTable._activeSchemaNode===activeBookmarkColumn
+		&&bookmarkTable._selectedCell?.cellIndex===bookmarkTable._colSchemaNodes.indexOf(activeBookmarkColumn),
+		"returning active restores the exact row object and column schema left in that view");
+	bookmarkTable.setLifecycleMode("trash");
+	assert(bookmarkTable._cellCursorDataObj===firstTrashBookmarkRow
+		&&bookmarkTable._activeSchemaNode===trashBookmarkColumn,
+		"returning trash restores its independently selected row and column");
+
+	bookmarkTable.setLifecycleMode("active");
+	bookmarkTable.removeData(firstTrashBookmarkRow);
+	bookmarkTable.setLifecycleMode("trash");
+	assert(bookmarkTable._cellCursorDataObj===bookmarkTable._filteredData[1]
+		&&bookmarkTable._cellCursorDataObj!==firstTrashBookmarkRow
+		&&bookmarkTable._activeSchemaNode===trashBookmarkColumn,
+		"a missing bookmarked row falls back to the nearest index inside its own logical view");
+	bookmarkTable.setLifecycleMode("active");
+	showTrashSpecial=false;
+	bookmarkTable.setLifecycleMode("trash");
+	assert(bookmarkTable._activeSchemaNode===bookmarkTable._declaredColSchemaNodes[4]
+		&&bookmarkTable._activeSchemaNode.dataKey==="tail",
+		"a hidden bookmarked column uses the nearest visible declared column in the same view");
+
+	showTrashSpecial=true;
+	bookmarkTable.setLifecycleMode("active");
+	selectBookmarkMainCell(bookmarkTable,activeBookmarkRow,activeBookmarkColumn);
+	const detailRoot=bookmarkTable.expandRow(bookmarkTable._filteredData.indexOf(activeBookmarkRow));
+	detailRoot.children[0].select();
+	bookmarkTable.setLifecycleMode("trash");
+	bookmarkTable.setLifecycleMode("active");
+	assert(bookmarkTable._cellCursorDataObj===activeBookmarkRow
+		&&bookmarkTable._activeDetailsCell===null
+		&&bookmarkTable._activeSchemaNode===activeBookmarkColumn,
+		"a details cursor bookmarks its main row and anchor column without reopening details");
+
+	const namedViewRows=[
+		{name:"Default row",code:"D",current:true},
+		{name:"All-only row",code:"A",current:false},
+	];
+	const namedViewTable=new Tablance(host(),{
+		views:{default:{filter:row=>row.current},all:{filter:()=>true}},
+		main:{columns:[{dataKey:"name"},{dataKey:"code"}]},
+	},true,true,{searchbar:false,ordering:false});
+	namedViewTable.setData(namedViewRows);
+	selectBookmarkMainCell(namedViewTable,namedViewRows[0],namedViewTable._declaredColSchemaNodes[1]);
+	namedViewTable.setViewMode("all");
+	assert(namedViewTable._cellCursorDataObj===namedViewRows[0]&&namedViewTable._mainColIndex===0,
+		"a named view's first visit receives its own default cursor even when it overlaps the outgoing rows");
+	selectBookmarkMainCell(namedViewTable,namedViewRows[1],namedViewTable._declaredColSchemaNodes[0]);
+	namedViewTable.setViewMode("default");
+	assert(namedViewTable._cellCursorDataObj===namedViewRows[0]&&namedViewTable._mainColIndex===1,
+		"a named view restores its independent row and column bookmark");
+	namedViewTable.setViewMode("all");
+	assert(namedViewTable._cellCursorDataObj===namedViewRows[1]&&namedViewTable._mainColIndex===0,
+		"the overlapping named view also restores its own independent bookmark");
+
 	const removalSchema=()=>({
 		trash:{isTrashed:({rowData})=>!!rowData.removed,
 			getChanges:({operation})=>({removed:operation==="trash"})},
@@ -1028,8 +1141,9 @@ try {
 	lifecycleColumns._selectMainTableCell(lifecycleColumns._mainTbody.rows[0].cells[2]);
 	lifecycleColumns.setLifecycleMode("trash");
 	await tick();
-	assert(lifecycleColumns._activeSchemaNode.dataKey==="deletedAt"&&lifecycleColumns._mainColIndex===2,
-		"a disappearing focused column deterministically chooses the nearest visible declared column");
+	assert(lifecycleColumns._activeSchemaNode.dataKey==="name"&&lifecycleColumns._mainColIndex===0
+		&&lifecycleColumns._mainRowIndex===0,
+		"a lifecycle view without a surviving bookmark uses its own default instead of the outgoing hidden column");
 	const explicitMenuWidth=new Tablance(host(),{main:{columns:[
 		{dataKey:"name"},{type:"menu",width:"64px",actions:[{text:"Inspect"}]},
 	]}},true,true,{searchbar:false});
@@ -1367,6 +1481,80 @@ try {
 	assert(!noStatusTable._resultStatus&&!noStatusTable._emptyState
 		&&!noStatusTable._tableArea.classList.contains("has-result-status"),
 		"tables without result-status opt-in keep their existing DOM and layout");
+
+	const tooltipHost=host();
+	tooltipHost.style.width="420px";
+	tooltipHost.style.height="190px";
+	const tooltipTable=new Tablance(tooltipHost,{
+		trash:{isTrashed:({rowData})=>rowData.deleted,
+			getChanges:({operation})=>({deleted:operation==="trash"})},
+		main:{columns:[{dataKey:"value",input:{type:"text",validation:(value,message)=>{
+			message("Duplicate value");
+			return value!=="duplicate";
+		}}}]},
+		details:{type:"list",entries:[{dataKey:"detail"}]},
+	},true,true,{searchbar:false,ordering:false});
+	const tooltipRows=Array.from({length:82},(_value,index)=>({
+		value:`Active ${index}`,detail:`Detail ${index}`,deleted:index>=80,
+	}));
+	tooltipTable.setData(tooltipRows);
+	await tick();
+	const openInvalidTooltip=async ({waitForVisibility=true}={})=>{
+		const target=tooltipRows[79];
+		tooltipTable.scrollToDataRow(target,false,false);
+		tooltipTable._scrollMethod();
+		await tick();
+		const targetIndex=tooltipTable._filteredData.indexOf(target);
+		const targetRow=tooltipTable._mainTbody.querySelector(
+			`[data-data-row-index="${targetIndex}"]:not(.details)`);
+		tooltipTable._selectMainTableCell(targetRow.cells[0]);
+		key(tooltipTable.rootEl,"Enter","Enter");
+		const input=tooltipTable._cellCursor.querySelector("input");
+		input.value="duplicate";
+		input.dispatchEvent(new Event("change",{bubbles:true}));
+		assert(tooltipTable._exitEditMode(true)===false&&tooltipTable._inEditMode,
+			"generic field validation keeps the invalid editor open");
+		if (waitForVisibility)
+			await tick();
+		return input;
+	};
+	let tooltipInput=await openInvalidTooltip();
+	assert(tooltipTable._tooltip.isConnected
+		&&getComputedStyle(tooltipTable._tooltip).visibility==="visible"
+		&&parseFloat(tooltipTable._tooltip.style.top)>tooltipTable._scrollBody.clientHeight,
+		"a validation error far down the table anchors the shared tooltip in scrolling content");
+	key(tooltipInput,"Escape","Escape");
+	assert(!tooltipTable._inEditMode&&!tooltipTable._tooltip.isConnected,
+		"Escape fully dismisses the validation tooltip while closing its editor");
+	tooltipTable.setLifecycleMode("trash");
+	await tick();
+	assert(tooltipTable._filteredData.length===2
+		&&tooltipTable._tableSizer.style.height===tooltipTable._filteredData.length*tooltipTable._rowHeight+"px"
+		&&tooltipTable._scrollBody.scrollTop<=Math.max(0,
+			tooltipTable._scrollBody.scrollHeight-tooltipTable._scrollBody.clientHeight)+1
+		&&tooltipTable._scrollBody.scrollHeight<=tooltipTable._scrollBody.clientHeight+1
+		&&!tooltipTable._tooltip.isConnected,
+		"Esc followed by a shorter lifecycle view leaves no tooltip overflow and lets native scrolling clamp");
+
+	tooltipTable.setLifecycleMode("active");
+	tooltipInput=await openInvalidTooltip({waitForVisibility:false});
+	key(tooltipInput,"Escape","Escape");
+	await tick();
+	assert(!tooltipTable._tooltip.isConnected
+		&&tooltipTable._tooltip.style.visibility==="hidden"
+		&&tooltipTable._tooltip.style.top===""
+		&&!tooltipTable._tooltip.matches(".above,.below,.left,.right"),
+		"immediate Escape invalidates the delayed tooltip callback and clears positioning state");
+
+	tooltipInput=await openInvalidTooltip();
+	assert(tooltipTable._tooltip.isConnected,"the programmatic-close regression starts with a visible tooltip");
+	assert(tooltipTable._exitEditMode(false)===true&&!tooltipTable._inEditMode
+		&&!tooltipTable._tooltip.isConnected&&tooltipTable._tooltip.textContent===""
+		&&tooltipTable._tooltipShowTimer==null&&tooltipTable._transactionRevealTooltipTimer==null,
+		"programmatic editor cancellation uses the same complete tooltip dismissal");
+	await tick();
+	assert(!tooltipTable._tooltip.isConnected&&tooltipTable._tooltip.style.visibility==="hidden",
+		"a dismissed tooltip cannot be reattached or revealed by a stale callback");
 
 	const nestedRow={name:"Nested",profile:{enabled:true}};
 	const nestedViewTable=new Tablance(host(),{
