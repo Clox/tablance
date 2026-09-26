@@ -724,6 +724,169 @@ try {
 		&&capabilityRows[1].removed===false&&capabilityOnly._filteredData.length===0,
 		"capability-only tables may restore through the public lifecycle mutation method");
 
+	let resolveAsyncTrash,rejectAsyncTrash;
+	const asyncTrashTable=new Tablance(host(),{
+		trash:{isTrashed:({rowData})=>!!rowData.removed,
+			getChanges:({operation})=>({removed:operation==="trash"})},
+		commit:()=>new Promise((resolve,reject)=>{ resolveAsyncTrash=resolve; rejectAsyncTrash=reject; }),
+		main:{columns:[{dataKey:"name"}]},
+	},true,true,{searchbar:false});
+	const asyncTrashRow={name:"Durable",removed:false};
+	asyncTrashTable.setData([asyncTrashRow]);
+	const asyncTrashCompletion=asyncTrashTable.trashRow(asyncTrashRow,"trash");
+	assert(asyncTrashCompletion instanceof Promise&&!asyncTrashRow.removed
+		&&asyncTrashTable._filteredData.includes(asyncTrashRow)
+		&&asyncTrashTable.getOpenTransactionState().pending,
+		`async trash keeps state and membership unchanged until local durability succeeds (${JSON.stringify({
+			promise:asyncTrashCompletion instanceof Promise,removed:asyncTrashRow.removed,
+			included:asyncTrashTable._filteredData.includes(asyncTrashRow),
+			pending:asyncTrashTable.getOpenTransactionState().pending,
+		})})`);
+	resolveAsyncTrash();
+	assert(await asyncTrashCompletion&&asyncTrashRow.removed
+		&&!asyncTrashTable._filteredData.includes(asyncTrashRow)
+		&&!asyncTrashTable._editTransaction&&!asyncTrashTable._pendingStandaloneCommit,
+		"async trash atomically applies state and membership after local durability without leaving intents");
+	asyncTrashTable.setLifecycleMode("trash");
+	const failedRestore=asyncTrashTable.trashRow(asyncTrashRow,"restore");
+	rejectAsyncTrash(new Error("local store failed"));
+	assert(await failedRestore===false&&asyncTrashRow.removed
+		&&asyncTrashTable._filteredData.includes(asyncTrashRow)
+		&&!asyncTrashTable._editTransaction&&!asyncTrashTable._pendingStandaloneCommit,
+		"rejected async restore preserves prior state and membership without an orphaned transaction");
+
+	const propagatedRenderCounts=new Map;
+	const propagatedRows=[
+		{name:"Zulu",active:true},
+		{name:"Other",active:true},
+		{name:"Hidden",active:false},
+	];
+	const propagatedTable=new Tablance(host(),{
+		views:{default:{filter:row=>row.active}},
+		main:{columns:[{dataKey:"name",render:({rowData,value})=>{
+			propagatedRenderCounts.set(rowData,(propagatedRenderCounts.get(rowData)??0)+1);
+			return value;
+		}},{dataKey:"active"}]},
+	},true,true,{searchbar:true,ordering:true});
+	propagatedTable.setData(propagatedRows);
+	await tick();
+	propagatedTable._headerTr.cells[0].click();
+	propagatedRows[2].name="Alpha";
+	propagatedRows[2].active=true;
+	propagatedTable.notifyDataChange(propagatedRows[2],["name","active"]);
+	assert(propagatedTable._filteredData.map(row=>row.name).join(",")==="Alpha,Other,Zulu",
+		"notifyDataChange incrementally admits and sorts a changed record");
+	propagatedTable._searchInput.value="Zulu";
+	propagatedTable._searchInput.dispatchEvent(new Event("input",{bubbles:true}));
+	propagatedRows[0].name="Gone";
+	propagatedTable.notifyDataChange(propagatedRows[0],["name"]);
+	assert(propagatedTable._filteredData.length===0,
+		"notifyDataChange reevaluates active search membership for only the changed record");
+
+	const protectedDraftRow={status:"Before",notes:"Saved"};
+	const protectedDraftTable=new Tablance(host(),{views:{default:{filter:row=>row.status==="Before"}},
+		main:{columns:[{dataKey:"status"}]},
+		details:{type:"list",entries:[{type:"group",nodeId:"protectedDraftGroup",entries:[
+			{dataKey:"notes",nodeId:"protectedDraftNotes",input:{type:"text"}},
+		]}]}},true,true,{searchbar:false,ordering:false});
+	protectedDraftTable.setData([protectedDraftRow]);
+	await tick();
+	const protectedDraftGroup=protectedDraftTable.getDetailCell(0,"protectedDraftGroup");
+	protectedDraftTable._openGroup(protectedDraftGroup);
+	const protectedDraftNotes=protectedDraftGroup.children[0];
+	protectedDraftNotes.select();
+	key(protectedDraftTable.rootEl,"Enter","Enter");
+	const protectedDraftInput=protectedDraftTable._cellCursor.querySelector("input");
+	protectedDraftInput.value="Unsaved draft";
+	protectedDraftInput.dispatchEvent(new Event("input",{bubbles:true}));
+	protectedDraftRow.status="After";
+	protectedDraftTable.notifyDataChange(protectedDraftRow,["status"]);
+	assert(protectedDraftTable._inEditMode&&protectedDraftTable._activeDetailsCell===protectedDraftNotes
+		&&protectedDraftTable._isGroupPresentationOpen(protectedDraftGroup)
+		&&protectedDraftInput.isConnected&&protectedDraftInput.value==="Unsaved draft"
+		&&protectedDraftTable._filteredData.includes(protectedDraftRow)
+		&&protectedDraftTable._deferredDataChanges.has(protectedDraftRow),
+		"an unrelated incoming row change neither overwrites nor discards an active details draft");
+	protectedDraftTable._exitEditMode(false);
+	assert(protectedDraftTable._closeGroup(protectedDraftGroup)
+		&&!protectedDraftTable._filteredData.includes(protectedDraftRow)
+		&&!protectedDraftTable._deferredDataChanges.size,
+		"deferred membership propagation runs after the active draft transaction closes");
+
+	let preservedMenuResolutions=0;
+	const preservedMenuTable=new Tablance(host(),{main:{columns:[
+		{dataKey:"name"},{type:"menu",actions:()=>{ preservedMenuResolutions++; return [{text:"Action"}]; }},
+	]}},true,true,{searchbar:false});
+	const preservedMenuRow={name:"Before"};
+	preservedMenuTable.setData([preservedMenuRow]);
+	await tick();
+	preservedMenuTable._mainTbody.rows[0].cells[1].click();
+	const preservedMenuState=preservedMenuTable._menuState;
+	preservedMenuRow.name="After";
+	preservedMenuTable.notifyDataChange(preservedMenuRow,["name"]);
+	preservedMenuTable.refreshView("same-row-repaint");
+	assert(preservedMenuTable._menuState===preservedMenuState&&preservedMenuResolutions===1,
+		"same-record same-schema same-anchor repaint preserves an open menu without reevaluating actions");
+	preservedMenuTable._closeMenu();
+
+	let timedPrimaryRenders=0,timedOtherRenders=0;
+	const nativeDateNow=Date.now;
+	let fakeNow=nativeDateNow();
+	Date.now=()=>fakeNow;
+	const timedStart=fakeNow;
+	const timedTable=new Tablance(host(),{main:{columns:[
+		{dataKey:"value",render:({value,now})=>{
+			timedPrimaryRenders++;
+			return {content:now<timedStart+1000?`Initial ${value}`:`Updated ${value}`,
+				refreshAt:now<timedStart+1000?timedStart+1000:null,
+				className:now<timedStart+1000?"waiting":"done"};
+		}},
+		{dataKey:"other",render:({value})=>{ timedOtherRenders++; return value; }},
+	]}},true,true,{searchbar:false,ordering:false});
+	const timedRow={value:"clock",other:"stable"};
+	timedTable.setData([timedRow]);
+	await tick();
+	const timedPrimaryBefore=timedPrimaryRenders,timedOtherBefore=timedOtherRenders;
+	fakeNow=timedStart+1000;
+	timedTable._runTimedCellRefreshes();
+	assert(timedPrimaryRenders===timedPrimaryBefore+1&&timedOtherRenders===timedOtherBefore
+		&&timedTable._mainTbody.rows[0].cells[0].textContent.includes("Updated clock")
+		&&timedTable._mainTbody.rows[0].cells[0].classList.contains("done")
+		&&timedTable._timedCellRefreshes.size===0,
+		"render refreshAt follows the absolute fake clock, repaints only its target, and stops on null");
+	Date.now=nativeDateNow;
+
+	const virtualTimedHost=host();
+	const virtualTimedRows=Array.from({length:80},(_value,index)=>({value:`Row ${index}`}));
+	let virtualTimedRenders=0;
+	const virtualDeadline=nativeDateNow()+1000;
+	const virtualTimedTable=new Tablance(virtualTimedHost,{main:{columns:[
+		{dataKey:"value",render:({value,now})=>{
+			virtualTimedRenders++;
+			return {content:now<virtualDeadline?value:`Updated ${value}`,
+				refreshAt:now<virtualDeadline?virtualDeadline:null};
+		}},
+	]}},true,true,{searchbar:false,ordering:false});
+	virtualTimedTable.setData(virtualTimedRows);
+	await tick();
+	const firstRegistration=[...virtualTimedTable._timedCellRefreshes.values()][0];
+	assert(virtualTimedTable._timedCellRefreshes.size>0
+		&&virtualTimedTable._timedCellRefreshes.size<virtualTimedRows.length
+		&&[...virtualTimedTable._timedCellRefreshes.values()].every(entry=>entry.anchor.isConnected),
+		"refreshAt registers only materialized virtual cells");
+	virtualTimedTable._updateRowValues(firstRegistration.anchor.closest("tr"),60);
+	assert(!virtualTimedTable._timedCellIdentityMatches(firstRegistration),
+		"recycling a virtual row invalidates the old record/schema/generation registration");
+	const rendersBeforeVirtualDeadline=virtualTimedRenders;
+	fakeNow=virtualDeadline;
+	Date.now=()=>fakeNow;
+	virtualTimedTable._runTimedCellRefreshes();
+	Date.now=nativeDateNow;
+	assert(virtualTimedRenders>rendersBeforeVirtualDeadline
+		&&[...virtualTimedTable._mainTbody.querySelectorAll('tr[data-data-row-index] td:first-child')]
+			.every(cell=>cell.textContent.startsWith("Updated Row ")),
+		"the fake-clock deadline repaints only the currently materialized virtual identities");
+
 	const selectBookmarkMainCell=(table,rowData,schemaNode)=>{
 		const rowIndex=table._filteredData.indexOf(rowData);
 		const colIndex=table._colSchemaNodes.indexOf(schemaNode);
@@ -2990,10 +3153,10 @@ try {
 	sortedIdentityTable._markDirtyField(identityOneOrder);
 	assert(sortedIdentityTable._closeGroup(identityOne)
 		&&visualEntries()[0]===identityOne&&identityOne.outerContainerEl===identityOneElement
-		&&sortedIdentityTable._activeDetailsCell===identityOneOrder
+		&&sortedIdentityTable._activeDetailsCell===identityOne
 		&&JSON.stringify(sortedBacking.map(entry=>entry.id))===JSON.stringify([1,2]),
 		"accepted sort-key updates move the existing instance and DOM without changing identity, "
-			+"focus, or backing order");
+			+"the closed-group anchor, or backing order");
 	const collectionState=visualEntries().find(entry=>entry.dataObj.id===2).children[2];
 	const collectionEdit=visualEntries().find(entry=>entry.dataObj.id===2).children[3];
 	assert(!collectionState.hidden&&collectionState.el.textContent==="5,10"
@@ -5213,13 +5376,14 @@ try {
 	assert(visualHierarchyGroup.detailsAffordancesExposed===true&&!visualHierarchyGroup.groupChevronEl.hidden
 		&&getComputedStyle(visualHierarchyGroup.el).borderTopColor==="rgb(200, 205, 211)",
 		"a top-level group exposes its own border and chevron");
-	assert(deepVisualGroup.el.querySelector(".group-closed-content")?.textContent==="Nested preview"
-		&&deepVisualGroup.detailsAffordancesExposed===false&&deepVisualGroup.groupChevronEl.hidden
-		&&getComputedStyle(deepVisualGroup.el).borderTopColor==="rgba(0, 0, 0, 0)"
-		&&getComputedStyle(hierarchyGrid.gridRowSeparators[0]).display==="none"
-		&&hierarchyGrid.gridRowExtensions.every(extension=>getComputedStyle(extension).display==="none")
-		&&getComputedStyle(hierarchyField.selEl,"::before").display==="none",
-		"the nearest closed ancestor group suppresses group, group-row, Grid and Lineup affordances through containers");
+	const closedHierarchyState=[deepVisualGroup.el.querySelector(".group-closed-content")?.textContent==="Nested preview",
+		deepVisualGroup.detailsAffordancesExposed===false,deepVisualGroup.groupChevronEl.hidden,
+		getComputedStyle(deepVisualGroup.el).borderTopColor==="rgba(0, 0, 0, 0)",
+		getComputedStyle(hierarchyGrid.gridRowSeparators[0]).display==="none",
+		hierarchyGrid.gridRowExtensions.every(extension=>getComputedStyle(extension).display==="none"),
+		getComputedStyle(hierarchyField.selEl,"::before").display==="none"];
+	assert(closedHierarchyState.every(Boolean),
+		`the nearest closed ancestor group suppresses group, group-row, Grid and Lineup affordances through containers (${closedHierarchyState})`);
 	visualHierarchyGroup.select();
 	key(table.rootEl,"Enter","Enter");
 	const openedHierarchyState=[visualHierarchyGroup.el.classList.contains("open"),
@@ -5444,6 +5608,7 @@ try {
 		&&getComputedStyle(firstHistorySeparator).marginLeft==="0px"
 		&&getComputedStyle(firstHistorySeparator).marginRight==="0px",
 		"open inner cell separators use the same full-width geometry as Grid separators");
+	table._reanchorActiveDetailsCellForGroupClose(historyEntries[0]);
 	table._setGroupPresentationState(historyEntries[0],"closed");
 	table._syncGroupChevronVisibility(historyEntries[0]);
 	assert(getComputedStyle(firstHistorySeparator).display==="none"
@@ -7757,10 +7922,18 @@ try {
 		&&capturedOpenTransaction.rowData===openGroupNavRow
 		&&Object.isFrozen(capturedOpenTransaction)&&Object.isFrozen(capturedOpenTransaction.path),
 		"an exit reveal captures the most recently active nested group as an immutable logical reference");
+	openGroupNavTable.refreshView("passive-refresh");
+	assert(openGroupNavTable._activeDetailsCell===openGroupNavNestedValue
+		&&openGroupNavTable._isGroupPresentationOpen(openGroupNavRoot)
+		&&openGroupNavTable._isGroupPresentationOpen(openGroupNavNested)
+		&&openGroupNavTable.needsExitProtection(),
+		"refreshView does not close, commit, or discard an active group transaction");
+	assertThrows(()=>openGroupNavTable._setGroupPresentationState(openGroupNavNested,"closed"),
+		/Cannot close a group/,
+		"a group state transition rejects closed presentation while an active descendant remains selected");
 	openGroupNavTable._activeDetailsCell=null;
 	assert(openGroupNavTable.captureOpenTransactionReference()?.nodeId==="openGroupNavNested",
 		"multiple open groups fall back deterministically to the most recently opened group");
-	openGroupNavTable._activeDetailsCell=openGroupNavNestedValue;
 	openGroupNavTable._setGroupPresentationState(openGroupNavNested,"closed");
 	openGroupNavTable._setGroupPresentationState(openGroupNavRoot,"closed");
 	const exitExplanation="This group has unsaved staged changes";

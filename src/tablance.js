@@ -168,6 +168,11 @@ class TablanceBase {
 	_lifecycleSearch={active:"",trash:""};
 	_trashCapability=null;
 	_refreshingView=false;//guards commit flushing while rebuilding the active view pipeline
+	_timedCellRefreshes=new Map();//materialized cell anchors with declarative presentation refresh deadlines
+	_timedCellRefreshTimer=null;//single nearest-deadline timer owned by this Tablance instance
+	_timedCellRefreshGeneration=new WeakMap();//invalidates callbacks when virtual cells are rebound
+	_deferredDataChanges=new Map();//known changes held until an active draft can no longer be displaced
+	_deferredViewRefreshReason=null;//explicit full refresh requested while transient state is protected
 	_scrollRowIndex=0;//the index in the #data of the top row in the view
 	_scrollBody;//resides directly inside #container and is the element with the scrollbar. It contains #scrollingDiv
 	_toolbar;
@@ -241,6 +246,7 @@ class TablanceBase {
 	_pendingColumnCursorRemap=null;//row/column anchor restored after an effective column-set rebuild
 	_cursorBookmarks=new Map();//logical main-cell cursor anchor per lifecycle/view scope
 	_inEditMode;//whether the user is currently in edit-mode
+	_pendingStandaloneCommit=null;//non-editor row action waiting for local durable persistence
 	_editModeController;//optional non-field editor participating in the ordinary commit/cancel/navigation lifecycle
 	_inReadOnlyMode=false;//whether a read-only presentation textarea is currently open
 	_readOnlyDisplayedText;//immutable displayed text used while read-only presentation mode is open
@@ -1224,6 +1230,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	/**Reset all per-dataset state to an empty baseline. */
 	_resetDataState({clearFilter=true}={}) {
+		this._clearAllTimedCellRefreshes();
+		this._deferredDataChanges.clear();
+		this._deferredViewRefreshReason=null;
 		this._cancelDetailsScrollTween?.();
 		this._dismissTooltip();
 		this._cursorBookmarks.clear();
@@ -1477,14 +1486,54 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			{schemaNode:this._schema,rowData}));
 		if (!changes||typeof changes!=="object"||Array.isArray(changes)||!Object.keys(changes).length)
 			throw new TypeError("trash.getChanges must return a non-empty changes object.");
-		Object.assign(rowData,changes);
 		const expected=operation==="trash";
-		if (this._isRowTrashed(rowData)!==expected)
+		const projected=Object.assign(Object.create(Object.getPrototypeOf(rowData)),rowData,changes);
+		if (this._isRowTrashed(projected)!==expected)
 			throw new Error("trash.getChanges must transition the row to the requested lifecycle state.");
 		const payload=this._makeCallbackPayload(null,{data:rowData,changes,mode:"update",operation},
 			{schemaNode:this._schema,rowData,mainIndex:this._filteredData.indexOf(rowData)});
-		this._queueDataCommit(payload,null);
-		return true;
+		return this._commitStandaloneRowChange(payload,rowData,changes);
+	}
+
+	_commitStandaloneRowChange(payload,rowData,changes) {
+		if (this._hasPendingCommitHandoff())
+			return false;
+		const txn=this._queueCommitIntent(payload,{schemaNode:this._schema,depth:0});
+		if (txn.stack.length)
+			throw new Error("A standalone row action cannot be queued inside an open group transaction.");
+		const prepared=this._prepareCommitTransaction(null);
+		let result;
+		try {
+			result=this._schema.commit?.(prepared.transaction,prepared.context);
+		} catch(error) {
+			result=Promise.reject(error);
+		}
+		const finalize=()=>{
+			Object.assign(rowData,changes);
+			this._finalizeCommitTransaction(prepared);
+			return true;
+		};
+		if (!this._isThenable(result))
+			return finalize();
+		const pending={prepared,rowData,changes};
+		this._pendingStandaloneCommit=pending;
+		this._notifyTransactionStateChange();
+		return Promise.resolve(result).then(()=>{
+			if (this._pendingStandaloneCommit!==pending)
+				return false;
+			this._pendingStandaloneCommit=null;
+			const finalized=finalize();
+			this._notifyTransactionStateChange();
+			return finalized;
+		}).catch(error=>{
+			if (this._pendingStandaloneCommit===pending)
+				this._pendingStandaloneCommit=null;
+			this._editTransaction=null;
+			this._notifyTransactionStateChange();
+			this._showTooltip(error?.message??this._lang.dataCommitFailed
+				??"The change could not be saved locally.");
+			return false;
+		});
 	}
 
 	refreshView(reason="refresh") {
@@ -1495,8 +1544,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._refreshingView=true;
 		try {
 			this._rowFilterCache=new WeakMap();
-			if (!this._flushValidatedEdits())
+			if (this._inEditMode||this._inReadOnlyMode||this.needsExitProtection()) {
+				this._deferredViewRefreshReason=reason;
+				this._emitViewStateChange(reason);
 				return this.getViewState();
+			}
 			const previousRows=[...(this._filteredData??[])];
 			this._rebuildViewData();
 			this._filterCurrentView(this._filter??"");
@@ -1512,6 +1564,156 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		} finally {
 			this._refreshingView=false;
 		}
+	}
+
+	/**
+	 * Propagate changes that have already been applied to one source record.
+	 * Reevaluate only that record's active lifecycle/view/search/sort membership and repaint declared dependents.
+	 */
+	notifyDataChange(rowData,changedPaths=[],options=null) {
+		if (!rowData||!this._sourceData.includes(rowData))
+			return {changed:false,rowsChanged:false};
+		if (this._onlyDetails)
+			return {changed:false,rowsChanged:false};
+		const {reason="data",repaint=true,emit=true}=options??{};
+		const paths=(Array.isArray(changedPaths)?changedPaths:[changedPaths])
+			.filter(path=>path!=null).map(path=>Array.isArray(path)?path.map(String):String(path).split("."));
+		if (this._inEditMode||this._inReadOnlyMode||this.needsExitProtection()) {
+			const deferred=this._deferredDataChanges.get(rowData)??{paths:new Set,reason};
+			for (const path of paths)
+				deferred.paths.add(path.join("."));
+			deferred.reason=reason;
+			this._deferredDataChanges.set(rowData,deferred);
+			if (repaint)
+				this._repaintChangedRow(rowData,paths,{protectActiveDraft:true});
+			if (emit)
+				this._emitViewStateChange(reason);
+			return {changed:repaint,rowsChanged:false,viewChanged:false,deferred:true};
+		}
+		const previousView=[...(this._viewData??[])];
+		const previousRows=[...(this._filteredData??[])];
+		this._rowFilterCache.delete(rowData);
+
+		const sourceOrder=new Map(this._sourceData.map((row,index)=>[row,index]));
+		const nextView=previousView.filter(row=>row!==rowData);
+		if (this._rowMatchesView(rowData)) {
+			const sourceIndex=sourceOrder.get(rowData);
+			const insertAt=nextView.findIndex(row=>sourceOrder.get(row)>sourceIndex);
+			nextView.splice(insertAt<0?nextView.length:insertAt,0,rowData);
+		}
+		this._viewData=nextView;
+		if (this._filter) {
+			const nextFiltered=previousRows.filter(row=>row!==rowData&&nextView.includes(row));
+			if (nextView.includes(rowData)) {
+				const viewIndex=nextView.indexOf(rowData);
+				if (this._rowSatisfiesFilters(this._filter,rowData,viewIndex,this._createSelectOptsCache())) {
+					const insertAt=nextFiltered.findIndex(row=>nextView.indexOf(row)>viewIndex);
+					nextFiltered.splice(insertAt<0?nextFiltered.length:insertAt,0,rowData);
+				}
+			}
+			this._filteredData=nextFiltered;
+		} else
+			this._filteredData=this._viewData;
+		this._sortData();
+
+		const rowsChanged=previousRows.length!==this._filteredData.length
+			||previousRows.some((row,index)=>row!==this._filteredData[index]);
+		const viewChanged=previousView.length!==this._viewData.length
+			||previousView.some((row,index)=>row!==this._viewData[index]);
+		if (rowsChanged)
+			this._refreshAfterViewRowsChanged(previousRows);
+		else if (repaint)
+			this._repaintChangedRow(rowData,paths);
+		if (emit&&(rowsChanged||viewChanged||repaint))
+			this._emitViewStateChange(reason);
+		return {changed:rowsChanged||viewChanged||repaint,rowsChanged,viewChanged};
+	}
+
+	_changedPathRootSet(paths) {
+		return new Set(paths.map(path=>path[0]).filter(Boolean));
+	}
+
+	_detailsSubtreeDependsOnRoots(instanceNode,roots) {
+		if (!instanceNode||!roots.size)
+			return false;
+		if (roots.has("*"))
+			return true;
+		const depends=node=>{
+			const schemaNode=node?.schemaNode;
+			const paths=[schemaNode?._dataPath,schemaNode?._dataContextPath,
+				schemaNode?.dependsOnDataPath,...(schemaNode?.dependsOnDataPaths??[])];
+			if (paths.some(path=>Array.isArray(path)&&path.length&&roots.has(String(path[0]))))
+				return true;
+			return (node?.children??[]).some(depends);
+		};
+		return depends(instanceNode);
+	}
+
+	_repaintChangedRow(rowData,paths,{protectActiveDraft=false}={}) {
+		if (!this._mainTbody)
+			return;
+		const mainIndex=this._filteredData.indexOf(rowData);
+		if (mainIndex<0)
+			return;
+		const row=this._mainTbody.querySelector(`tr[data-data-row-index="${mainIndex}"]:not(.details)`);
+		const roots=this._changedPathRootSet(paths);
+		const wildcard=roots.has("*")||!roots.size;
+		const affected=new Set;
+		for (const schemaNode of this._colSchemaNodes) {
+			const dependencyPaths=[schemaNode.dependsOnDataPath,...(schemaNode.dependsOnDataPaths??[])]
+				.filter(Boolean);
+			if (wildcard||roots.has(String(schemaNode.dataKey))
+				||dependencyPaths.some(path=>roots.has(String(path[0])))
+				||(schemaNode.type==="menu"&&typeof schemaNode.disabledIf==="function"))
+				affected.add(schemaNode);
+		}
+		for (const source of [...affected]) {
+			const queue=[source];
+			for (let index=0;index<queue.length;index++)
+				for (const path of queue[index].dependencyPaths??[])
+					if (path[0]==="m") {
+						const dependent=this._colSchemaNodes[path[1]];
+						if (dependent&&!affected.has(dependent)) {
+							affected.add(dependent);
+							queue.push(dependent);
+						}
+					}
+		}
+		if (row)
+			for (const schemaNode of affected) {
+				if (protectActiveDraft&&this._inEditMode&&!this._activeDetailsCell
+					&&rowData===this._cellCursorDataObj&&schemaNode===this._activeSchemaNode)
+					continue;
+				const columnIndex=this._colSchemaNodes.indexOf(schemaNode);
+				if (columnIndex<0)
+					continue;
+				if (schemaNode.type==="menu")
+					this._updateMenuCell(row.cells[columnIndex],schemaNode,mainIndex);
+				else if (schemaNode.type!=="expand"&&schemaNode.type!=="select")
+					this._updateMainRowCell(row.cells[columnIndex],schemaNode);
+			}
+		const detailsRoot=this._openDetailsPanes[mainIndex];
+		if (detailsRoot&&this._detailsSubtreeDependsOnRoots(detailsRoot,roots))
+			if (!(protectActiveDraft&&this._inEditMode
+				&&this._isInstanceDescendantOf(this._activeDetailsCell,detailsRoot)))
+				this.refreshSubtree(detailsRoot);
+	}
+
+	_flushDeferredDataChanges() {
+		if (this._inEditMode||this._inReadOnlyMode||this.needsExitProtection()
+			||(!this._deferredDataChanges.size&&!this._deferredViewRefreshReason))
+			return false;
+		const refreshReason=this._deferredViewRefreshReason;
+		this._deferredViewRefreshReason=null;
+		const pending=[...this._deferredDataChanges];
+		this._deferredDataChanges.clear();
+		if (refreshReason) {
+			this.refreshView(refreshReason);
+			return true;
+		}
+		for (const [rowData,{paths,reason}] of pending)
+			this.notifyDataChange(rowData,[...paths],{reason:reason??"deferred-data"});
+		return true;
 	}
 
 	/**Explicitly create and insert a new, uncommitted row. */
@@ -1547,8 +1749,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			dataRow=this._filteredData[mainIndx=dataRow_or_mainIndex];
 		else //if (typeof dataRow_or_mainIndex=="object")
 			mainIndx=this._filteredData.indexOf(dataRow=dataRow_or_mainIndex);
-		if (dataRow&&typeof dataRow==="object")
-			this._rowFilterCache.delete(dataRow);
 		dataPath=typeof dataPath=="string"?dataPath.split(/\.|(?=\[\d*\])/):dataPath;
 
 		if (!onlyRefresh) {//if we're not only refreshing the cell but actually modifying/adding data
@@ -1565,24 +1765,24 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					dataPortion=dataPortion[key]??(dataPortion[key]=i%2?[]:{});
 			}
 		}
+		const isMainPath=dataPath.length===1
+			&&this._colSchemaNodes.some(schemaNode=>schemaNode.dataKey==dataPath[0]);
+		const propagation=this.notifyDataChange(dataRow,[dataPath],{
+			reason:"data",repaint:isMainPath,
+		});
+		if (propagation.rowsChanged||isMainPath)
+			return this;
+		mainIndx=this._filteredData.indexOf(dataRow);
 
 		if (mainIndx<this._scrollRowIndex||mainIndx>=this._scrollRowIndex+this._numRenderedRows)
-			return;//the row to be updated is outside of view. It'll be updated automatically if scrolled into view
-		
-		//is it a column of the main-table?
-		if (dataPath.length==1) //it's possible only if the path is a single dataKey. (but still not guaranteed)
-			for (let colI=-1,colSchemaNode;colSchemaNode=this._colSchemaNodes[++colI];)
-				if (colSchemaNode.dataKey==dataPath[0]) {//if true then yes, it was a column of main-table
-					const tr=this._mainTbody.querySelector(`[data-data-row-index="${mainIndx}"]:not(.details)`);
-					return this._updateMainRowCell(tr.cells[colI],colSchemaNode);//update it and be done with this
-				}
+			return this;//the row is outside the materialized viewport; membership has still been reconciled
 
 		//The data is somewhere in details
 		
 		let nodeToUpdate=this._openDetailsPanes[mainIndx];//points to the instance-node that will be subject for update
 		const repeatedMutations=new Set;
 		if (!nodeToUpdate)//if the updates details is not open
-			return;
+			return this;
 
 		//look through the celObjToUpdate and its descendants-tree (currently set to whole details), following the
 		//dataPath. At the end of this loop celObjToUpdate should be set to the deepest down object that dataPath points
@@ -1623,6 +1823,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		this._adjustCursorPosSize(this._activeDetailsCell
 			?this._getCursorGeometryEl(this._activeDetailsCell):this._selectedCell);
+		return this;
 	}
 
 	/**Reconcile a complete repeated refresh by backing-object identity.
@@ -1931,32 +2132,48 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return {value,idValue,dependedValue};
 	}
 
-	_getDisplayValue(schemaNode,dataObj,mainIndex,stripHtml=false,instanceNode=null) {
-		if (!schemaNode)
-			return;
-		const {value,idValue,dependedValue}=this._getCellValueBundle(schemaNode,dataObj,mainIndex,instanceNode);
-		const payload=this._makeCallbackPayload(instanceNode??null,{value,idValue,dependedValue,rowData: dataObj},{
-			schemaNode,mainIndex,rowData: dataObj});
-		let displayVal;
+	_normalizeRenderPresentation(rendered) {
+		if (!rendered||typeof rendered!=="object"||Array.isArray(rendered)
+			||typeof Node!=="undefined"&&rendered instanceof Node
+			||!("content" in rendered||"refreshAt" in rendered||"className" in rendered))
+			return {content:rendered,refreshAt:null,classNames:[]};
+		const refreshAt=rendered.refreshAt==null?null:Number(rendered.refreshAt);
+		if (refreshAt!=null&&!Number.isFinite(refreshAt))
+			throw new TypeError("render().refreshAt must be a finite timestamp or null.");
+		const classes=rendered.className==null?[]:Array.isArray(rendered.className)
+			?rendered.className:String(rendered.className).split(/\s+/);
+		return {content:rendered.content,refreshAt,classNames:classes.filter(Boolean)};
+	}
+
+	_getCellPresentation(schemaNode,dataObj,mainIndex,instanceNode=null,now=Date.now()) {
+		const valueBundle=this._getCellValueBundle(schemaNode,dataObj,mainIndex,instanceNode);
+		const payload=this._makeCallbackPayload(instanceNode??null,{...valueBundle,rowData:dataObj,now},{
+			schemaNode,mainIndex,rowData:dataObj});
 		if (schemaNode.type==="group")
-			displayVal=schemaNode.closedRender?.(dataObj);
-		else if (schemaNode.render)
-			displayVal=schemaNode.render(payload);
-		else if (schemaNode.input?.type==="select") {
-			// Dynamic selects without render deliberately have no closed-cell presentation;
-			// preserve that existing rule.
+			return {...this._normalizeRenderPresentation(schemaNode.closedRender?.(dataObj)),valueBundle};
+		if (schemaNode.render)
+			return {...this._normalizeRenderPresentation(schemaNode.render(payload)),valueBundle};
+		let content;
+		if (schemaNode.input?.type==="select") {
 			if (typeof schemaNode.input.options==="function"&&!schemaNode.input.boolean)
-				displayVal="";
+				content="";
 			else {
-				const normalizedValue=this._getSelectValue(value);
+				const normalizedValue=this._getSelectValue(valueBundle.value);
 				const option=this._getSelectOptions(schemaNode.input,schemaNode,dataObj,mainIndex,instanceNode)
 					.find(candidate=>schemaNode.input.boolean
 						?this._getSelectValue(candidate)===normalizedValue
 						:this._getSelectValue(candidate)==normalizedValue);
-				displayVal=option?.text??value??"";
+				content=option?.text??valueBundle.value??"";
 			}
 		} else
-			displayVal=value;
+			content=valueBundle.value;
+		return {content,refreshAt:null,classNames:[],...valueBundle};
+	}
+
+	_getDisplayValue(schemaNode,dataObj,mainIndex,stripHtml=false,instanceNode=null) {
+		if (!schemaNode)
+			return;
+		const displayVal=this._getCellPresentation(schemaNode,dataObj,mainIndex,instanceNode).content;
 		if (stripHtml)
 			return this._clipboardPrimitiveRepresentation(displayVal,
 				schemaNode.type==="group"?schemaNode.closedRenderHtml===true:schemaNode.html===true).text;
@@ -7023,7 +7240,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_hasPendingCommitHandoff() {
-		return !!(this._pendingGroupTransaction||this._pendingDataCommit);
+		return !!(this._pendingGroupTransaction||this._pendingDataCommit||this._pendingStandaloneCommit);
 	}
 
 	_notifyTransactionStateChange() {
@@ -7036,6 +7253,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this.rootEl.dispatchEvent(new CustomEvent("transactionstatechange",{
 			detail:state,
 		}));
+		if (!state.open&&!state.pending&&!this._inEditMode&&!this._inReadOnlyMode)
+			this._flushDeferredDataChanges();
 	}
 
 	getOpenTransactionState() {
@@ -7043,7 +7262,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const mainIndex=boundary?this._getInstanceMainIndex(boundary):this._mainRowIndex;
 		return Object.freeze({
 			open:!!this._editTransaction?.stack?.length,
-			pending:!!(this._pendingGroupTransaction||this._pendingDataCommit),
+			pending:!!(this._pendingGroupTransaction||this._pendingDataCommit||this._pendingStandaloneCommit),
 			boundary,
 			mainIndex:Number.isInteger(mainIndex)?mainIndex:null,
 			rowData:Number.isInteger(mainIndex)?this._filteredData?.[mainIndex]??null:null,
@@ -7395,6 +7614,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_stageGroupClose(groupObject) {
 		groupObject._commitStagedClosed=true;
+		this._reanchorActiveDetailsCellForGroupClose(groupObject);
 		this._transitionGroupPresentation(groupObject,()=>{
 			this._refreshClosedRenderPresentations(groupObject,true);
 			this._setGroupPresentationState(groupObject,"closed");
@@ -7450,7 +7670,25 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					transaction:prepared.transaction}}));
 			}
 		}
-		this.refreshView("commit");
+		const changedByRow=new Map;
+		for (const intent of prepared.intents) {
+			const rowData=intent.payload?.rowData;
+			if (!rowData||!this._sourceData.includes(rowData))
+				continue;
+			let paths=changedByRow.get(rowData);
+			if (!paths)
+				changedByRow.set(rowData,paths=new Set);
+			for (const key of Object.keys(intent.payload?.changes??{}))
+				paths.add(key);
+			if (intent.payload?.mode!=="update"&&!Object.keys(intent.payload?.changes??{}).length)
+				paths.add("*");
+			if (intent.repeatedSchemaNode?.dataKey)
+				paths.add(intent.repeatedSchemaNode.dataKey);
+			else if (intent.schemaNode?.dataKey)
+				paths.add(intent.schemaNode.dataKey);
+		}
+		for (const [rowData,paths] of changedByRow)
+			this.notifyDataChange(rowData,[...paths],{reason:"commit",repaint:false});
 	}
 
 	_captureGroupContinuation(target) {
@@ -7745,6 +7983,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			delete groupObject._dirtyFields;
 			return;
 		}
+		this._reanchorActiveDetailsCellForGroupClose(groupObject);
 		this._transitionGroupPresentation(groupObject,()=>{
 			this._setGroupPresentationState(groupObject,"closed");
 			if (groupObject.updateRenderOnClose) {//if group is flagged for having its closed-render updated on close
@@ -7940,9 +8179,30 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			||groupObject?.presentationState==="creator-empty";
 	}
 
+	_isInstanceDescendantOf(instanceNode,ancestor) {
+		for (let node=instanceNode;node;node=node.parent)
+			if (node===ancestor)
+				return true;
+		return false;
+	}
+
+	_reanchorActiveDetailsCellForGroupClose(groupObject) {
+		if (!this._isInstanceDescendantOf(this._activeDetailsCell,groupObject)
+			||this._activeDetailsCell===groupObject)
+			return;
+		this._activeDetailsCell=groupObject;
+		this._activeSchemaNode=groupObject.schemaNode;
+		this._cellCursorDataObj=groupObject.dataObj;
+		this._selectedCellVal=this._getTargetVal(true,groupObject.schemaNode,groupObject,groupObject.dataObj);
+		this._setSelectedCellElement(groupObject.selEl??groupObject.el);
+	}
+
 	_setGroupPresentationState(groupObject,state) {
 		if (!groupObject)
 			return false;
+		if (state==="closed"&&this._isInstanceDescendantOf(this._activeDetailsCell,groupObject)
+			&&this._activeDetailsCell!==groupObject)
+			throw new Error("Cannot close a group while its active details cell is a descendant.");
 		groupObject.presentationState=state;
 		groupObject.el?.classList.toggle("open",state==="open");
 		groupObject.el?.classList.toggle("creator-empty",state==="creator-empty");
@@ -9849,6 +10109,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		//if (this._activeSchemaNode.input.type==="textarea")//also needed for file..
 		this._adjustCursorPosSize(this._selectedCell);
 		this._highlightOnFocus=false;
+		this._flushDeferredDataChanges();
 		return true;
 	}
 
@@ -10353,6 +10614,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_adjustCursorPosSize(el,onlyPos=false) {
 		if (this._activeDetailsCell&&el===this._selectedCell)
 			el=this._getCursorGeometryEl(this._activeDetailsCell);
+		if (this._selectedCellState?.kind==="disabled"
+			&&this._cellElementRepresentsLogicalCursor(this._selectedCell,this._activeDetailsCell)) {
+			this._cellCursor.style.display="none";
+			return;
+		}
 		if (!el)
 			return;
 		const elPos=this._getElPos(el);
@@ -10560,7 +10826,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const sortCols=this._sortingCols;
 		if (!sortCols.length)
 			return false;
-		this._clearCellRange();
+		const previousFiltered=[...(this._filteredData??[])];
 		const mainIndexMap=new WeakMap();
 		for (let i=0;i<this._viewData.length;i++)
 			mainIndexMap.set(this._viewData[i],i);
@@ -10593,6 +10859,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._viewData.sort(compare);
 		if (this._filteredData!==this._viewData)
 			this._filteredData.sort(compare);
+		if (previousFiltered.length!==this._filteredData.length
+			||previousFiltered.some((row,index)=>row!==this._filteredData[index]))
+			this._clearCellRange();
 		if (this._mainRowIndex>=0)//if there is a selected row
 			this._mainRowIndex=this._filteredData.indexOf(this._cellCursorDataObj);//then find it's new pos
 		return true;
@@ -11551,8 +11820,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * The row needs to already have the right amount of td's.
 	 * @param {HTMLTableRowElement} tr The tr-element whose cells that should be updated*/
 	_updateRowValues(tr,mainIndex) {
-		if (this._menuState?.cell?.parentElement===tr)
-			this._closeMenu();
+		if (this._menuState?.cell?.parentElement===tr) {
+			const menuColumnIndex=this._colSchemaNodes.indexOf(this._menuState.schemaNode);
+			const sameAnchor=this._menuState.rowData===this._filteredData[mainIndex]
+				&&menuColumnIndex>=0&&tr.cells[menuColumnIndex]===this._menuState.cell;
+			if (!sameAnchor)
+				this._closeMenu();
+		}
 		this._detachMainCursorFromRow(tr,mainIndex);
 		for (const cell of tr.querySelectorAll(":scope>td.tablance-active-cell"))
 			cell.classList.remove("tablance-active-cell");
@@ -11910,6 +12184,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_updateCell(schemaNode,el,selEl,scopedData,mainIndex,instanceNode=null) {
 		const valueBundle=this._getCellValueBundle(schemaNode,scopedData,mainIndex,instanceNode);
+		const presentation=schemaNode.input?.type==="button"
+			?{content:null,refreshAt:null,classNames:[]}
+			:this._getCellPresentation(schemaNode,scopedData,mainIndex,instanceNode,Date.now());
 		const statePayload=this._makeCallbackPayload(instanceNode,valueBundle,
 			{schemaNode,mainIndex,rowData:scopedData});
 		const cellState=this._resolveCellState(schemaNode,statePayload);
@@ -11921,7 +12198,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._generateButton(schemaNode,mainIndex,el,scopedData,instanceNode);
 		} else if (schemaNode.input?.type==="select"&&schemaNode.input.boolean&&!schemaNode.render) {
 			this._renderBooleanSelectValue(el,this._getSelectValue(valueBundle.value),
-				this._getDisplayValue(schemaNode,scopedData,mainIndex,false,instanceNode));
+				presentation.content);
 		} else {
 			if (!schemaNode.render&&schemaNode.input?.type==="select"
 				&&typeof schemaNode.input.options==="function") {
@@ -11934,7 +12211,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 						"`allowDynamicOptionsWithoutRender: true` on the input configuration.");
 					console.log(schemaNode);
 			}
-			const newCellContent=this._getDisplayValue(schemaNode,scopedData,mainIndex,false,instanceNode);
+			const newCellContent=presentation.content;
 			if (schemaNode.html)
 				el.innerHTML=newCellContent??"";
 			else
@@ -11955,7 +12232,99 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (cssAddition)//guard against undefined/null in case function returns that
 				(selEl??el).classList.add(...(Array.isArray(cssAddition)?cssAddition:cssAddition.split(" ")));
 		}
+		const anchor=selEl??el;
+		if (presentation.classNames.length)
+			anchor.classList.add(...presentation.classNames);
+		// Repainting presentation resets the anchor's base classes. Reapply structural details state so a
+		// descendant behind a closed ancestor cannot regain separators or other open-only affordances.
+		if (instanceNode)
+			this._applyDetailsAffordanceState(instanceNode);
+		this._scheduleTimedCellRefresh({anchor,contentEl:el,schemaNode,rowData:scopedData,
+			mainIndex:Number(mainIndex),instanceNode,presentation});
 		return cellState;
+	}
+
+	_clearTimedCellRefresh(anchor) {
+		if (!anchor)
+			return;
+		this._timedCellRefreshes.delete(anchor);
+		this._timedCellRefreshGeneration.set(anchor,
+			Number(this._timedCellRefreshGeneration.get(anchor)??0)+1);
+	}
+
+	_scheduleTimedCellRefresh({anchor,contentEl,schemaNode,rowData,mainIndex,instanceNode,presentation}) {
+		this._clearTimedCellRefresh(anchor);
+		const refreshAt=presentation.refreshAt;
+		if (refreshAt==null||refreshAt<=Date.now()||!anchor?.isConnected)
+			return this._armTimedCellRefreshTimer();
+		const generation=this._timedCellRefreshGeneration.get(anchor);
+		this._timedCellRefreshes.set(anchor,{anchor,contentEl,schemaNode,rowData,mainIndex,instanceNode,
+			refreshAt,generation,presentationClasses:new Set(presentation.classNames)});
+		this._armTimedCellRefreshTimer();
+	}
+
+	_armTimedCellRefreshTimer() {
+		if (this._timedCellRefreshTimer!=null) {
+			clearTimeout(this._timedCellRefreshTimer);
+			this._timedCellRefreshTimer=null;
+		}
+		for (const [anchor,entry] of this._timedCellRefreshes)
+			if (!anchor.isConnected
+				||this._timedCellRefreshGeneration.get(anchor)!==entry.generation)
+				this._timedCellRefreshes.delete(anchor);
+		const next=Math.min(...[...this._timedCellRefreshes.values()].map(entry=>entry.refreshAt));
+		if (!Number.isFinite(next))
+			return;
+		this._timedCellRefreshTimer=setTimeout(()=>this._runTimedCellRefreshes(),
+			Math.min(0x7fffffff,Math.max(0,next-Date.now())));
+	}
+
+	_timedCellIdentityMatches(entry) {
+		if (!entry.anchor.isConnected
+			||this._timedCellRefreshGeneration.get(entry.anchor)!==entry.generation)
+			return false;
+		if (entry.instanceNode)
+			return entry.instanceNode.el?.isConnected&&entry.instanceNode.dataObj===entry.rowData;
+		const row=entry.anchor.closest("tr[data-data-row-index]");
+		const index=Number(row?.dataset.dataRowIndex);
+		return Number.isInteger(index)&&this._filteredData[index]===entry.rowData
+			&&this._colSchemaNodes[entry.anchor.cellIndex]===entry.schemaNode;
+	}
+
+	_runTimedCellRefreshes() {
+		this._timedCellRefreshTimer=null;
+		const now=Date.now();
+		for (const entry of [...this._timedCellRefreshes.values()]) {
+			if (entry.refreshAt>now)
+				continue;
+			this._timedCellRefreshes.delete(entry.anchor);
+			if (!this._timedCellIdentityMatches(entry))
+				continue;
+			if (this._inEditMode&&entry.anchor===this._selectedCell)
+				continue;
+			const mainIndex=this._filteredData.indexOf(entry.rowData);
+			if (mainIndex<0)
+				continue;
+			const presentation=this._getCellPresentation(entry.schemaNode,entry.rowData,mainIndex,
+				entry.instanceNode,now);
+			if (entry.schemaNode.html)
+				entry.contentEl.innerHTML=presentation.content??"";
+			else
+				entry.contentEl.innerText=presentation.content??"";
+			for (const className of entry.presentationClasses)
+				entry.anchor.classList.remove(className);
+			if (presentation.classNames.length)
+				entry.anchor.classList.add(...presentation.classNames);
+			this._scheduleTimedCellRefresh({...entry,mainIndex,presentation});
+		}
+		this._armTimedCellRefreshTimer();
+	}
+
+	_clearAllTimedCellRefreshes() {
+		if (this._timedCellRefreshTimer!=null)
+			clearTimeout(this._timedCellRefreshTimer);
+		this._timedCellRefreshTimer=null;
+		this._timedCellRefreshes.clear();
 	}
 
 	/**Updates the html-element of a main-table-cell
