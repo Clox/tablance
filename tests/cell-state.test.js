@@ -6521,8 +6521,9 @@ try {
 		&&Math.abs(populatedInsets[6]-9)<.1,
 		`an open ungrouped repeated collection aligns its first entry and creator within balanced outer insets (${populatedInsets})`);
 	assert(noCreatorRepeatedGroup.presentationState==="closed"
-		&&!noCreatorRepeatedGroup.el.classList.contains("open"),
-		"an empty repeated group without a creator remains unchanged and closed");
+		&&!noCreatorRepeatedGroup.el.classList.contains("open")&&!noCreatorRepeatedGroup.present
+		&&!noCreatorRepeatedGroup.outerContainerEl.isConnected,
+		"an empty repeated group without a creator remains logical but has no visual row");
 
 	beforeCreatorEmpty.select();
 	key(creatorEmptyTable.rootEl,"Tab","Tab");
@@ -6596,10 +6597,10 @@ try {
 	assert(creatorEmptyGroup.presentationState==="creator-empty"
 		&&!creatorEmptyGroup.el.classList.contains("open")&&creator.el.getClientRects().length>0,
 		"leaving an empty repeated group does not close its persistent creator-empty presentation");
-	for (const expected of [noCreatorRepeatedGroup,populatedRepeatedGroup,creator]) {
+	for (const expected of [populatedRepeatedGroup,creator]) {
 		key(creatorEmptyTable.rootEl,"Tab","Tab",{shiftKey:true});
 		assert(creatorEmptyTable._activeDetailsCell===expected,
-			"reverse navigation follows ordinary closed groups before the empty creator");
+			"reverse navigation skips absent groups and follows present closed groups before the empty creator");
 	}
 	assert(creatorEmptyTable._activeDetailsCell===creator
 		&&creatorEmptyGroup.presentationState==="creator-empty",
@@ -7052,7 +7053,7 @@ try {
 	initializedEntry.dataObj.scope="current";
 	initializedTable.refreshSubtree(initializedEntry);
 	initializedTable.refreshSubtree(initializedEntry);
-	assert(scopeField.hidden&&scopeField.outerContainerEl.style.display==="none"
+	assert(scopeField.hidden&&!scopeField.outerContainerEl.isConnected
 		&&initializedEntry.el.querySelector("tr.group-render").textContent==="appointment:current",
 		"refreshSubtree recursively refreshes visibility and closed group rendering after cross-entry changes");
 	assert(initializedEntry.el.querySelectorAll(".delete-controls button").length===3
@@ -8005,6 +8006,428 @@ try {
 	assert(invalidNavigationResult.status==="blocked"&&invalidNavigationResult.reason==="validation"
 		&&invalidNavigationTable.needsExitProtection()&&invalidNavigationRoot._openSnapshot,
 		"validation failure blocks programmatic navigation without persistence or snapshot cleanup");
+
+	const presenceValueTable=new Tablance(host(),{
+		main:{columns:[{type:"expand"},{dataKey:"name"}]},
+		details:{type:"list",entries:[
+			{dataKey:"nil",title:"Null"},{dataKey:"missing",title:"Undefined"},
+			{dataKey:"blank",title:"Blank"},{dataKey:"emptyArray",title:"Empty array"},
+			{dataKey:"emptyObject",title:"Empty object"},{dataKey:"zero",title:"Zero"},
+			{dataKey:"no",title:"False"},{dataKey:"rendered",title:"Rendered",render:()=>"Explicit"},
+		]}
+	},true,true,{searchbar:false,ordering:false});
+	const presenceValueRow={name:"Values",nil:null,blank:" \n ",emptyArray:[],emptyObject:{},zero:0,no:false};
+	presenceValueTable.setData([presenceValueRow]);
+	await tick();
+	const presenceValueRoot=presenceValueTable.expandRow(0);
+	const connectedPresenceValueKeys=presenceValueRoot.children.filter(node=>node.outerContainerEl.isConnected)
+		.map(node=>node.schemaNode.dataKey).join(",");
+	assert(presenceValueRoot.children.length===8&&connectedPresenceValueKeys==="zero,no,rendered",
+		"presence keeps the complete logical list while empty values create no rows, and 0, false and render do");
+	assert(presenceValueRoot.children[0].select()===false
+		&&presenceValueTable._activeDetailsCell!==presenceValueRoot.children[0],
+		"a logically materialized but absent details field cannot become a navigation or selection target");
+	const updatePresenceNode=presenceValueRoot.children[2];
+	presenceValueTable.updateData(presenceValueRow,"blank","later");
+	assert(updatePresenceNode.present&&updatePresenceNode.outerContainerEl.isConnected,
+		"updateData incrementally connects the existing logical instance when its value becomes present");
+	presenceValueTable.updateData(presenceValueRow,"blank","   ");
+	assert(!updatePresenceNode.present&&!updatePresenceNode.outerContainerEl.isConnected,
+		"updateData incrementally removes only the visual row when the value becomes absent again");
+
+	const structuredPresenceTable=new Tablance(host(),{
+		details:{type:"list",entries:[
+			{dataKey:"suppressed",readOnly:true,render:()=>({content:"Decorative",presenceValue:null,
+				placeholder:"Suppressed placeholder"})},
+			{dataKey:"zero",readOnly:true,render:()=>({content:"Zero",presenceValue:0})},
+			{dataKey:"no",readOnly:true,render:()=>({content:"False",presenceValue:false})},
+			{dataKey:"legacy",readOnly:true,render:()=>"Legacy render"},
+			{type:"group",nodeId:"placeholderOnlyGroup",closedRender:()=>({content:null,
+				presenceValue:null,placeholder:"Group placeholder"}),entries:[]},
+		]}
+	},true,true,{searchbar:false});
+	structuredPresenceTable.setData([{suppressed:"stored",zero:null,no:null,legacy:null}]);
+	const structuredPresenceRoot=structuredPresenceTable._openDetailsPanes[0];
+	assert(!structuredPresenceRoot.children[0].present
+		&&structuredPresenceRoot.children[1].present&&structuredPresenceRoot.children[2].present
+		&&structuredPresenceRoot.children[3].present&&!structuredPresenceRoot.children[4].present,
+		"explicit presenceValue overrides raw/content presence while 0 and false remain values and legacy renderers keep their semantics");
+	assert(!structuredPresenceRoot.children[0].outerContainerEl.isConnected
+		&&!structuredPresenceRoot.children[4].outerContainerEl.isConnected
+		&&!structuredPresenceRoot.children[4].el.querySelector(".tablance-presentation-placeholder"),
+		"a placeholder creates neither its own presence nor ancestor presence");
+
+	const emptyClosedRenderTable=new Tablance(host(),{
+		details:{type:"list",entries:[{type:"group",nodeId:"emptyClosedRender",
+			closedRender:()=>({content:" \n ",presenceValue:null}),entries:[
+				{dataKey:"value",readOnly:true},
+			]}]}
+	},true,true,{searchbar:false});
+	emptyClosedRenderTable.setData([{value:"Keeps the group present"}]);
+	const emptyClosedRenderGroup=emptyClosedRenderTable.getDetailCell(0,"emptyClosedRender");
+	assert(emptyClosedRenderGroup.present&&!emptyClosedRenderGroup.el.classList.contains("closed-render")
+		&&!emptyClosedRenderGroup.el.querySelector("tr.group-render"),
+		"closedRender without normalized content leaves no empty group-render or closed-render shell");
+
+	const placeholderRefreshTable=new Tablance(host(),{
+		details:{type:"list",entries:[
+			{dataKey:"source",nodeId:"placeholderSource",input:{type:"text"}},
+			{dataKey:"computed",nodeId:"placeholderComputed",dependsOn:"placeholderSource",
+				input:{type:"text"},render:({dependedValue})=>({
+					content:dependedValue?`Computed ${dependedValue}`:null,
+					presenceValue:dependedValue||null,placeholder:"Waiting for source",
+				})},
+		]}
+	},true,true,{searchbar:false});
+	const placeholderRefreshRow={source:"",computed:null};
+	placeholderRefreshTable.setData([placeholderRefreshRow]);
+	const placeholderSource=placeholderRefreshTable.getDetailCell(0,"placeholderSource");
+	const placeholderComputed=placeholderRefreshTable.getDetailCell(0,"placeholderComputed");
+	assert(placeholderComputed.present&&placeholderComputed.el.textContent==="Waiting for source"
+		&&placeholderComputed.el.classList.contains("tablance-presentation-placeholder"),
+		"an editable present field displays its placeholder when actual content is absent");
+	placeholderRefreshRow.source="ready";
+	placeholderRefreshTable._updateDependentCells(placeholderSource.schemaNode,placeholderSource);
+	assert(placeholderComputed.el.textContent==="Computed ready"
+		&&!placeholderComputed.el.classList.contains("tablance-presentation-placeholder"),
+		"dependency refresh replaces a placeholder with actual content");
+	placeholderRefreshRow.source="";
+	placeholderRefreshTable._updateDependentCells(placeholderSource.schemaNode,placeholderSource);
+	assert(placeholderComputed.el.textContent==="Waiting for source"
+		&&placeholderComputed.el.classList.contains("tablance-presentation-placeholder"),
+		"dependency refresh restores the placeholder without changing field or ancestor presence");
+
+	const namePresenceSchema=()=>({
+		trash:{isTrashed:({rowData})=>rowData.removed,
+			getChanges:({operation})=>({removed:operation==="trash"})},
+		details:{type:"list",entries:[{type:"group",nodeId:"presenceName",dataPath:"name",
+			closedRenderHtml:true,closedRender:name=>{
+				const fullName=[name.first,name.last].filter(Boolean).join(" ");
+				return {content:fullName?`<strong>${fullName}</strong>`:null,
+					presenceValue:fullName||null,placeholder:"Enter name"};
+			},entries:[
+				{dataKey:"first",input:{type:"text"}},
+				{dataKey:"last",input:{type:"text"}},
+				{dataKey:"preferred",nodeId:"presencePreferred",input:{type:"text"},render:({value})=>({
+					content:value,presenceValue:value??null,placeholder:"Not specified",
+				})},
+			]}]}
+	});
+	const editableNameTable=new Tablance(host(),namePresenceSchema(),true,true,{searchbar:false});
+	editableNameTable.setData([{removed:false,name:{first:"",last:"",preferred:null}}]);
+	const editableNameGroup=editableNameTable.getDetailCell(0,"presenceName");
+	const editablePreferred=editableNameTable.getDetailCell(0,"presencePreferred");
+	assert(editableNameGroup.present&&editableNameGroup.outerContainerEl.isConnected
+		&&editableNameGroup.el.querySelector(".group-closed-content")?.textContent==="Enter name"
+		&&editableNameGroup.el.querySelector(".tablance-presentation-placeholder"),
+		"an empty editable group stays present and shows its closed placeholder");
+	const namePlaceholder=editableNameGroup.el.querySelector(".tablance-presentation-placeholder");
+	const placeholderStyle=getComputedStyle(namePlaceholder);
+	const mutedColorProbe=editableNameTable.rootEl.appendChild(document.createElement("span"));
+	mutedColorProbe.style.color="var(--tablance-muted-color)";
+	const mutedColor=getComputedStyle(mutedColorProbe).color;
+	mutedColorProbe.remove();
+	assert(placeholderStyle.color===mutedColor
+		&&placeholderStyle.fontStyle==="italic"
+		&&!namePlaceholder.closest(".repeat-insertion"),
+		"the neutral placeholder style shares the muted token without creator structure or semantics");
+	assert(editablePreferred.present&&editablePreferred.el.textContent==="Not specified"
+		&&editablePreferred.el.classList.contains("tablance-presentation-placeholder"),
+		"an editable preferred-name field shows its placeholder without treating it as information");
+	editableNameGroup.dataObj.first="Ada";
+	editableNameGroup.dataObj.preferred="Ada";
+	editableNameTable.refreshSubtree(editableNameGroup);
+	assert(editableNameGroup.el.querySelector(".group-closed-content")?.innerHTML==="<strong>Ada</strong>"
+		&&!editableNameGroup.el.querySelector(".group-closed-content")
+			?.classList.contains("tablance-presentation-placeholder")
+		&&editablePreferred.el.textContent==="Ada"
+		&&!editablePreferred.el.classList.contains("tablance-presentation-placeholder"),
+		"filled group and preferred-name values replace placeholders with actual presentation");
+
+	const emptyTrashNameTable=new Tablance(host(),namePresenceSchema(),true,true,{searchbar:false});
+	emptyTrashNameTable._lifecycleMode="trash";
+	emptyTrashNameTable.setData([{removed:true,name:{first:"",last:"",preferred:null}}]);
+	const emptyTrashNameRoot=emptyTrashNameTable._openDetailsPanes[0];
+	const emptyTrashNameGroup=emptyTrashNameRoot.children[0];
+	assert(!emptyTrashNameGroup.present&&!emptyTrashNameGroup.outerContainerEl.isConnected
+		&&!emptyTrashNameGroup.el.querySelector("tr.group-render")
+		&&!emptyTrashNameGroup.el.classList.contains("closed-render"),
+		"an empty immutable name group disappears without rendering its placeholder or an empty shell");
+
+	const filledTrashNameTable=new Tablance(host(),namePresenceSchema(),true,true,{searchbar:false});
+	filledTrashNameTable._lifecycleMode="trash";
+	filledTrashNameTable.setData([{removed:true,name:{first:"Ada",last:"Lovelace",preferred:null}}]);
+	const filledTrashNameGroup=filledTrashNameTable.getDetailCell(0,"presenceName");
+	const missingTrashPreferred=filledTrashNameTable.getDetailCell(0,"presencePreferred");
+	assert(filledTrashNameGroup.present&&filledTrashNameGroup.outerContainerEl.isConnected
+		&&filledTrashNameGroup.el.querySelector(".group-closed-content")?.textContent==="Ada Lovelace"
+		&&!missingTrashPreferred.present&&!missingTrashPreferred.outerContainerEl.isConnected,
+		"an immutable filled name group remains while a missing preferred name cannot create its own row");
+
+	const presenceLifecycleTable=new Tablance(host(),{
+		trash:{isTrashed:({rowData})=>rowData.removed,
+			getChanges:({operation})=>({removed:operation==="trash"})},
+		main:{columns:[{type:"expand"},{dataKey:"name"}]},
+		details:{type:"list",entries:[
+			{type:"group",nodeId:"emptyEditableGroup",dataPath:"group",entries:[
+				{dataKey:"value",nodeId:"emptyEditableValue",input:{type:"text"}},
+			]},
+			{type:"repeated",nodeId:"emptyRepeated",dataKey:"items",create:true,
+				entry:{type:"group",entries:[{dataKey:"value"}]}},
+		]}
+	},true,true,{searchbar:false,ordering:false});
+	const activePresenceRow={name:"Active",group:{value:""},items:[],removed:false};
+	const trashPresenceRow={name:"Trash",group:{value:""},items:[{}],removed:true};
+	presenceLifecycleTable.setData([activePresenceRow,trashPresenceRow]);
+	await tick();
+	const activePresenceRoot=presenceLifecycleTable.expandRow(0);
+	assert(activePresenceRoot.present&&activePresenceRoot.children[0].present
+		&&activePresenceRoot.children[1].present
+		&&activePresenceRoot.children[1].children.some(node=>node.schemaNode.creator),
+		"empty editable groups and repeated creators remain present in ordinary edit mode");
+	presenceLifecycleTable.setLifecycleMode("trash");
+	await tick();
+	const trashExpandCell=presenceLifecycleTable._mainTbody.rows[0].cells[0];
+	assert(presenceLifecycleTable._getCellState(trashExpandCell).kind==="disabled"
+		&&!presenceLifecycleTable.expandRow(0),
+		"immutable empty groups and repeated entries containing only an empty object disappear and expose no empty details shell");
+
+	const presenceLayoutTable=new Tablance(host(),{
+		details:{type:"list",entries:[
+			{type:"lineup",nodeId:"presenceLineup",entries:[
+				{dataKey:"lineEmpty"},{dataKey:"lineValue"},
+			]},
+			{type:"grid",nodeId:"presenceGrid",columns:2,entries:[
+				{dataKey:"gridEmpty"},{dataKey:"gridValue"},
+			]},
+		]}
+	},true,true,{searchbar:false});
+	presenceLayoutTable.setData([{lineEmpty:"",lineValue:0,gridEmpty:null,gridValue:false}]);
+	const presenceLayoutRoot=presenceLayoutTable._openDetailsPanes[0];
+	const presenceLineup=presenceLayoutRoot.children[0];
+	const presenceGrid=presenceLayoutRoot.children[1];
+	assert(presenceLineup.children.length===2&&presenceLineup.children[0].present===false
+		&&!presenceLineup.children[0].outerContainerEl.isConnected&&presenceLineup.children[1].outerContainerEl.isConnected
+		&&presenceGrid.children.length===2&&presenceGrid.children[0].present===false
+		&&!presenceGrid.children[0].outerContainerEl.isConnected&&presenceGrid.children[1].outerContainerEl.isConnected
+		&&presenceGrid.gridRows.flat().filter(Boolean).every(node=>node===presenceGrid.children[1]),
+		"list, lineup and grid retain absent logical children while laying out only present children");
+
+	const presenceNavigationTable=new Tablance(host(),{
+		main:{columns:[{dataKey:"name"}]},
+		details:{type:"list",entries:[
+			{dataKey:"listStart",nodeId:"presenceNavListStart"},
+			{dataKey:"listAbsentOne",nodeId:"presenceNavListAbsentOne"},
+			{dataKey:"listAbsentTwo"},
+			{dataKey:"listEnd",nodeId:"presenceNavListEnd"},
+			{type:"lineup",nodeId:"presenceNavLineup",entries:[
+				{dataKey:"lineStart"},{dataKey:"lineAbsentOne"},{dataKey:"lineAbsentTwo"},{dataKey:"lineEnd"},
+			]},
+			{type:"grid",nodeId:"presenceNavGrid",columns:1,entries:[
+				{dataKey:"gridStart"},{dataKey:"gridAbsentOne"},{dataKey:"gridAbsentTwo"},{dataKey:"gridEnd"},
+			]},
+			{type:"group",nodeId:"presenceNavGroup",dataPath:"group",entries:[
+				{dataKey:"start"},{dataKey:"absentOne"},{dataKey:"absentTwo"},{dataKey:"end"},
+			]},
+			{dataKey:"beforeRepeated",nodeId:"presenceNavBeforeRepeated"},
+			{type:"repeated",nodeId:"presenceNavRepeated",dataKey:"items",entry:{type:"group",entries:[
+				{dataKey:"value"},
+			]}},
+			{dataKey:"afterRepeated",nodeId:"presenceNavAfterRepeated"},
+		]}
+	},true,true,{searchbar:false});
+	const presenceNavigationRow={name:"Presence navigation",listStart:"List start",listAbsentOne:null,listAbsentTwo:"",listEnd:"List end",
+		lineStart:"Line start",lineAbsentOne:null,lineAbsentTwo:"",lineEnd:"Line end",
+		gridStart:"Grid start",gridAbsentOne:null,gridAbsentTwo:"",gridEnd:"Grid end",
+		group:{start:"Group start",absentOne:null,absentTwo:"",end:"Group end"},
+		beforeRepeated:"Before repeated",items:[{}, {}, {value:"Repeated value"}],afterRepeated:"After repeated"};
+	presenceNavigationTable.setData([presenceNavigationRow]);
+	await tick();
+	const presenceNavigationRoot=presenceNavigationTable.expandRow(0);
+	const presenceNavListStart=presenceNavigationTable.getDetailCell(0,"presenceNavListStart");
+	const presenceNavListAbsentOne=presenceNavigationTable.getDetailCell(0,"presenceNavListAbsentOne");
+	const presenceNavListEnd=presenceNavigationTable.getDetailCell(0,"presenceNavListEnd");
+	presenceNavListStart.select();
+	key(presenceNavigationTable.rootEl,"ArrowDown","ArrowDown");
+	assert(presenceNavigationTable._activeDetailsCell===presenceNavListEnd,
+		"forward list navigation skips any number of present:false siblings");
+	key(presenceNavigationTable.rootEl,"ArrowUp","ArrowUp");
+	assert(presenceNavigationTable._activeDetailsCell===presenceNavListStart,
+		"reverse list navigation skips any number of present:false siblings");
+	key(presenceNavigationTable.rootEl,"Tab","Tab");
+	assert(presenceNavigationTable._activeDetailsCell===presenceNavListEnd,
+		"Tab navigation skips any number of present:false list siblings");
+	key(presenceNavigationTable.rootEl,"Tab","Tab",{shiftKey:true});
+	assert(presenceNavigationTable._activeDetailsCell===presenceNavListStart,
+		"Shift+Tab navigation skips any number of present:false list siblings");
+
+	const presenceNavLineup=presenceNavigationTable.getDetailCell(0,"presenceNavLineup");
+	const [presenceNavLineStart,,,presenceNavLineEnd]=presenceNavLineup.children;
+	presenceNavLineStart.select();
+	key(presenceNavigationTable.rootEl,"ArrowRight","ArrowRight");
+	assert(presenceNavigationTable._activeDetailsCell===presenceNavLineEnd,
+		"forward lineup navigation skips detached present:false children");
+	key(presenceNavigationTable.rootEl,"ArrowLeft","ArrowLeft");
+	assert(presenceNavigationTable._activeDetailsCell===presenceNavLineStart,
+		"reverse lineup navigation skips detached present:false children");
+
+	const presenceNavGrid=presenceNavigationTable.getDetailCell(0,"presenceNavGrid");
+	const [presenceNavGridStart,,,presenceNavGridEnd]=presenceNavGrid.children;
+	presenceNavGridStart.select();
+	key(presenceNavigationTable.rootEl,"ArrowDown","ArrowDown");
+	assert(presenceNavigationTable._activeDetailsCell===presenceNavGridEnd,
+		"forward Grid navigation skips rows containing only present:false cells");
+	key(presenceNavigationTable.rootEl,"ArrowUp","ArrowUp");
+	assert(presenceNavigationTable._activeDetailsCell===presenceNavGridStart,
+		"reverse Grid navigation skips rows containing only present:false cells");
+
+	const presenceNavGroup=presenceNavigationTable.getDetailCell(0,"presenceNavGroup");
+	presenceNavigationTable._openGroup(presenceNavGroup);
+	const [presenceNavGroupStart,,,presenceNavGroupEnd]=presenceNavGroup.children;
+	presenceNavGroupStart.select();
+	key(presenceNavigationTable.rootEl,"ArrowDown","ArrowDown");
+	assert(presenceNavigationTable._activeDetailsCell===presenceNavGroupEnd,
+		"open-group navigation skips absent descendants without removing them from the logical tree");
+	key(presenceNavigationTable.rootEl,"ArrowUp","ArrowUp");
+	assert(presenceNavigationTable._activeDetailsCell===presenceNavGroupStart,
+		"open-group reverse navigation skips absent descendants");
+
+	const presenceNavBeforeRepeated=presenceNavigationTable.getDetailCell(0,"presenceNavBeforeRepeated");
+	const presenceNavRepeated=presenceNavigationTable.getDetailCell(0,"presenceNavRepeated");
+	const presenceNavAfterRepeated=presenceNavigationTable.getDetailCell(0,"presenceNavAfterRepeated");
+	const presenceNavRepeatedTarget=presenceNavRepeated.children[2];
+	assert(presenceNavRepeated.children.length===3&&!presenceNavRepeated.children[0].present
+		&&!presenceNavRepeated.children[1].present&&presenceNavRepeatedTarget.present,
+		"repeated reconciliation retains absent entry instances alongside a present entry");
+	presenceNavBeforeRepeated.select();
+	key(presenceNavigationTable.rootEl,"ArrowDown","ArrowDown");
+	assert(presenceNavigationTable._activeDetailsCell===presenceNavRepeatedTarget,
+		"navigation enters the first present repeated entry after absent entries");
+	presenceNavAfterRepeated.select();
+	key(presenceNavigationTable.rootEl,"ArrowUp","ArrowUp");
+	assert(presenceNavigationTable._activeDetailsCell===presenceNavRepeatedTarget,
+		"reverse navigation enters the last present repeated entry before absent entries");
+
+	presenceNavigationTable.updateData(presenceNavigationRow,"listAbsentOne","Now present");
+	assert(presenceNavListAbsentOne.present&&presenceNavListAbsentOne.outerContainerEl.isConnected,
+		"an incrementally restored node rejoins the visual tree");
+	presenceNavListStart.select();
+	key(presenceNavigationTable.rootEl,"ArrowDown","ArrowDown");
+	assert(presenceNavigationTable._activeDetailsCell===presenceNavListAbsentOne,
+		"an incrementally restored node rejoins ordinary navigation order");
+	assert(presenceNavigationRoot.children.length===10,
+		"presence-aware navigation leaves the complete root details instance tree intact");
+
+	const presenceRootNavigationTable=new Tablance(host(),{
+		details:{type:"list",entries:[
+			{dataKey:"absentTop",nodeId:"presenceRootAbsentTop"},
+			{dataKey:"absentSecond"},
+			{dataKey:"first",nodeId:"presenceRootFirst"},
+			{dataKey:"last",nodeId:"presenceRootLast"},
+		]}
+	},true,true,{searchbar:false});
+	const presenceRootNavigationRow={absentTop:null,absentSecond:"",first:"First",last:"Last"};
+	presenceRootNavigationTable.setData([presenceRootNavigationRow]);
+	const presenceRootAbsentTop=presenceRootNavigationTable.getDetailCell(0,"presenceRootAbsentTop");
+	const presenceRootFirst=presenceRootNavigationTable.getDetailCell(0,"presenceRootFirst");
+	const presenceRootLast=presenceRootNavigationTable.getDetailCell(0,"presenceRootLast");
+	presenceRootNavigationTable.selectTopBottomCellOnlyDetails(true);
+	assert(presenceRootNavigationTable._activeDetailsCell===presenceRootFirst,
+		"root-details entry navigation skips absent leading descendants");
+	presenceRootNavigationTable.selectTopBottomCellOnlyDetails(false);
+	assert(presenceRootNavigationTable._activeDetailsCell===presenceRootLast,
+		"reverse root-details entry navigation skips absent leading descendants");
+	presenceRootNavigationRow.absentTop="Restored top";
+	presenceRootNavigationTable.refreshSubtree(presenceRootAbsentTop);
+	presenceRootNavigationTable.selectTopBottomCellOnlyDetails(true);
+	assert(presenceRootNavigationTable._activeDetailsCell===presenceRootAbsentTop,
+		"a restored root-details descendant rejoins boundary navigation");
+
+	const dependentPresenceTable=new Tablance(host(),{
+		details:{type:"list",entries:[
+			{dataKey:"source",nodeId:"presenceSource",input:{type:"text"}},
+			{dataKey:"computed",nodeId:"presenceComputed",dependsOn:"presenceSource",
+				render:({dependedValue})=>dependedValue?`Computed ${dependedValue}`:""},
+			{dataKey:"conditional",nodeId:"presenceConditional",visibleIf:({rowData})=>rowData.show},
+		]}
+	},true,true,{searchbar:false});
+	const dependentPresenceRow={source:"",computed:null,conditional:"available",show:false};
+	dependentPresenceTable.setData([dependentPresenceRow]);
+	const dependentPresenceRoot=dependentPresenceTable._openDetailsPanes[0];
+	const presenceSource=dependentPresenceRoot.children[0];
+	const presenceComputed=dependentPresenceRoot.children[1];
+	const presenceConditional=dependentPresenceRoot.children[2];
+	assert(!presenceComputed.present&&!presenceComputed.outerContainerEl.isConnected
+		&&!presenceConditional.present&&!presenceConditional.outerContainerEl.isConnected,
+		"dependency and visibleIf targets remain logical instances while visually absent");
+	dependentPresenceRow.source="ready";
+	dependentPresenceTable._updateDependentCells(presenceSource.schemaNode,presenceSource);
+	dependentPresenceRow.show=true;
+	dependentPresenceTable.refreshSubtree(presenceConditional);
+	assert(presenceComputed.present&&presenceComputed.outerContainerEl.isConnected
+		&&presenceComputed.el.textContent==="Computed ready"
+		&&presenceConditional.present&&presenceConditional.outerContainerEl.isConnected,
+		"dependency repaint and visibleIf incrementally reconnect absent instances and their ancestors");
+
+	const nativePresenceNow=Date.now;
+	let presenceNow=nativePresenceNow();
+	Date.now=()=>presenceNow;
+	const presenceDeadline=presenceNow+1000;
+	const timedPresenceTable=new Tablance(host(),{
+		details:{type:"list",entries:[{dataKey:"clock",nodeId:"timedPresence",
+			render:({now})=>({content:now>=presenceDeadline?"Now present":"",refreshAt:presenceDeadline})}]}
+	},true,true,{searchbar:false});
+	timedPresenceTable.setData([{clock:null}]);
+	const timedPresenceNode=timedPresenceTable._openDetailsPanes[0].children[0];
+	assert(!timedPresenceNode.present&&!timedPresenceNode.outerContainerEl.isConnected
+		&&[...timedPresenceTable._timedCellRefreshes.values()].some(entry=>entry.instanceNode===timedPresenceNode),
+		"refreshAt remains scheduled for a materialized but visually absent details instance");
+	presenceNow=presenceDeadline;
+	timedPresenceTable._runTimedCellRefreshes();
+	Date.now=nativePresenceNow;
+	assert(timedPresenceNode.present&&timedPresenceNode.outerContainerEl.isConnected
+		&&timedPresenceNode.el.textContent==="Now present",
+		"refreshAt can make an absent instance and its parent containers present without refreshing the view");
+
+	presenceNow=nativePresenceNow();
+	Date.now=()=>presenceNow;
+	const rootPresenceDeadline=presenceNow+1000;
+	const timedRootPresenceTable=new Tablance(host(),{
+		main:{columns:[{type:"expand"},{dataKey:"name"}]},
+		details:{type:"list",entries:[{dataKey:"future",render:({now})=>({
+			content:now>=rootPresenceDeadline?"Available":"",refreshAt:rootPresenceDeadline})}]},
+	},true,true,{searchbar:false,ordering:false});
+	timedRootPresenceTable.setData([{name:"Timed root",future:null}]);
+	await tick();
+	const timedRootExpand=timedRootPresenceTable._mainTbody.rows[0].cells[0];
+	assert(timedRootPresenceTable._getCellState(timedRootExpand).kind==="disabled"
+		&&!timedRootPresenceTable.expandRow(0),
+		"a root with no current presence cannot be expanded into an empty details shell");
+	presenceNow=rootPresenceDeadline;
+	timedRootPresenceTable._runTimedCellRefreshes();
+	const timedRootState=timedRootPresenceTable._getCellState(timedRootExpand).kind;
+	const timedRootInstance=timedRootPresenceTable.expandRow(0);
+	Date.now=nativePresenceNow;
+	assert(timedRootState==="action"&&timedRootInstance?.present,
+		"root details refreshAt incrementally enables expansion when future presentation becomes present");
+
+	const pinnedPresenceTable=new Tablance(host(),{
+		main:{columns:[{type:"expand"},{dataKey:"name"}]},
+		details:{type:"list",entries:[{dataKey:"value",nodeId:"pinnedPresence"}]}
+	},true,true,{searchbar:false,ordering:false});
+	const pinnedPresenceRow={name:"Pinned",value:"before"};
+	pinnedPresenceTable.setData([pinnedPresenceRow]);
+	await tick();
+	const pinnedPresenceNode=pinnedPresenceTable.expandRow(0).children[0];
+	pinnedPresenceNode.select();
+	pinnedPresenceRow.value="";
+	pinnedPresenceTable.refreshSubtree(pinnedPresenceNode);
+	assert(pinnedPresenceTable._activeDetailsCell===pinnedPresenceNode&&pinnedPresenceNode.present
+		&&pinnedPresenceNode.outerContainerEl.isConnected,
+		"an active selection pins a node whose refreshed value would otherwise remove its DOM");
+	pinnedPresenceTable._selectMainTableCell(pinnedPresenceTable._mainTbody.rows[0].cells[1]);
+	assert(!pinnedPresenceNode.present&&!pinnedPresenceNode.outerContainerEl.isConnected,
+		"temporary interaction pinning is released after selection leaves the absent details node");
 
 	result.textContent="awaiting trusted table focus navigation";
 	result.dataset.status="awaiting-native-table-focus";

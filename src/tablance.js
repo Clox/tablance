@@ -534,7 +534,11 @@ class TablanceBase {
 	 * 				grow Bool|Number Flex growth when the field is inside a lineup. Defaults to 0. True means 1;
 	 * 					a non-negative number is used directly. No cell grows implicitly.
 	 * 				render Function Function that can be set to render the content of the cell. The return-value is what
-	 * 					will be displayed in the cell. Similiarly to columns->render it gets passed the following:
+	 * 					will be displayed in the cell. It may instead return {content,presenceValue,placeholder}.
+	 * 					An explicitly supplied presenceValue replaces automatic value/content presence evaluation.
+	 * 					Placeholder is plain text shown only when the node is already present and content is empty;
+	 * 					it never creates presence or participates in data-oriented presentation APIs.
+	 * 					Similiarly to columns->render it gets passed the following:
 	 * 					1: The value from data pointed to by "dataKey". If dataKey is not set but dependsOn is then this
 	 * 						will instead get passed the value that the dataKey of the depended cell points to, 
 	 * 					2: data-row, 
@@ -751,7 +755,9 @@ class TablanceBase {
 	 * 					standard cell payload and is re-evaluated when the group's presentation is refreshed.
   	 * 				entries Array Array of entries. fields, lists, etc.. 
 	 * 				closedRender Function pass a method here that will get the data for the group as first arg.
-	 * 								it needs to return a string which will replace the group-content when it is closed
+	 * 								It returns closed content or the same {content,presenceValue,placeholder} presentation
+	 * 								shape as render. Empty normalized content creates no closed-render shell; a placeholder
+	 * 								is shown only if the group is independently present.
 	 * 				closedRenderHtml Bool Defaults to false. If true, closedRender output is inserted as HTML. Only
 	 * 								enable this for trusted or escaped output; the default text rendering remains injection-safe.
 	 * 				validate Function Synchronous, side-effect-free validation before the group crosses its commit
@@ -891,6 +897,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!schema.main?.columns) {
 			this._setupSpreadsheet(true);
 			this._onlyDetails=true;
+			this._buildDependencyGraph(this._schema);
 		} else {
 			// for (let col of this._schema.main.columns) {
 			// 	let processedCol={};
@@ -1640,7 +1647,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return true;
 		const depends=node=>{
 			const schemaNode=node?.schemaNode;
-			const paths=[schemaNode?._dataPath,schemaNode?._dataContextPath,
+			const paths=[schemaNode?.dataKey?[String(schemaNode.dataKey)]:null,
+				schemaNode?._dataPath,schemaNode?._dataContextPath,
 				schemaNode?.dependsOnDataPath,...(schemaNode?.dependsOnDataPaths??[])];
 			if (paths.some(path=>Array.isArray(path)&&path.length&&roots.has(String(path[0]))))
 				return true;
@@ -1689,9 +1697,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					continue;
 				if (schemaNode.type==="menu")
 					this._updateMenuCell(row.cells[columnIndex],schemaNode,mainIndex);
+				else if (schemaNode.type==="expand")
+					this._updateExpandCell(row.cells[columnIndex],schemaNode,rowData,mainIndex);
 				else if (schemaNode.type!=="expand"&&schemaNode.type!=="select")
 					this._updateMainRowCell(row.cells[columnIndex],schemaNode);
 			}
+		if (row&&this._schema.details)
+			for (const schemaNode of this._colSchemaNodes)
+				if (schemaNode.type==="expand"&&!affected.has(schemaNode))
+					this._updateExpandCell(row.cells[this._colSchemaNodes.indexOf(schemaNode)],schemaNode,rowData,mainIndex);
 		const detailsRoot=this._openDetailsPanes[mainIndex];
 		if (detailsRoot&&this._detailsSubtreeDependsOnRoots(detailsRoot,roots))
 			if (!(protectActiveDraft&&this._inEditMode
@@ -2135,14 +2149,19 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_normalizeRenderPresentation(rendered) {
 		if (!rendered||typeof rendered!=="object"||Array.isArray(rendered)
 			||typeof Node!=="undefined"&&rendered instanceof Node
-			||!("content" in rendered||"refreshAt" in rendered||"className" in rendered))
-			return {content:rendered,refreshAt:null,classNames:[]};
+			||!("content" in rendered||"refreshAt" in rendered||"className" in rendered
+				||"presenceValue" in rendered||"placeholder" in rendered))
+			return {content:rendered,refreshAt:null,classNames:[],placeholder:null,
+				presenceValueExplicit:false,presenceValue:undefined};
 		const refreshAt=rendered.refreshAt==null?null:Number(rendered.refreshAt);
 		if (refreshAt!=null&&!Number.isFinite(refreshAt))
 			throw new TypeError("render().refreshAt must be a finite timestamp or null.");
 		const classes=rendered.className==null?[]:Array.isArray(rendered.className)
 			?rendered.className:String(rendered.className).split(/\s+/);
-		return {content:rendered.content,refreshAt,classNames:classes.filter(Boolean)};
+		return {content:rendered.content,refreshAt,classNames:classes.filter(Boolean),
+			placeholder:rendered.placeholder,
+			presenceValueExplicit:Object.prototype.hasOwnProperty.call(rendered,"presenceValue"),
+			presenceValue:rendered.presenceValue};
 	}
 
 	_getCellPresentation(schemaNode,dataObj,mainIndex,instanceNode=null,now=Date.now()) {
@@ -2329,6 +2348,192 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return schemaNode?build(schemaNode,rowData,null,null,rootDataScoped):null;
 	}
 
+	_hasPresenceValue(value,seen=new Set) {
+		if (value==null)
+			return false;
+		if (typeof value==="string")
+			return !!normalizeSearchWhitespace(value);
+		if (["number","bigint","boolean"].includes(typeof value))
+			return true;
+		if (typeof Node!=="undefined"&&value instanceof Node) {
+			if (value.nodeType===Node.TEXT_NODE)
+				return !!normalizeSearchWhitespace(value.textContent);
+			return !!normalizeSearchWhitespace(value.textContent)
+				||value.nodeType===Node.ELEMENT_NODE&&!["SPAN","DIV"].includes(value.tagName)
+				||!!value.childElementCount;
+		}
+		if (typeof value!=="object"||seen.has(value))
+			return false;
+		seen.add(value);
+		if (Array.isArray(value))
+			return value.some(item=>this._hasPresenceValue(item,seen));
+		return Object.values(value).some(item=>this._hasPresenceValue(item,seen));
+	}
+
+	_isPresenceAuxiliary(instanceNode) {
+		for (let node=instanceNode;node;node=node.parent)
+			if (node.schemaNode?.type==="reorder"
+				||String(node.schemaNode?.cssClass??"").split(/\s+/).includes("delete-controls"))
+				return true;
+		return false;
+	}
+
+	_resolveDetailsOwnPresence(instanceNode,mainIndex=instanceNode?.rowIndex??0) {
+		const schemaNode=instanceNode?.schemaNode;
+		if (!schemaNode||this._isPresenceAuxiliary(instanceNode))
+			return false;
+		if (!this._isLogicalDetailsNodeVisible(instanceNode,mainIndex))
+			return false;
+		if (schemaNode.creator)
+			return !this._isTrashMode();
+		if (schemaNode.type==="field") {
+			const presentation=instanceNode.presencePresentation
+				??this._getCellPresentation(schemaNode,instanceNode.dataObj,mainIndex,instanceNode);
+			instanceNode.presencePresentation=presentation;
+			const hasPresentation=presentation.presenceValueExplicit
+				?this._hasPresenceValue(presentation.presenceValue)
+				:this._hasPresenceValue(presentation.value)
+					||!!schemaNode.render&&this._hasPresenceValue(presentation.content);
+			const payload=this._makeCallbackPayload(instanceNode,presentation,
+				{schemaNode,mainIndex,rowData:instanceNode.dataObj});
+			const state=this._resolveCellState(schemaNode,payload);
+			const primaryInteraction=state.mutable
+				||state.activatable&&(schemaNode.input?.type==="button"||(!schemaNode.input&&schemaNode.onEnter));
+			return hasPresentation||primaryInteraction;
+		}
+		if (schemaNode.type==="group"&&schemaNode.closedRender) {
+			const presentation=instanceNode.presencePresentation
+				??this._normalizeRenderPresentation(schemaNode.closedRender(instanceNode.dataObj));
+			instanceNode.presencePresentation=presentation;
+			return presentation.presenceValueExplicit
+				?this._hasPresenceValue(presentation.presenceValue)
+				:this._hasPresenceValue(presentation.content);
+		}
+		if (schemaNode.type==="repeated"&&schemaNode.create&&!this._isTrashMode())
+			return true;
+		return false;
+	}
+
+	_isPresencePinned(instanceNode) {
+		const popoverState=this._activeAnchoredPopover?.state;
+		const protectedNodes=[this._activeDetailsCell,this._pendingGroupTransaction?.boundary,
+			this._editTransaction?.stack?.[0],this._activeRepeatedReorderEntry,
+			popoverState?.instanceNode,popoverState?.payload?.instanceNode];
+		return protectedNodes.some(active=>active&&this._isInstanceDescendantOf(active,instanceNode))
+			||!!popoverState?.trigger&&!!instanceNode.outerContainerEl?.contains(popoverState.trigger);
+	}
+
+	_resolveDetailsPresence(instanceNode,{recurse=true,reconcile=false}={}) {
+		if (!instanceNode?.schemaNode)
+			return false;
+		if (recurse)
+			for (const child of instanceNode.children??[])
+				this._resolveDetailsPresence(child,{recurse:true,reconcile});
+		const visible=this._isLogicalDetailsNodeVisible(instanceNode,instanceNode.rowIndex??0);
+		instanceNode.hidden=!visible;
+		const descendantPresent=(instanceNode.children??[]).some(child=>child.present);
+		const present=visible&&(this._resolveDetailsOwnPresence(instanceNode)
+			||descendantPresent||this._isPresencePinned(instanceNode));
+		instanceNode.present=present;
+		if (reconcile&&instanceNode.presenceManaged)
+			this._reconcileInstancePresence(instanceNode);
+		if (recurse&&present)
+			for (const child of instanceNode.children??[])
+				if (this._isPresenceAuxiliary(child))
+					this._setAuxiliarySubtreePresence(child,true,reconcile);
+		return present;
+	}
+
+	_setAuxiliarySubtreePresence(instanceNode,parentPresent,reconcile) {
+		const present=parentPresent&&this._isLogicalDetailsNodeVisible(instanceNode,instanceNode.rowIndex??0);
+		instanceNode.present=present;
+		instanceNode.hidden=!present;
+		if (reconcile&&instanceNode.presenceManaged)
+			this._reconcileInstancePresence(instanceNode);
+		for (const child of instanceNode.children??[])
+			this._setAuxiliarySubtreePresence(child,present,reconcile);
+	}
+
+	_refreshPresenceChain(instanceNode) {
+		for (let node=instanceNode;node;node=node.parent) {
+			const before=node.present;
+			this._resolveDetailsPresence(node,{recurse:false,reconcile:true});
+			if (before===node.present&&node!==instanceNode)
+				break;
+		}
+	}
+
+	_reconcileInstancePresence(instanceNode) {
+		if (instanceNode?.schemaNode?.type==="group")
+			this._applyClosedRenderPresentation(instanceNode);
+		else if (instanceNode?.schemaNode?.type==="field")
+			this._applyFieldPresentationPlaceholder(instanceNode);
+		const outer=instanceNode?.outerContainerEl;
+		if (outer) {
+			const parent=instanceNode.parent;
+			const collection=parent?.schemaNode?.type==="repeated"?parent.parent:parent;
+			if (!instanceNode.present)
+				outer.remove();
+			else if (outer.parentNode!==collection?.containerEl) {
+				const siblings=parent?.children??[];
+				const index=siblings.indexOf(instanceNode);
+				const next=siblings.slice(index+1).find(sibling=>sibling.present
+					&&sibling.outerContainerEl?.parentNode===collection?.containerEl);
+				collection?.containerEl?.insertBefore(outer,next?.outerContainerEl
+					??(parent?.schemaNode?.type==="repeated"?parent.insertionPoint:null));
+			}
+		}
+		if (instanceNode?.visualNodes?.length) {
+			if (instanceNode.present) {
+				for (const node of instanceNode.visualNodes)
+					if (!node.isConnected)
+						instanceNode.visualHost?.appendChild(node);
+			} else for (const node of instanceNode.visualNodes)
+				node.remove();
+			if (!this._onlyDetails) {
+				const row=this._mainTbody?.querySelector(
+					`[data-data-row-index="${instanceNode.rowIndex}"]:not(.details)`);
+				const expandIndex=this._colSchemaNodes?.findIndex(schemaNode=>schemaNode.type==="expand");
+				if (row&&expandIndex>=0)
+					this._updateExpandCell(row.cells[expandIndex],this._colSchemaNodes[expandIndex],
+						this._filteredData[instanceNode.rowIndex],instanceNode.rowIndex);
+				if (!instanceNode.present&&row?.classList.contains("expanded")&&!instanceNode.collapsing)
+					this._contractRow(row);
+			}
+		}
+		const layout=instanceNode?.parent?.schemaNode?.type==="repeated"
+			?instanceNode.parent.parent:instanceNode?.parent;
+		if (layout?.schemaNode?.type==="grid")
+			this._refreshGridLayout(layout);
+		else if (layout?.schemaNode?.type==="lineup")
+			this._refreshLineupRowExtensions(layout);
+	}
+
+	_detailsSchemaHasPresence(rowData,mainIndex,refreshAnchor=null) {
+		const root=this._buildLogicalDetailsTree(this._schema.details,rowData,mainIndex);
+		const present=!!root&&this._resolveDetailsPresence(root,{recurse:true,reconcile:false});
+		if (refreshAnchor)
+			this._scheduleDetailsPresenceRefresh(refreshAnchor,rowData,mainIndex,root);
+		return present;
+	}
+
+	_scheduleDetailsPresenceRefresh(anchor,rowData,mainIndex,root) {
+		this._clearTimedCellRefresh(anchor);
+		const deadlines=[];
+		this._walkLogicalDetails(root,node=>{
+			const refreshAt=node.presencePresentation?.refreshAt;
+			if (refreshAt!=null&&refreshAt>Date.now())
+				deadlines.push(refreshAt);
+		},{includeHidden:true,mainIndex});
+		const refreshAt=Math.min(...deadlines);
+		if (!Number.isFinite(refreshAt)||!anchor?.isConnected)
+			return this._armTimedCellRefreshTimer();
+		const generation=this._timedCellRefreshGeneration.get(anchor);
+		this._timedCellRefreshes.set(anchor,{key:anchor,anchor,rowData,mainIndex,
+			schemaNode:this._colSchemaNodes[anchor.cellIndex],refreshAt,generation,detailsPresence:true});
+		this._armTimedCellRefreshTimer();
+	}
+
 	_isLogicalDetailsNodeVisible(instanceNode,mainIndex) {
 		const schemaNode=instanceNode?.schemaNode;
 		if (typeof schemaNode?.visibleIf!=="function")
@@ -2465,6 +2670,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._setClosedRender(node,node.schemaNode.closedRender(node.dataObj));
 		};
 		visit(instanceNode);
+		this._resolveDetailsPresence(instanceNode,{recurse:true,reconcile:true});
+		for (let ancestor=instanceNode.parent;ancestor;ancestor=ancestor.parent)
+			this._resolveDetailsPresence(ancestor,{recurse:false,reconcile:true});
 		const detailsTr=instanceNode.outerContainerEl?.closest?.("tr.details")
 			??instanceNode.el?.closest?.("tr.details");
 		if (detailsTr&&!this._onlyDetails)
@@ -4361,7 +4569,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_collectLogicalDetailsCells(instanceNode,cells) {
-		if (!instanceNode||instanceNode.hidden||instanceNode.previewHidden)
+		if (!instanceNode||!instanceNode.present||instanceNode.hidden||instanceNode.previewHidden)
 			return cells;
 		const schemaNode=instanceNode.schemaNode;
 		const children=instanceNode.children??[];
@@ -4392,7 +4600,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_isNavigableDetailsInstance(instanceNode) {
 		const cellEl=instanceNode?.selEl??instanceNode?.el;
-		return !!cellEl&&!instanceNode.hidden&&!instanceNode.previewHidden
+		const present=instanceNode?.schemaNode?.type==="reorder"
+			?instanceNode.ownerEntry?.present:instanceNode?.present;
+		return !!cellEl&&!!present&&!instanceNode.hidden&&!instanceNode.previewHidden
 			&&this._getCellState(cellEl,instanceNode)?.selectable!==false;
 	}
 
@@ -4644,9 +4854,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (numCols) {//moving left or right
 			for (let i=this._activeDetailsCell.index,nextCel;nextCel=this._activeDetailsCell.parent.children[i+=numCols];) {
 				const nextCellEl=nextCel.selEl??nextCel.el;
-				if (nextCellEl.offsetParent != null && (nextCellEl.offsetLeft>currentCellX)==(numCols>0)) {
-					if (this._getCellState(nextCellEl,nextCel)?.selectable!==false
-						&&currCelBottom>nextCellEl.offsetTop&&nextCellEl.offsetTop+nextCellEl.offsetHeight>currCelTop)
+				if (this._isNavigableDetailsInstance(nextCel)
+						&&nextCellEl.offsetParent != null&&(nextCellEl.offsetLeft>currentCellX)==(numCols>0)) {
+					if (currCelBottom>nextCellEl.offsetTop&&nextCellEl.offsetTop+nextCellEl.offsetHeight>currCelTop)
 						this._selectDetailsCell(nextCel);
 					break;
 				}
@@ -4658,7 +4868,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				const siblings=this._activeDetailsCell.parent.children;
 				for (let i=this._activeDetailsCell.index,otherCell;otherCell=siblings[i+=numRows];) {
 					const otherCellEl=otherCell.selEl??otherCell.el;
-					const skipCell=this._getCellState(otherCellEl,otherCell)?.selectable===false
+					const skipCell=!this._isNavigableDetailsInstance(otherCell)
 						||Math.max(otherCellEl.offsetTop,currCelTop)
 							<=Math.min(otherCellEl.offsetTop+otherCellEl.offsetHeight,currCelBottom)
 						||otherCellEl.offsetParent==null;
@@ -4715,10 +4925,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const index=instanceNode.index;
 		for (let i=index+(isGoingDown||-1); i>=0&&i<siblings.length; i+=isGoingDown||-1) {
 			const sibling=siblings[i];
-			if (sibling.hidden||sibling.previewHidden)
+			if (!sibling.present||sibling.hidden||sibling.previewHidden)
 				continue;
 			if (sibling.el) {
-				if (this._getCellState(sibling.selEl??sibling.el,sibling)?.selectable!==false)
+				if (this._isNavigableDetailsInstance(sibling))
 					return sibling;
 				continue;
 			}
@@ -4749,24 +4959,27 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * @param {Boolean} onlyGetChild if set to true then it will never return the passed in instanceNode and instead
 	 *			only look at its (grand)children. Used for groups where both itself and its children can be selected*/
 	_getFirstSelectableDetailsCell(instanceNode,isGoingDown,onlyGetChild=false) {
+		if (!instanceNode?.present||instanceNode.hidden||instanceNode.previewHidden)
+			return;
 		if (instanceNode?.presentationState==="creator-empty") {
 			const creator=this._getCreatorEmptyTarget(instanceNode);
 			if (creator&&this._isNavigableDetailsInstance(creator))
 				return creator;
 		}
 		if (!onlyGetChild&&instanceNode.el) {
-			if (this._getCellState(instanceNode.selEl??instanceNode.el,instanceNode)?.selectable!==false)
+			if (this._isNavigableDetailsInstance(instanceNode))
 				return instanceNode;
 			return;
 		}
 		const children=instanceNode.children;
 		if (!children?.length)//check needed if a repeated-container hs a single field instead of a group
-			return onlyGetChild?instanceNode:undefined;
+			return onlyGetChild&&this._isNavigableDetailsInstance(instanceNode)?instanceNode:undefined;
 		let startI=isGoingDown?0:children.length-1;
 		if (instanceNode.schemaNode.type==="lineup"&&!isGoingDown) {
 			let chosenCell;
 			for (let i=startI,otherCell;otherCell=children[i--];)
-				if ((otherCell.selEl??otherCell.el)?.offsetParent)
+				if (this._isNavigableDetailsInstance(otherCell)
+						&&(otherCell.selEl??otherCell.el)?.offsetParent)
 					if (!chosenCell||(otherCell.selEl??otherCell.el).offsetLeft
 						<(chosenCell.selEl??chosenCell.el).offsetLeft)
 						chosenCell=otherCell;
@@ -4776,7 +4989,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				startI=chosenCell.index;
 		}
 		for (let childI=startI;childI>=0&&childI<children.length; childI+=isGoingDown||-1)
-			if (!children[childI].hidden&&!children[childI].previewHidden
+			if (children[childI].present&&!children[childI].hidden&&!children[childI].previewHidden
 				&&(children[childI].children||children[childI].select)) {
 				const target=this._getFirstSelectableDetailsCell(children[childI],isGoingDown);
 				if (target)
@@ -5454,7 +5667,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const shadowLine=detailsDiv.appendChild(document.createElement("div"));
 		shadowLine.className="details-shadow";
 		const instanceNode=this._openDetailsPanes[rowIndex]=this._createInstanceNode();
-		this._generateDetailsContent(this._schema.details,rowIndex,instanceNode,detailsDiv,[],this._filteredData[rowIndex]);
+		const visualFragment=document.createDocumentFragment();
+		this._generateDetailsContent(this._schema.details,rowIndex,instanceNode,visualFragment,[],this._filteredData[rowIndex]);
+		instanceNode.visualHost=detailsDiv;
+		instanceNode.visualNodes=[...visualFragment.childNodes];
+		instanceNode.presenceManaged=true;
+		this._resolveDetailsPresence(instanceNode,{recurse:true,reconcile:true});
+		if (instanceNode.present)
+			detailsDiv.appendChild(visualFragment);
 		instanceNode.rowIndex=rowIndex;
 		return detailsRow;
 	}
@@ -5653,8 +5873,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			-(rowMeta?.h??mainRowHeight)+mainRowHeight+"px";
 		detailsTr.remove();
 		if (rowMeta){delete rowMeta.h; if (!Object.keys(rowMeta).length) this._rowMeta.delete(rowData);}
-		if (this._openDetailsPanes[dataRowIndex]===transition.instanceNode)
+		if (this._openDetailsPanes[dataRowIndex]===transition.instanceNode) {
+			this._clearTimedDetailsSubtree(transition.instanceNode);
 			delete this._openDetailsPanes[dataRowIndex];
+		}
 		this._updateAutoHeight();
 	}
 
@@ -5837,7 +6059,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		repeatedSchemaNode.create&&!this._isTrashMode()&&this._generateRepeatedCreator(instanceNode);
 		repeatData?.forEach(repeatData=>this._repeatInsert(instanceNode,false,repeatData));
 		this._arrangeRepeatedInstances(instanceNode);
-		return !!repeatData?.length||(repeatedSchemaNode.create&&!this._isTrashMode());
+		this._resolveDetailsPresence(instanceNode,{recurse:true,reconcile:false});
+		return instanceNode.present;
 	}
 
 	/**For repeated schema-nodes with create set to true (meaning users can create more entries via user-interface),
@@ -6031,7 +6254,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._setCellState(groupTable,this._resolveCellState(groupSchemaNode,statePayload),instanceNode);
 		this._setupRepeatedReorderEntry(instanceNode);
 		this._syncCreatorEmptyPresentation(instanceNode);
-		return true;
+		this._resolveDetailsPresence(instanceNode,{recurse:true,reconcile:false});
+		return instanceNode.present;
 	}
 
 	/**
@@ -6060,7 +6284,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (listSchemaNode.titlesColWidth!=null)
 				titlesCol.style.width=listSchemaNode.titlesColWidth;
 		}
-		return this._generateDetailsCollection(listSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
+		this._generateDetailsCollection(listSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
+		this._resolveDetailsPresence(instanceNode,{recurse:true,reconcile:false});
+		return instanceNode.present;
 	}
 
 	/**
@@ -6095,7 +6321,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		const generated=this._generateDetailsCollection(lineupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
 		this._refreshLineupRowExtensions(instanceNode);
-		return generated;
+		this._resolveDetailsPresence(instanceNode,{recurse:true,reconcile:false});
+		return generated&&instanceNode.present;
 	}
 
 	_generateDetailsGrid(gridSchemaNode,mainIndex,instanceNode,parentEl,path,rowData,_notYetCreated) {
@@ -6124,7 +6351,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		instanceNode.containerEl.style.gridTemplateColumns=gridTemplateColumns;
 		const generated=this._generateDetailsCollection(gridSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
 		this._refreshGridLayout(instanceNode);
-		return generated;
+		this._resolveDetailsPresence(instanceNode,{recurse:true,reconcile:false});
+		return generated&&instanceNode.present;
 	}
 
 	_refreshGridLayout(grid) {
@@ -6139,7 +6367,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (!Number.isInteger(span)||span<1||span>columns)
 				throw new TypeError("A grid child columnSpan must be a positive integer no larger than grid.columns.");
 			child.gridColumnSpan=span;
-			if (child.hidden) {
+			if (child.hidden||!child.present) {
 				child.gridRow=child.gridColumn=null;
 				continue;
 			}
@@ -6267,10 +6495,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._arrangeRepeatedInstances(rptCelObj);
 				for (const entry of rptCelObj.children)
 					this._syncRepeatedReorderEntry(entry);
+				this._resolveDetailsPresence(rptCelObj,{recurse:true,reconcile:false});
 			} else
 				this._generateCollectionItem(childSchemaNode,mainIndex,collectionObj,path,rowData);
 		}
-		return true;
+		this._resolveDetailsPresence(collectionObj,{recurse:true,reconcile:false});
+		return collectionObj.present;
 	}
 
 	_validateRepeatedDataArray(dataArray) {
@@ -6363,14 +6593,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		// Where to insert in the DOM
 		const beforeEl=siblingAfter?.el.closest(".collection>*")?? collectionOrRepeated.insertionPoint;
 
-		collectionEl.insertBefore(outerContainerEl,beforeEl);
-
 		// Insert into internal children array
 		collectionOrRepeated.children.splice(index,0,itemObj);
+		itemObj.presenceManaged=true;
 
 		// Extra CSS class if defined in schemaNode
 		if (schemaNode.cssClass)
 			outerContainerEl.className+=" "+schemaNode.cssClass;
+		if (itemObj.present)
+			collectionEl.insertBefore(outerContainerEl,beforeEl);
 	}
 	
 	
@@ -6423,11 +6654,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		itemObj.outerContainerEl=outerContainerEl;//reference to outer-most container belonging exclusively to this item
 
 		// Expand inner content; may return false if nothing should be rendered
-		const generated=this._generateDetailsContent(schemaNode,mainIndex,itemObj,containerEl,path,data,creating);
+		this._generateDetailsContent(schemaNode,mainIndex,itemObj,containerEl,path,data,creating);
 
-		// Only insert if it actually has content (important for sparse repeated arrays)
-		if (generated)
-			this._insertCollectionItem(schemaNode,index,itemObj,outerContainerEl,collectionOrRepeated,collectionEl);
+		// Every materialized schema/data node remains in the logical tree. Presence controls only whether its
+		// already prepared visual root is connected to the collection.
+		this._resolveDetailsPresence(itemObj,{recurse:true,reconcile:false});
+		this._insertCollectionItem(schemaNode,index,itemObj,outerContainerEl,collectionOrRepeated,collectionEl);
+		// Registration gives descendants their stable collection owner. Reconcile once more so auxiliary controls
+		// that may be shown by a present entry are connected without being allowed to create that presence.
+		this._resolveDetailsPresence(itemObj,{recurse:true,reconcile:true});
 
 		path.pop();
 		return itemObj;
@@ -6454,7 +6689,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		instanceNode.el=parentEl;
 		this._updateDetailsCell(instanceNode,scopedData);
 		instanceNode[instanceNode.selEl?"selEl":"el"].dataset.path=path.join("-");
-		return true;
+		this._resolveDetailsPresence(instanceNode,{recurse:false,reconcile:false});
+		return instanceNode.present;
 	}
 	
 	_spreadsheetMouseDown(e) {
@@ -8339,28 +8575,44 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			groupObject.el.classList.add(...classNames);
 	}
 
-	_setClosedRender(groupObject,renderText,path=groupObject.path,tbody=groupObject.el.tBodies?.[0]) {
+	_setClosedRender(groupObject,rendered,path=groupObject.path,tbody=groupObject.el.tBodies?.[0]) {
+		groupObject.presencePresentation=this._normalizeRenderPresentation(rendered);
+		groupObject.closedRenderPath=path;
+		groupObject.closedRenderTbody=tbody;
 		this._applyGroupSchemaCssClass(groupObject);
+		this._applyClosedRenderPresentation(groupObject);
+	}
+
+	_applyClosedRenderPresentation(groupObject) {
+		if (!groupObject?.el||!groupObject.presencePresentation)
+			return;
+		const presentation=groupObject.presencePresentation;
+		const hasContent=this._hasPresenceValue(presentation.content);
+		const hasPlaceholder=!!groupObject.present&&!hasContent
+			&&this._hasPresenceValue(presentation.placeholder);
 		const renderRow=groupObject.el.querySelector("tbody>tr.group-render");
-		if (renderText==null) {
+		if (!hasContent&&!hasPlaceholder) {
 			groupObject.el.classList.remove("closed-render");
 			renderRow?.remove();
 			this._placeGroupChevron(groupObject);
 			return;
 		}
 		groupObject.el.classList.add("closed-render");
-		const row=renderRow??tbody?.insertRow();
+		const row=renderRow??groupObject.closedRenderTbody?.insertRow();
 		if (!row)
 			return;
 		row.className="group-render";
-		row.dataset.path=path?.join("-")??"";
+		row.dataset.path=groupObject.closedRenderPath?.join("-")??"";
 		const cell=row.cells[0]??row.insertCell();
 		const content=document.createElement("span");
 		content.className="group-closed-content";
-		if (groupObject.schemaNode.closedRenderHtml===true)
-			content.innerHTML=renderText;
+		content.classList.toggle("tablance-presentation-placeholder",hasPlaceholder);
+		if (hasPlaceholder)
+			content.textContent=String(presentation.placeholder);
+		else if (groupObject.schemaNode.closedRenderHtml===true)
+			content.innerHTML=presentation.content;
 		else
-			content.innerText=renderText;
+			content.innerText=presentation.content;
 		cell.replaceChildren(content);
 		this._placeGroupChevron(groupObject);
 	}
@@ -8456,7 +8708,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_getRepeatedReorderEntries(repeated) {
-		return (repeated?.children??[]).filter(child=>!child.schemaNode?.creator&&!child.creating&&!child.hidden);
+		return (repeated?.children??[]).filter(child=>!child.schemaNode?.creator&&!child.creating
+			&&!child.hidden&&child.present);
 	}
 
 	_makeRepeatedReorderPayload(entry,direction=null) {
@@ -8846,7 +9099,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return false;
 		const creators=(repeated.children??[]).filter(entry=>entry.schemaNode?.creator);
 		const presentedEntries=(repeated.children??[]).filter(entry=>!entry.schemaNode?.creator
-			&&!entry.hidden&&!entry.previewHidden);
+			&&!entry.hidden&&entry.present&&!entry.previewHidden);
 		const hasPresentedEntry=presentedEntries.length>0;
 		const firstUngroupedEntry=this._getRepeatedGrouping(repeated)?null:presentedEntries[0];
 		for (const entry of repeated.children??[])
@@ -8925,7 +9178,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		repeated.previewActive=previewActive;
 		for (const entry of repeated.children??[])
 			this._setRepeatedEntryPreviewHidden(entry,false);
-		const hasVisibleGroupedEntries=!!grouping&&groups.some(group=>group.entries.some(entry=>!entry.hidden));
+		const hasVisibleGroupedEntries=!!grouping&&groups.some(group=>group.entries.some(entry=>!entry.hidden&&entry.present));
 		for (const entry of entries)
 			entry.outerContainerEl?.classList.remove("repeated-group-entry","repeated-group-first");
 		for (const creator of creators)
@@ -8938,7 +9191,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		repeated.groupSpacers=[];
 		if (collectionEl&&grouping) {
 			for (const group of groups) {
-				const visibleEntries=group.entries.filter(entry=>!entry.hidden);
+				const visibleEntries=group.entries.filter(entry=>!entry.hidden&&entry.present);
 				let presentedEntries=visibleEntries;
 				if (previewActive&&group.preview) {
 					const entryData=visibleEntries.map(entry=>entry.dataObj);
@@ -8964,7 +9217,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					repeated.groupHeadings.push(heading);
 				}
 				for (const entry of group.entries)
-					if (entry.outerContainerEl)
+					if (entry.present&&entry.outerContainerEl)
 						collectionEl.insertBefore(entry.outerContainerEl,repeated.insertionPoint);
 				if (presentedEntries.length) {
 					const spacer=this._createRepeatedGroupSpacer(repeated);
@@ -8975,10 +9228,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				}
 			}
 			for (const pinned of [...drafts,...creators])
-				if (pinned.outerContainerEl)
+				if (pinned.present&&pinned.outerContainerEl)
 					collectionEl.insertBefore(pinned.outerContainerEl,repeated.insertionPoint);
 		} else for (const entry of repeated.children) {
-			if (entry.outerContainerEl&&collectionEl)
+			if (entry.present&&entry.outerContainerEl&&collectionEl)
 				collectionEl.insertBefore(entry.outerContainerEl,repeated.insertionPoint);
 		}
 		for (let index=0;index<repeated.children.length;index++)
@@ -8998,6 +9251,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._syncCreatorEmptyPresentation(repeated);
 		for (const entry of repeated.children??[])
 			this._syncRepeatedReorderEntry(entry);
+		this._resolveDetailsPresence(repeated,{recurse:true,reconcile:true});
+		this._refreshPresenceChain(repeated);
 		this._updateDependentCells(repeated.schemaNode,repeated);
 		const detailsTr=repeated.outerContainerEl?.closest?.("tr.details")
 			??repeated.parent?.containerEl?.closest?.("tr.details");
@@ -9094,6 +9349,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._activeDetailsCell=null;
 				break;
 			}
+		this._refreshPresenceChain(parent);
 		const commitBoundary=transactionBoundary;
 		if (instanceNode.schemaNode?.type==="group")
 			this._removeGroupFromTransaction(instanceNode,!commitBoundary);
@@ -9954,7 +10210,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return true;
 		};
 		const resolveDetailsCells=(depPath,sourceInstance)=>{
-			const detailsRoot=depPath[0]==="r"?null:this._openDetailsPanes[this._mainRowIndex];
+			let sourceRoot=sourceInstance;
+			while (sourceRoot?.parent) sourceRoot=sourceRoot.parent;
+			const detailsIndex=sourceRoot?.rowIndex??this._mainRowIndex??(this._onlyDetails?0:null);
+			const detailsRoot=depPath[0]==="r"?null:this._openDetailsPanes[detailsIndex];
 			let cells=depPath[0]==="r"?[sourceInstance]:[detailsRoot];
 			if (!cells[0])
 				return [];
@@ -10409,7 +10668,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_closeActiveDetailsCell(targetCell,continuation=null) {
 		if (this._hasPendingCommitHandoff())
 			return false;
+		let detailsRoot=null;
 		if (this._activeDetailsCell) {
+			detailsRoot=this._activeDetailsCell;
+			while (detailsRoot.parent) detailsRoot=detailsRoot.parent;
 			for (let oldCellParent=this._activeDetailsCell; oldCellParent=oldCellParent.parent;) {
 				if (oldCellParent.schemaNode.type==="group") {
 					if (!this._closeGroup(oldCellParent,targetCell,false,continuation))//close any open group above old cell
@@ -10421,6 +10683,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 			this._activeDetailsCell=null;//should be null when not inside details
 		}
+		if (detailsRoot)
+			this._resolveDetailsPresence(detailsRoot,{recurse:true,reconcile:true});
 		return true;
 	}
 
@@ -10456,6 +10720,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!instanceNode)
 			return false;
 		instanceNode=this._getCreatorEmptyTarget(instanceNode)??instanceNode;
+		if (instanceNode.schemaNode?.type==="reorder"
+			?!instanceNode.ownerEntry?.present:!instanceNode.present)
+			return false;
 		let root=instanceNode;
 		while (root.parent) root=root.parent;
 		if (root.collapsing)
@@ -11538,7 +11805,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const detailsDiv=this.rootEl.appendChild(document.createElement("div"));
 		detailsDiv.classList.add("details");
 		const rootInstance=this._openDetailsPanes[0]=this._createInstanceNode();
-		this._generateDetailsContent(this._schema.details,0,rootInstance,detailsDiv,[],lastRow);
+		const visualFragment=document.createDocumentFragment();
+		this._generateDetailsContent(this._schema.details,0,rootInstance,visualFragment,[],lastRow);
+		rootInstance.visualHost=detailsDiv;
+		rootInstance.visualNodes=[...visualFragment.childNodes];
+		rootInstance.presenceManaged=true;
+		this._resolveDetailsPresence(rootInstance,{recurse:true,reconcile:true});
+		if (rootInstance.present)
+			detailsDiv.appendChild(visualFragment);
 	}
 
 	/**Refreshes the table-rows. Should be used after sorting or filtering or such.*/
@@ -11625,7 +11899,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				//check if the top row (the one that is to be moved to the bottom) is expanded
 				const topMeta=this._rowMeta.get(this._filteredData[this._scrollRowIndex]);
 				if (topShift=topMeta?.h) {
-					delete this._openDetailsPanes[this._scrollRowIndex];
+					this._deleteOpenDetailsPane(this._scrollRowIndex);
 					this._mainTbody.rows[1].remove();
 				} else
 					topShift=this._rowHeight;
@@ -11649,7 +11923,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 				//check if the bottom row (the one that is to be moved to the top) is expanded
 				if (this._rowMeta.get(this._filteredData[this._scrollRowIndex+this._numRenderedRows])?.h) {
-					delete this._openDetailsPanes[this._scrollRowIndex+this._numRenderedRows];
+					this._deleteOpenDetailsPane(this._scrollRowIndex+this._numRenderedRows);
 					this._mainTbody.lastChild.remove();//remove the details-tr
 				}
 
@@ -11809,7 +12083,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		while ((this._numRenderedRows-2)*this._rowHeight>scrH) {
 			if (this._rowMeta.get(this._filteredData[this._scrollRowIndex+this._numRenderedRows-1])?.h) {
 				this._mainTbody.lastChild.remove();
-				delete this._openDetailsPanes[this._scrollRowIndex+this._numRenderedRows];
+				this._deleteOpenDetailsPane(this._scrollRowIndex+this._numRenderedRows);
 			}
 			this._detachMainCursorFromRow(this._mainTbody.lastChild);
 			this._mainTbody.lastChild.remove();
@@ -11845,7 +12119,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				const rowData=this._filteredData[mainIndex];
 				const valueBundle=this._getCellValueBundle(colSchemaNode,rowData,mainIndex,null);
 				const payload=this._makeCallbackPayload(null,valueBundle,{schemaNode:colSchemaNode,mainIndex,rowData});
-				const cellState=this._resolveCellState(colSchemaNode,payload);
+				let cellState=this._resolveCellState(colSchemaNode,payload);
+				if (colSchemaNode.type==="expand")
+					cellState=this._resolveExpandCellState(td,colSchemaNode,rowData,mainIndex,cellState);
 				this._setCellState(td,cellState,null,colSchemaNode);
 				if (colSchemaNode.type=="select") {
 					const checkbox=td.querySelector("input");
@@ -11861,6 +12137,19 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (this._cellRange?.surface==="main")
 			this._paintCellRange();
 		return tr;
+	}
+
+	_resolveExpandCellState(cell,colSchemaNode,rowData,mainIndex,
+		cellState=this._resolveCellState(colSchemaNode,this._makeCallbackPayload(null,{},
+			{schemaNode:colSchemaNode,mainIndex,rowData}))) {
+		return this._detailsSchemaHasPresence(rowData,mainIndex,cell)?cellState
+			:{kind:"disabled",selectable:false,activatable:false,mutable:false,activation:"none"};
+	}
+
+	_updateExpandCell(cell,colSchemaNode,rowData,mainIndex) {
+		const state=this._resolveExpandCellState(cell,colSchemaNode,rowData,mainIndex);
+		this._setCellState(cell,state,null,colSchemaNode);
+		return state;
 	}
 
 	/**
@@ -11984,6 +12273,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					for (let cellI=instanceNode; cellI; cellI=cellI.parent)
 						if (cellI.nonEmptyDescentants!=null)
 							cellI.grpTr.classList.toggle("empty",!(cellI.nonEmptyDescentants+=newCellContent?1:-1));
+					this._refreshPresenceChain(instanceNode);
 					return true;
 				}
 				} else {
@@ -11994,6 +12284,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					this._setCellState(instanceNode.selEl??instanceNode.el,cellState,instanceNode);
 				}
 		}
+		this._refreshPresenceChain(instanceNode);
 	}
 
 	_getValueByPath(obj, path) {
@@ -12191,6 +12482,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const statePayload=this._makeCallbackPayload(instanceNode,valueBundle,
 			{schemaNode,mainIndex,rowData:scopedData});
 		const cellState=this._resolveCellState(schemaNode,statePayload);
+		if (instanceNode) {
+			instanceNode.presencePresentation={...presentation,...valueBundle};
+			instanceNode.presentationContentEl=el;
+		}
 		if (!instanceNode)
 			selEl.className="";
 		else if (instanceNode.baseCss)
@@ -12212,11 +12507,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 						"`allowDynamicOptionsWithoutRender: true` on the input configuration.");
 					console.log(schemaNode);
 			}
-			const newCellContent=presentation.content;
-			if (schemaNode.html)
-				el.innerHTML=newCellContent??"";
-			else
-				el.innerText=newCellContent??"";
+			this._renderFieldPresentation(el,schemaNode,presentation,instanceNode?instanceNode.present:true);
 		}
 		if (instanceNode&&!instanceNode.schemaNode.baseCss)
 			instanceNode.baseCss=(selEl??el).className;
@@ -12245,21 +12536,68 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return cellState;
 	}
 
-	_clearTimedCellRefresh(anchor) {
-		if (!anchor)
+	_renderFieldPresentation(el,schemaNode,presentation,present) {
+		const hasContent=this._hasPresenceValue(presentation?.content);
+		const hasPlaceholder=!!present&&!hasContent&&this._hasPresenceValue(presentation?.placeholder);
+		el.classList.toggle("tablance-presentation-placeholder",hasPlaceholder);
+		if (hasPlaceholder)
+			el.textContent=String(presentation.placeholder);
+		else if (schemaNode.html)
+			el.innerHTML=presentation?.content??"";
+		else
+			el.innerText=presentation?.content??"";
+	}
+
+	_applyFieldPresentationPlaceholder(instanceNode) {
+		if (!instanceNode?.presentationContentEl||!instanceNode.presencePresentation
+			||instanceNode.schemaNode.input?.type==="button")
 			return;
-		this._timedCellRefreshes.delete(anchor);
-		this._timedCellRefreshGeneration.set(anchor,
-			Number(this._timedCellRefreshGeneration.get(anchor)??0)+1);
+		this._renderFieldPresentation(instanceNode.presentationContentEl,instanceNode.schemaNode,
+			instanceNode.presencePresentation,instanceNode.present);
+	}
+
+	_clearTimedCellRefresh(key) {
+		if (!key)
+			return;
+		this._timedCellRefreshes.delete(key);
+		this._timedCellRefreshGeneration.set(key,
+			Number(this._timedCellRefreshGeneration.get(key)??0)+1);
+	}
+
+	_clearTimedDetailsSubtree(root) {
+		if (!root)
+			return;
+		for (const [key,entry] of this._timedCellRefreshes)
+			if (entry.instanceNode&&this._isInstanceDescendantOf(entry.instanceNode,root)) {
+				this._timedCellRefreshes.delete(key);
+				this._timedCellRefreshGeneration.set(key,
+					Number(this._timedCellRefreshGeneration.get(key)??0)+1);
+			}
+		this._armTimedCellRefreshTimer();
+	}
+
+	_deleteOpenDetailsPane(index) {
+		this._clearTimedDetailsSubtree(this._openDetailsPanes?.[index]);
+		delete this._openDetailsPanes[index];
+	}
+
+	_isMaterializedDetailsInstance(instanceNode) {
+		if (!instanceNode)
+			return false;
+		let root=instanceNode;
+		for (;root.parent;root=root.parent);
+		return !root.collapsing&&Object.values(this._openDetailsPanes??{}).includes(root);
 	}
 
 	_scheduleTimedCellRefresh({anchor,contentEl,schemaNode,rowData,mainIndex,instanceNode,presentation}) {
-		this._clearTimedCellRefresh(anchor);
+		const key=instanceNode??anchor;
+		this._clearTimedCellRefresh(key);
 		const refreshAt=presentation.refreshAt;
-		if (refreshAt==null||refreshAt<=Date.now()||!anchor?.isConnected)
+		const materialized=instanceNode?this._isMaterializedDetailsInstance(instanceNode):anchor?.isConnected;
+		if (refreshAt==null||refreshAt<=Date.now()||!materialized)
 			return this._armTimedCellRefreshTimer();
-		const generation=this._timedCellRefreshGeneration.get(anchor);
-		this._timedCellRefreshes.set(anchor,{anchor,contentEl,schemaNode,rowData,mainIndex,instanceNode,
+		const generation=this._timedCellRefreshGeneration.get(key);
+		this._timedCellRefreshes.set(key,{key,anchor,contentEl,schemaNode,rowData,mainIndex,instanceNode,
 			refreshAt,generation,presentationClasses:new Set(presentation.classNames)});
 		this._armTimedCellRefreshTimer();
 	}
@@ -12269,10 +12607,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			clearTimeout(this._timedCellRefreshTimer);
 			this._timedCellRefreshTimer=null;
 		}
-		for (const [anchor,entry] of this._timedCellRefreshes)
-			if (!anchor.isConnected
-				||this._timedCellRefreshGeneration.get(anchor)!==entry.generation)
-				this._timedCellRefreshes.delete(anchor);
+		for (const [key,entry] of this._timedCellRefreshes)
+			if (!(entry.instanceNode?this._isMaterializedDetailsInstance(entry.instanceNode):entry.anchor.isConnected)
+				||this._timedCellRefreshGeneration.get(key)!==entry.generation)
+				this._timedCellRefreshes.delete(key);
 		const next=Math.min(...[...this._timedCellRefreshes.values()].map(entry=>entry.refreshAt));
 		if (!Number.isFinite(next))
 			return;
@@ -12281,11 +12619,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_timedCellIdentityMatches(entry) {
-		if (!entry.anchor.isConnected
-			||this._timedCellRefreshGeneration.get(entry.anchor)!==entry.generation)
+		if (!(entry.instanceNode?this._isMaterializedDetailsInstance(entry.instanceNode):entry.anchor.isConnected)
+			||this._timedCellRefreshGeneration.get(entry.key)!==entry.generation)
 			return false;
 		if (entry.instanceNode)
-			return entry.instanceNode.el?.isConnected&&entry.instanceNode.dataObj===entry.rowData;
+			return entry.instanceNode.dataObj===entry.rowData;
 		const row=entry.anchor.closest("tr[data-data-row-index]");
 		const index=Number(row?.dataset.dataRowIndex);
 		return Number.isInteger(index)&&this._filteredData[index]===entry.rowData
@@ -12298,9 +12636,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (const entry of [...this._timedCellRefreshes.values()]) {
 			if (entry.refreshAt>now)
 				continue;
-			this._timedCellRefreshes.delete(entry.anchor);
+			this._timedCellRefreshes.delete(entry.key);
 			if (!this._timedCellIdentityMatches(entry))
 				continue;
+			if (entry.detailsPresence) {
+				this._updateExpandCell(entry.anchor,entry.schemaNode,entry.rowData,
+					this._filteredData.indexOf(entry.rowData));
+				continue;
+			}
 			if (this._inEditMode&&entry.anchor===this._selectedCell)
 				continue;
 			const mainIndex=this._filteredData.indexOf(entry.rowData);
@@ -12308,14 +12651,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				continue;
 			const presentation=this._getCellPresentation(entry.schemaNode,entry.rowData,mainIndex,
 				entry.instanceNode,now);
-			if (entry.schemaNode.html)
-				entry.contentEl.innerHTML=presentation.content??"";
-			else
-				entry.contentEl.innerText=presentation.content??"";
+			this._renderFieldPresentation(entry.contentEl,entry.schemaNode,presentation,
+				entry.instanceNode?entry.instanceNode.present:true);
 			for (const className of entry.presentationClasses)
 				entry.anchor.classList.remove(className);
 			if (presentation.classNames.length)
 				entry.anchor.classList.add(...presentation.classNames);
+			if (entry.instanceNode) {
+				entry.instanceNode.presencePresentation=presentation;
+				this._refreshPresenceChain(entry.instanceNode);
+			}
 			this._scheduleTimedCellRefresh({...entry,mainIndex,presentation});
 		}
 		this._armTimedCellRefreshTimer();
@@ -12632,7 +12977,7 @@ export default class Tablance extends TablanceBase {
 	_expandRow(tr,animate=true) {
 		const dataRowIndex=parseInt(tr.dataset.dataRowIndex);
 		const rowData=this._filteredData[dataRowIndex];
-		if (!rowData||!this._schema.details)
+		if (!rowData||!this._schema.details||!this._detailsSchemaHasPresence(rowData,dataRowIndex))
 			return;
 		const rowMeta=this._rowMeta.get(rowData)??(this._rowMeta.set(rowData,{}),this._rowMeta.get(rowData));
 		if (rowMeta.h>0)
@@ -12755,8 +13100,8 @@ export default class Tablance extends TablanceBase {
 		//the !! is needed or else undefined will be treated the same as true
 		if (!!schemaNode.visibleIf(payload) == instanceNode.hidden) {
 			instanceNode.hidden=!instanceNode.hidden;
-			instanceNode.outerContainerEl.style.display=instanceNode.hidden?"none":"";
-			instanceNode.outerContainerEl.classList.toggle("tablance-hidden",instanceNode.hidden);
+			instanceNode.outerContainerEl?.classList.toggle("tablance-hidden",instanceNode.hidden);
+			this._refreshPresenceChain(instanceNode);
 			if (instanceNode.parent?.schemaNode?.type==="grid"
 				&&instanceNode.parent.children?.includes(instanceNode))
 				this._refreshGridLayout(instanceNode.parent);

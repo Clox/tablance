@@ -1137,6 +1137,10 @@
 .tablance .main-table > tbody > tr.details + tr:not(.details) > td {
   box-shadow: inset 0 1px 0 var(--tablance-border-color);
 }
+.tablance .details .tablance-presentation-placeholder {
+  color: var(--tablance-muted-color);
+  font-style: italic;
+}
 .tablance .details td {
   border-color: var(--tablance-row-border-color);
   background-color: transparent;
@@ -1577,7 +1581,7 @@
 }
 .tablance .details .repeat-insertion td {
   padding: 0;
-  color: gray;
+  color: var(--tablance-muted-color);
 }
 .tablance .details tr.repeat-insertion.repeated-creator-after-entry:not(.grouped-repeated-creator) > td {
   padding: 7px 0 8px 4px;
