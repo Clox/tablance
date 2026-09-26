@@ -2748,6 +2748,9 @@ try {
 		return !!row&&[...row.cells].every((cell,index)=>Math.abs(cell.getBoundingClientRect().width
 			-scrollbarTable._headerTr.cells[index].getBoundingClientRect().width)<1);
 	};
+	const scrollbarOuterEdgesAligned=()=>Math.abs(
+		scrollbarTable._headerTable.getBoundingClientRect().right
+		-scrollbarTable._scrollBody.getBoundingClientRect().right)<.01;
 	const scrollbarSpacerAligned=()=>Math.abs(
 		scrollbarTable._headerTr.lastElementChild.getBoundingClientRect().width
 		-(scrollbarTable._scrollBody.offsetWidth-scrollbarTable._scrollBody.clientWidth))<1;
@@ -2755,19 +2758,19 @@ try {
 	await tick();
 	await tick();
 	assert(scrollbarTable._scrollBody.offsetWidth===scrollbarTable._scrollBody.clientWidth
-		&&scrollbarWidthsAligned()&&scrollbarSpacerAligned(),
+		&&scrollbarWidthsAligned()&&scrollbarSpacerAligned()&&scrollbarOuterEdgesAligned(),
 		"header and body share column geometry before a vertical scrollbar is needed");
 	scrollbarTable.setData(Array.from({length:30},(_,index)=>({a:index,b:index,c:index})));
 	await tick();
 	await tick();
 	assert(scrollbarTable._scrollBody.offsetWidth>scrollbarTable._scrollBody.clientWidth
-		&&scrollbarWidthsAligned()&&scrollbarSpacerAligned(),
+		&&scrollbarWidthsAligned()&&scrollbarSpacerAligned()&&scrollbarOuterEdgesAligned(),
 		"header geometry resynchronizes when body growth introduces a vertical scrollbar");
 	scrollbarTable.setData([{a:"A",b:"B",c:"C"}]);
 	await tick();
 	await tick();
 	assert(scrollbarTable._scrollBody.offsetWidth===scrollbarTable._scrollBody.clientWidth
-		&&scrollbarWidthsAligned()&&scrollbarSpacerAligned(),
+		&&scrollbarWidthsAligned()&&scrollbarSpacerAligned()&&scrollbarOuterEdgesAligned(),
 		"header geometry resynchronizes when body shrink removes the vertical scrollbar");
 
 	const fixedHeightTable=new Tablance(host(),{

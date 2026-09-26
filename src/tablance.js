@@ -11245,10 +11245,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 			//last col is empty col with the width of table-scrollbar if its present in order to make the header span
 			//the whole with while not actually using that last bit in the calculations for the normal cols
-			this._headerTr.cells[colI].style.width
-				=this._scrollBody.offsetWidth-this._scrollBody.clientWidth+"px";
+			const scrollbarWidth=this._scrollBody.offsetWidth-this._scrollBody.clientWidth;
+			this._headerTr.cells[colI].style.width=scrollbarWidth+"px";
+			this._headerTable.classList.toggle("has-scrollbar-gutter",scrollbarWidth>0);
 			this._tableArea.style.setProperty("--tablance-scrollbar-width",
-				this._scrollBody.offsetWidth-this._scrollBody.clientWidth+"px");
+				scrollbarWidth+"px");
 			this._reserveTableUtilitiesHeaderSpace();
 		}
 	}

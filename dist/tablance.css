@@ -842,10 +842,11 @@
 }
 .tablance > .table-area > .header-table {
   overflow: hidden;
+  height: 44px;
   border-collapse: separate;
   border-spacing: 0;
-  border: 1px solid var(--tablance-border-color);
-  border-bottom: 0;
+  border: 0;
+  border-top: 1px solid var(--tablance-border-color);
   border-radius: var(--tablance-radius) var(--tablance-radius) 0 0;
   background: var(--tablance-header-background);
 }
@@ -854,6 +855,7 @@
 }
 .tablance > .table-area > .header-table th {
   position: relative;
+  box-sizing: border-box;
   height: 42px;
   padding: 0 12px;
   border: 0;
@@ -867,6 +869,12 @@
   vertical-align: middle;
   cursor: pointer;
   transition: background-color 80ms ease;
+}
+.tablance > .table-area > .header-table th:first-child {
+  border-left: 1px solid var(--tablance-border-color);
+}
+.tablance > .table-area > .header-table th:nth-last-child(2) {
+  border-right: 1px solid var(--tablance-border-color);
 }
 .tablance > .table-area > .header-table th.sortable-header:hover {
   background: #E5ECF5;
@@ -934,6 +942,12 @@
 }
 .tablance > .table-area > .header-table th.select-col > input {
   transform: scale(1.3);
+}
+.tablance > .table-area > .header-table.has-scrollbar-gutter th:nth-last-child(2) {
+  border-right: 0;
+}
+.tablance > .table-area > .header-table.has-scrollbar-gutter th.scrollbar-spacer {
+  border-right: 1px solid var(--tablance-border-color);
 }
 .tablance > .table-area.has-table-utilities > .header-table {
   table-layout: fixed;
