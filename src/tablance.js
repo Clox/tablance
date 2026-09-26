@@ -739,7 +739,8 @@ class TablanceBase {
   	 * 				type "group" Used when a set of data should be grouped. An example is when having an address and
 	 * 					all the rows in it belongs together. The group also has to be entered/opened with enter/dblclick
   	 * 				title String String displayed title if placed in a container which displays the title
-	 * 				cssClass String Css-classes to be added to the group
+	 * 				cssClass String|Function Css-classes to be added to the group. A callback receives the
+	 * 					standard cell payload and is re-evaluated when the group's presentation is refreshed.
   	 * 				entries Array Array of entries. fields, lists, etc.. 
 	 * 				closedRender Function pass a method here that will get the data for the group as first arg.
 	 * 								it needs to return a string which will replace the group-content when it is closed
@@ -5672,7 +5673,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			parentEl.dataset.path=groupTable.dataset.path;
 		}
 		this._generateDetailsCollection(groupSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
-		groupTable.className="details-group "+(groupSchemaNode.cssClass??"");
+		groupTable.className="details-group";
+		this._applyGroupSchemaCssClass(instanceNode,mainIndex,rowData);
 		const chevron=document.createElement("span");
 		chevron.className="group-chevron";
 		chevron.setAttribute("aria-hidden","true");
@@ -7940,7 +7942,27 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._syncDetailsPresentation(groupObject);
 	}
 
+	_applyGroupSchemaCssClass(groupObject,mainIndex=this._getInstanceMainIndex(groupObject),rowData=groupObject?.dataObj) {
+		if (!groupObject?.el)
+			return;
+		for (const className of groupObject.schemaCssClasses??[])
+			groupObject.el.classList.remove(className);
+		const {schemaNode}=groupObject;
+		let cssAddition=schemaNode?.cssClass;
+		if (typeof cssAddition==="function") {
+			const valueBundle=this._getCellValueBundle(schemaNode,rowData,mainIndex,groupObject);
+			cssAddition=cssAddition(this._makeCallbackPayload(groupObject,valueBundle,
+				{schemaNode,mainIndex,rowData}));
+		}
+		const classNames=(Array.isArray(cssAddition)?cssAddition:String(cssAddition??"").split(" "))
+			.filter(Boolean);
+		groupObject.schemaCssClasses=classNames;
+		if (classNames.length)
+			groupObject.el.classList.add(...classNames);
+	}
+
 	_setClosedRender(groupObject,renderText,path=groupObject.path,tbody=groupObject.el.tBodies?.[0]) {
+		this._applyGroupSchemaCssClass(groupObject);
 		const renderRow=groupObject.el.querySelector("tbody>tr.group-render");
 		if (renderText==null) {
 			groupObject.el.classList.remove("closed-render");

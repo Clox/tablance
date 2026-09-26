@@ -1959,7 +1959,9 @@ try {
 			{title:"Notes",dataKey:"notes",nodeId:"notes",
 				input:{type:"textarea",newLineShortcutHint:true}},
 			{type:"group",title:"History",nodeId:"historyGroup",entries:[
-				{type:"repeated",dataKey:"history",entry:{type:"group",closedRender:({date})=>date,entries:[
+				{type:"repeated",dataKey:"history",entry:{type:"group",closedRender:({date})=>date,
+					cssClass:({rowData})=>["history-entry",rowData.date==="2026-02-01"?"history-current":null]
+						.filter(Boolean),entries:[
 					{title:"Date",dataKey:"date",input:{type:"text"}},
 					{title:"Event",dataKey:"event",editableIf:()=>false,input:{type:"text"}},
 				]}},
@@ -4747,6 +4749,17 @@ try {
 		"closedRenderHtml explicitly enables trusted markup for closed groups");
 	const historyGroupChevron=historyGroup.groupChevronEl;
 	const initiallyNestedHistoryEntries=historyGroup.children[0].children;
+	assert(initiallyNestedHistoryEntries[0].el.classList.contains("history-entry")
+		&&!initiallyNestedHistoryEntries[0].el.classList.contains("history-current")
+		&&initiallyNestedHistoryEntries[1].el.classList.contains("history-current"),
+		"group cssClass callbacks receive row data when the group is generated");
+	initiallyNestedHistoryEntries[1].dataObj.date="2026-03-01";
+	table._setClosedRender(initiallyNestedHistoryEntries[1],"2026-03-01");
+	assert(initiallyNestedHistoryEntries[1].el.classList.contains("history-entry")
+		&&!initiallyNestedHistoryEntries[1].el.classList.contains("history-current"),
+		"dynamic group classes are re-evaluated without removing stable schema classes");
+	initiallyNestedHistoryEntries[1].dataObj.date="2026-02-01";
+	table._setClosedRender(initiallyNestedHistoryEntries[1],"2026-02-01");
 	const initialChevronState=[historyGroupChevron?.classList.contains("group-chevron"),!historyGroupChevron?.hidden,
 		historyGroupChevron?.getAttribute("aria-hidden")==="true",
 		historyGroupChevron?.closest("table")===historyGroup.el,
