@@ -1405,6 +1405,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return true;
 	}
 
+	/**Whether a source row is still the uncommitted draft created by insertNewRow(). */
+	isNewRow(rowData) {
+		return this._sourceData.includes(rowData)&&this._rowMeta.get(rowData)?.isNew===true;
+	}
+
 	setViewMode(viewModeKey) {
 		if (viewModeKey===this._currentViewModeKey)
 			return;

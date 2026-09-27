@@ -1110,6 +1110,12 @@ try {
 		&&removeDataTable._cellCursorDataObj===firstRemovedRows[1]
 		&&removeDataTable._activeSchemaNode.dataKey==="code",
 		"removeData moves a first-row cursor to the following row in the same sticky column");
+	const removableDraft=removeDataTable.insertNewRow({name:"Draft",code:"local"},{highlight:false});
+	assert(removeDataTable.isNewRow(removableDraft)&&!removeDataTable.isNewRow(firstRemovedRows[1]),
+		"isNewRow distinguishes an insertNewRow draft from ordinary source rows");
+	assert(removeDataTable.removeData(removableDraft)&&!removeDataTable.isNewRow(removableDraft)
+		&&!removeDataTable._sourceData.includes(removableDraft),
+		"the generic removeData operation discards a new draft without a commit path");
 	const overriddenTrashTable=new Tablance(host(),{
 		trash:{isTrashed:({rowData})=>!!rowData.removed,
 			getChanges:({operation})=>({removed:operation==="trash"})},
