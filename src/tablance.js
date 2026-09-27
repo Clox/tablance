@@ -6,6 +6,7 @@ const TABLANCE_VERSION = typeof __TABLANCE_VERSION__!=="undefined"?__TABLANCE_VE
 const TABLANCE_BUILD = typeof __TABLANCE_BUILD__!=="undefined"?__TABLANCE_BUILD__:"dev";
 const CONTEXTUAL_HELP_HOVER_DELAY=350;
 const DEFAULT_MENU_COLUMN_WIDTH=48;
+const POINTER_GROUP_COLLAPSE_DELAY=150;
 let anchoredPopoverId=0;
 let textareaShortcutHintId=0;
 let comboboxListboxId=0;
@@ -6719,12 +6720,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const directInstance=e.target.closest(".repeated-reorder-cell")?._tablanceInstanceNode;
 			const interactiveEl=extensionTarget?.selEl??extensionTarget?.el??e.target.closest('[data-path]');
 			if (!interactiveEl)
-				return directInstance?this._selectDetailsCell(directInstance):undefined;
+				return directInstance?this._selectDetailsCell(directInstance,false,
+					{kind:"pointer",targetInstance:directInstance}):undefined;
 			const instanceNode=directInstance??this._resolvePointerDetailsInstance(interactiveEl,mainTr);
 			if (rangeAnchor&&instanceNode?.parent===rangeAnchor.surface
 					&&instanceNode.parent.schemaNode.type==="grid")
 				e.preventDefault();
-			if (this._selectDetailsCell(instanceNode)&&rangeAnchor) {
+			if (this._selectDetailsCell(instanceNode,false,{kind:"pointer",targetInstance:instanceNode})&&rangeAnchor) {
 				const head=this._rangePosition();
 				if (head?.surface===rangeAnchor.surface)
 					this._setCellRange(rangeAnchor,head);
@@ -6748,7 +6750,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 			if (rangeAnchor?.surface==="main"&&this._rangeMainColumns().includes(td?.cellIndex))
 				e.preventDefault();
-			if (this._selectMainTableCell(td)&&rangeAnchor) {
+			if (this._selectMainTableCell(td,true,{kind:"pointer"})&&rangeAnchor) {
 				const head=this._rangePosition();
 				if (head?.surface===rangeAnchor.surface)
 					this._setCellRange(rangeAnchor,head);
@@ -6929,7 +6931,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				onClose:()=>{
 					pikaContainer.remove();
 					pika.destroy();
-					setTimeout(()=>this._exitEditMode(true));
+					setTimeout(()=>{
+						if (this._ownsCellEditor(input))
+							this._exitEditMode(true);
+					});
 				},
 				container:pikaContainer,
 				firstDay:1,//week starts on monday
@@ -7260,6 +7265,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return editor;
 	}
 
+	_ownsCellEditor(editor) {
+		return !!this._inEditMode&&!!editor&&this._cellCursor.contains(editor);
+	}
+
 	_syncInlineEditorGeometry() {
 		if (!this._inlineEditorHost||!this._inlineEditorValueEl)
 			return;
@@ -7319,7 +7328,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				textarea.setSelectionRange(Math.min(start,textarea.value.length),Math.min(start,textarea.value.length));
 			}
 		});
-		textarea.addEventListener("blur",()=>setTimeout(()=>this._exitReadOnlyMode(false)));
+		textarea.addEventListener("blur",()=>setTimeout(()=>{
+			if (this._inReadOnlyMode&&this._cellCursor.contains(textarea))
+				this._exitReadOnlyMode(false);
+		}));
 		const caretPosition=textarea.value.length;
 		textarea.setSelectionRange(caretPosition,caretPosition);
 		textarea.focus({preventScroll:true});
@@ -7852,14 +7864,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 	}
 
-	_stageGroupClose(groupObject) {
+	_stageGroupClose(groupObject,animationDelay=0) {
 		groupObject._commitStagedClosed=true;
 		this._reanchorActiveDetailsCellForGroupClose(groupObject);
 		this._transitionGroupPresentation(groupObject,()=>{
 			this._refreshClosedRenderPresentations(groupObject,true);
 			this._setGroupPresentationState(groupObject,"closed");
 			this._syncGroupChevronVisibility(groupObject);
-		});
+		},animationDelay);
 		this._ignoreClicksUntil=Date.now()+500;
 	}
 
@@ -7893,7 +7905,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			delete group._commitStagedClosed;
 		}
 		if (prepared.boundary) {
-			this._finalizeGroupClose(prepared.boundary);
+			this._finalizeGroupClose(prepared.boundary,prepared.groupCloseAnimationDelay??0);
 			this._removeGroupFromTransaction(prepared.boundary);
 		}
 		this._editTransaction=null;
@@ -8107,11 +8119,20 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 	}
 
-	_closeGroup(groupObject,targetCell=null,suppressTooltip=false,continuation=null) {
+	_closeGroup(groupObject,targetCell=null,suppressTooltip=false,continuation=null,interaction=null) {
 		if (this._hasPendingCommitHandoff())
 			return false;
+		const pointerOutsideGroup=interaction?.kind==="pointer"
+			&&(interaction.targetInstance
+				?!this._isInstanceDescendantOf(interaction.targetInstance,groupObject)
+				:true);
+		const groupRowData=this._filteredData?.[this._getInstanceMainIndex(groupObject)];
+		const groupRowIndex=this._filteredData?.indexOf(groupRowData)??-1;
+		const targetRowIndex=this._filteredData?.indexOf(interaction?.targetRowData)??-1;
+		const animationDelay=pointerOutsideGroup&&groupRowIndex>=0&&targetRowIndex>groupRowIndex
+			?POINTER_GROUP_COLLAPSE_DELAY:0;
 		if (this._isTrashMode()) {
-			this._finalizeGroupClose(groupObject);
+			this._finalizeGroupClose(groupObject,animationDelay);
 			this._removeGroupFromTransaction(groupObject,true);
 			return true;
 		}
@@ -8155,7 +8176,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			groupObject._transactionCreated=true;
 		}
 		if (groupObject!==commitBoundary)
-			this._stageGroupClose(groupObject);
+			this._stageGroupClose(groupObject,animationDelay);
 		if (changed)
 			for (const repeated of this._getRepeatedAncestors(groupObject))
 				this._finalizeRepeatedMutation(repeated);
@@ -8172,6 +8193,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					this._showTooltip(error?.message??String(error),groupObject.el);
 				return false;
 			}
+			prepared.groupCloseAnimationDelay=animationDelay;
 			if (!prepared.transaction.commits.length) {
 				this._finalizeCommitTransaction(prepared);
 				return true;
@@ -8216,7 +8238,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return true;
 	}
 
-	_finalizeGroupClose(groupObject) {
+	_finalizeGroupClose(groupObject,animationDelay=0) {
 		if (this._isCreatorEmptyGroup(groupObject)) {
 			this._presentCreatorEmpty(groupObject);
 			this._ignoreClicksUntil=Date.now()+500;
@@ -8224,7 +8246,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return;
 		}
 		this._reanchorActiveDetailsCellForGroupClose(groupObject);
-		this._transitionGroupPresentation(groupObject,()=>{
+		const mutatePresentation=()=>{
 			this._setGroupPresentationState(groupObject,"closed");
 			if (groupObject.updateRenderOnClose) {//if group is flagged for having its closed-render updated on close
 				delete groupObject.updateRenderOnClose;//delete the flag so it doesn't get triggered again
@@ -8232,7 +8254,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 			this._syncGroupChevronVisibility(groupObject);
 			this._syncRepeatedReorderEntry(groupObject);
-		});
+		};
+		// A nested group may already have entered its closed presentation while its outer commit boundary completes.
+		// Keep that exact transition (including a pending pointer delay) instead of restarting it during finalization.
+		if (groupObject.presentationState==="closed") {
+			mutatePresentation();
+			const transition=groupObject.viewportEl?._tablanceGroupTransition;
+			if (transition)
+				this._retargetGroupTransition(groupObject,transition);
+		} else
+			this._transitionGroupPresentation(groupObject,mutatePresentation,animationDelay);
 		this._ignoreClicksUntil=Date.now()+500;
 		delete groupObject._dirtyFields;
 	}
@@ -8261,11 +8292,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const transition=viewport?._tablanceGroupTransition;
 		if (transition) {
 			transition.finished=true;
+			clearTimeout(transition.delayTimer);
 			clearTimeout(transition.fallback);
 			cancelAnimationFrame(transition.startFrame);
 			cancelAnimationFrame(transition.geometryFrame);
 			cancelAnimationFrame(transition.retargetFrame);
 			transition.resizeObserver?.disconnect();
+			this._setGroupTransitionCursorClipped(transition,false);
 			delete viewport._tablanceGroupTransition;
 		}
 		if (!viewport)
@@ -8286,6 +8319,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		visit(groupObject);
 	}
 
+	_setGroupTransitionCursorClipped(transition,clipped) {
+		if (!this._cellCursor)
+			return;
+		if (clipped) {
+			this._cellCursor._tablanceGroupClipOwner=transition;
+			this._cellCursor.classList.add("tablance-group-animation-clipped");
+		} else if (this._cellCursor._tablanceGroupClipOwner===transition) {
+			this._cellCursor.classList.remove("tablance-group-animation-clipped");
+			delete this._cellCursor._tablanceGroupClipOwner;
+		}
+	}
+
 	_syncGroupAnimationGeometry(groupObject,transition) {
 		const viewport=groupObject.viewportEl;
 		if (viewport?._tablanceGroupTransition!==transition)
@@ -8295,12 +8340,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._updateDetailsHeight(detailsTr);
 		this._adjustCursorPosSize?.(this._activeDetailsCell
 			?this._getCursorGeometryEl(this._activeDetailsCell):this._selectedCell);
-		if (this._cellCursor&&!this._navigationCursorTransition) {
+		const ownsCursor=transition.cursorOwner===this._activeDetailsCell
+			&&transition.selectedCell===this._selectedCell;
+		if (this._cellCursor&&!this._navigationCursorTransition&&ownsCursor) {
 			const viewportRect=viewport.getBoundingClientRect();
 			const cursorRect=this._cellCursor.getBoundingClientRect();
-			this._cellCursor.classList.toggle("tablance-group-animation-clipped",
+			this._setGroupTransitionCursorClipped(transition,
 				cursorRect.top<viewportRect.top-.5||cursorRect.bottom>viewportRect.bottom+.5);
-		}
+		} else
+			this._setGroupTransitionCursorClipped(transition,false);
 		transition.geometryFrame=requestAnimationFrame(()=>this._syncGroupAnimationGeometry(groupObject,transition));
 	}
 
@@ -8319,13 +8367,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const targetHeight=this._groupNaturalHeight(groupObject);
 		if (Math.abs(targetHeight-transition.targetHeight)<.75)
 			return;
+		transition.targetHeight=targetHeight;
+		if (!transition.started)
+			return;
 		const currentHeight=viewport.getBoundingClientRect().height;
 		clearTimeout(transition.fallback);
 		cancelAnimationFrame(transition.startFrame);
 		viewport.classList.remove("tablance-group-animating");
 		viewport.style.height=currentHeight+"px";
 		void viewport.offsetHeight;
-		transition.targetHeight=targetHeight;
 		cancelAnimationFrame(transition.retargetFrame);
 		transition.retargetFrame=requestAnimationFrame(()=>{
 			if (viewport._tablanceGroupTransition!==transition)
@@ -8343,6 +8393,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!viewport||transition.finished||viewport._tablanceGroupTransition!==transition)
 			return;
 		transition.finished=true;
+		clearTimeout(transition.delayTimer);
 		clearTimeout(transition.fallback);
 		cancelAnimationFrame(transition.startFrame);
 		cancelAnimationFrame(transition.geometryFrame);
@@ -8351,7 +8402,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		viewport.classList.remove("tablance-group-animating");
 		viewport.style.removeProperty("height");
 		viewport.style.removeProperty("overflow");
-		this._cellCursor?.classList.remove("tablance-group-animation-clipped");
+		this._setGroupTransitionCursorClipped(transition,false);
 		delete viewport._tablanceGroupTransition;
 		const detailsTr=viewport.closest("tr.details");
 		if (detailsTr&&!this._onlyDetails)
@@ -8360,7 +8411,23 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			?this._getCursorGeometryEl(this._activeDetailsCell):this._selectedCell);
 	}
 
-	_transitionGroupPresentation(groupObject,mutatePresentation) {
+	_startGroupTransition(groupObject,transition) {
+		const viewport=groupObject?.viewportEl;
+		if (viewport?._tablanceGroupTransition!==transition)
+			return;
+		transition.delayTimer=null;
+		transition.startFrame=requestAnimationFrame(()=>{
+			if (viewport._tablanceGroupTransition!==transition)
+				return;
+			transition.started=true;
+			viewport.classList.add("tablance-group-animating");
+			viewport.style.height=transition.targetHeight+"px";
+			this._armGroupTransitionFallback(groupObject,transition);
+			this._syncGroupAnimationGeometry(groupObject,transition);
+		});
+	}
+
+	_transitionGroupPresentation(groupObject,mutatePresentation,startDelay=0) {
 		const viewport=groupObject?.viewportEl;
 		if (!viewport) {
 			mutatePresentation();
@@ -8375,28 +8442,24 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!viewport.isConnected||this._groupReducedMotion()||Math.abs(currentHeight-targetHeight)<.75) {
 			viewport.style.removeProperty("height");
 			viewport.style.removeProperty("overflow");
-			this._cellCursor?.classList.remove("tablance-group-animation-clipped");
 			const detailsTr=viewport.closest("tr.details");
 			if (detailsTr&&!this._onlyDetails)
 				this._updateDetailsHeight(detailsTr);
 			return;
 		}
-		const transition={groupObject,targetHeight,finished:false,fallback:null,startFrame:null,
-			geometryFrame:null,retargetFrame:null,resizeObserver:null};
+		const transition={groupObject,targetHeight,finished:false,started:false,delayTimer:null,
+			cursorOwner:this._activeDetailsCell,selectedCell:this._selectedCell,
+			fallback:null,startFrame:null,geometryFrame:null,retargetFrame:null,resizeObserver:null};
 		viewport._tablanceGroupTransition=transition;
 		if (typeof ResizeObserver==="function") {
 			transition.resizeObserver=new ResizeObserver(()=>this._retargetGroupTransition(groupObject,transition));
 			transition.resizeObserver.observe(groupObject.el);
 		}
 		void viewport.offsetHeight;
-		transition.startFrame=requestAnimationFrame(()=>{
-			if (viewport._tablanceGroupTransition!==transition)
-				return;
-			viewport.classList.add("tablance-group-animating");
-			viewport.style.height=transition.targetHeight+"px";
-			this._armGroupTransitionFallback(groupObject,transition);
-			this._syncGroupAnimationGeometry(groupObject,transition);
-		});
+		if (startDelay>0)
+			transition.delayTimer=setTimeout(()=>this._startGroupTransition(groupObject,transition),startDelay);
+		else
+			this._startGroupTransition(groupObject,transition);
 	}
 
 	_placeGroupChevron(groupObject) {
@@ -8454,7 +8517,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._cancelGroupTransition(groupObject);
 		groupObject.viewportEl?.style.removeProperty("height");
 		groupObject.viewportEl?.style.removeProperty("overflow");
-		this._cellCursor?.classList.remove("tablance-group-animation-clipped");
 		this._setGroupPresentationState(groupObject,"creator-empty");
 		this._syncDetailsPresentation(groupObject);
 		const detailsTr=groupObject.viewportEl?.closest("tr.details");
@@ -9407,7 +9469,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		input.addEventListener("blur",()=>setTimeout(()=>{
 			// A rejected durable handoff restores focus to this same editor. Ignore the delayed blur task caused by
 			// temporarily disabling it while pending, otherwise it would immediately start an unrequested retry.
-			if (input.ownerDocument.activeElement!==input)
+			if (input.ownerDocument.activeElement!==input&&this._ownsCellEditor(input))
 				this._exitEditMode(true);
 		}));
 		
@@ -9577,7 +9639,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._chooseComboboxOption(ctx,Number(option.dataset.index));
 		});
 		input.addEventListener("blur",()=>setTimeout(()=>{
-			if (input.ownerDocument.activeElement!==input&&this._inEditMode&&this._comboboxContext===ctx)
+			if (input.ownerDocument.activeElement!==input&&this._ownsCellEditor(input)
+				&&this._comboboxContext===ctx)
 				this._exitEditMode(true);
 		}));
 		this._cellCursor.parentElement.appendChild(popup);
@@ -10669,7 +10732,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return true;
 	}
 
-	_closeActiveDetailsCell(targetCell,continuation=null) {
+	_closeActiveDetailsCell(targetCell,continuation=null,interaction=null) {
 		if (this._hasPendingCommitHandoff())
 			return false;
 		let detailsRoot=null;
@@ -10678,7 +10741,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			while (detailsRoot.parent) detailsRoot=detailsRoot.parent;
 			for (let oldCellParent=this._activeDetailsCell; oldCellParent=oldCellParent.parent;) {
 				if (oldCellParent.schemaNode.type==="group") {
-					if (!this._closeGroup(oldCellParent,targetCell,false,continuation))//close any open group above old cell
+					if (!this._closeGroup(oldCellParent,targetCell,false,continuation,interaction))//close any open group above old cell
 						return false;
 					this._ignoreClicksUntil=Date.now()+500;
 				}
@@ -10693,7 +10756,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 
-	_selectMainTableCell(cell,focus=true) {
+	_selectMainTableCell(cell,focus=true,interaction=null) {
 		if (this._hasPendingCommitHandoff())
 			return false;
 		if (!cell)	//in case of trying to move up from top row etc,
@@ -10707,10 +10770,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._mainColIndex=cell.cellIndex;
 		const mainRowIndex=parseInt(cell.parentElement.dataset.dataRowIndex);//save it here rather than setting it 
 					//directly because we do not want it to change if #selectCell returns false, preventing the select
+		if (interaction?.kind==="pointer")
+			interaction={...interaction,targetRowData:this._filteredData[mainRowIndex]};
 					
 		const continuation={kind:"main",rowData:this._filteredData[mainRowIndex],
 			schemaNode:this._colSchemaNodes[this._mainColIndex],focus};
-		if (this._closeActiveDetailsCell(cell,continuation)) {
+		if (this._closeActiveDetailsCell(cell,continuation,interaction)) {
 			const selected=this._selectCell(cell,this._colSchemaNodes[this._mainColIndex],
 				this._filteredData[mainRowIndex],true,null,false,focus);
 			this._mainRowIndex=mainRowIndex;
@@ -10718,7 +10783,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 	}
 
-	_selectDetailsCell(instanceNode,preserveVerticalPreferredColumn=false) {
+	_selectDetailsCell(instanceNode,preserveVerticalPreferredColumn=false,interaction=null) {
 		if (this._hasPendingCommitHandoff())
 			return false;
 		if (!instanceNode)
@@ -10729,6 +10794,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return false;
 		let root=instanceNode;
 		while (root.parent) root=root.parent;
+		if (interaction?.kind==="pointer")
+			interaction={...interaction,targetInstance:instanceNode,
+				targetRowData:this._filteredData[root.rowIndex]};
 		if (root.collapsing)
 			return false;
 		for (let node=instanceNode;node;node=node.parent)
@@ -10755,7 +10823,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					if (oldParnt) {
 						if (oldParnt.schemaNode.type==="group"&&!this._closeGroup(oldParnt,instanceNode.selEl??instanceNode.el,
 							false,{kind:"details",rowData:this._filteredData[mainRowIndex],path:[...instanceNode.path],
-								preserveVerticalPreferredColumn}))
+								preserveVerticalPreferredColumn},interaction))
 							return false;
 						if (oldParnt.schemaNode.onBlur)
 							oldParnt.schemaNode.onBlur?.(oldParnt,mainRowIndex);
@@ -10790,6 +10858,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_selectCell(cellEl,schemaNode,dataObj,adjustCursorPosSize=true,instanceNode=null,
 		preserveVerticalPreferredColumn=false,focus=true) {
 		this._cancelNavigationCursorTransition();
+		if (this._cellCursor?._tablanceGroupClipOwner)
+			this._setGroupTransitionCursorClipped(this._cellCursor._tablanceGroupClipOwner,false);
 		this._clearCopyFeedback();
 		this._closeHelp();
 		this._closeMenu();

@@ -3513,6 +3513,7 @@ try {
 	];
 	const previewIncludeCalls=[];
 	const previewRow={title:"Preview",items:previewBacking};
+	const previewTargetRow={title:"Target below",items:[]};
 	const previewTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},details:{type:"list",entries:[
 		{type:"group",nodeId:"previewOuter",entries:[
 			{type:"repeated",dataKey:"items",nodeId:"previewItems",grouping:{by:"kind",order:[
@@ -3528,7 +3529,7 @@ try {
 				entries:[{title:"Label",dataKey:"label",input:{type:"text"}}]}},
 		]},
 	]}},true,true,{searchbar:false});
-	previewTable.setData([previewRow]);
+	previewTable.setData([previewRow,previewTargetRow]);
 	await tick();
 	const previewOuter=previewTable.getDetailCell(0,"previewOuter");
 	const previewRepeated=previewTable.getDetailCell(0,"previewItems");
@@ -3617,6 +3618,58 @@ try {
 	await waitFor(()=>!previewViewport._tablanceGroupTransition,"ordinary group transition completion");
 	assert(previewOuter.el.classList.contains("open")&&!previewViewport.style.height&&!previewViewport.style.overflow,
 		"an ordinary transition event leaves an open group at natural height with no temporary inline state");
+
+	const previewMainCell=previewTable._mainTbody.querySelector('tr[data-data-row-index="1"]>td');
+	const pointerClose=()=>{
+		previewTable._ignoreClicksUntil=0;
+		previewMainCell.dispatchEvent(new MouseEvent("mousedown",{button:0,bubbles:true,cancelable:true}));
+		return previewViewport._tablanceGroupTransition;
+	};
+	const pointerOpenHeight=previewViewport.getBoundingClientRect().height;
+	const delayedPointerClose=pointerClose();
+	assert(!previewOuter.el.classList.contains("open")
+		&&JSON.stringify(previewTitles())===JSON.stringify(["Alpha","Beta","unknown"])
+		&&previewTable._selectedCell===previewMainCell&&previewTable._activeDetailsCell===null
+		&&delayedPointerClose&&!delayedPointerClose.started&&delayedPointerClose.delayTimer!=null
+		&&Math.abs(previewViewport.getBoundingClientRect().height-pointerOpenHeight)<.75,
+		"outside mousedown closes logically and selects its target immediately while retaining the open height");
+	await new Promise(resolve=>setTimeout(resolve,80));
+	assert(previewViewport._tablanceGroupTransition===delayedPointerClose&&!delayedPointerClose.started
+		&&Math.abs(previewViewport.getBoundingClientRect().height-pointerOpenHeight)<.75,
+		"pointer-driven group collapse remains visually stationary during its initial delay");
+	await waitFor(()=>delayedPointerClose.started,"delayed pointer group collapse start");
+	await waitFor(()=>!previewViewport._tablanceGroupTransition,"delayed pointer group collapse cleanup");
+
+	previewEntry("a-second").select();
+	await waitFor(()=>!previewViewport._tablanceGroupTransition,"group reopening before delayed-close cancellation test");
+	const obsoletePointerClose=pointerClose();
+	previewEntry("a-second").select();
+	assert(previewOuter.el.classList.contains("open")&&obsoletePointerClose.finished
+		&&previewViewport._tablanceGroupTransition!==obsoletePointerClose,
+		"reopening during the delay cancels the obsolete pointer-collapse state immediately");
+	await new Promise(resolve=>setTimeout(resolve,180));
+	assert(previewOuter.el.classList.contains("open")
+		&&previewViewport._tablanceGroupTransition!==obsoletePointerClose,
+		"an obsolete delayed callback cannot affect a reopened group");
+	await waitFor(()=>!previewViewport._tablanceGroupTransition,"reopened group transition cleanup");
+	const firstRapidClose=pointerClose();
+	previewEntry("a-second").select();
+	previewTable._ignoreClicksUntil=0;
+	const secondRapidClose=pointerClose();
+	assert(firstRapidClose.finished&&secondRapidClose&&secondRapidClose!==firstRapidClose
+		&&!secondRapidClose.started,
+		"subsequent pointer group operations replace rather than reuse delayed transition state");
+	await waitFor(()=>secondRapidClose.started,"replacement delayed pointer group collapse start");
+	await waitFor(()=>!previewViewport._tablanceGroupTransition,"replacement delayed pointer group collapse cleanup");
+
+	previewEntry("a-second").select();
+	await waitFor(()=>!previewViewport._tablanceGroupTransition,"group reopening before keyboard close");
+	key(previewTable.rootEl,"Escape","Escape");
+	const keyboardClose=previewViewport._tablanceGroupTransition;
+	assert(!previewOuter.el.classList.contains("open")&&keyboardClose&&keyboardClose.delayTimer==null,
+		"keyboard-driven group closing starts through the existing animation path without an added delay");
+	await waitFor(()=>!previewViewport._tablanceGroupTransition,"keyboard group collapse cleanup");
+
 	const originalMatchMedia=window.matchMedia;
 	window.matchMedia=query=>({matches:query==="(prefers-reduced-motion: reduce)",media:query,
 		addEventListener:()=>{},removeEventListener:()=>{}});
@@ -3664,6 +3717,124 @@ try {
 	}
 	assert(/preview\.maxEntries/.test(invalidPreviewError?.message),
 		"invalid repeated preview limits fail declaratively");
+
+	const pointerScopeTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},details:{type:"list",entries:[
+		{title:"Plain",dataKey:"plain",nodeId:"pointerPlain",input:{type:"text"}},
+		{type:"group",title:"Group",nodeId:"pointerGroup",closedRender:data=>data.groupValue,entries:[
+			{title:"Grouped",dataKey:"groupValue",nodeId:"pointerGrouped",input:{type:"text"}},
+		]},
+		{title:"Target",dataKey:"target",nodeId:"pointerTarget",input:{type:"text"}},
+	]}},true,true,{searchbar:false});
+	pointerScopeTable.setData([
+		{title:"First",plain:"Plain",groupValue:"Grouped",target:"Target"},
+		{title:"Second",plain:"Other",groupValue:"Other group",target:"Other target"},
+	]);
+	await tick();
+	const pointerPlain=pointerScopeTable.getDetailCell(0,"pointerPlain");
+	const pointerGroup=pointerScopeTable.getDetailCell(0,"pointerGroup");
+	const pointerGrouped=pointerScopeTable.getDetailCell(0,"pointerGrouped");
+	const pointerTarget=pointerScopeTable.getDetailCell(0,"pointerTarget");
+	const pointerTargetEl=pointerTarget.selEl??pointerTarget.el;
+	const pointerOtherRowCell=pointerScopeTable._mainTbody.querySelector('tr[data-data-row-index="1"]>td');
+	const pointerTransitionDelays=[];
+	const originalPointerTransition=pointerScopeTable._transitionGroupPresentation.bind(pointerScopeTable);
+	pointerScopeTable._transitionGroupPresentation=(group,mutate,delay=0)=>{
+		pointerTransitionDelays.push({group,delay});
+		return originalPointerTransition(group,mutate,delay);
+	};
+	const pointerDown=element=>{
+		pointerScopeTable._ignoreClicksUntil=0;
+		element.dispatchEvent(new MouseEvent("mousedown",{button:0,bubbles:true,cancelable:true}));
+	};
+
+	pointerGrouped.select();
+	await waitFor(()=>!pointerGroup.viewportEl._tablanceGroupTransition,
+		"same-panel pointer scope group opening");
+	pointerDown(pointerTargetEl);
+	const samePanelCollapse=pointerGroup.viewportEl._tablanceGroupTransition;
+	assert(pointerScopeTable._activeDetailsCell===pointerTarget
+		&&pointerScopeTable._selectedCell===pointerTargetEl&&!pointerGroup.el.classList.contains("open")
+		&&samePanelCollapse&&samePanelCollapse.delayTimer==null
+		&&pointerTransitionDelays.at(-1)?.group===pointerGroup
+		&&pointerTransitionDelays.at(-1)?.delay===0,
+		"a pointer target in the same details panel closes the group without delaying selection or collapse");
+	await waitFor(()=>!pointerGroup.viewportEl._tablanceGroupTransition,
+		"same-panel group collapse cleanup");
+
+	pointerGrouped.select();
+	await waitFor(()=>!pointerGroup.viewportEl._tablanceGroupTransition,
+		"cross-row pointer scope group opening");
+	pointerDown(pointerOtherRowCell);
+	const crossRowCollapse=pointerGroup.viewportEl._tablanceGroupTransition;
+	assert(pointerScopeTable._selectedCell===pointerOtherRowCell&&crossRowCollapse
+		&&!crossRowCollapse.started&&crossRowCollapse.delayTimer!=null,
+		"a pointer target below the group's main row delays the group collapse");
+	await waitFor(()=>!pointerGroup.viewportEl._tablanceGroupTransition,
+		"cross-row delayed group collapse cleanup");
+
+	pointerGrouped.select();
+	await waitFor(()=>!pointerGroup.viewportEl._tablanceGroupTransition,
+		"edit ownership group opening");
+	pointerScopeTable._enterCell(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
+	const obsoleteEditor=pointerScopeTable._cellCursor.querySelector("input");
+	pointerDown(pointerTargetEl);
+	const editOwnershipCollapse=pointerGroup.viewportEl._tablanceGroupTransition;
+	pointerScopeTable._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
+	const replacementEditor=pointerScopeTable._cellCursor.querySelector("input");
+	assert(obsoleteEditor&&replacementEditor&&replacementEditor!==obsoleteEditor
+		&&pointerScopeTable._inEditMode&&pointerScopeTable._activeDetailsCell===pointerTarget,
+		"double-click starts editing the same-panel target while the old group collapse is running");
+	await tick();
+	assert(pointerScopeTable._inEditMode&&pointerScopeTable._cellCursor.contains(replacementEditor)
+		&&document.activeElement===replacementEditor,
+		"a deferred blur callback from the old editor cannot close its replacement");
+	await waitFor(()=>!pointerGroup.viewportEl._tablanceGroupTransition,
+		"edit ownership group collapse cleanup");
+	assert(editOwnershipCollapse.finished&&pointerScopeTable._inEditMode
+		&&pointerScopeTable._activeDetailsCell===pointerTarget
+		&&pointerScopeTable._cellCursor.contains(replacementEditor)&&document.activeElement===replacementEditor,
+		"group animation completion preserves a newer editor owned by another cell");
+	pointerScopeTable._exitEditMode(false);
+
+	pointerPlain.select();
+	const transitionsBeforePlainExit=pointerTransitionDelays.length;
+	pointerDown(pointerOtherRowCell);
+	assert(pointerScopeTable._selectedCell===pointerOtherRowCell
+		&&pointerTransitionDelays.length===transitionsBeforePlainExit
+		&&!pointerGroup.viewportEl._tablanceGroupTransition,
+		"leaving a details panel without closing an open group adds no pointer-collapse delay");
+
+	const pointerOrderRows=[
+		{title:"First",groupValue:"First group"},
+		{title:"Second",groupValue:"Second group"},
+	];
+	const pointerOrderTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},details:{type:"list",entries:[
+		{type:"group",nodeId:"orderedPointerGroup",closedRender:data=>data.groupValue,entries:[
+			{title:"Grouped",dataKey:"groupValue",nodeId:"orderedPointerGrouped",input:{type:"text"}},
+		]},
+	]}},true,true,{searchbar:false});
+	pointerOrderTable.setData(pointerOrderRows);
+	pointerOrderTable._headerTr.cells[0].click();
+	pointerOrderTable._headerTr.cells[0].click();
+	await tick();
+	assert(pointerOrderTable._filteredData[0]===pointerOrderRows[1]
+		&&pointerOrderTable._filteredData[1]===pointerOrderRows[0],
+		"pointer row-order coverage uses a view whose current order differs from source data order");
+	const orderedPointerGroup=pointerOrderTable.getDetailCell(1,"orderedPointerGroup");
+	const orderedPointerGrouped=pointerOrderTable.getDetailCell(1,"orderedPointerGrouped");
+	orderedPointerGrouped.select();
+	await waitFor(()=>!orderedPointerGroup.viewportEl._tablanceGroupTransition,
+		"sorted pointer-order group opening");
+	pointerOrderTable._ignoreClicksUntil=0;
+	const orderedAboveCell=pointerOrderTable._mainTbody
+		.querySelector('tr[data-data-row-index="0"]>td');
+	orderedAboveCell.dispatchEvent(new MouseEvent("mousedown",{button:0,bubbles:true,cancelable:true}));
+	const orderedAboveCollapse=orderedPointerGroup.viewportEl._tablanceGroupTransition;
+	assert(pointerOrderTable._selectedCell===orderedAboveCell&&orderedAboveCollapse
+		&&orderedAboveCollapse.delayTimer==null,
+		"a pointer target above the group's main row adds no delay and follows current sorted row order");
+	await waitFor(()=>!orderedPointerGroup.viewportEl._tablanceGroupTransition,
+		"above-row pointer group collapse cleanup");
 
 	const nestedAnimationRow={title:"Nested animation",value:"Value"};
 	const nestedAnimationTable=new Tablance(host(),{main:{columns:[{dataKey:"title"}]},details:{type:"list",entries:[
