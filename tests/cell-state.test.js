@@ -2949,6 +2949,147 @@ try {
 	await assertVirtualCursorRecycling(false);
 	await assertVirtualCursorRecycling(true);
 
+	const assertVirtualJumpRebase=async withDetails=>{
+		const virtualHost=host();
+		virtualHost.style.height="320px";
+		const rows=Array.from({length:700},(_entry,index)=>({
+			id:index,value:`Virtual ${index}`,detailHeight:index%2?36:156,
+		}));
+		const schema={main:{columns:[{type:"expand",width:40},{dataKey:"value"}]}};
+		if (withDetails)
+			schema.details={type:"list",entries:[
+				{title:"Value",dataKey:"value",nodeId:"virtualJumpValue",input:{type:"text"}},
+				{title:"Variable",render:({rowData})=>{
+					const content=document.createElement("div");
+					content.style.height=rowData.detailHeight+"px";
+					content.textContent="Measured details";
+					return content;
+				}},
+			]};
+		const table=new Tablance(virtualHost,schema,true,true,{searchbar:false,ordering:false});
+		table.setData(rows);
+		await tick();
+		await tick();
+		// Result-status/content ResizeObservers coalesce through animation frames. Reconcile explicitly so this
+		// geometry assertion is independent of other observer work queued by the full browser suite.
+		table._updateSizesOfViewportAndCols();
+		assert(table._scrollMarginPx===Math.max(150,Math.min(table._scrollBody.clientHeight,1200))
+			&&table._scrollMarginPx>150,
+			`${withDetails?"details":"plain"} virtualization uses one clamped viewport of pixel overscan per side`);
+		const originalRebase=table._rebaseVirtualWindow;
+		let rebases=0;
+		table._rebaseVirtualWindow=function(offset){
+			rebases++;
+			return originalRebase.call(this,offset);
+		};
+		const initialRenderedRows=table._numRenderedRows;
+		table._scrollBody.scrollTop=table._scrollMarginPx+table._rowHeight*3;
+		table._scrollBody.dispatchEvent(new Event("scroll"));
+		table._scrollBody.scrollTop=0;
+		table._scrollBody.dispatchEvent(new Event("scroll"));
+		assert(rebases===0&&table._scrollRowIndex===0,
+			`${withDetails?"details":"plain"} small forward and backward scrolls retain incremental recycling`);
+
+		let activeDetailsCell=null;
+		let firstExpandedHeight=0;
+		if (withDetails) {
+			const firstRow=table._mainTbody.querySelector('[data-data-row-index="0"]:not(.details)');
+			table._expandRow(firstRow,false);
+			firstExpandedHeight=table._rowMeta.get(rows[0]).h;
+			activeDetailsCell=table.getDetailCell(rows[0],"virtualJumpValue");
+			activeDetailsCell.select();
+		}
+
+		const originalUpdateRowValues=table._updateRowValues;
+		let reboundRows=0;
+		table._updateRowValues=function(...args){
+			reboundRows++;
+			return originalUpdateRowValues.apply(this,args);
+		};
+		const largeTarget=20000;
+		table._scrollBody.scrollTop=largeTarget;
+		table._scrollBody.dispatchEvent(new Event("scroll"));
+		const targetOffset=Math.max(largeTarget-table._scrollMarginPx,0);
+		const targetGeometry=table._virtualGeometryAtOffset(targetOffset);
+		const firstLargeRow=table._mainTbody.querySelector(":scope>tr:not(.details)");
+		assert(rebases===1&&Number(firstLargeRow.dataset.dataRowIndex)===targetGeometry.index
+			&&reboundRows<=initialRenderedRows+2
+			&&Math.abs(parseFloat(table._tableSizer.style.top)-targetGeometry.top)<.01
+			&&Math.abs(parseFloat(table._tableSizer.style.height)
+				-(targetGeometry.totalHeight-targetGeometry.top))<.01,
+			`${withDetails?"details":"plain"} scrollbar-sized jump directly rebases one bounded render window`);
+
+		let secondExpandedRow=null;
+		let secondExpandedHeight=0;
+		if (withDetails) {
+			secondExpandedRow=[...table._mainTbody.querySelectorAll(":scope>tr:not(.details)")]
+				.find(row=>Number(row.dataset.dataRowIndex)%2===1);
+			table._expandRow(secondExpandedRow,false);
+			const secondIndex=Number(secondExpandedRow.dataset.dataRowIndex);
+			const secondMeta=table._rowMeta.get(rows[secondIndex]);
+			const measuredHeight=secondMeta.h;
+			// Preserve a distinct stored measurement even on browser/font combinations where these two test
+			// presentations happen to lay out to the same height.
+			secondExpandedHeight=Math.max(measuredHeight,firstExpandedHeight+table._rowHeight*2);
+			secondMeta.h=secondExpandedHeight;
+			table._tableSizer.style.height=parseFloat(table._tableSizer.style.height)
+				+secondExpandedHeight-measuredHeight+"px";
+			assert(firstExpandedHeight!==secondExpandedHeight,
+				"details jump test establishes distinct measured expanded-row heights");
+		}
+
+		reboundRows=0;
+		table._scrollBody.scrollTop=0;
+		table._scrollBody.dispatchEvent(new Event("scroll"));
+		const zeroGeometry=table._virtualGeometryAtOffset(0);
+		assert(rebases===2&&table._scrollRowIndex===0&&reboundRows<=initialRenderedRows+2
+			&&Math.abs(parseFloat(table._tableSizer.style.height)-zeroGeometry.totalHeight)<.01,
+			`${withDetails?"details":"plain"} reverse large jump rebases without replaying crossed rows`);
+		if (withDetails)
+			assert(table._activeDetailsCell===activeDetailsCell
+				&&activeDetailsCell.el.closest("tr.details")?.isConnected
+				&&table._openDetailsPanes[0]
+				&&table._rowMeta.get(rows[0]).h===firstExpandedHeight
+				&&table._rowMeta.get(rows[Number(secondExpandedRow.dataset.dataRowIndex)]).h===secondExpandedHeight,
+				"details rebase preserves active selection and all measured expanded heights");
+	};
+	await assertVirtualJumpRebase(false);
+	await assertVirtualJumpRebase(true);
+
+	const wheelJumpHost=host();
+	wheelJumpHost.style.height="320px";
+	const wheelJumpRows=Array.from({length:400},(_,index)=>({value:`Wheel ${index}`}));
+	const wheelJumpTable=new Tablance(wheelJumpHost,{main:{columns:[{dataKey:"value"}]}},true,true,
+		{searchbar:false,ordering:false});
+	wheelJumpTable.setData(wheelJumpRows);
+	await tick();
+	await tick();
+	const wheelDelta=wheelJumpTable._scrollMarginPx+wheelJumpTable._rowHeight*2;
+	const forwardWheel=new WheelEvent("wheel",{deltaY:wheelDelta,deltaMode:WheelEvent.DOM_DELTA_PIXEL,
+		bubbles:true,cancelable:true});
+	wheelJumpTable._scrollBody.dispatchEvent(forwardWheel);
+	const forwardWheelGeometry=wheelJumpTable._virtualGeometryAtOffset(
+		Math.max(wheelDelta-wheelJumpTable._scrollMarginPx,0));
+	assert(forwardWheel.defaultPrevented&&Math.abs(wheelJumpTable._scrollBody.scrollTop-wheelDelta)<.01
+		&&wheelJumpTable._scrollRowIndex===forwardWheelGeometry.index,
+		"a wheel delta beyond available overscan materializes its target before applying forward scroll");
+	const backwardWheel=new WheelEvent("wheel",{deltaY:-wheelDelta,deltaMode:WheelEvent.DOM_DELTA_PIXEL,
+		bubbles:true,cancelable:true});
+	wheelJumpTable._scrollBody.dispatchEvent(backwardWheel);
+	assert(backwardWheel.defaultPrevented&&wheelJumpTable._scrollBody.scrollTop===0
+		&&wheelJumpTable._scrollRowIndex===0,
+		"a wheel delta beyond available overscan materializes its target before applying backward scroll");
+
+	const cappedOverscanHost=host();
+	cappedOverscanHost.style.height="1800px";
+	const cappedOverscanTable=new Tablance(cappedOverscanHost,{main:{columns:[{dataKey:"value"}]}},true,true,
+		{searchbar:false,ordering:false});
+	cappedOverscanTable.setData(Array.from({length:200},(_,index)=>({value:index})));
+	await tick();
+	await tick();
+	assert(cappedOverscanTable._scrollBody.clientHeight>1200&&cappedOverscanTable._scrollMarginPx===1200,
+		"viewport-relative overscan is capped at 1200px per side for unusually tall hosts");
+
 	const emptyGroupTable=new Tablance(host(),{details:{type:"list",entries:[
 		{title:"Addresses",type:"group",nodeId:"addressesGroup",entries:[
 			{type:"repeated",dataKey:"addresses",create:true,entry:{type:"group",entries:[]}},

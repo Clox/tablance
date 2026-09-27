@@ -186,11 +186,9 @@ class TablanceBase {
 					//this is needed because putting #cellCursor directly inside #scrollBody will not make it scroll
 					//because it has position absolute and needs that. And putting it inside #tableSizer will cause it
 					//to jump up and down when pos and height of #tableSizer is adjusted to keep correct scroll-height
-	_scrollMarginPx=150;//is used to allow for more rows to be rendered outside of the view so to speak. At least in
-						//firefox when scrolling it is really noticable that the scrolling is done before the rows are
-						//moved which reveals white area before the rows are rendered. Increasing this number will
-						//basically add that many pixels to the height of the viewport on top and bottom. It will not
-						//actually be higher but the scroll-method will see it as if it is higher than it is
+	_scrollMarginPx=150;//pixel overscan on each side of the viewport. It tracks one viewport height, clamped to
+						//150-1200px: the minimum preserves the previous small-viewport buffer, while the maximum
+						//prevents unusually tall embedding surfaces from tripling an already large rendered DOM.
 	_tableSizer;//a div inside #scrollingDiv which wraps #mainTable. The purpose of it is to set its height to the 
 				//"true" height of the table so that the scrollbar reflects all the data that can be scrolled through
 	_mainTable;//the actual main-table that contains the actual data. Resides inside #tableSizer
@@ -3162,6 +3160,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._scrollBody.style.height = this.hostEl.clientHeight - this._headerTable.offsetHeight
 		- (this._toolbar?.offsetHeight ?? 0) - (this._resultStatus?.offsetHeight??0)
 		- this._bulkEditArea.offsetHeight + "px";
+		this._scrollMarginPx=Math.max(150,Math.min(this._scrollBody.clientHeight,1200));
 		this._updateViewportRemainder();
 	}
 
@@ -11149,7 +11148,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		else if (this._staticRowHeight&&this._schema.details)
 			this._scrollMethod=this._onScrollStaticRowHeightDetails;
 		this._scrollBody.addEventListener("scroll",e=>this._scrollMethod(e),{passive:true});
-		for (const eventName of ["wheel","touchstart","pointerdown"])
+		this._scrollBody.addEventListener("wheel",e=>{
+			this._cancelDetailsScrollTween();
+			this._prepareForLargeWheelScroll(e);
+		},{passive:this._naturalAutoHeight});
+		for (const eventName of ["touchstart","pointerdown"])
 			this._scrollBody.addEventListener(eventName,()=>this._cancelDetailsScrollTween(),{passive:true});
 		this.rootEl.addEventListener("keydown",()=>this._cancelDetailsScrollTween(),{capture:true});
 		this._scrollBody.className="scroll-body";
@@ -11294,6 +11297,125 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_onScrollNaturalAutoHeight() {}
+
+	_prepareForLargeWheelScroll(event) {
+		if (this._naturalAutoHeight||event.ctrlKey||event.shiftKey||event.deltaMode!==WheelEvent.DOM_DELTA_PIXEL
+			||Math.abs(event.deltaY)<=this._scrollMarginPx)
+			return false;
+		const maximumScrollTop=Math.max(0,this._scrollBody.scrollHeight-this._scrollBody.clientHeight);
+		const currentScrollTop=this._scrollBody.scrollTop;
+		const synchronizedScrollTop=this._scrollY>0?this._scrollY+this._scrollMarginPx:currentScrollTop;
+		// Compositor-thread scrolling (notably Chromium) can expose the new scrollTop before the main-thread wheel
+		// listener runs. Other engines deliver wheel first. Detect which state we received so deltaY is applied once.
+		const scrollAlreadyApplied=this._scrollY>0&&Math.abs(currentScrollTop-synchronizedScrollTop)>.5
+			||this._scrollY===0&&currentScrollTop>this._scrollMarginPx;
+		const projectedScrollTop=scrollAlreadyApplied?currentScrollTop:currentScrollTop+event.deltaY;
+		const targetScrollTop=Math.max(0,Math.min(projectedScrollTop,maximumScrollTop));
+		const targetOffset=Math.max(targetScrollTop-this._scrollMarginPx,0);
+		// Large pixel deltas are deliberately main-thread controlled: prepare the distant window, then expose its
+		// scroll position. Small wheel/trackpad deltas retain native scrolling and incremental row recycling.
+		this._rebaseVirtualWindow(targetOffset);
+		if (event.cancelable)
+			event.preventDefault();
+		this._scrollBody.scrollTop=targetScrollTop;
+		this._scrollMethod();
+		return true;
+	}
+
+	_rowVirtualHeight(row) {
+		const expandedHeight=row?this._rowMeta.get(row)?.h:undefined;
+		return Number.isFinite(expandedHeight)&&expandedHeight>0?expandedHeight:this._rowHeight;
+	}
+
+	/**Resolve the row window and full virtual height for an absolute pixel offset without touching row DOM. */
+	_virtualGeometryAtOffset(offset) {
+		const dataLength=this._filteredData.length;
+		if (!dataLength||!this._rowHeight)
+			return {index:0,top:0,totalHeight:0};
+		const renderedCapacity=Math.min(dataLength,Math.max(1,this._numRenderedRows));
+		const maximumIndex=Math.max(0,dataLength-renderedCapacity);
+		let totalHeight=0;
+		let targetIndex=null;
+		let targetTop=0;
+		let maximumTop=0;
+		for (let index=0;index<dataLength;index++) {
+			if (index===maximumIndex)
+				maximumTop=totalHeight;
+			const rowHeight=this._rowVirtualHeight(this._filteredData[index]);
+			if (targetIndex==null&&offset<totalHeight+rowHeight) {
+				targetIndex=index;
+				targetTop=totalHeight;
+			}
+			totalHeight+=rowHeight;
+		}
+		targetIndex??=dataLength-1;
+		if (targetIndex>maximumIndex) {
+			targetIndex=maximumIndex;
+			targetTop=maximumTop;
+		}
+		return {index:targetIndex,top:targetTop,totalHeight};
+	}
+
+	_materializeDetailsForRow(tr,rowIndex) {
+		if (rowIndex===this._mainRowIndex&&this._activeDetailsCell) {
+			const detailsTr=this._activeDetailsCell.el?.closest("tr.details");
+			if (detailsTr) {
+				tr.classList.add("expanded");
+				detailsTr.dataset.dataRowIndex=rowIndex;
+				tr.after(detailsTr);
+				let detailsRoot=this._activeDetailsCell;
+				for (;detailsRoot.parent;detailsRoot=detailsRoot.parent);
+				detailsRoot.rowIndex=rowIndex;
+				this._openDetailsPanes[rowIndex]=detailsRoot;
+				return detailsTr;
+			}
+		}
+		return this._renderDetails(tr,rowIndex);
+	}
+
+	/**Rebuild only the materialized window around an absolute virtual offset. */
+	_rebaseVirtualWindow(offset) {
+		const normalizedOffset=Math.max(Number(offset)||0,0);
+		const geometry=this._virtualGeometryAtOffset(normalizedOffset);
+		for (const detailsTr of [...this._mainTbody.querySelectorAll(":scope>tr.details")])
+			this._finishCollapsingDetailsBeforeRecycle(detailsTr);
+		for (const index of Object.keys(this._openDetailsPanes))
+			this._deleteOpenDetailsPane(index);
+		this._openDetailsPanes=Object.create(null);
+		this._lastCheckedIndex=null;
+		this._cellCursor.style.display="none";
+		this._detachMainCursorFromRow(this._selectedCell?.parentElement);
+		// Populate a hidden replacement tbody and swap it atomically. The previous rows stay painted while the
+		// replacement is rendered, without repeatedly exposing intermediate row states or an empty table.
+		const previousTbody=this._mainTbody;
+		this._clearTimedMainRows(previousTbody);
+		const replacementTbody=document.createElement("tbody");
+		replacementTbody.hidden=true;
+		this._mainTable.appendChild(replacementTbody);
+		this._mainTbody=replacementTbody;
+		let completed=false;
+		try {
+			this._numRenderedRows=0;
+			this._scrollRowIndex=geometry.index;
+			this._scrollY=normalizedOffset;
+			this._maybeAddTrs();
+			completed=true;
+		} finally {
+			if (completed) {
+				// Change the virtual position only when its matching rows are ready; until here the old tbody and its old
+				// sizer position continue to cover the compositor's current viewport.
+				this._tableSizer.style.top=geometry.top+"px";
+				this._tableSizer.style.height=Math.max(0,geometry.totalHeight-geometry.top)+"px";
+				replacementTbody.hidden=false;
+				previousTbody.remove();
+			} else {
+				replacementTbody.remove();
+				this._mainTbody=previousTbody;
+			}
+		}
+		this._adjustCursorPosSize(this._selectedCell);
+		this._updateViewportRemainder();
+	}
 
 	_createBulkEditArea(schema) {
 		this._bulkEditArea=this.rootEl.appendChild(document.createElement("div"));
@@ -11478,13 +11600,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		// Header and toolbar geometry can change without resizing the host (for example when a consumer relocates
 		// toolbar controls). Always recompute the viewport when layout is explicitly refreshed.
 		this._updateViewportHeight();
-		if (heightChanged) {
-			if (this.hostEl.offsetHeight > this._containerHeight)
-				this._maybeAddTrs();
-			else
-				this._maybeRemoveTrs();
+		// Header/status geometry can change the viewport and therefore the viewport-relative overscan even when the
+		// host itself did not resize. Reconcile both sides every time; these methods are no-ops when the count fits.
+		this._maybeAddTrs();
+		this._maybeRemoveTrs();
+		if (heightChanged)
 			this._containerHeight = this.hostEl.offsetHeight;
-		}
 		this._updateColsWidths();
 		this._headerTable.style.width = this._scrollBody.offsetWidth + "px";
 		this._adjustCursorPosSize(this._selectedCell);
@@ -11838,6 +11959,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._cellCursor.style.display="none";
 		this._detachMainCursorFromRow(this._selectedCell?.parentElement);
 
+		this._clearTimedMainRows(this._mainTbody);
 		this._mainTbody.replaceChildren();//remove all the tr-elements
 		this._maybeAddTrs();//add them again and with their correct data, at least based on them being the top rows 
 		this._scrollMethod();//now scroll back to the real scroll-position
@@ -11855,8 +11977,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (newScrollRowIndex==this._scrollRowIndex)
 			return;
 		if(Math.abs(newScrollRowIndex-this._scrollRowIndex)>this._mainTbody.rows.length){//if scrolling by whole page(s)
-			this._scrollRowIndex=parseInt(scrY/this._rowHeight);
-			this._refreshTable();
+			this._rebaseVirtualWindow(scrY);
+			return;
 		} else {
 			const scrollSignum=Math.sign(newScrollRowIndex-this._scrollRowIndex);//1 if moving down, -1 if up
 			do {
@@ -11886,6 +12008,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return;
 		}
 		let newScrY=Math.max(this._scrollBody.scrollTop-this._scrollMarginPx,0);
+		// A distant scrollbar/programmatic jump must not replay every crossed row through DOM. Rebuilding the bounded
+		// materialized window is cheaper once the jump exceeds the window's fixed-row capacity; stored details heights
+		// are folded into the absolute geometry by the rebase operation.
+		if (Math.abs(newScrY-parseFloat(this._scrollY))>this._numRenderedRows*this._rowHeight) {
+			this._rebaseVirtualWindow(newScrY);
+			return;
+		}
 		if (newScrY>parseInt(this._scrollY)) {//if scrolling down
 			while (true) {
 				const topMainRow=this._mainTbody.firstElementChild;
@@ -11951,15 +12080,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const detailsHeight=newRow?this._rowMeta.get(newRow)?.h:undefined;
 		if (detailsHeight>0) {
 
-			if (trToMove.dataset.dataRowIndex==this._mainRowIndex&&this._activeDetailsCell) {
-				//if the details-pane just scrolled into view contains the cell-cursor. In this case we want to restore
-				//the old instance to retain the state of opened groups and such.
-				trToMove.classList.add("expanded");
-				trToMove.after(this._activeDetailsCell.el.closest("tr.details"));
-				for (var detailsRoot=this._activeDetailsCell;detailsRoot.parent;detailsRoot=detailsRoot.parent);
-				this._openDetailsPanes[newMainIndex]=detailsRoot;
-			} else
-				this._renderDetails(trToMove,newMainIndex);
+			this._materializeDetailsForRow(trToMove,newMainIndex);
 
 		} else if (detailsHeight==-1) {
 			this._scrollBody.scrollTop+=this._expandRow(trToMove,false);
@@ -12038,7 +12159,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		//if there are fewer trs than datarows, and if there is empty space below bottom tr
 		while ((this._naturalAutoHeight||(this._numRenderedRows-1)*this._rowHeight<scrH)
 			&&this._scrollRowIndex+this._numRenderedRows<dataLen) {
-			lastTr=this._mainTable.insertRow();
+			lastTr=this._mainTbody.insertRow();
 			this._numRenderedRows++;
 			for (let i=0; i<this._colSchemaNodes.length; i++) {
 				const cell=lastTr.insertCell();
@@ -12057,7 +12178,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const newRowIndex=this._scrollRowIndex+this._numRenderedRows-1;
 			this._updateRowValues(lastTr,newRowIndex);
 			if (this._rowMeta.get(this._filteredData[newRowIndex])?.h)
-				this._renderDetails(lastTr,newRowIndex);
+				this._materializeDetailsForRow(lastTr,newRowIndex);
 			this._lookForActiveCellInRow(lastTr);//look for active cell (cellcursor) in the row
 			if (!this._rowHeight) {//if there were no rows prior to this
 				this._rowHeight=lastTr.offsetHeight+this._borderSpacingY;
@@ -12091,6 +12212,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._deleteOpenDetailsPane(this._scrollRowIndex+this._numRenderedRows);
 			}
 			this._detachMainCursorFromRow(this._mainTbody.lastChild);
+			this._clearTimedMainRows(this._mainTbody.lastChild);
 			this._mainTbody.lastChild.remove();
 			this._numRenderedRows--;
 		}
@@ -12579,6 +12701,21 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					Number(this._timedCellRefreshGeneration.get(key)??0)+1);
 			}
 		this._armTimedCellRefreshTimer();
+	}
+
+	_clearTimedMainRows(root) {
+		if (!root)
+			return;
+		let changed=false;
+		for (const [key,entry] of this._timedCellRefreshes)
+			if (!entry.instanceNode&&entry.anchor&&root.contains(entry.anchor)) {
+				this._timedCellRefreshes.delete(key);
+				this._timedCellRefreshGeneration.set(key,
+					Number(this._timedCellRefreshGeneration.get(key)??0)+1);
+				changed=true;
+			}
+		if (changed)
+			this._armTimedCellRefreshTimer();
 	}
 
 	_deleteOpenDetailsPane(index) {
