@@ -111,6 +111,7 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			align-items: center;
 			justify-content: flex-end;
 			gap: 2px;
+			border-top-right-radius: max(0px, calc(var(--tablance-radius) - 1px));
 			background: var(--tablance-header-background);
 			&[hidden] { display: none; }
 			>.table-help-trigger,
@@ -884,6 +885,7 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		}
 	}
 	>.table-area>.header-table {
+		position: relative;
 		overflow: hidden;
 		height: 44px;
 		border-collapse: separate;
@@ -891,9 +893,19 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		// Header tracks already add up to the full body width (data viewport plus scrollbar gutter). Keep the side
 		// rules inside that shared width, just as the body cells do, instead of making table border geometry wider.
 		border: 0;
-		border-top: 1px solid var(--tablance-border-color);
 		border-radius: var(--tablance-radius) var(--tablance-radius) 0 0;
 		background: var(--tablance-header-background);
+
+		// Draw the complete header outline above the cell and utility backgrounds.
+		&::after {
+			position: absolute;
+			z-index: 4;
+			inset: 0;
+			border: 1px solid var(--tablance-border-color);
+			border-radius: inherit;
+			pointer-events: none;
+			content: "";
+		}
 
 		thead {
 			background: var(--tablance-header-background);
@@ -905,7 +917,7 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			height: 42px;
 			padding: 0 12px;
 			border: 0;
-			border-bottom: 1px solid var(--tablance-border-color);
+			border-bottom: 1px solid transparent;
 			background: var(--tablance-header-background);
 			color: var(--tablance-heading-color);
 			font-size: 14px;
