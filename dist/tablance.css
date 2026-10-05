@@ -2171,6 +2171,19 @@
 .tablance .tablance-select-container > div > ul.pinned > li:last-child {
   border-bottom: 3px solid #ccc;
 }
+.tablance .tablance-select-container > div > ul.pinned > li.select-action {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.35em 0.5em;
+  cursor: pointer;
+}
+.tablance .tablance-select-container > div > ul.pinned > li.select-action > .select-action-mark {
+  flex: 0 0 1em;
+  width: 1em;
+  font-weight: bold;
+  text-align: center;
+}
 .tablance .tablance-select-container > div > ul.main {
   max-height: 300px;
   overflow-y: auto;

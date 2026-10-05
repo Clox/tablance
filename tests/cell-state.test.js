@@ -48,6 +48,83 @@ const commitEach=callback=>(transaction,context)=>{
 };
 
 try {
+	let showExtra=false;
+	let choices=[{text:"Alpha",value:1},{text:"Beta",value:2},
+		{text:"Gamma",value:3,visibleIf:()=>showExtra}];
+	const selectTable=new Tablance(host(),{
+		main:{columns:[{dataKey:"choice",input:{type:"select",allowSelectEmpty:true,
+			minOptsFilter:0,options:()=>choices,stickyAction:()=>({label:"Show more",checked:showExtra,
+			onActivate:({tablance})=>{showExtra=!showExtra;tablance.refreshOpenSelect();}})}}]},
+	},true,true,{ordering:false});
+	selectTable.setData([{choice:null}]);
+	await tick();
+	selectTable.selectCell(0,"choice",{enterEditMode:true});
+	let selectCtx=selectTable._selectContext;
+	assert(!!selectCtx&&selectCtx.selectContainer.isConnected,"select opens with refresh context");
+	assert(selectCtx.pinnedUl.children[0].textContent==="<None>"
+		&&selectCtx.pinnedUl.children[1].textContent.includes("Show more"),
+		"sticky action is placed directly under empty option");
+	assert(!selectCtx.mainUl.textContent.includes("Gamma"),"visibleIf hides option initially");
+	key(selectCtx.input,"ArrowDown");
+	assert(selectCtx.pinnedUl.children[1].classList.contains("highlighted"),
+		"action participates in arrow navigation");
+	key(selectCtx.input,"Enter");
+	assert(showExtra&&selectCtx.selectContainer.isConnected&&selectTable._inputVal===null,
+		"Enter activates action without selecting or closing");
+	assert(selectCtx.pinnedUl.children[1].classList.contains("highlighted")
+		&&selectCtx.mainUl.textContent.includes("Gamma"),
+		"refresh preserves action focus and reevaluates visibleIf");
+	key(selectCtx.input," ","Space");
+	assert(!showExtra&&selectCtx.selectContainer.isConnected&&selectTable._inputVal===null,
+		"Space activates action without selecting or closing");
+	key(selectCtx.input,"ArrowDown");
+	key(selectCtx.input,"ArrowDown");
+	assert(selectCtx.mainUl.children[1].classList.contains("highlighted"),
+		"arrow navigation reaches ordinary options");
+	choices=[{text:"New first",value:9},...choices];
+	selectTable.refreshOpenSelect();
+	assert(selectCtx.mainUl.children[2].classList.contains("highlighted"),
+		"refresh retains highlighted option by value after insertion");
+	choices=choices.filter(option=>option.value!==2);
+	selectTable.refreshOpenSelect();
+	assert(selectCtx.mainUl.querySelector(".highlighted")?.textContent==="Alpha"
+		||selectCtx.mainUl.querySelector(".highlighted")?.textContent==="New first",
+		"removed highlighted option moves focus to a nearby row");
+	assert(selectTable._inputVal===null&&selectCtx.selectContainer.isConnected,
+		"refresh fallback does not select a value or close the dropdown");
+	selectCtx.input.value="gam";
+	selectCtx.input.dispatchEvent(new Event("input",{bubbles:true}));
+	assert(selectCtx.mainUl.children.length===0,"search filters the current visible options");
+	selectCtx.pinnedUl.querySelector(".select-action").click();
+	assert(showExtra&&selectCtx.input.value==="gam"&&document.activeElement===selectCtx.input
+		&&selectCtx.mainUl.children.length===1
+		&&selectCtx.mainUl.children[0].textContent==="Gamma"
+		&&selectCtx.selectContainer.isConnected,
+		"action click refreshes searched options without closing or clearing search");
+	selectCtx.mainUl.children[0].click();
+	assert(selectTable._selectContext===null&&selectTable._inputVal===3,
+		"ordinary option selection still commits its value and closes the dropdown");
+	let showSearchOption=false;
+	const thresholdTable=new Tablance(host(),{main:{columns:[{dataKey:"choice",input:{
+		type:"select",minOptsFilter:2,
+		options:()=>[{text:"Always",value:1},{text:"Later",value:2,visibleIf:()=>showSearchOption}],
+		stickyAction:()=>({label:"More",checked:showSearchOption,onActivate:({tablance})=>{
+			showSearchOption=true;
+			tablance.refreshOpenSelect();
+		}}),
+	}}]}},true,true,{ordering:false});
+	thresholdTable.setData([{choice:null}]);
+	await tick();
+	thresholdTable.selectCell(0,"choice",{enterEditMode:true});
+	const thresholdCtx=thresholdTable._selectContext;
+	assert(thresholdCtx.inputWrapper.classList.contains("hide"),
+		"search starts hidden below the option threshold");
+	thresholdCtx.pinnedUl.querySelector(".select-action").click();
+	assert(!thresholdCtx.inputWrapper.classList.contains("hide")
+		&&thresholdCtx.selectContainer.isConnected,
+		"refresh reveals search when visible options cross the threshold");
+	key(thresholdCtx.input,"Escape");
+
 	const shortcuts=new Tablance(host(),{
 		main:{columns:[{dataKey:"name",input:{type:"text"}}]},
 		details:{type:"list",entries:[{dataKey:"detail"}]},

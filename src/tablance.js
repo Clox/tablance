@@ -663,8 +663,13 @@ class TablanceBase {
 	 * 							value * The value of the cell will be mapped to the option with the same value
 	 * 							text String Unless a render-method has been set then this string will be shown
 	 * 							pinned Bool If true then this option will be pinned at the top. Default is false
+	 * 							visibleIf Function Optional callback evaluated when opening or refreshing the select.
 	 * 							cssClass: Css-classes to be added to the opt which actually is a li-element
 	 * 						}
+	 * 						stickyAction Object|Function Optional action row after the empty option (if any).
+	 * 							{label,checked,onActivate}; a function may return this object on each refresh.
+	 * 							Activation receives the usual callback payload plus event and can call
+	 * 							tablance.refreshOpenSelect(). It never changes the selected value.
 	 * 						allowCreateNew bool - Allows user to create new options.
 	 * 								If this is true then minOptsFilter will be ignored, input-field is required anyway.
 	 * 						createNewOptionHandler Function - Callback which is called when the user creates a new 
@@ -9867,9 +9872,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_renderSelectOptions(ul,opts,selectedVal,ctx) {
 			let foundSelected=false;
 			const selectedValNorm=this._getSelectValue(selectedVal);
+			for (const li of ul.children)
+				ctx.rowByLi.delete(li);
 			ul.innerHTML="";
 			for (const opt of opts) {
 				const li=ul.appendChild(document.createElement("li"));
+				ctx.rowByLi.set(li,{kind:"option",option:opt});
 				if (opt.cssClass)
 					li.className=opt.cssClass;
 			if (ctx.strctInp.boolean)
@@ -9886,6 +9894,69 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 			return foundSelected;
 		}
+
+		_selectActionDefinition(ctx) {
+			const source=ctx.strctInp.stickyAction;
+			return typeof source==="function"
+				?source(this._makeCallbackPayload(this._activeDetailsCell,{},
+					{schemaNode:this._activeSchemaNode,rowData:this._cellCursorDataObj,mainIndex:this._mainRowIndex}))
+				:source;
+		}
+
+		_renderSelectAction(ctx) {
+			const action=this._selectActionDefinition(ctx);
+			if (!action)
+				return;
+			const li=document.createElement("li");
+			li.className="select-action";
+			li.dataset.type="action";
+			li.setAttribute("role","checkbox");
+			const mark=li.appendChild(document.createElement("span"));
+			mark.className="select-action-mark";
+			mark.textContent=action.checked?"✓":"";
+			mark.setAttribute("aria-hidden","true");
+			const label=li.appendChild(document.createElement("span"));
+			label.textContent=action.label??"";
+			li.setAttribute("aria-checked",action.checked?"true":"false");
+			ctx.rowByLi.set(li,{kind:"action",action});
+			const empty=ctx.pinnedUl.querySelector(".empty-option");
+			if (empty)
+				empty.after(li);
+			else
+				ctx.pinnedUl.prepend(li);
+		}
+
+		_selectNavigableRows(ctx) {
+			return [...ctx.pinnedUl.children,...ctx.mainUl.children]
+				.filter(li=>ctx.rowByLi.has(li));
+		}
+
+		_selectHighlightedRow(ctx) {
+			const li=ctx.ulDiv.querySelector("li.highlighted");
+			return li?ctx.rowByLi.get(li):null;
+		}
+
+		_selectRowMatches(a,b) {
+			if (!a||!b||a.kind!==b.kind)
+				return false;
+			if (a.kind==="action"||a.kind==="create")
+				return true;
+			if (a.option===b.option)
+				return true;
+			if (a.option.isEmpty&&b.option.isEmpty)
+				return true;
+			const aValue=this._getSelectValue(a.option);
+			const bValue=this._getSelectValue(b.option);
+			return aValue!=null&&aValue===bValue;
+		}
+
+		_highlightSelectRow(ctx,li,keyboardNavigating=false) {
+			if (!li)
+				return this._highlightSelectOption(ctx,null,null,false);
+			const ul=li.parentElement;
+			this._highlightSelectOption(ctx,Number(ul.dataset.ulIndex),
+				Array.prototype.indexOf.call(ul.children,li),keyboardNavigating);
+		}
 	
 		/**
 		 * Highlight a specific option in one of the ULs and optionally scroll it into view when keyboard navigating.
@@ -9898,7 +9969,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const highlighted=ctx.ulDiv.getElementsByClassName("highlighted")[0];
 			if (highlighted)
 				highlighted.classList.remove("highlighted");
-			const ul=ctx.ulDiv.children[ulIndex];
+			const ul=ulIndex==null?null:ctx.ulDiv.children[ulIndex];
 			const li=ul?.children[liIndex];
 			if (!li) {
 				ctx.highlightUlIndex=ctx.highlightLiIndex=null;
@@ -9918,29 +9989,59 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		 * @returns {boolean} whether an option was highlighted
 		 */
 		_highlightFirstSelectOption(ctx) {
-			if (ctx.pinnedUl.children.length)
-				this._highlightSelectOption(ctx,0,0,false);
-			else if (ctx.mainUl.children.length)
-				this._highlightSelectOption(ctx,1,0,false);
-			else
+			const first=this._selectNavigableRows(ctx)[0];
+			if (!first)
 				return false;
+			this._highlightSelectRow(ctx,first);
 			return true;
 		}
+
+		/** Reevaluate options and action state without closing the active select or changing its value. */
+	refreshOpenSelect() {
+		const ctx=this._selectContext;
+		if (!ctx?.selectContainer.isConnected)
+			return false;
+		const oldRows=this._selectNavigableRows(ctx);
+		const oldHighlighted=this._selectHighlightedRow(ctx);
+		const oldIndex=oldRows.findIndex(li=>ctx.rowByLi.get(li)===oldHighlighted);
+		const oldScroll=ctx.mainUl.scrollTop;
+		const allOpts=this._getSelectOptions(ctx.strctInp,this._activeSchemaNode,
+			this._cellCursorDataObj,this._mainRowIndex,this._activeDetailsCell);
+		ctx.allOpts=allOpts.filter(opt=>!opt.visibleIf||opt.visibleIf({
+			dataContext:this._cellCursorDataObj,schemaNode:this._activeSchemaNode,
+			rowIndex:this._mainRowIndex,instanceNode:this._activeDetailsCell}));
+		ctx.pinnedOpts=ctx.allOpts.filter(opt=>opt.pinned||!!ctx.strctInp.stickyAction&&opt.isEmpty);
+		ctx.looseOpts=ctx.allOpts.filter(opt=>!ctx.pinnedOpts.includes(opt));
+		this._updateSelectSearchVisibility(ctx);
+		ctx.rowByLi=new Map();
+		this._renderSelectOptions(ctx.pinnedUl,ctx.pinnedOpts,this._inputVal,ctx);
+		this._renderSelectAction(ctx);
+		this._handleSelectInputChange(ctx,{preserveHighlight:true});
+		const rows=this._selectNavigableRows(ctx);
+		const matching=oldHighlighted&&rows.find(li=>this._selectRowMatches(oldHighlighted,ctx.rowByLi.get(li)));
+		const fallback=oldIndex<0?null:rows[Math.min(oldIndex,rows.length-1)];
+		this._highlightSelectRow(ctx,matching??fallback??rows[0]??null);
+		ctx.mainUl.scrollTop=oldScroll;
+		this._alignDropdown(ctx.selectContainer);
+		return true;
+	}
+
+	_updateSelectSearchVisibility(ctx) {
+		const optionCount=ctx.allOpts.filter(opt=>!opt.pinned&&!opt.isEmpty).length;
+		const show=ctx.strctInp.allowCreateNew||!!ctx.input.value
+			||optionCount>=(ctx.strctInp.minOptsFilter??this._opts.defaultMinOptsFilter??5);
+		ctx.inputWrapper.classList.toggle("hide",!show);
+	}
 	
 		/**
 		 * Filter loose options based on the current input value and update rendered lists and create-option state.
 		 * @param {Object} ctx
 		 */
-		_handleSelectInputChange(ctx) {
+		_handleSelectInputChange(ctx,{preserveHighlight=false}={}) {
 			const value=ctx.input.value;
 			const filter=value.toLowerCase();
-			const hadFilter=!!ctx.filterText;
-			// Detect when the filter text diverges so we can rebuild the option list.
-			const filterChangedAtEdges=!filter.includes((ctx.filterText??"").toLowerCase())||!hadFilter;
 			ctx.canCreate=!!value;
-			// If the user broadened the search (backspaced), restore all options before filtering again.
-			if (filterChangedAtEdges)
-				ctx.looseOpts.splice(0,Infinity,...ctx.allOpts);
+			ctx.looseOpts=ctx.allOpts.filter(opt=>!opt.pinned&&!(ctx.strctInp.stickyAction&&opt.isEmpty));
 			for (let i=-1,opt; opt=ctx.looseOpts[++i];) {
 				// Normalize option text for case-insensitive matching.
 				const optText=typeof opt.text==="string"?opt.text.toLowerCase():String(opt.text??"");
@@ -9959,9 +10060,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				});
 			this._updateCreateOptionVisibility(ctx);
 			const foundSelected=this._renderSelectOptions(ctx.mainUl,ctx.looseOpts,this._inputVal,ctx);
-			if (value.length) {// User is typing: drop any previous highlight and move focus to the first search result.
+			if (preserveHighlight) {
+				// The caller restores the highlighted row by identity after rebuilding both lists.
+			} else if (value.length) {// User is typing: drop any previous highlight and move focus to the first search result.
 				if (ctx.looseOpts.length)//select first result. check allowSelectEmpty to skip empty-option
-					this._highlightSelectOption(ctx,1,ctx.strctInp.allowSelectEmpty?1:0,true);
+					this._highlightSelectOption(ctx,1,0,true);
 				else if (ctx.pinnedUl.children.length)
 					// No main results; fall back to the first pinned option (e.g. create/new or pinned entries).
 					this._highlightSelectOption(ctx,0,0,true);
@@ -9995,6 +10098,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (ctx.canCreate) {
 				if (ctx.creationLi.parentElement!=ctx.pinnedUl)
 					ctx.pinnedUl.appendChild(ctx.creationLi);
+				ctx.rowByLi.set(ctx.creationLi,{kind:"create"});
 				ctx.creationLi.classList.add("create-option");
 			} else if (ctx.creationLi.parentElement==ctx.pinnedUl)
 				ctx.pinnedUl.removeChild(ctx.creationLi);
@@ -10008,22 +10112,25 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			_handleSelectKeyDown(e,ctx) {
 				if (e.key==="ArrowDown"||e.key==="ArrowUp") {
 					e.preventDefault();
-					const direction=e.key==="ArrowDown"?1:-1;
-					const currentIndex=ctx.highlightLiIndex==null?0:ctx.highlightLiIndex;
-					const newIndex=currentIndex+direction;
-					if (ctx.highlightUlIndex??true) {
-						if (ctx.looseOpts.length&&newIndex<ctx.looseOpts.length&&newIndex>=0)
-							this._highlightSelectOption(ctx,1,newIndex,true);
-						else if (newIndex==-1&&ctx.pinnedUl.children.length)
-							this._highlightSelectOption(ctx,0,ctx.pinnedUl.children.length-1,true);
-					} else if (newIndex>=0&&newIndex<ctx.pinnedUl.children.length)
-						this._highlightSelectOption(ctx,0,newIndex,true);
-					else if (newIndex>=ctx.pinnedUl.children.length&&ctx.looseOpts.length)
-						this._highlightSelectOption(ctx,1,0,true);
+					const rows=this._selectNavigableRows(ctx);
+					const current=rows.findIndex(li=>li.classList.contains("highlighted"));
+					const next=current+(e.key==="ArrowDown"?1:-1);
+					if (rows[next])
+						this._highlightSelectRow(ctx,rows[next],true);
 				} else if (e.key==="Enter") {
+					if (this._activateHighlightedSelectAction(ctx,e)) {
+						e.preventDefault();
+						e.stopPropagation();
+						return;
+					}
 					this._closeSelectDropdown(ctx,e);
 					this._moveCellCursor(0,e.shiftKey?-1:1);
 					e.stopPropagation();
+				} else if (e.key===" "||e.key==="Spacebar") {
+					if (this._activateHighlightedSelectAction(ctx,e)) {
+						e.preventDefault();
+						e.stopPropagation();
+					}
 				} else if (e.key==="Tab") {
 					e.preventDefault();
 					this._closeSelectDropdown(ctx,e);
@@ -10032,6 +10139,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				} else if (e.key==="Escape")
 					this._closeSelectDropdown(ctx,e,true);
 			}
+
+		_activateHighlightedSelectAction(ctx,e) {
+			const row=this._selectHighlightedRow(ctx);
+			if (row?.kind!=="action")
+				return false;
+			row.action.onActivate?.(this._makeCallbackPayload(this._activeDetailsCell,{event:e},
+				{schemaNode:this._activeSchemaNode,rowData:this._cellCursorDataObj,mainIndex:this._mainRowIndex}));
+			return true;
+		}
 	
 		/**
 		 * Handle mouse movement over list items by updating the highlighted option.
@@ -10040,7 +10156,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		 */
 		_handleSelectMouseMove(e,ctx) {
 			const li=e.target.closest("li");
-			if (!li)
+			if (!li||!ctx.rowByLi.has(li))
 				return;
 			const ul=li.parentNode;
 			const ulIndex=parseInt(ul.dataset.ulIndex);
@@ -10055,11 +10171,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		 */
 		_handleSelectClick(e,ctx) {
 			const li=e.target.closest("li");
-			if (!li)
+			if (!li||!ctx.rowByLi.has(li))
 				return;
 			const ul=e.currentTarget;
-			ctx.highlightUlIndex=parseInt(ul.dataset.ulIndex);
-			ctx.highlightLiIndex=Array.prototype.indexOf.call(ul.children,li);
+			this._highlightSelectRow(ctx,li);
+			if (this._activateHighlightedSelectAction(ctx,e))
+				return;
 			this._closeSelectDropdown(ctx,e);
 			this._exitEditMode(true);
 		}
@@ -10086,14 +10203,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			noResults.innerHTML=strctInp.noResultsText??this.lang.selectNoResultsFound;
 			noResults.className="no-results";
 			const allOpts=this._getSelectOptions(strctInp,this._activeSchemaNode,this._cellCursorDataObj,
-				this._mainRowIndex,this._activeDetailsCell);
-			for (const opt of allOpts) {
-				const visible=!opt.visibleIf || opt.visibleIf({dataContext:this._cellCursorDataObj,
-					schemaNode:this._activeSchemaNode, rowIndex:this._mainRowIndex, 
-					instanceNode:this._activeDetailsCell});
-				if (visible)
-					(opt.pinned?pinnedOpts:looseOpts).push(opt);
-			}
+				this._mainRowIndex,this._activeDetailsCell).filter(opt=>!opt.visibleIf||opt.visibleIf({
+					dataContext:this._cellCursorDataObj,schemaNode:this._activeSchemaNode,
+					rowIndex:this._mainRowIndex,instanceNode:this._activeDetailsCell}));
+			for (const opt of allOpts)
+				(opt.pinned||!!strctInp.stickyAction&&opt.isEmpty?pinnedOpts:looseOpts).push(opt);
 			const ctx=Object.assign(Object.create(null),{
 				strctInp,
 				selectContainer,
@@ -10107,6 +10221,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				looseOpts,
 				matchScores:new Map(),
 				allOpts,
+				rowByLi:new Map(),
 				creationLi:null,
 				canCreate:false,
 				filterText:"",
@@ -10147,6 +10262,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				return;
 			const highlightedUl=ctx.highlightUlIndex==null?null:ctx.ulDiv.children[ctx.highlightUlIndex];
 			const highlightedLi=ctx.highlightLiIndex==null?null:highlightedUl?.children[ctx.highlightLiIndex];
+			const highlightedRow=highlightedLi?ctx.rowByLi.get(highlightedLi):null;
 			if (!cancel&&ctx.highlightUlIndex===0&&highlightedLi?.dataset.type=="create") {
 				ctx.filterText=ctx.filterText??ctx.input.value;
 				this._inputVal={text:ctx.filterText};
@@ -10154,14 +10270,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				ctx.allOpts.push(this._inputVal);
 				ctx.strctInp.createNewOptionHandler?.(this._inputVal,e,this._cellCursorDataObj,this._mainRowIndex
 															,this._activeSchemaNode,this._activeDetailsCell);
-			} else if (!cancel&&highlightedLi) {
-				const highlightedOpts=ctx.highlightUlIndex===1?ctx.looseOpts:ctx.pinnedOpts;
-				this._inputVal=highlightedOpts[ctx.highlightLiIndex]?.value;
+			} else if (!cancel&&highlightedRow?.kind==="option") {
+				this._inputVal=this._getSelectValue(highlightedRow.option);
 			}
 			if (typeof ctx.selectContainer.hidePopover==="function") {
 				try { ctx.selectContainer.hidePopover(); } catch(_e) {}
 			}
 			ctx.selectContainer.remove();
+			if (this._selectContext===ctx)
+				this._selectContext=null;
 			if (ctx.windowMouseDown)
 				window.removeEventListener("mousedown",ctx.windowMouseDown);
 			if (ctx.wheelHandler)
@@ -10176,12 +10293,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const strctInp=this._activeSchemaNode.input;
 			this._inputVal=this._cellCursorDataObj[this._activeSchemaNode.dataKey];
 			const ctx=this._createSelectDropdownContext(strctInp);
+			this._selectContext=ctx;
 			this._cellCursor.style.backgroundColor="transparent";
-			const allowCreateNew=strctInp.allowCreateNew;
-			if (allowCreateNew||ctx.looseOpts.length>=(strctInp.minOptsFilter??this._opts.defaultMinOptsFilter??5))
-				ctx.input.addEventListener("input",()=>this._handleSelectInputChange(ctx));
-			else
-				ctx.inputWrapper.classList.add("hide");
+			ctx.input.addEventListener("input",()=>this._handleSelectInputChange(ctx));
+			this._updateSelectSearchVisibility(ctx);
 			ctx.input.addEventListener("keydown",e=>this._handleSelectKeyDown(e,ctx));
 			ctx.input.placeholder=strctInp.selectInputPlaceholder??"";
 			ctx.input.addEventListener("blur",ctx.input.focus);
@@ -10195,6 +10310,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				ctx.creationLi.dataset.type="create";
 			}
 			this._renderSelectOptions(ctx.pinnedUl,ctx.pinnedOpts,this._inputVal,ctx);
+			this._renderSelectAction(ctx);
 			this._renderSelectOptions(ctx.mainUl,ctx.looseOpts,this._inputVal,ctx);
 			if (this._getSelectValue(this._inputVal)==null&&ctx.highlightUlIndex==null)
 				this._highlightFirstSelectOption(ctx);

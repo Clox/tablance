@@ -2214,6 +2214,19 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 					border-bottom: 3px solid #ccc;
 				}
 			}
+			&.pinned>li.select-action {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				padding: .35em .5em;
+				cursor: pointer;
+				>.select-action-mark {
+					flex: 0 0 1em;
+					width: 1em;
+					font-weight: bold;
+					text-align: center;
+				}
+			}
 			&.main {
 				max-height: 300px;
 				overflow-y: auto;
