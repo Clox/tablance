@@ -255,12 +255,6 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		}
 		cursor:cell;
 		outline:2px solid var(--tablance-accent-color);
-		&.tablance-bottom-left-corner {
-			border-bottom-left-radius: var(--tablance-radius);
-		}
-		&.tablance-bottom-right-corner {
-			border-bottom-right-radius: var(--tablance-radius);
-		}
 		>.tablance-copy-feedback {
 			position: absolute;
 			z-index: 2;

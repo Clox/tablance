@@ -10962,7 +10962,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		if (!el)
 			return;
-		this._syncMainCursorBottomCorners(el);
+		this._syncCursorCornerShape(el);
 		const elPos=this._getElPos(el);
 		this._cellCursor.style.top=elPos.y+"px";
 		this._cellCursor.style.left=elPos.x+"px";
@@ -10979,19 +10979,32 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._syncInlineEditorGeometry?.();
 	}
 
-	_syncMainCursorBottomCorners(el) {
-		const cell=el.matches?.(".main-table>tbody>tr:not(.details)>td")?el:null;
-		const row=cell?.parentElement;
-		const atLastRow=row&&Number(row.dataset.dataRowIndex)===this._filteredData.length-1
-			&&!row.nextElementSibling?.matches("tr.details")
-			&&!this._tableArea.classList.contains("has-result-status");
-		const cellRect=atLastRow?cell.getBoundingClientRect():null;
-		const viewportRect=cellRect?this._scrollBody.getBoundingClientRect():null;
-		const atBottom=cellRect&&Math.abs(cellRect.bottom-viewportRect.bottom)<=2;
-		this._cellCursor.classList.toggle("tablance-bottom-left-corner",
-			Boolean(atBottom&&Math.abs(cellRect.left-viewportRect.left)<=2));
-		this._cellCursor.classList.toggle("tablance-bottom-right-corner",
-			Boolean(atBottom&&Math.abs(cellRect.right-viewportRect.right)<=2));
+	_syncCursorCornerShape(el) {
+		const cursorRect=el.getBoundingClientRect();
+		const corners=["TopLeft","TopRight","BottomRight","BottomLeft"];
+		const edges=[["top","left"],["top","right"],["bottom","right"],["bottom","left"]];
+		const radii=corners.map(()=>[0,0]);
+		const length=(value,size)=>value.endsWith("%")?parseFloat(value)*size/100:parseFloat(value)||0;
+		for (let node=el;node&&node!==this.rootEl.parentElement;node=node.parentElement) {
+			const style=getComputedStyle(node);
+			const isCell=node===el;
+			if (!isCell&&style.overflowX==="visible"&&style.overflowY==="visible")
+				continue;
+			const rect=node.getBoundingClientRect();
+			corners.forEach((corner,index)=>{
+				const [vertical,horizontal]=edges[index];
+				if (!isCell&&(Math.abs(cursorRect[vertical]-rect[vertical])>2
+					||Math.abs(cursorRect[horizontal]-rect[horizontal])>2))
+					return;
+				const [x,y=x]=style[`border${corner}Radius`].split(" ");
+				radii[index][0]=Math.max(radii[index][0],length(x,rect.width));
+				radii[index][1]=Math.max(radii[index][1],length(y,rect.height));
+			});
+		}
+		corners.forEach((corner,index)=>{
+			const [x,y]=radii[index];
+			this._cellCursor.style[`border${corner}Radius`]=`${x}px ${y}px`;
+		});
 	}
 
 	_clearStaticCellOverflowPreview() {
