@@ -1138,6 +1138,10 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			background-color: var(--tablance-selected-hover-background);
 		}
 	}
+	.main-table>tbody>tr.expanded>td:first-child {
+		// The details panel is inset, exposing this row's lower left corner.
+		border-bottom-left-radius: var(--tablance-radius);
+	}
 	&.static-row-height .main-table>tbody>tr:not(.details)>td:not(.expand-col):not(.select-col):not(.menu-col)>div {
 		overflow: hidden;
 		text-overflow: ellipsis;

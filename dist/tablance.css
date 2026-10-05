@@ -1051,6 +1051,9 @@
 .tablance .main-table > tbody > tr:not(.details).selected > td:not(.disabled):hover {
   background-color: var(--tablance-selected-hover-background);
 }
+.tablance .main-table > tbody > tr.expanded > td:first-child {
+  border-bottom-left-radius: var(--tablance-radius);
+}
 .tablance.static-row-height .main-table > tbody > tr:not(.details) > td:not(.expand-col):not(.select-col):not(.menu-col) > div {
   overflow: hidden;
   text-overflow: ellipsis;
