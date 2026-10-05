@@ -215,6 +215,10 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		border-bottom: 0;
 		border-radius: 0;
 	}
+	&.auto-height>.table-area:not(.has-result-status):has(.main-table>tbody>tr.details:last-child)>.scroll-body {
+		// The indented details panel owns the bottom rule until its row has fully collapsed and been removed.
+		border-bottom-color: transparent;
+	}
 	>.table-area>.tablance-result-status {
 		box-sizing: border-box;
 		min-height: 32px;

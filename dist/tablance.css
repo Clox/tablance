@@ -161,6 +161,9 @@
   border-bottom: 0;
   border-radius: 0;
 }
+.tablance.auto-height > .table-area:not(.has-result-status):has(.main-table > tbody > tr.details:last-child) > .scroll-body {
+  border-bottom-color: transparent;
+}
 .tablance > .table-area > .tablance-result-status {
   box-sizing: border-box;
   min-height: 32px;

@@ -879,6 +879,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._staticRowHeight=rowHeightMode==="fixed";
 		this._naturalAutoHeight=!!this._opts.autoHeight&&!this._staticRowHeight;
 		rootEl.classList.add("tablance");
+		rootEl.classList.toggle("auto-height",!!this._opts.autoHeight);
 		rootEl.classList.toggle("static-row-height",this._staticRowHeight);
 		rootEl.classList.toggle("natural-row-height",this._naturalAutoHeight);
 		this._schema=this._buildSchemaFacade(schema);
