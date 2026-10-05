@@ -10962,6 +10962,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		if (!el)
 			return;
+		this._syncMainCursorBottomCorners(el);
 		const elPos=this._getElPos(el);
 		this._cellCursor.style.top=elPos.y+"px";
 		this._cellCursor.style.left=elPos.x+"px";
@@ -10976,6 +10977,21 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._updateStaticCellOverflowPreview();
 		}
 		this._syncInlineEditorGeometry?.();
+	}
+
+	_syncMainCursorBottomCorners(el) {
+		const cell=el.matches?.(".main-table>tbody>tr:not(.details)>td")?el:null;
+		const row=cell?.parentElement;
+		const atLastRow=row&&Number(row.dataset.dataRowIndex)===this._filteredData.length-1
+			&&!row.nextElementSibling?.matches("tr.details")
+			&&!this._tableArea.classList.contains("has-result-status");
+		const cellRect=atLastRow?cell.getBoundingClientRect():null;
+		const viewportRect=cellRect?this._scrollBody.getBoundingClientRect():null;
+		const atBottom=cellRect&&Math.abs(cellRect.bottom-viewportRect.bottom)<=2;
+		this._cellCursor.classList.toggle("tablance-bottom-left-corner",
+			Boolean(atBottom&&Math.abs(cellRect.left-viewportRect.left)<=2));
+		this._cellCursor.classList.toggle("tablance-bottom-right-corner",
+			Boolean(atBottom&&Math.abs(cellRect.right-viewportRect.right)<=2));
 	}
 
 	_clearStaticCellOverflowPreview() {

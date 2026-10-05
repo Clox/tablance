@@ -201,6 +201,12 @@
   cursor: cell;
   outline: 2px solid var(--tablance-accent-color);
 }
+.tablance .cell-cursor.tablance-bottom-left-corner {
+  border-bottom-left-radius: var(--tablance-radius);
+}
+.tablance .cell-cursor.tablance-bottom-right-corner {
+  border-bottom-right-radius: var(--tablance-radius);
+}
 .tablance .cell-cursor > .tablance-copy-feedback {
   position: absolute;
   z-index: 2;
