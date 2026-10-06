@@ -5788,10 +5788,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!detailsRow||!mainRow)
 			return null;
 		const viewport=this._getVisibleDataViewportRect();
-		if (detailsRow.getBoundingClientRect().bottom<=viewport.bottom+.5)
+		const overflow=detailsRow.getBoundingClientRect().bottom-viewport.bottom;
+		if (overflow<=.5)
 			return null;
 		const current=this._scrollBody.scrollTop;
-		const desired=current+mainRow.getBoundingClientRect().top-viewport.top;
+		const distanceToMainRowTop=Math.max(0,mainRow.getBoundingClientRect().top-viewport.top);
+		const desired=current+Math.min(overflow,distanceToMainRowTop);
 		const maximum=Math.max(0,this._scrollBody.scrollHeight-this._scrollBody.clientHeight);
 		const target=Math.max(0,Math.min(desired,maximum));
 		return Math.abs(target-current)<.5?null:target;

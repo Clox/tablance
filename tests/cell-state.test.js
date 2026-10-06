@@ -1823,6 +1823,30 @@ try {
 		&&Math.abs(fittingDetailsTable._scrollBody.scrollTop-fittingScrollBefore)<.5,
 		"details expansion leaves scroll unchanged when its final bottom already fits in the data viewport");
 
+	const partialDetailsHost=host();
+	partialDetailsHost.style.height="220px";
+	const partialDetailsTable=new Tablance(partialDetailsHost,{main:detailsScrollSchema.main,details:{
+		type:"list",entries:[{title:"First",dataKey:"detailA"}],
+	}},true,true,{searchbar:false,ordering:false});
+	partialDetailsTable.setData(detailsScrollRows);
+	await tick();
+	let partialMain=partialDetailsTable._mainTbody.querySelector('[data-data-row-index="5"]');
+	const partialViewport=partialDetailsTable._getVisibleDataViewportRect();
+	partialDetailsTable._scrollBody.scrollTop+=partialMain.getBoundingClientRect().top
+		-(partialViewport.bottom-partialMain.offsetHeight-12);
+	partialDetailsTable._scrollMethod();
+	partialMain=partialDetailsTable._mainTbody.querySelector('[data-data-row-index="5"]');
+	const partialScrollBefore=partialDetailsTable._scrollBody.scrollTop;
+	partialDetailsTable.expandRow(5);
+	await waitFor(()=>partialMain.nextElementSibling?.querySelector(".content")?.style.height==="auto"
+		&&partialDetailsTable._detailsScrollTarget==null,"partial-overflow details expansion cleanup");
+	const partialExpandedViewport=partialDetailsTable._getVisibleDataViewportRect();
+	const partialDetails=partialMain.nextElementSibling;
+	assert(partialDetailsTable._scrollBody.scrollTop>partialScrollBefore+.5
+		&&Math.abs(partialDetails.getBoundingClientRect().bottom-partialExpandedViewport.bottom)<1
+		&&partialMain.getBoundingClientRect().top>partialExpandedViewport.top+1,
+		"a partially clipped expansion scrolls its bottom into view without pinning the main row to the top");
+
 	const overflowingDetailsHost=host();
 	overflowingDetailsHost.style.height="220px";
 	const overflowingDetailsTable=new Tablance(overflowingDetailsHost,detailsScrollSchema,true,true,
