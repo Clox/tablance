@@ -2,8 +2,8 @@ const Tablance=window.Tablance;
 const assert=(condition,message)=>{if (!condition) throw new Error(message);};
 const host=()=>document.body.appendChild(document.createElement("div"));
 const fields=()=>[
-	{dataKey:"ordinary",nodeId:"ordinary",input:{type:"text",placeholder:"Editor only"}},
-	{dataKey:"visible",nodeId:"visible",showPlaceholderInDisplay:true,
+	{dataKey:"ordinary",nodeId:"ordinary",title:"Person 1",input:{type:"text",placeholder:"Editor only"}},
+	{dataKey:"visible",nodeId:"visible",title:"Person 2",showPlaceholderInDisplay:true,
 		input:{type:"text",placeholder:"Visible hint"}},
 	{dataKey:"boolean",nodeId:"boolean",showPlaceholderInDisplay:true,
 		input:{type:"select",boolean:true,placeholder:"Choose"}},
@@ -25,9 +25,22 @@ const mutedColor=getComputedStyle(mutedProbe).color;
 mutedProbe.remove();
 assert(ordinary.el.textContent===""&&!ordinary.el.classList.contains("tablance-presentation-placeholder"),
 	"default placeholder remains editor-only in onlyDetails");
+standalone.selectCell(0,"ordinary");
+assert(standalone._cellCursor.classList.contains("details")
+	&&getComputedStyle(standalone._cellCursor).backgroundColor==="rgba(0, 0, 0, 0)"
+	&&getComputedStyle(standalone._cellCursor).paddingTop==="0px",
+	"the onlyDetails frame does not style the selected-cell cursor");
 standalone.selectCell(0,"ordinary",{enterEditMode:true});
 assert(standalone._cellCursor.querySelector("input.text-editor")?.placeholder==="Editor only",
 	"the ordinary editor still receives its input placeholder");
+const ordinaryTitle=ordinary.selEl.querySelector(":scope > span.title");
+const inlineEditor=standalone._cellCursor.querySelector(":scope > .cell-value-editor");
+assert(ordinaryTitle?.textContent==="Person 1"&&inlineEditor
+	&&inlineEditor.getBoundingClientRect().top>=ordinaryTitle.getBoundingClientRect().bottom
+	&&getComputedStyle(standalone._cellCursor).backgroundColor==="rgba(0, 0, 0, 0)"
+	&&getComputedStyle(standalone._cellCursor).paddingTop==="0px"
+	&&!standalone._cellCursor.classList.contains("only-details-content"),
+	"editing an inline-title grid field leaves its label visible above the editor");
 standalone._exitEditMode(false);
 assert(visible.el.textContent==="Visible hint"
 	&&visible.el.classList.contains("tablance-presentation-placeholder")

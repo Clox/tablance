@@ -12165,7 +12165,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!lastRow)
 			return;
 		const detailsDiv=this.rootEl.appendChild(document.createElement("div"));
-		detailsDiv.classList.add("details");
+		detailsDiv.classList.add("details","only-details-content");
 		const rootInstance=this._openDetailsPanes[0]=this._createInstanceNode();
 		const visualFragment=document.createDocumentFragment();
 		this._generateDetailsContent(this._schema.details,0,rootInstance,visualFragment,[],lastRow);

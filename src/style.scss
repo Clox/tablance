@@ -89,7 +89,7 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 				//this way it is more predictable.
 				
 	width: 100%;//doesn't currently do anything but doesn't hurt either
-	&.only-details > .details {
+	&.only-details > .only-details-content {
 		box-sizing: border-box;
 		min-width: 0;
 		padding: 14px 16px;
