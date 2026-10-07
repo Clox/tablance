@@ -1790,12 +1790,22 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 		}
 		const isMainPath=dataPath.length===1
-			&&this._colSchemaNodes.some(schemaNode=>schemaNode.dataKey==dataPath[0]);
+			&&this._colSchemaNodes?.some(schemaNode=>schemaNode.dataKey==dataPath[0]);
 		const propagation=this.notifyDataChange(dataRow,[dataPath],{
 			reason:"data",repaint:isMainPath,
 		});
 		if (propagation.rowsChanged||isMainPath)
 			return this;
+		if (this._onlyDetails) {
+			const root=this._openDetailsPanes[0];
+			const field=root&&dataPath.length===1
+				?this._findDescendantInstanceNodeById(root,dataPath[0]):null;
+			if (field) {
+				this.refreshSubtree(field);
+				this._updateDependentCells(field.schemaNode,field);
+			}
+			return this;
+		}
 		mainIndx=this._filteredData.indexOf(dataRow);
 
 		if (mainIndx<this._scrollRowIndex||mainIndx>=this._scrollRowIndex+this._numRenderedRows)
