@@ -21,7 +21,8 @@
 		"build": "rm -rf dist && npm run build:js && npm run build:css",
 		"build:js": "rollup -c",
 		"build:css": "mkdir -p styles dist && sass --style=expanded --source-map src/style.scss styles/tablance.css && sass --style=compressed --source-map src/style.scss styles/tablance.min.css && cp styles/tablance.css styles/tablance.css.map styles/tablance.min.css styles/tablance.min.css.map dist/",
-		"test": "node tests/run-browser-tests.mjs"
+		"test": "node tests/run-browser-tests.mjs",
+		"test:only-details": "node tests/run-browser-tests.mjs --only-details"
 	},
 	"repository": {
 		"type": "git",

@@ -89,6 +89,14 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 				//this way it is more predictable.
 				
 	width: 100%;//doesn't currently do anything but doesn't hurt either
+	&.only-details > .details {
+		box-sizing: border-box;
+		min-width: 0;
+		padding: 14px 16px;
+		border: 1px solid var(--tablance-border-color);
+		border-radius: var(--tablance-radius);
+		background: var(--tablance-cell-background);
+	}
 
 	&:focus {
 		outline: 2px solid rgba(37, 99, 235, .35);

@@ -6,6 +6,7 @@ import {spawn} from "node:child_process";
 import {fileURLToPath} from "node:url";
 
 const root=normalize(join(fileURLToPath(new URL(".",import.meta.url)),".."));
+const onlyDetails=process.argv.includes("--only-details");
 const types={".css":"text/css",".htm":"text/html",".html":"text/html",".js":"text/javascript",".mjs":"text/javascript"};
 const server=createServer(async (req,res)=>{
 	try {
@@ -67,7 +68,8 @@ try {
 		pending.set(id,{resolve,reject});
 		socket.send(JSON.stringify({id,method,params,...sessionId?{sessionId}:{}}));
 	});
-	const testUrl=`http://127.0.0.1:${port}/tests/cell-state.test.htm`;
+	const testUrl=`http://127.0.0.1:${port}/tests/${onlyDetails
+		?"only-details-presentation.test.htm":"cell-state.test.htm"}`;
 	const {targetId}=await send("Target.createTarget",{url:testUrl});
 	await send("Target.activateTarget",{targetId});
 	const {sessionId}=await send("Target.attachToTarget",{targetId,flatten:true});
@@ -93,6 +95,7 @@ try {
 		}
 		throw new Error(`Browser test timed out in state: ${JSON.stringify(await readResult())}`);
 	};
+	if (!onlyDetails) {
 	await waitForStatus(["awaiting-native-keys"]);
 	const dispatch=(type,key,code,keyCode,modifiers=0)=>send("Input.dispatchKeyEvent",{
 		type,key,code,modifiers,windowsVirtualKeyCode:keyCode,nativeVirtualKeyCode:keyCode,
@@ -164,6 +167,7 @@ try {
 	await dispatch("keyUp","Tab","Tab",9,8);
 	await press("ArrowRight","ArrowRight",39);
 	await evaluate(`window.verifyNativeTableFocus("interaction");window.finishNativeTableFocus()`);
+	}
 	const finalResult=await waitForStatus(["passed"]);
 	console.log(finalResult.text);
 	await send("Target.closeTarget",{targetId});

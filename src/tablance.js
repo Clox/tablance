@@ -546,6 +546,8 @@ class TablanceBase {
 	 * 					5: instanceNode
 	 * 				input Object defining the editor used when the field is editable. Cell state is configured on the
 	 * 					schema node through readOnly, editableIf, disabled and disabledIf.
+	 * 				showPlaceholderInDisplay Bool When true, an empty field may show input.placeholder in its
+	 * 					presentation, using placeholder styling. Defaults to false. It does not create field presence.
 	 * 					{
 	 * 					type String This is mandatory and specifies the type of input. Se further down for properties 
 	 * 						specific to each type of input. The possible types are:
@@ -884,6 +886,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._staticRowHeight=rowHeightMode==="fixed";
 		this._naturalAutoHeight=!!this._opts.autoHeight&&!this._staticRowHeight;
 		rootEl.classList.add("tablance");
+		rootEl.classList.toggle("only-details",!schema.main?.columns);
 		rootEl.classList.toggle("auto-height",!!this._opts.autoHeight);
 		rootEl.classList.toggle("static-row-height",this._staticRowHeight);
 		rootEl.classList.toggle("natural-row-height",this._naturalAutoHeight);
@@ -2190,8 +2193,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			schemaNode,mainIndex,rowData:dataObj});
 		if (schemaNode.type==="group")
 			return {...this._normalizeRenderPresentation(schemaNode.closedRender?.(dataObj)),valueBundle};
-		if (schemaNode.render)
-			return {...this._normalizeRenderPresentation(schemaNode.render(payload)),valueBundle};
+		if (schemaNode.render) {
+			const presentation=this._normalizeRenderPresentation(schemaNode.render(payload));
+			return {...presentation,...valueBundle,placeholder:presentation.placeholder
+				??(schemaNode.showPlaceholderInDisplay?schemaNode.input?.placeholder:null)};
+		}
 		let content;
 		if (schemaNode.input?.type==="select") {
 			if (typeof schemaNode.input.options==="function"&&!schemaNode.input.boolean)
@@ -2206,7 +2212,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 		} else
 			content=valueBundle.value;
-		return {content,refreshAt:null,classNames:[],...valueBundle};
+		return {content,refreshAt:null,classNames:[],...valueBundle,
+			placeholder:schemaNode.showPlaceholderInDisplay?schemaNode.input?.placeholder:null};
 	}
 
 	_getDisplayValue(schemaNode,dataObj,mainIndex,stripHtml=false,instanceNode=null) {
@@ -11721,6 +11728,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_renderBooleanSelectValue(parent,value,text) {
+		parent.classList.remove("tablance-presentation-placeholder");
 		parent.replaceChildren();
 		const presentation=parent.appendChild(document.createElement("span"));
 		presentation.className="boolean-select-value";
@@ -12848,8 +12856,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (schemaNode.input?.type==="button") {
 			this._generateButton(schemaNode,mainIndex,el,scopedData,instanceNode);
 		} else if (schemaNode.input?.type==="select"&&schemaNode.input.boolean&&!schemaNode.render) {
-			this._renderBooleanSelectValue(el,this._getSelectValue(valueBundle.value),
-				presentation.content);
+			if (schemaNode.showPlaceholderInDisplay&&!this._hasPresenceValue(valueBundle.value)
+				&&this._hasPresenceValue(presentation.placeholder))
+				this._renderFieldPresentation(el,schemaNode,presentation,instanceNode?instanceNode.present:true);
+			else
+				this._renderBooleanSelectValue(el,this._getSelectValue(valueBundle.value),
+					presentation.content);
 		} else {
 			if (!schemaNode.render&&schemaNode.input?.type==="select"
 				&&typeof schemaNode.input.options==="function") {
