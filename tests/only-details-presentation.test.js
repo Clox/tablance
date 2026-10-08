@@ -1,88 +1,62 @@
 const Tablance=window.Tablance;
-const assert=(condition,message)=>{if (!condition) throw new Error(message);};
-const host=()=>document.body.appendChild(document.createElement("div"));
+const assert=(condition,message)=>{if(!condition)throw new Error(message)};
+const host=()=>document.body.appendChild(document.createElement('div'));
 const fields=()=>[
-	{dataKey:"ordinary",nodeId:"ordinary",title:"Person 1",input:{type:"text",placeholder:"Editor only"}},
-	{dataKey:"visible",nodeId:"visible",title:"Person 2",showPlaceholderInDisplay:true,
-		input:{type:"text",placeholder:"Visible hint"}},
-	{dataKey:"boolean",nodeId:"boolean",showPlaceholderInDisplay:true,
-		input:{type:"select",boolean:true,placeholder:"Choose"}},
+ {dataKey:'none',nodeId:'none',title:'No hint',input:{type:'text'}},
+ {dataKey:'editOnly',nodeId:'editOnly',title:'Edit only',input:{type:'text',placeholder:'Editor hint'}},
+ {dataKey:'displayOnly',nodeId:'displayOnly',title:'Display only',displayPlaceholder:'Display hint',input:{type:'text'}},
+ {dataKey:'both',nodeId:'both',title:'Both',displayPlaceholder:'Short hint',input:{type:'text',placeholder:'Long hint'}},
+ {dataKey:'boolean',nodeId:'boolean',displayPlaceholder:'Choose',input:{type:'select',boolean:true}},
+ {dataKey:'selectEmpty',nodeId:'selectEmpty',displayPlaceholder:'Select a value',
+  input:{type:'select',options:[{value:'',text:'None'},{value:'chosen',text:'Chosen'}]}},
 ];
-
-const standalone=new Tablance(host(),{details:{type:"grid",columns:2,entries:fields()}},
-	true,true,{searchbar:false});
-const standaloneRow={ordinary:"",visible:"",boolean:null};
-standalone.setData(standaloneRow);
-const ordinary=standalone.getDetailCell(0,"ordinary");
-const visible=standalone.getDetailCell(0,"visible");
-const boolean=standalone.getDetailCell(0,"boolean");
-const panel=standalone.rootEl.querySelector(":scope > .details");
-const panelStyle=getComputedStyle(panel);
-const hintStyle=getComputedStyle(visible.el);
-const mutedProbe=standalone.rootEl.appendChild(document.createElement("span"));
-mutedProbe.style.color="var(--tablance-muted-color)";
-const mutedColor=getComputedStyle(mutedProbe).color;
-mutedProbe.remove();
-assert(ordinary.el.textContent===""&&!ordinary.el.classList.contains("tablance-presentation-placeholder"),
-	"default placeholder remains editor-only in onlyDetails");
-standalone.selectCell(0,"ordinary");
-assert(standalone._cellCursor.classList.contains("details")
-	&&getComputedStyle(standalone._cellCursor).backgroundColor==="rgba(0, 0, 0, 0)"
-	&&getComputedStyle(standalone._cellCursor).paddingTop==="0px",
-	"the onlyDetails frame does not style the selected-cell cursor");
-standalone.selectCell(0,"ordinary",{enterEditMode:true});
-assert(standalone._cellCursor.querySelector("input.text-editor")?.placeholder==="Editor only",
-	"the ordinary editor still receives its input placeholder");
-const ordinaryTitle=ordinary.selEl.querySelector(":scope > span.title");
-const inlineEditor=standalone._cellCursor.querySelector(":scope > .cell-value-editor");
-assert(ordinaryTitle?.textContent==="Person 1"&&inlineEditor
-	&&inlineEditor.getBoundingClientRect().top>=ordinaryTitle.getBoundingClientRect().bottom
-	&&getComputedStyle(standalone._cellCursor).backgroundColor==="rgba(0, 0, 0, 0)"
-	&&getComputedStyle(standalone._cellCursor).paddingTop==="0px"
-	&&!standalone._cellCursor.classList.contains("only-details-content"),
-	"editing an inline-title grid field leaves its label visible above the editor");
+const row={none:'',editOnly:'',displayOnly:'',both:'',boolean:null,selectEmpty:''};
+const standalone=new Tablance(host(),{details:{type:'grid',title:'Contact details',columns:2,entries:fields()}},true,true,{searchbar:false});
+standalone.setData(row);
+const cell=key=>standalone.getDetailCell(0,key);
+const panel=standalone.rootEl.querySelector(':scope>.only-details-content');
+const header=panel.querySelector(':scope>.only-details-header');
+const body=panel.querySelector(':scope>.only-details-body');
+assert(header.textContent==='Contact details'&&body.contains(cell('both').el),'existing details.title renders an integrated header');
+assert(getComputedStyle(header).borderBottomWidth==='1px'&&getComputedStyle(header).backgroundColor!==getComputedStyle(panel).backgroundColor,'header has subtle background and divider');
+assert(getComputedStyle(panel).borderTopWidth==='1px'&&getComputedStyle(panel).borderTopLeftRadius!=='0px'&&parseFloat(getComputedStyle(body).paddingLeft)>0,'standalone panel has a frame and padded body');
+assert(cell('none').el.textContent===''&&cell('editOnly').el.textContent==='','neither an absent nor an edit placeholder appears in display mode');
+assert(cell('displayOnly').el.textContent==='Display hint'&&cell('both').el.textContent==='Short hint'&&cell('boolean').el.textContent==='Choose'&&cell('selectEmpty').el.textContent==='Select a value','displayPlaceholder works without fallback to the editor placeholder or empty select option text');
+for(const key of ['displayOnly','both','boolean','selectEmpty'])assert(cell(key).el.classList.contains('tablance-presentation-placeholder'),`${key} uses placeholder styling`);
+const muted=standalone.rootEl.appendChild(document.createElement('span'));muted.style.color='var(--tablance-muted-color)';
+assert(getComputedStyle(cell('both').el).color===getComputedStyle(muted).color&&getComputedStyle(cell('both').el).fontStyle==='italic'&&getComputedStyle(cell('both').el).cursor==='cell','display placeholder is secondary text with a cell cursor');muted.remove();
+assert(cell('none').outerContainerEl.getBoundingClientRect().height<55&&getComputedStyle(cell('editOnly').outerContainerEl).borderInlineStartWidth==='1px'&&panel.querySelector('.grid-row-separator'),'standalone grid is compact with subtle separators');
+for(const [key,expected] of [['none',''],['editOnly','Editor hint'],['displayOnly',''],['both','Long hint']]){
+ standalone.selectCell(0,key,{enterEditMode:true});const input=standalone._cellCursor.querySelector('input.text-editor');
+ assert(input?.placeholder===expected&&getComputedStyle(input).cursor==='text',`${key} has its own edit placeholder`);
+ standalone._exitEditMode(false);
+}
+standalone.selectCell(0,'both');
+assert(getComputedStyle(standalone._cellCursor).backgroundColor==='rgba(0, 0, 0, 0)'&&getComputedStyle(standalone._cellCursor).paddingTop==='0px','cell cursor does not inherit the panel frame');
+standalone.selectCell(0,'both',{enterEditMode:true});
+assert(standalone._cellCursor.querySelector('.cell-value-editor').getBoundingClientRect().top>=cell('both').selEl.querySelector(':scope>span.title').getBoundingClientRect().bottom,'inline title stays visible in edit mode');
 standalone._exitEditMode(false);
-assert(visible.el.textContent==="Visible hint"
-	&&visible.el.classList.contains("tablance-presentation-placeholder")
-	&&hintStyle.color===mutedColor&&hintStyle.fontStyle==="italic",
-	"opted-in onlyDetails placeholder uses muted placeholder styling");
-assert(boolean.el.textContent==="Choose"
-	&&boolean.el.classList.contains("tablance-presentation-placeholder"),
-	"an empty boolean select can use the same field-level placeholder opt-in");
-assert(standalone.rootEl.classList.contains("only-details")
-	&&panelStyle.borderTopWidth==="1px"&&panelStyle.borderTopStyle==="solid"
-	&&panelStyle.borderTopLeftRadius!=="0px"&&parseFloat(panelStyle.paddingLeft)>0,
-	"onlyDetails owns the standalone frame and padding");
-standalone.updateData(standaloneRow,"visible","Real value");
-assert(visible.el.textContent==="Real value"
-	&&!visible.el.classList.contains("tablance-presentation-placeholder"),
-	"a real value replaces the onlyDetails placeholder");
-standalone.updateData(standaloneRow,"boolean",false);
-assert(!boolean.el.classList.contains("tablance-presentation-placeholder")
-	&&boolean.el.textContent==="No",
-	"a real boolean value replaces its placeholder with the select's displayed value");
-
-const expanded=new Tablance(host(),{main:{columns:[{type:"expand"},{dataKey:"name"}]},
-	details:{type:"list",entries:fields()}},true,true,{searchbar:false,ordering:false});
-const expandedRow={name:"Row",ordinary:"",visible:"",boolean:null};
-expanded.setData([expandedRow]);
-expanded.expandRow(0);
-const expandedOrdinary=expanded.getDetailCell(0,"ordinary");
-const expandedVisible=expanded.getDetailCell(0,"visible");
-const expandedPanel=expanded.rootEl.querySelector(".main-table > tbody > tr.details > td > .content");
-assert(expandedOrdinary.el.textContent===""
-	&&expandedVisible.el.textContent==="Visible hint"
-	&&expandedVisible.el.classList.contains("tablance-presentation-placeholder"),
-	"expanded details keep the same per-field opt-in and default");
-assert(!expanded.rootEl.classList.contains("only-details")
-	&&!expanded.rootEl.querySelector(":scope > .details")
-	&&getComputedStyle(expandedPanel).borderTopWidth==="1px",
-	"expanded details have only their existing main-row frame");
-expanded.updateData(expandedRow,"visible","Filled");
-assert(expandedVisible.el.textContent==="Filled"
-	&&!expandedVisible.el.classList.contains("tablance-presentation-placeholder"),
-	"a real value replaces the expanded-details placeholder");
-
-const result=document.getElementById("test-results");
-result.textContent="onlyDetails and expanded-details placeholder and frame checks passed";
-result.dataset.status="passed";
+standalone.updateData(row,'displayOnly','Real value');standalone.updateData(row,'both','Real value');standalone.updateData(row,'boolean',false);standalone.updateData(row,'selectEmpty','chosen');
+assert(cell('displayOnly').el.textContent==='Real value'&&cell('both').el.textContent==='Real value'&&cell('boolean').el.textContent==='No'&&cell('selectEmpty').el.textContent==='Chosen'&&!cell('both').el.classList.contains('tablance-presentation-placeholder'),'real values replace display placeholders including false');
+const renderedSchema={type:'field',dataKey:'stored',displayPlaceholder:'Unused hint',
+ render:()=>({content:'',presenceValue:true}),input:{type:'text'}};
+assert(standalone._getCellPresentation(renderedSchema,{stored:'Stored value'},0).placeholder==null,
+ 'a field renderer cannot expose displayPlaceholder over a nonempty actual value');
+standalone.selectCell(0,'both',{enterEditMode:true});
+const filledEditor=standalone._cellCursor.querySelector('input.text-editor');
+assert(filledEditor?.value==='Real value'&&filledEditor.placeholder==='Long hint','filled edit cells retain their real value and independent editor hint');
+standalone._exitEditMode(false);
+standalone.selectCell(0,'none');
+standalone.rootEl.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',code:'ArrowRight',bubbles:true,cancelable:true}));
+assert(standalone._activeSchemaNode?.dataKey==='editOnly','keyboard navigation still moves between onlyDetails cells');
+const expanded=new Tablance(host(),{main:{columns:[{type:'expand'},{dataKey:'name'}]},details:{type:'list',title:'Expanded title',entries:fields()}},true,true,{searchbar:false,ordering:false});
+const expandedRow={name:'Row',...row,displayOnly:'',both:'',boolean:null,selectEmpty:''};expanded.setData([expandedRow]);expanded.expandRow(0);
+assert(expanded.getDetailCell(0,'editOnly').el.textContent===''&&expanded.getDetailCell(0,'both').el.textContent==='Short hint','expanded details use independent placeholders');
+assert(!expanded.rootEl.classList.contains('only-details')&&!expanded.rootEl.querySelector('.only-details-header'),'expanded details do not gain a standalone panel/header');
+expanded.selectCell(0,'both',{enterEditMode:true});assert(expanded._cellCursor.querySelector('input.text-editor')?.placeholder==='Long hint','expanded editor uses its own placeholder');expanded._exitEditMode(false);
+expanded.updateData(expandedRow,'both','Filled');assert(expanded.getDetailCell(0,'both').el.textContent==='Filled','expanded real value replaces placeholder');
+const bulk=new Tablance(host(),{main:{columns:[{type:'select'},{dataKey:'name',input:{type:'text',bulkEdit:true}}]}},true,true,{searchbar:false,ordering:false});
+bulk.setData([{name:'First'},{name:'Second'}]);
+const bulkRoot=bulk._bulkEditTable.rootEl,bulkPanel=bulkRoot.querySelector(':scope>.only-details-content');
+assert(bulkRoot.classList.contains('tablance-bulk-edit-details')&&bulkPanel&&!bulkPanel.querySelector('.only-details-header')&&getComputedStyle(bulkPanel).borderTopWidth==='0px','bulkEdit is an explicit internal variant without a standalone frame');
+const result=document.getElementById('test-results');result.textContent='standalone, expanded, and bulkEdit presentation checks passed';result.dataset.status='passed';

@@ -59,6 +59,31 @@ The default palette can be themed by overriding CSS custom properties on a `.tab
 
 Text-like action cells and read-only cells display their native navigation and lock indicators on hover or selection. The indicators are non-interactive absolute overlays and do not affect cell content or geometry.
 
+## Display and editor placeholders
+
+`displayPlaceholder` belongs on a field schema node and appears as muted placeholder text only while its actual
+value is empty. `input.placeholder` belongs to the editor and appears only in edit mode. Neither falls back to the
+other:
+
+```js
+{
+  type: "field",
+  dataKey: "personalNumber",
+  displayPlaceholder: "Personal number",
+  input: {type: "text", placeholder: "YYYYMMDD-XXXX"}
+}
+```
+
+If either property is omitted, its mode has no placeholder. A real value replaces the display placeholder. A
+`render()` result may still provide its own `placeholder` for presentation.
+
+## Standalone details
+
+A schema with `details` and no `main.columns` renders `onlyDetails` as a compact framed grid or details block.
+Set `details.title` to place a header inside the frame; `details.titleHtml` and `details.help` use the existing
+title behavior. Ordinary expanded details keep their main-table container. The internal bulk-edit instance uses a
+separate presentation variant and does not inherit the standalone frame.
+
 ## Contextual help
 
 Set `help` on a titled details entry to show a non-navigable `?` in the title's fixed help slot. Main columns may also

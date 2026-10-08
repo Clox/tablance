@@ -89,13 +89,60 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 				//this way it is more predictable.
 				
 	width: 100%;//doesn't currently do anything but doesn't hurt either
-	&.only-details > .only-details-content {
+	&.only-details:not(.tablance-bulk-edit-details) > .only-details-content {
 		box-sizing: border-box;
 		min-width: 0;
-		padding: 14px 16px;
 		border: 1px solid var(--tablance-border-color);
 		border-radius: var(--tablance-radius);
 		background: var(--tablance-cell-background);
+		overflow: hidden;
+		>.only-details-header {
+			margin: 0;
+			padding: 9px 14px;
+			border-bottom: 1px solid var(--tablance-border-color);
+			background: color-mix(in srgb, var(--tablance-header-background) 65%, white);
+			color: var(--tablance-heading-color);
+			font-family: var(--tablance-font-family);
+			font-size: 14px;
+			font-weight: 600;
+			line-height: 1.35;
+		}
+		>.only-details-body {
+			min-width: 0;
+			padding: 4px 10px;
+		}
+		.details-grid {
+			>.grid-row-separator { border-color: var(--tablance-row-border-color); }
+			>span {
+				min-height: 32px;
+				padding: 4px 7px;
+				cursor: cell;
+				&.details-grid-column-divider {
+					border-inline-start: 1px solid var(--tablance-row-border-color);
+				}
+				>div.value {
+					padding: 2px 4px;
+					overflow: hidden;
+					text-overflow: ellipsis;
+					white-space: nowrap;
+					overflow-wrap: normal;
+					cursor: cell;
+				}
+				>div.tablance-presentation-placeholder {
+					color: var(--tablance-muted-color);
+					font-style: italic;
+				}
+				&.disabled {
+					background: var(--tablance-disabled-background);
+				}
+			}
+		}
+	}
+	&.only-details:not(.tablance-bulk-edit-details) {
+		.cell-cursor.editable-indicator::before,
+		.only-details-content .details-grid>span.editable-indicator::before {
+			content: none;
+		}
 	}
 
 	&:focus {

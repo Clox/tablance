@@ -546,8 +546,8 @@ class TablanceBase {
 	 * 					5: instanceNode
 	 * 				input Object defining the editor used when the field is editable. Cell state is configured on the
 	 * 					schema node through readOnly, editableIf, disabled and disabledIf.
-	 * 				showPlaceholderInDisplay Bool When true, an empty field may show input.placeholder in its
-	 * 					presentation, using placeholder styling. Defaults to false. It does not create field presence.
+	 * 				displayPlaceholder String Placeholder shown in display mode only when the actual value is empty.
+	 * 					It is independent of input.placeholder and does not create field presence.
 	 * 					{
 	 * 					type String This is mandatory and specifies the type of input. Se further down for properties 
 	 * 						specific to each type of input. The possible types are:
@@ -2196,11 +2196,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (schemaNode.render) {
 			const presentation=this._normalizeRenderPresentation(schemaNode.render(payload));
 			return {...presentation,...valueBundle,placeholder:presentation.placeholder
-				??(schemaNode.showPlaceholderInDisplay?schemaNode.input?.placeholder:null)};
+				??(!this._hasPresenceValue(valueBundle.value)?schemaNode.displayPlaceholder:null)};
 		}
 		let content;
 		if (schemaNode.input?.type==="select") {
-			if (typeof schemaNode.input.options==="function"&&!schemaNode.input.boolean)
+			if (!this._hasPresenceValue(valueBundle.value)&&schemaNode.displayPlaceholder!=null)
+				content="";
+			else if (typeof schemaNode.input.options==="function"&&!schemaNode.input.boolean)
 				content="";
 			else {
 				const normalizedValue=this._getSelectValue(valueBundle.value);
@@ -2213,7 +2215,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		} else
 			content=valueBundle.value;
 		return {content,refreshAt:null,classNames:[],...valueBundle,
-			placeholder:schemaNode.showPlaceholderInDisplay?schemaNode.input?.placeholder:null};
+			placeholder:!this._hasPresenceValue(valueBundle.value)?schemaNode.displayPlaceholder:null};
 	}
 
 	_getDisplayValue(schemaNode,dataObj,mainIndex,stripHtml=false,instanceNode=null) {
@@ -6407,6 +6409,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 			child.gridRow=row;
 			child.gridColumn=column;
+			child.outerContainerEl.classList.toggle("details-grid-column-divider",column>0);
 			rows[row]??=Array(columns).fill(null);
 			for (let slot=column;slot<column+span;slot++)
 				rows[row][slot]=child;
@@ -12167,14 +12170,22 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const detailsDiv=this.rootEl.appendChild(document.createElement("div"));
 		detailsDiv.classList.add("details","only-details-content");
 		const rootInstance=this._openDetailsPanes[0]=this._createInstanceNode();
+		const title=this._schema.details.title;
+		if (title!=null&&String(title)!=="") {
+			const header=detailsDiv.appendChild(document.createElement("h3"));
+			header.className="only-details-header";
+			this._populateSchemaTitle(header,this._schema.details,rootInstance,{reserveHelpSlot:true});
+		}
+		const body=detailsDiv.appendChild(document.createElement("div"));
+		body.className="only-details-body";
 		const visualFragment=document.createDocumentFragment();
 		this._generateDetailsContent(this._schema.details,0,rootInstance,visualFragment,[],lastRow);
-		rootInstance.visualHost=detailsDiv;
+		rootInstance.visualHost=body;
 		rootInstance.visualNodes=[...visualFragment.childNodes];
 		rootInstance.presenceManaged=true;
 		this._resolveDetailsPresence(rootInstance,{recurse:true,reconcile:true});
 		if (rootInstance.present)
-			detailsDiv.appendChild(visualFragment);
+			body.appendChild(visualFragment);
 	}
 
 	/**Refreshes the table-rows. Should be used after sorting or filtering or such.*/
@@ -12856,7 +12867,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (schemaNode.input?.type==="button") {
 			this._generateButton(schemaNode,mainIndex,el,scopedData,instanceNode);
 		} else if (schemaNode.input?.type==="select"&&schemaNode.input.boolean&&!schemaNode.render) {
-			if (schemaNode.showPlaceholderInDisplay&&!this._hasPresenceValue(valueBundle.value)
+			if (schemaNode.displayPlaceholder!=null&&!this._hasPresenceValue(valueBundle.value)
 				&&this._hasPresenceValue(presentation.placeholder))
 				this._renderFieldPresentation(el,schemaNode,presentation,instanceNode?instanceNode.present:true);
 			else
@@ -13167,6 +13178,7 @@ class TablanceBulk extends TablanceBase {
 	_dropdownAlignmentContainer=this.rootEl;
 	constructor() {
 		super(...arguments);
+		this.rootEl.classList.add("tablance-bulk-edit-details");
 		this._resetDataState();
 	}
 
