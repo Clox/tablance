@@ -1,6 +1,7 @@
 const Tablance=window.Tablance;
 const assert=(condition,message)=>{if(!condition)throw new Error(message)};
 const host=()=>document.body.appendChild(document.createElement('div'));
+const settleLayout=async()=>{for(let i=0;i<3;i++)await new Promise(resolve=>requestAnimationFrame(resolve))};
 const fields=()=>[
  {dataKey:'none',nodeId:'none',title:'No hint',input:{type:'text'}},
  {dataKey:'editOnly',nodeId:'editOnly',title:'Edit only',input:{type:'text',placeholder:'Editor hint'}},
@@ -23,12 +24,17 @@ assert(getComputedStyle(panel).borderTopWidth==='1px'&&getComputedStyle(panel).b
 assert(cell('none').el.textContent===''&&cell('editOnly').el.textContent==='','neither an absent nor an edit placeholder appears in display mode');
 assert(cell('displayOnly').el.textContent==='Display hint'&&cell('both').el.textContent==='Short hint'&&cell('boolean').el.textContent==='Choose'&&cell('selectEmpty').el.textContent==='Select a value','displayPlaceholder works without fallback to the editor placeholder or empty select option text');
 for(const key of ['displayOnly','both','boolean','selectEmpty'])assert(cell(key).el.classList.contains('tablance-presentation-placeholder'),`${key} uses placeholder styling`);
-const muted=standalone.rootEl.appendChild(document.createElement('span'));muted.style.color='var(--tablance-muted-color)';
-assert(getComputedStyle(cell('both').el).color===getComputedStyle(muted).color&&getComputedStyle(cell('both').el).fontStyle==='italic'&&getComputedStyle(cell('both').el).cursor==='cell','display placeholder is secondary text with a cell cursor');muted.remove();
+const placeholderColor=getComputedStyle(standalone.rootEl).getPropertyValue('--tablance-placeholder-color').trim();
+const colorSample=standalone.rootEl.appendChild(document.createElement('span'));
+colorSample.style.color=placeholderColor;
+assert(getComputedStyle(cell('both').el).color===getComputedStyle(colorSample).color&&getComputedStyle(cell('both').el).color!==getComputedStyle(cell('none').el).color,'display placeholder uses a distinct Tablance color');
+colorSample.remove();
+assert(getComputedStyle(cell('both').el).fontStyle==='normal'&&getComputedStyle(cell('both').el).cursor==='cell','display placeholder uses normal text style with a cell cursor');
 assert(cell('none').outerContainerEl.getBoundingClientRect().height<55&&getComputedStyle(cell('editOnly').outerContainerEl).borderInlineStartWidth==='1px'&&panel.querySelector('.grid-row-separator'),'standalone grid is compact with subtle separators');
 for(const [key,expected] of [['none',''],['editOnly','Editor hint'],['displayOnly',''],['both','Long hint']]){
  standalone.selectCell(0,key,{enterEditMode:true});const input=standalone._cellCursor.querySelector('input.text-editor');
  assert(input?.placeholder===expected&&getComputedStyle(input).cursor==='text',`${key} has its own edit placeholder`);
+	if(expected)assert(getComputedStyle(input,'::placeholder').color===getComputedStyle(cell('both').el).color&&getComputedStyle(input,'::placeholder').fontStyle==='normal',`${key} editor placeholder uses Tablance styling`);
  standalone._exitEditMode(false);
 }
 standalone.selectCell(0,'both');
@@ -49,14 +55,48 @@ standalone._exitEditMode(false);
 standalone.selectCell(0,'none');
 standalone.rootEl.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',code:'ArrowRight',bubbles:true,cancelable:true}));
 assert(standalone._activeSchemaNode?.dataKey==='editOnly','keyboard navigation still moves between onlyDetails cells');
-const expanded=new Tablance(host(),{main:{columns:[{type:'expand'},{dataKey:'name'}]},details:{type:'list',title:'Expanded title',entries:fields()}},true,true,{searchbar:false,ordering:false});
+const expandedHost=host();expandedHost.style.width='700px';
+const expanded=new Tablance(expandedHost,{main:{columns:[{type:'expand'},{dataKey:'name'}]},details:{type:'list',title:'Expanded title',entries:fields()}},true,true,{searchbar:false,ordering:false});
 const expandedRow={name:'Row',...row,displayOnly:'',both:'',boolean:null,selectEmpty:''};expanded.setData([expandedRow]);expanded.expandRow(0);
 assert(expanded.getDetailCell(0,'editOnly').el.textContent===''&&expanded.getDetailCell(0,'both').el.textContent==='Short hint','expanded details use independent placeholders');
 assert(!expanded.rootEl.classList.contains('only-details')&&!expanded.rootEl.querySelector('.only-details-header'),'expanded details do not gain a standalone panel/header');
 expanded.selectCell(0,'both',{enterEditMode:true});assert(expanded._cellCursor.querySelector('input.text-editor')?.placeholder==='Long hint','expanded editor uses its own placeholder');expanded._exitEditMode(false);
 expanded.updateData(expandedRow,'both','Filled');assert(expanded.getDetailCell(0,'both').el.textContent==='Filled','expanded real value replaces placeholder');
+expanded.selectCell(0,'both');expandedHost.style.width='420px';await settleLayout();
+const expandedRect=expanded._getCursorGeometryEl().getBoundingClientRect(),expandedCursorRect=expanded._cellCursor.getBoundingClientRect();
+assert(Math.abs(expandedRect.left-expandedCursorRect.left)<1&&Math.abs(expandedRect.width-expandedCursorRect.width)<1,'expanded ordinary details reuse cursor geometry synchronization');
+expanded.selectCell(0,'name');expandedHost.style.width='560px';await settleLayout();
+const mainRect=expanded._selectedCell.getBoundingClientRect(),mainCursorRect=expanded._cellCursor.getBoundingClientRect();
+assert(Math.abs(mainRect.left-mainCursorRect.left)<1&&Math.abs(mainRect.width-mainCursorRect.width)<1,'ordinary main cells reuse cursor geometry synchronization');
 const bulk=new Tablance(host(),{main:{columns:[{type:'select'},{dataKey:'name',input:{type:'text',bulkEdit:true}}]}},true,true,{searchbar:false,ordering:false});
 bulk.setData([{name:'First'},{name:'Second'}]);
 const bulkRoot=bulk._bulkEditTable.rootEl,bulkPanel=bulkRoot.querySelector(':scope>.only-details-content');
 assert(bulkRoot.classList.contains('tablance-bulk-edit-details')&&bulkPanel&&!bulkPanel.querySelector('.only-details-header')&&getComputedStyle(bulkPanel).borderTopWidth==='0px','bulkEdit is an explicit internal variant without a standalone frame');
+const layoutHost=host();layoutHost.style.width='760px';
+const layoutTable=new Tablance(layoutHost,{details:{type:'grid',columns:['fit-content(16rem)','8rem','minmax(0, 1fr)'],entries:[
+ {type:'field',title:'C/O',disabledIf:()=>true,render:()=>({content:'',presenceValue:true})},
+ {type:'field',dataKey:'fixed',nodeId:'fixed',input:{type:'text'}},
+ {type:'field',dataKey:'fluid',nodeId:'fluid',input:{type:'text'}},
+]}},true,true,{searchbar:false});
+layoutTable.setData({fixed:'Fixed',fluid:'Flexible'});
+const cursorMatches=key=>{const cellRect=layoutTable.getDetailCell(0,key).outerContainerEl.getBoundingClientRect();
+ const cursorRect=layoutTable._cellCursor.getBoundingClientRect();
+ return Math.abs(cellRect.left-cursorRect.left)<1&&Math.abs(cellRect.top-cursorRect.top)<1
+  &&Math.abs(cellRect.width-cursorRect.width)<1&&Math.abs(cellRect.height-cursorRect.height)<1};
+layoutTable.selectCell(0,'fluid');
+assert(cursorMatches('fluid'),'active cursor initially matches a flexible grid cell');
+layoutHost.style.width='360px';await settleLayout();
+assert(cursorMatches('fluid')&&layoutTable._activeSchemaNode.dataKey==='fluid','active cursor follows a narrower flexible grid track without changing selection');
+layoutHost.style.width='900px';await settleLayout();
+assert(cursorMatches('fluid')&&layoutTable._activeSchemaNode.dataKey==='fluid','active cursor follows a wider flexible grid track');
+layoutTable.selectCell(0,'fluid',{enterEditMode:true});
+layoutHost.style.width='500px';await settleLayout();
+assert(layoutTable._inEditMode&&cursorMatches('fluid'),'resize keeps an active editor aligned with its cell');
+layoutTable._exitEditMode(false);
+layoutTable.selectCell(0,'fixed');
+const fixedLeft=layoutTable.getDetailCell(0,'fixed').outerContainerEl.getBoundingClientRect().left;
+layoutHost.querySelector('.details-grid>span .title').textContent='A much longer label that changes the first grid track';
+await settleLayout();
+assert(layoutTable.getDetailCell(0,'fixed').outerContainerEl.getBoundingClientRect().left>fixedLeft
+ &&cursorMatches('fixed'),'sibling content moves a fixed-width cell and its cursor together');
 const result=document.getElementById('test-results');result.textContent='standalone, expanded, and bulkEdit presentation checks passed';result.dataset.status='passed';

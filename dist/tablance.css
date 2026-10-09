@@ -5,6 +5,7 @@
   --tablance-cell-text-color: #263B57;
   --tablance-heading-color: #203B61;
   --tablance-muted-color: #526A88;
+  --tablance-placeholder-color: #8A9AB1;
   --tablance-sort-color: #93A4B8;
   --tablance-border-color: #D9E2EF;
   --tablance-row-border-color: #E2E8F0;
@@ -27,6 +28,10 @@
   height: 100%;
   width: 100%;
 }
+.tablance .tablance-presentation-placeholder {
+  color: var(--tablance-placeholder-color);
+  font-style: normal;
+}
 .tablance.only-details:not(.tablance-bulk-edit-details) > .only-details-content {
   box-sizing: border-box;
   min-width: 0;
@@ -42,9 +47,9 @@
   background: color-mix(in srgb, var(--tablance-header-background) 65%, white);
   color: var(--tablance-heading-color);
   font-family: var(--tablance-font-family);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 .tablance.only-details:not(.tablance-bulk-edit-details) > .only-details-content > .only-details-body {
   min-width: 0;
@@ -69,12 +74,11 @@
   overflow-wrap: normal;
   cursor: cell;
 }
-.tablance.only-details:not(.tablance-bulk-edit-details) > .only-details-content .details-grid > span > div.tablance-presentation-placeholder {
-  color: var(--tablance-muted-color);
-  font-style: italic;
-}
 .tablance.only-details:not(.tablance-bulk-edit-details) > .only-details-content .details-grid > span.disabled {
   background: var(--tablance-disabled-background);
+}
+.tablance.only-details:not(.tablance-bulk-edit-details) .only-details-content .details-grid > span.tablance-cell-state:not(.disabled):not(.tablance-active-cell):hover {
+  background-color: #EAF3FF;
 }
 .tablance.only-details:not(.tablance-bulk-edit-details) .cell-cursor.editable-indicator::before,
 .tablance.only-details:not(.tablance-bulk-edit-details) .only-details-content .details-grid > span.editable-indicator::before {
@@ -242,6 +246,13 @@
 }
 .tablance tbody > tr:not(.details) {
   background-color: var(--tablance-cell-background);
+}
+.tablance .cell-cursor input::placeholder,
+.tablance .cell-cursor textarea::placeholder {
+  color: var(--tablance-placeholder-color);
+  font-size: inherit;
+  font-style: normal;
+  opacity: 1;
 }
 .tablance .cell-cursor {
   position: absolute;
@@ -1205,10 +1216,6 @@
 }
 .tablance .main-table > tbody > tr.details + tr:not(.details) > td {
   box-shadow: inset 0 1px 0 var(--tablance-border-color);
-}
-.tablance .details .tablance-presentation-placeholder {
-  color: var(--tablance-muted-color);
-  font-style: italic;
 }
 .tablance .details td {
   border-color: var(--tablance-row-border-color);

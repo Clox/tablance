@@ -65,6 +65,7 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	--tablance-cell-text-color: #263B57;
 	--tablance-heading-color: #203B61;
 	--tablance-muted-color: #526A88;
+	--tablance-placeholder-color: #8A9AB1;
 	--tablance-sort-color: #93A4B8;
 	--tablance-border-color: #D9E2EF;
 	--tablance-row-border-color: #E2E8F0;
@@ -89,6 +90,10 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 				//this way it is more predictable.
 				
 	width: 100%;//doesn't currently do anything but doesn't hurt either
+	.tablance-presentation-placeholder {
+		color: var(--tablance-placeholder-color);
+		font-style: normal;
+	}
 	&.only-details:not(.tablance-bulk-edit-details) > .only-details-content {
 		box-sizing: border-box;
 		min-width: 0;
@@ -103,9 +108,9 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			background: color-mix(in srgb, var(--tablance-header-background) 65%, white);
 			color: var(--tablance-heading-color);
 			font-family: var(--tablance-font-family);
-			font-size: 14px;
+			font-size: 15px;
 			font-weight: 600;
-			line-height: 1.35;
+			line-height: 1.4;
 		}
 		>.only-details-body {
 			min-width: 0;
@@ -128,10 +133,6 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 					overflow-wrap: normal;
 					cursor: cell;
 				}
-				>div.tablance-presentation-placeholder {
-					color: var(--tablance-muted-color);
-					font-style: italic;
-				}
 				&.disabled {
 					background: var(--tablance-disabled-background);
 				}
@@ -139,6 +140,9 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		}
 	}
 	&.only-details:not(.tablance-bulk-edit-details) {
+		.only-details-content .details-grid>span.tablance-cell-state:not(.disabled):not(.tablance-active-cell):hover {
+			background-color: #EAF3FF;
+		}
 		.cell-cursor.editable-indicator::before,
 		.only-details-content .details-grid>span.editable-indicator::before {
 			content: none;
@@ -301,6 +305,13 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		background-color: var(--tablance-cell-background);
 	}
 	.cell-cursor {
+		input::placeholder,
+		textarea::placeholder {
+			color: var(--tablance-placeholder-color);
+			font-size: inherit;
+			font-style: normal;
+			opacity: 1;
+		}
 
 		//looks good but is distracting when using arrow-keys. Limit it to mouse-clicks?
 		//transition: left .15s ease-out,top .15s ease-out,height .15s ease-out,width .15s ease-out;
@@ -1308,10 +1319,6 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		box-shadow: inset 0 1px 0 var(--tablance-border-color);
 	}
 	.details {
-		.tablance-presentation-placeholder {
-			color: var(--tablance-muted-color);
-			font-style: italic;
-		}
 		td {
 			border-color: var(--tablance-row-border-color);
 			background-color: transparent;

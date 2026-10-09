@@ -330,6 +330,9 @@ class TablanceBase {
 	_lineupResizeObserver;
 	_viewportResizeObserver;
 	_viewportResizeFrame;
+	_cursorGeometryResizeObserver;
+	_cursorGeometryResizeFrame;
+	_cursorGeometryTarget;
 	_detailsScrollTween=null;//single cancelable tween shared by outer details expansion and collapse
 	_detailsScrollTarget=null;
 	_readOnlyFeedbackTarget;
@@ -11059,6 +11062,36 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		groupEl?.classList.add("tablance-selected-group");
 		this._selectedCell=cellEl;
 		cellEl?.classList.add("tablance-active-cell");
+		this._observeCursorGeometry(cellEl,instanceNode);
+	}
+
+	_observeCursorGeometry(cellEl,instanceNode) {
+		if (!cellEl) {
+			this._cursorGeometryTarget=null;
+			this._cursorGeometryResizeObserver?.disconnect();
+			return;
+		}
+		this._cursorGeometryResizeObserver??=new ResizeObserver(()=>{
+			if (this._cursorGeometryResizeFrame!=null)
+				return;
+			this._cursorGeometryResizeFrame=requestAnimationFrame(()=>{
+				this._cursorGeometryResizeFrame=null;
+				const target=this._cursorGeometryTarget;
+				if (!target||!this._selectedCell||this._cellCursor.style.display==="none"
+					||!this.rootEl.contains(target))
+					return;
+				this._adjustCursorPosSize(target);
+			});
+		});
+		this._cursorGeometryResizeObserver.disconnect();
+		this._cursorGeometryTarget=instanceNode?this._getCursorGeometryEl(instanceNode):cellEl;
+		this._cursorGeometryResizeObserver.observe(this.hostEl);
+		this._cursorGeometryResizeObserver.observe(this._cursorGeometryTarget);
+		const layout=this._cursorGeometryTarget.closest(".details-grid,.lineup,tr");
+		// A sibling can change an intrinsic grid track and move a fixed-width active cell without
+		// changing the active cell's own size. Observe the layout participants, not just the cursor target.
+		for (const element of layout?.children??[])
+			this._cursorGeometryResizeObserver.observe(element);
 	}
 
 	_getCursorGeometryEl(instanceNode=this._activeDetailsCell) {
