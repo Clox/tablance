@@ -77,8 +77,11 @@
 .tablance.only-details:not(.tablance-bulk-edit-details) > .only-details-content .details-grid > span.disabled {
   background: var(--tablance-disabled-background);
 }
+.tablance.only-details:not(.tablance-bulk-edit-details) {
+  --tablance-hover-background: #EAF3FF;
+}
 .tablance.only-details:not(.tablance-bulk-edit-details) .only-details-content .details-grid > span.tablance-cell-state:not(.disabled):not(.tablance-active-cell):hover {
-  background-color: #EAF3FF;
+  background-color: var(--tablance-hover-background);
 }
 .tablance.only-details:not(.tablance-bulk-edit-details) .cell-cursor.editable-indicator::before,
 .tablance.only-details:not(.tablance-bulk-edit-details) .only-details-content .details-grid > span.editable-indicator::before {

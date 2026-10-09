@@ -2814,6 +2814,41 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 	}
 
+	_linkedTablePeers() {
+		const seen=new Set([this]);
+		const pending=[this];
+		while (pending.length) {
+			const table=pending.pop();
+			for (const peer of [table.neighbourTables?.up,table.neighbourTables?.down])
+				if (peer&&!seen.has(peer)) {
+					seen.add(peer);
+					pending.push(peer);
+				}
+		}
+		seen.delete(this);
+		return seen;
+	}
+
+	_prepareLinkedPointerSelection(interaction) {
+		if (interaction?.kind!=="pointer")
+			return true;
+		for (const peer of this._linkedTablePeers())
+			if ((peer._inEditMode||peer._inReadOnlyMode)&&!peer._exitEditMode(true)) {
+				interaction.event?.preventDefault();
+				return false;
+			}
+		return true;
+	}
+
+	_hideLinkedPointerCursors(interaction) {
+		if (interaction?.kind!=="pointer")
+			return;
+		for (const peer of this._linkedTablePeers()) {
+			peer._setSelectedCellElement(null);
+			peer._cellCursor.style.display="none";
+		}
+	}
+
 	selectTopBottomCellOnlyDetails(top) {
 		this._highlightOnFocus=false;
 		this._selectFirstSelectableDetailsCell(this._openDetailsPanes[0],top);
@@ -6752,12 +6787,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const interactiveEl=extensionTarget?.selEl??extensionTarget?.el??e.target.closest('[data-path]');
 			if (!interactiveEl)
 				return directInstance?this._selectDetailsCell(directInstance,false,
-					{kind:"pointer",targetInstance:directInstance}):undefined;
+					{kind:"pointer",targetInstance:directInstance,event:e}):undefined;
 			const instanceNode=directInstance??this._resolvePointerDetailsInstance(interactiveEl,mainTr);
 			if (rangeAnchor&&instanceNode?.parent===rangeAnchor.surface
 					&&instanceNode.parent.schemaNode.type==="grid")
 				e.preventDefault();
-			if (this._selectDetailsCell(instanceNode,false,{kind:"pointer",targetInstance:instanceNode})&&rangeAnchor) {
+			if (this._selectDetailsCell(instanceNode,false,
+				{kind:"pointer",targetInstance:instanceNode,event:e})&&rangeAnchor) {
 				const head=this._rangePosition();
 				if (head?.surface===rangeAnchor.surface)
 					this._setCellRange(rangeAnchor,head);
@@ -6771,7 +6807,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._clearCellRange();
 				if (e.shiftKey)
 					e.preventDefault();//prevent text-selection when shift-clicking checkboxes
-				if (!this._establishMainActionCellCursor(td))
+				if (!this._establishMainActionCellCursor(td,e))
 					return;
 				if (td.classList.contains("menu-col"))
 					return;
@@ -6781,7 +6817,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			}
 			if (rangeAnchor?.surface==="main"&&this._rangeMainColumns().includes(td?.cellIndex))
 				e.preventDefault();
-			if (this._selectMainTableCell(td,true,{kind:"pointer"})&&rangeAnchor) {
+			if (this._selectMainTableCell(td,true,{kind:"pointer",event:e})&&rangeAnchor) {
 				const head=this._rangePosition();
 				if (head?.surface===rangeAnchor.surface)
 					this._setCellRange(rangeAnchor,head);
@@ -6789,10 +6825,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 	}
 
-	_establishMainActionCellCursor(cell) {
-		if (!this._spreadsheet||this._mainRowIndex!=null)
+	_establishMainActionCellCursor(cell,event) {
+		if (!this._spreadsheet||(this._mainRowIndex!=null&&this._cellCursor.style.display!=="none"))
 			return true;
-		return this._selectMainTableCell(cell)!==false;
+		return this._selectMainTableCell(cell,true,{kind:"pointer",event})!==false;
 	}
 
 	_resolvePointerDetailsInstance(interactiveEl,mainTr=null) {
@@ -10907,6 +10943,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return false;
 		if (!this._exitEditMode(true))//try to exit-mode and commit any changes.
 			return false;//if exiting edit-mode was denied then do nothing more
+		if (!this._prepareLinkedPointerSelection(interaction))
+			return false;
 			
 		
 		this._mainColIndex=cell.cellIndex;
@@ -10921,6 +10959,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const selected=this._selectCell(cell,this._colSchemaNodes[this._mainColIndex],
 				this._filteredData[mainRowIndex],true,null,false,focus);
 			this._mainRowIndex=mainRowIndex;
+			if (selected)
+				this._hideLinkedPointerCursors(interaction);
 			return selected;
 		}
 	}
@@ -10946,6 +10986,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				return false;
 		if (!this._exitEditMode(true))//try to exit-mode and commit any changes.
 			return false;//if exiting edit-mode was denied then do nothing more
+		if (!this._prepareLinkedPointerSelection(interaction))
+			return false;
 
 		const oldExpCell=this._activeDetailsCell;//need to know the current/old details-cell if any for closing groups
 					//etc but we can't just use this._activeDetailsCell because #selectCell changes it and we do want
@@ -10994,6 +11036,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		this._activeDetailsCell=instanceNode;
 		this._adjustCursorPosSize(this._getCursorGeometryEl(instanceNode));
+		this._hideLinkedPointerCursors(interaction);
 		return instanceNode;
 	}
 

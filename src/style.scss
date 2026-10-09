@@ -140,8 +140,9 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		}
 	}
 	&.only-details:not(.tablance-bulk-edit-details) {
+		--tablance-hover-background: #EAF3FF;
 		.only-details-content .details-grid>span.tablance-cell-state:not(.disabled):not(.tablance-active-cell):hover {
-			background-color: #EAF3FF;
+			background-color: var(--tablance-hover-background);
 		}
 		.cell-cursor.editable-indicator::before,
 		.only-details-content .details-grid>span.editable-indicator::before {
