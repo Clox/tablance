@@ -193,6 +193,11 @@ assert(linkedTables[0]._cellCursor.style.display==='none'
 clickLinked(linkedTables[1]);
 assert(linkedTables[2]._cellCursor.style.display==='none'
  &&linkedTables[1]._cellCursor.style.display==='block','another pointer switch keeps one linked cursor visible');
+linkedTables[0].selectCell(0,'value');
+assert(linkedTables[1]._cellCursor.style.display==='none'
+ &&!linkedTables[1]._selectedCell?.classList.contains('tablance-active-cell')
+ &&linkedTables[0]._cellCursor.style.display==='block',
+ 'public selectCell transfers cursor ownership across linked tables');
 clickLinked(linkedTables[0]);
 linkedTables[0].rootEl.dispatchEvent(new KeyboardEvent('keydown',
  {key:'ArrowDown',code:'ArrowDown',bubbles:true,cancelable:true}));
@@ -201,6 +206,10 @@ assert(linkedTables[0]._cellCursor.style.display==='none'
 linkedTables[1].selectCell(0,'value',{enterEditMode:true});
 const linkedEditor=linkedTables[1]._cellCursor.querySelector('input.text-editor');
 linkedEditor.value='blocked';
+assert(linkedTables[2].selectCell(0,'value')===false
+ &&linkedTables[1]._inEditMode&&linkedTables[1]._cellCursor.style.display==='block'
+ &&linkedTables[2]._cellCursor.style.display==='none',
+ 'programmatic selection cannot strand an invalid draft in another linked table');
 clickLinked(linkedTables[2]);
 assert(linkedTables[1]._inEditMode&&linkedTables[1]._cellCursor.style.display==='block'
  &&linkedTables[2]._cellCursor.style.display==='none','a rejected edit keeps the old linked cursor and draft');
@@ -208,6 +217,10 @@ linkedEditor.value='Saved';clickLinked(linkedTables[2]);
 assert(!linkedTables[1]._inEditMode&&linkedTables[1]._filteredData[0].value==='Saved'
  &&linkedTables[1]._cellCursor.style.display==='none'
  &&linkedTables[2]._cellCursor.style.display==='block','a valid draft commits before pointer activation moves to another linked table');
+linkedTables[0].selectCell(0,'value');
+assert(linkedTables[2]._cellCursor.style.display==='none'
+ &&linkedTables[0]._cellCursor.style.display==='block',
+ 'public selection after pointer activation still leaves a single linked cursor');
 const mainTables=Array.from({length:2},()=>{
  const table=new Tablance(host(),{main:{columns:[{type:'select'},{dataKey:'value'}]}},true,true,{searchbar:false,ordering:false});
  table.setData([{value:'Main'}]);return table;
@@ -221,4 +234,8 @@ mainTables[0]._mainTbody.querySelector('tr:not(.details)>td.select-col').dispatc
  new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0}));
 assert(mainTables[0]._cellCursor.style.display==='block'
  &&mainTables[1]._cellCursor.style.display==='none','an action cell reactivates a previously hidden chained main table');
+mainTables[1].selectCell(0,'value');
+assert(mainTables[0]._cellCursor.style.display==='none'
+ &&mainTables[1]._cellCursor.style.display==='block',
+ 'programmatic selection also transfers cursor ownership for chained main tables');
 const result=document.getElementById('test-results');result.textContent='standalone, expanded, bulkEdit, and linked table checks passed';result.dataset.status='passed';

@@ -2829,20 +2829,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return seen;
 	}
 
-	_prepareLinkedPointerSelection(interaction) {
-		if (interaction?.kind!=="pointer")
-			return true;
+	_prepareLinkedSelection(interaction) {
 		for (const peer of this._linkedTablePeers())
 			if ((peer._inEditMode||peer._inReadOnlyMode)&&!peer._exitEditMode(true)) {
-				interaction.event?.preventDefault();
+				interaction?.event?.preventDefault();
 				return false;
 			}
 		return true;
 	}
 
-	_hideLinkedPointerCursors(interaction) {
-		if (interaction?.kind!=="pointer")
-			return;
+	_hideLinkedCursors() {
 		for (const peer of this._linkedTablePeers()) {
 			peer._setSelectedCellElement(null);
 			peer._cellCursor.style.display="none";
@@ -2851,7 +2847,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	selectTopBottomCellOnlyDetails(top) {
 		this._highlightOnFocus=false;
-		this._selectFirstSelectableDetailsCell(this._openDetailsPanes[0],top);
+		return this._selectFirstSelectableDetailsCell(this._openDetailsPanes[0],top);
 	}
 
 	/**Return the first details instance-node matching nodeId for a row (expands row if needed). */
@@ -4684,9 +4680,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const nextTable=this.neighbourTables?.[direction>0?"down":"up"];
 		if (!nextTable)
 			return false;
-		this._mainColIndex=this._mainRowIndex=this._activeDetailsCell=null;
-		nextTable._focusEl.style.outline=this._cellCursor.style.display="none";
-		return nextTable.selectTopBottomCellOnlyDetails(direction>0);
+		const selected=nextTable.selectTopBottomCellOnlyDetails(direction>0);
+		if (selected)
+			this._mainColIndex=this._mainRowIndex=this._activeDetailsCell=null;
+		return selected;
 	}
 
 	_selectAdjacentMainTable(isGoingDown,preferredColIndex) {
@@ -4694,13 +4691,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!nextTable||!nextTable._selectTopBottomMainCell(isGoingDown,preferredColIndex))
 			return;
 		this._mainColIndex=this._mainRowIndex=null;
-		this._cellCursor.style.display="none";
 	}
 
 	_selectTopBottomMainCell(isGoingDown,preferredColIndex) {
 		if (this._onlyDetails) {
-			this.selectTopBottomCellOnlyDetails(isGoingDown);
-			return true;
+			return !!this.selectTopBottomCellOnlyDetails(isGoingDown);
 		}
 		const rows=[...this._mainTbody.querySelectorAll(":scope>tr:not(.details)")];
 		const row=isGoingDown?rows[0]:rows.at(-1);
@@ -4711,10 +4706,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return;
 		const targetCell=selectableCells.reduce((closest,cell)=>
 			Math.abs(cell.cellIndex-preferredColIndex)<Math.abs(closest.cellIndex-preferredColIndex)?cell:closest);
-		this._focusEl.focus({preventScroll:true});
-		this._selectMainTableCell(targetCell);
-		this._scrollToCursor();
-		return true;
+		const selected=this._selectMainTableCell(targetCell);
+		if (selected)
+			this._scrollToCursor();
+		return !!selected;
 	}
 
 	_selectMainDataBoundaryCell(toEnd,preferredColIndex) {
@@ -4979,9 +4974,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		else {
 			const nextTable=this.neighbourTables?.[isGoingDown?"down":"up"];
 			if (nextTable) {
-				this._mainColIndex=this._mainRowIndex=this._activeDetailsCell=null;
-				nextTable._focusEl.style.outline=this._cellCursor.style.display="none";
-				nextTable.selectTopBottomCellOnlyDetails(isGoingDown);
+				if (nextTable.selectTopBottomCellOnlyDetails(isGoingDown))
+					this._mainColIndex=this._mainRowIndex=this._activeDetailsCell=null;
 			}
 		}
 	}
@@ -10959,7 +10953,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return false;
 		if (!this._exitEditMode(true))//try to exit-mode and commit any changes.
 			return false;//if exiting edit-mode was denied then do nothing more
-		if (!this._prepareLinkedPointerSelection(interaction))
+		if (!this._prepareLinkedSelection(interaction))
 			return false;
 			
 		
@@ -10975,8 +10969,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const selected=this._selectCell(cell,this._colSchemaNodes[this._mainColIndex],
 				this._filteredData[mainRowIndex],true,null,false,focus);
 			this._mainRowIndex=mainRowIndex;
-			if (selected)
-				this._hideLinkedPointerCursors(interaction);
 			return selected;
 		}
 	}
@@ -11002,7 +10994,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				return false;
 		if (!this._exitEditMode(true))//try to exit-mode and commit any changes.
 			return false;//if exiting edit-mode was denied then do nothing more
-		if (!this._prepareLinkedPointerSelection(interaction))
+		if (!this._prepareLinkedSelection(interaction))
 			return false;
 
 		const oldExpCell=this._activeDetailsCell;//need to know the current/old details-cell if any for closing groups
@@ -11052,7 +11044,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		this._activeDetailsCell=instanceNode;
 		this._adjustCursorPosSize(this._getCursorGeometryEl(instanceNode));
-		this._hideLinkedPointerCursors(interaction);
 		return instanceNode;
 	}
 
@@ -11108,6 +11099,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._cellCursorDataObj=dataObj;
 		this._selectedCellVal=schemaNode.type==="menu"?undefined:dataObj?.[schemaNode.dataKey];
 		this._updateStaticCellOverflowPreview();
+		this._hideLinkedCursors();
 		return true;
 	}
 
