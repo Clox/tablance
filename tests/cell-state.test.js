@@ -6763,6 +6763,7 @@ try {
 	hiddenGridRow.show=true;
 	hiddenGridTable.refreshSubtree(hiddenGridOne.parent);
 	assert(!hiddenGridConditional.hidden&&hiddenGridConditional.gridColumn===1
+		&&!hiddenGridConditional.outerContainerEl.classList.contains("tablance-hidden")
 		&&hiddenGridShow.gridRow===1&&hiddenGridShow.gridColumn===0
 		&&hiddenGridOne.parent.gridRowSeparators.length===1&&!preRefreshExtension.isConnected
 		&&hiddenGridOne.parent.gridRowExtensions.length===2

@@ -6432,6 +6432,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const columns=grid.gridColumns;
 		const rows=[];
 		let row=0,column=0;
+		let lastVisible=null;
 		for (const child of grid.children??[]) {
 			const span=child.schemaNode.columnSpan??1;
 			if (!Number.isInteger(span)||span<1||span>columns)
@@ -6441,6 +6442,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				child.gridRow=child.gridColumn=null;
 				continue;
 			}
+			lastVisible=child;
 			if (column+span>columns) {
 				row++;
 				column=0;
@@ -6457,6 +6459,20 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (column===columns) {
 				row++;
 				column=0;
+			}
+		}
+		// When visibleIf removes trailing fields from the final row, the preceding field
+		// occupies their empty tracks as one real grid cell. The schema spans stay unchanged.
+		if (lastVisible&&column>0) {
+			const trailing=grid.children.slice(grid.children.lastIndexOf(lastVisible)+1);
+			const firstHidden=trailing[0];
+			if (firstHidden?.hidden&&firstHidden.schemaNode.visibleIf
+				&&(firstHidden.schemaNode.columnSpan??1)<=columns-column) {
+				const remaining=columns-column;
+				lastVisible.gridColumnSpan+=remaining;
+				for (let slot=column;slot<columns;slot++)
+					rows[lastVisible.gridRow][slot]=lastVisible;
+				lastVisible.outerContainerEl.style.gridColumn=`${lastVisible.gridColumn+1} / span ${lastVisible.gridColumnSpan}`;
 			}
 		}
 		grid.gridRows=rows;
@@ -12717,6 +12733,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		} else {
 			const cellState=this._updateCell(instanceNode.schemaNode,cellEl,instanceNode.selEl,scopedData,
 				rootCell.rowIndex,instanceNode);
+			// _updateCell restores the cell's base classes. Keep the structural visibility
+			// class in sync when visibleIf has changed since that base was captured.
+			instanceNode.outerContainerEl?.classList.toggle("tablance-hidden",!!instanceNode.hidden);
 			if (instanceNode.schemaNode.input?.type!=="button") {
 				const newCellContent=cellEl.innerText;
 				if (!newCellContent!=!oldCellContent) {
@@ -13581,6 +13600,15 @@ export default class Tablance extends TablanceBase {
 			else if (instanceNode.parent?.schemaNode?.type==="repeated"
 				&&instanceNode.parent.children?.includes(instanceNode))
 				this._arrangeRepeatedInstances(instanceNode.parent);
+			if (instanceNode.hidden&&!this._inEditMode
+				&&this._isInstanceDescendantOf(this._activeDetailsCell,instanceNode)) {
+				const target=this._getAdjacentDetailsCell(instanceNode,false)
+					??this._getAdjacentDetailsCell(instanceNode,true);
+				if (target)
+					this._selectDetailsCell(target);
+				else
+					this._clearCursorForViewTransition();
+			}
 		}
 
 		return !instanceNode.hidden;

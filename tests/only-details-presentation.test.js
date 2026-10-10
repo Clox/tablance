@@ -68,6 +68,82 @@ assert(Math.abs(expandedRect.left-expandedCursorRect.left)<1&&Math.abs(expandedR
 expanded.selectCell(0,'name');expandedHost.style.width='560px';await settleLayout();
 const mainRect=expanded._selectedCell.getBoundingClientRect(),mainCursorRect=expanded._cellCursor.getBoundingClientRect();
 assert(Math.abs(mainRect.left-mainCursorRect.left)<1&&Math.abs(mainRect.width-mainCursorRect.width)<1,'ordinary main cells reuse cursor geometry synchronization');
+for(const withMain of [false,true]){
+ const conditionalData={name:'Conditional',show:false,value:''};
+ const conditionalSchema={details:{type:'grid',columns:3,entries:[
+  {type:'field',title:'Duration',disabledIf:()=>true,render:()=>({content:'',presenceValue:true})},
+  {type:'field',dataKey:'show',nodeId:'show',input:{type:'select',options:[{value:false,text:'Hide'},{value:true,text:'Show'}]}},
+  {type:'field',dataKey:'value',nodeId:'value',dependsOn:'show',
+   visibleIf:({rowData})=>rowData.show,input:{type:'text'}},
+ ]}};
+ if(withMain)conditionalSchema.main={columns:[{type:'expand'},{dataKey:'name'}]};
+ const conditionalHost=host();conditionalHost.style.width='700px';
+ const conditionalTable=new Tablance(conditionalHost,conditionalSchema,true,true,{searchbar:false,ordering:false});
+ conditionalTable.setData(withMain?[conditionalData]:conditionalData);
+ if(withMain)conditionalTable.expandRow(0);
+ const conditionalCell=conditionalTable.getDetailCell(0,'value');
+ const showCell=conditionalTable.getDetailCell(0,'show');
+ const grid=showCell.parent;
+ const matchesCursor=()=>{const cellRect=showCell.outerContainerEl.getBoundingClientRect();
+  const cursorRect=conditionalTable._cellCursor.getBoundingClientRect();
+  return Math.abs(cellRect.left-cursorRect.left)<1&&Math.abs(cellRect.width-cursorRect.width)<1};
+ assert(conditionalCell.hidden&&!conditionalCell.outerContainerEl.isConnected
+  &&showCell.gridColumn===1&&showCell.gridColumnSpan===2
+  &&grid.gridRows[0][1]===showCell&&grid.gridRows[0][2]===showCell,
+  'a trailing visibleIf field is absent and the preceding real grid cell fills its tracks');
+ assert(conditionalTable.selectCell(0,'value')===false,
+  'a hidden field cannot be selected through the public cell API');
+ conditionalTable.selectCell(0,'show');
+ assert(matchesCursor()&&Math.abs(showCell.outerContainerEl.getBoundingClientRect().right
+  -grid.containerEl.getBoundingClientRect().right)<2,
+  'the ordinary cell cursor follows a real cell reaching the end of the grid');
+ conditionalHost.style.width='530px';await settleLayout();
+ assert(matchesCursor(),'the actual cell and cursor resize together when narrowed');
+ conditionalHost.style.width='760px';await settleLayout();
+ assert(matchesCursor(),'the actual cell and cursor resize together when widened');
+ conditionalTable.selectCell(0,'show',{enterEditMode:true});
+ assert(matchesCursor(),'edit mode still uses the actual cell geometry');
+ conditionalTable._exitEditMode(false);
+ conditionalTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+  {key:'ArrowRight',code:'ArrowRight',bubbles:true,cancelable:true}));
+ assert(conditionalTable._activeDetailsCell===showCell,'keyboard navigation skips the hidden field');
+ conditionalData.show=true;conditionalTable.refreshSubtree(conditionalCell);
+ assert(!conditionalCell.hidden&&conditionalCell.outerContainerEl.isConnected
+  &&showCell.gridColumnSpan===1&&conditionalCell.gridColumn===2
+  &&grid.gridRows[0][2]===conditionalCell,
+  'revealing visibleIf restores the two separate grid cells');
+ assert(matchesCursor(),'the selected cell and cursor both return to their original width');
+ conditionalTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+  {key:'ArrowRight',code:'ArrowRight',bubbles:true,cancelable:true}));
+ assert(conditionalTable._activeDetailsCell===conditionalCell,
+  'keyboard navigation reaches the revealed cell');
+ conditionalData.show=false;conditionalTable.refreshSubtree(conditionalCell);
+ assert(conditionalCell.hidden&&!conditionalCell.outerContainerEl.isConnected
+  &&showCell.gridColumnSpan===2&&conditionalTable._activeDetailsCell===showCell&&matchesCursor(),
+  'hiding the selected cell restores the single wide cell and moves the cursor onto it');
+ conditionalTable._clearCursorForViewTransition();
+ (window.nativeGridHoverTargets??=[]).push({table:conditionalTable,showCell});
+}
+const reflowData={first:'First',conditional:'Conditional',next:'Next',show:false};
+const reflowTable=new Tablance(host(),{details:{type:'grid',columns:2,entries:[
+ {dataKey:'first',nodeId:'first',input:{type:'text'}},
+ {dataKey:'conditional',nodeId:'conditional',dependsOn:'show',
+  visibleIf:({rowData})=>rowData.show,input:{type:'text'}},
+ {dataKey:'next',nodeId:'next',input:{type:'text'}},
+]}},true,true,{searchbar:false});
+reflowTable.setData(reflowData);
+const reflowNext=reflowTable.getDetailCell(0,'next');
+const reflowConditional=reflowTable.getDetailCell(0,'conditional');
+assert(reflowConditional.hidden&&reflowNext.gridRow===0&&reflowNext.gridColumn===1,
+ 'a visible field following a hidden field keeps the existing compact grid reflow');
+reflowTable.selectCell(0,'first');
+reflowTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:'ArrowRight',code:'ArrowRight',bubbles:true,cancelable:true}));
+assert(reflowTable._activeDetailsCell===reflowNext,
+ 'navigation reaches the next visible field after a hidden field');
+reflowData.show=true;reflowTable.refreshSubtree(reflowConditional);
+assert(!reflowConditional.hidden&&reflowConditional.gridColumn===1&&reflowNext.gridRow===1,
+ 'reveal returns the following field to its original row');
 const bulk=new Tablance(host(),{main:{columns:[{type:'select'},{dataKey:'name',input:{type:'text',bulkEdit:true}}]}},true,true,{searchbar:false,ordering:false});
 bulk.setData([{name:'First'},{name:'Second'}]);
 const bulkRoot=bulk._bulkEditTable.rootEl,bulkPanel=bulkRoot.querySelector(':scope>.only-details-content');
