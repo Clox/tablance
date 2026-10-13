@@ -2128,47 +2128,105 @@
   display: none;
 }
 .tablance .tooltip {
+  --tooltip-surface: #17212f;
+  --tooltip-outline: rgba(15, 43, 75, .55);
   opacity: 1;
   pointer-events: none;
   visibility: hidden;
-  position: absolute;
-  padding: 5px 10px;
-  background-color: black;
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(380px, 100vw - 24px);
+  padding: 10px 12px;
+  background: var(--tooltip-surface);
+  border: 1px solid rgba(15, 43, 75, 0.25);
   border-radius: 6px;
-  min-width: 100px;
-  min-height: 30px;
+  box-shadow: 0 7px 22px rgba(15, 43, 75, 0.2);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: visible;
+  z-index: 10001;
 }
-.tablance .tooltip::after {
+.tablance .tooltip.cell-help {
+  --tooltip-surface: var(--tablance-cell-background);
+  --tooltip-outline: var(--tablance-border-color);
+  border: 1px solid var(--tablance-border-color);
+}
+.tablance .tooltip.cell-help > span {
+  color: var(--tablance-cell-text-color);
+}
+.tablance .tooltip::before, .tablance .tooltip::after {
   content: "";
   position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  border-width: 5px;
   border-style: solid;
   border-color: transparent;
 }
+.tablance .tooltip::before {
+  border-width: 8px;
+}
+.tablance .tooltip::after {
+  border-width: 7px;
+}
 .tablance .tooltip > span {
   color: #fff;
-  text-align: center;
+  text-align: left;
   display: block;
-  position: relative;
-  padding-top: 5px;
+  line-height: 1.4;
 }
-.tablance .tooltip.below {
-  margin-top: 5px;
+.tablance .tooltip > span[hidden] {
+  display: none;
+}
+.tablance .tooltip > span.cell-help-secondary:not([hidden]) {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.45);
+  font-size: 0.92em;
+}
+.tablance .tooltip.below::before, .tablance .tooltip.below::after {
+  top: 0;
+  left: var(--tooltip-caret-x);
+  transform: translate(-50%, -100%);
+}
+.tablance .tooltip.below::before {
+  border-bottom-color: var(--tooltip-outline);
 }
 .tablance .tooltip.below::after {
-  top: 0;
-  transform: translate(-50%, -100%);
-  border-bottom-color: black;
+  border-bottom-color: var(--tooltip-surface);
 }
-.tablance .tooltip.above {
-  margin-top: -5px;
+.tablance .tooltip.above::before, .tablance .tooltip.above::after {
+  bottom: 0;
+  left: var(--tooltip-caret-x);
+  transform: translate(-50%, 100%);
+}
+.tablance .tooltip.above::before {
+  border-top-color: var(--tooltip-outline);
 }
 .tablance .tooltip.above::after {
-  bottom: 0;
-  transform: translate(-50%, 100%);
-  border-top-color: black;
+  border-top-color: var(--tooltip-surface);
+}
+.tablance .tooltip.right::before, .tablance .tooltip.right::after {
+  left: 0;
+  top: var(--tooltip-caret-y);
+  transform: translate(-100%, -50%);
+}
+.tablance .tooltip.right::before {
+  border-right-color: var(--tooltip-outline);
+}
+.tablance .tooltip.right::after {
+  border-right-color: var(--tooltip-surface);
+}
+.tablance .tooltip.left::before, .tablance .tooltip.left::after {
+  right: 0;
+  top: var(--tooltip-caret-y);
+  transform: translate(100%, -50%);
+}
+.tablance .tooltip.left::before {
+  border-left-color: var(--tooltip-outline);
+}
+.tablance .tooltip.left::after {
+  border-left-color: var(--tooltip-surface);
 }
 .tablance .tablance-select-container {
   position: absolute;

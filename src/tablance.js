@@ -10,6 +10,7 @@ const POINTER_GROUP_COLLAPSE_DELAY=150;
 let anchoredPopoverId=0;
 let textareaShortcutHintId=0;
 let comboboxListboxId=0;
+let cellTooltipId=0;
 const tabFocusIntentByDocument=new WeakMap();
 
 const getTabFocusIntent=doc=>{
@@ -444,6 +445,8 @@ class TablanceBase {
 	 * 				* help String|Function Contextual help shown next to an already visible title. Strings are always
 	 * 					rendered as text. A callback receives the standard cell context and must return a string, Node,
 	 * 					or DocumentFragment. Repeated is a transparent container and receives no new heading for help.
+	 * 				* helpText String Guidance shown automatically beside an editable field only while that cell
+	 * 					is in edit mode. It does not add a help icon or appear for the selected cell cursor.
 	 *
 	 
 	 //todo visibleIf should get payload. (I think it already does but is not reflected in the docs here) The payload should also get valueBundle
@@ -4376,7 +4379,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		this._tooltip=document.createElement("div");
 		this._tooltip.classList.add("tooltip");
+		this._tooltip.popover="manual";
+		this._tooltip.id=`tablance-cell-tooltip-${++cellTooltipId}`;
+		this._tooltip.setAttribute("role","tooltip");
 		this._tooltip.appendChild(document.createElement("span"));
+		this._tooltip.appendChild(document.createElement("span"));
+		this._tooltip.lastChild.className="cell-help-secondary";
+		this._tooltip.lastChild.hidden=true;
 	}
 
 	_spreadsheetOnFocus(_e) {
@@ -5084,7 +5093,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return this._readOnlyPresentationKeyDown(e);
 		if (this._handleRepeatedReorderKey(e))
 			return;
-		this._dismissTooltip();
+		if (!this._inEditMode||!this._tooltip.classList.contains("cell-help")) {
+			const restoreHelp=this._inEditMode&&e.key!=="Escape"&&!!this._cellEditHelpText();
+			this._dismissTooltip();
+			if (restoreHelp)
+				this._showCellEditHelp();
+		}
 		const keysThatEnterFromOutline=["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Home","End","Escape",
 								"NumpadAdd","NumpadSubtract","Enter","NumpadEnter","Space"];
 		const tableOutlineMode=this._focusEl.classList.contains("show-focus-ring");
@@ -6781,7 +6795,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._highlightOnFocus=false;//see decleration
 		this._focusEl.classList.remove("show-focus-ring");
 		this._focusEl.style.outline="none";//see #spreadsheetOnFocus
-		this._dismissTooltip();
+		if (!(this._inEditMode&&this._tooltip.classList.contains("cell-help")
+			&&this._cellCursor.contains(e.target)))
+			this._dismissTooltip();
 		if (Date.now()<this._ignoreClicksUntil)//see decleration of #ignoreClicksUntil
 			return;
 		if (e.which===3)//if right click
@@ -7174,6 +7190,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			({textarea:this._openTextAreaEdit,date:this._openDateEdit,select:this._openSelectEdit,
 				combobox:this._openComboboxEdit
 				,file:this._openFileEdit}[this._activeSchemaNode.input.type]??this._openTextEdit).call(this,e);
+			this._showCellEditHelp();
 		} else if (this._activeSchemaNode.type==="group") {
 			this._clearCellRange();
 			this._openGroup(this._activeDetailsCell);
@@ -10627,19 +10644,119 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return true;
 	}
 
-	_showTooltip(message,target=this._cellCursor,preferredVertical) {
+	_cellEditHelpText() {
+		const help=this._inEditMode&&this._activeSchemaNode?.helpText;
+		if (help==null)
+			return "";
+		if (typeof help!=="string")
+			throw new TypeError("field.helpText must be a string.");
+		return help.trim();
+	}
+
+	_showCellEditHelp() {
+		const help=this._cellEditHelpText();
+		if (!help)
+			return false;
+		return this._showTooltip(help,this._cellCursor,undefined,true);
+	}
+
+	_describeTooltipEditor() {
+		const editor=this._selectContext?.input??this._cellCursor.querySelector("input,textarea");
+		if (!editor)
+			return;
+		const ids=(editor.getAttribute("aria-describedby")??"").split(/\s+/).filter(Boolean);
+		if (!ids.includes(this._tooltip.id))
+			ids.push(this._tooltip.id);
+		editor.setAttribute("aria-describedby",ids.join(" "));
+		this._tooltipDescribedEditor=editor;
+	}
+
+	_showTooltip(message,target=this._cellCursor,preferredVertical,cellHelp=false) {
 		this._dismissTooltip();
 		const tooltipGeneration=this._tooltipGeneration;
-		this._cellCursor.parentElement.appendChild(this._tooltip);
+		this.rootEl.appendChild(this._tooltip);
+		this._tooltip.classList.toggle("cell-help",cellHelp);
 		this._tooltip.firstChild.innerText=message;
-		this._alignDropdown(this._tooltip,target,preferredVertical);
-		this._scrollElementIntoView(this._tooltip);
+		const secondary=!cellHelp?this._cellEditHelpText():"";
+		this._tooltip.lastChild.textContent=secondary&&secondary!==message?secondary:"";
+		this._tooltip.lastChild.hidden=!this._tooltip.lastChild.textContent;
+		if (this._inEditMode)
+			this._describeTooltipEditor();
+		if (typeof this._tooltip.showPopover==="function")
+			this._tooltip.showPopover();
+		this._tooltipAnchor=target;
+		this._tooltipPreferredVertical=preferredVertical;
+		this._positionTooltip();
+		this._tooltipReposition=()=>this._scheduleTooltipPosition();
+		window.addEventListener("resize",this._tooltipReposition);
+		window.addEventListener("scroll",this._tooltipReposition,true);
+		document.addEventListener("scroll",this._tooltipReposition,true);
+		window.visualViewport?.addEventListener("resize",this._tooltipReposition);
+		window.visualViewport?.addEventListener("scroll",this._tooltipReposition);
+		if (typeof ResizeObserver==="function") {
+			this._tooltipResizeObserver=new ResizeObserver(this._tooltipReposition);
+			this._tooltipResizeObserver.observe(target);
+			this._tooltipResizeObserver.observe(this._tooltip);
+		}
 		this._tooltipShowTimer=setTimeout(()=>{
 			this._tooltipShowTimer=null;
 			if (this._tooltipGeneration===tooltipGeneration&&this._tooltip.isConnected)
 				this._tooltip.style.visibility="visible";
 		});//Delay visibility until the originating mousedown has finished bubbling.
 		return true;
+	}
+
+	_scheduleTooltipPosition() {
+		if (this._tooltipPositionFrame!=null)
+			return;
+		this._tooltipPositionFrame=requestAnimationFrame(()=>{
+			this._tooltipPositionFrame=null;
+			if (this._tooltip.isConnected)
+				this._positionTooltip();
+		});
+	}
+
+	_positionTooltip() {
+		const anchor=this._tooltipAnchor;
+		if (!anchor?.isConnected||!this._tooltip.isConnected)
+			return;
+		const rect=anchor.getBoundingClientRect();
+		const tooltip=this._tooltip;
+		const width=tooltip.offsetWidth;
+		const height=tooltip.offsetHeight;
+		const visual=window.visualViewport;
+		const viewport={
+			left:visual?.offsetLeft??0,top:visual?.offsetTop??0,
+			right:(visual?.offsetLeft??0)+(visual?.width??document.documentElement.clientWidth),
+			bottom:(visual?.offsetTop??0)+(visual?.height??document.documentElement.clientHeight)
+		};
+		const margin=12;
+		const gap=11;
+		const space={
+			right:viewport.right-rect.right-margin-gap,
+			above:rect.top-viewport.top-margin-gap,
+			below:viewport.bottom-rect.bottom-margin-gap,
+			left:rect.left-viewport.left-margin-gap
+		};
+		const order=[this._tooltipPreferredVertical,"above","below","right","left"]
+			.filter((side,index,sides)=>side&&sides.indexOf(side)===index);
+		const needed=side=>side==="right"||side==="left"?width:height;
+		const side=order.find(candidate=>space[candidate]>=needed(candidate))
+			??order.reduce((best,candidate)=>space[candidate]/Math.max(needed(candidate),1)
+				>space[best]/Math.max(needed(best),1)?candidate:best);
+		const clamp=(value,min,max)=>Math.max(min,Math.min(value,Math.max(min,max)));
+		const centeredX=rect.left+(rect.width-width)/2;
+		const centeredY=rect.top+(rect.height-height)/2;
+		const left=clamp(side==="right"?rect.right+gap:side==="left"?rect.left-width-gap:centeredX,
+			viewport.left+margin,viewport.right-width-margin);
+		const top=clamp(side==="below"?rect.bottom+gap:side==="above"?rect.top-height-gap:centeredY,
+			viewport.top+margin,viewport.bottom-height-margin);
+		tooltip.classList.remove("above","below","left","right");
+		tooltip.classList.add(side);
+		tooltip.style.left=`${left}px`;
+		tooltip.style.top=`${top}px`;
+		tooltip.style.setProperty("--tooltip-caret-x",`${clamp(rect.left+rect.width/2-left,14,width-14)}px`);
+		tooltip.style.setProperty("--tooltip-caret-y",`${clamp(rect.top+rect.height/2-top,14,height-14)}px`);
 	}
 
 	_dismissTooltip(expectedGeneration=null) {
@@ -10649,16 +10766,47 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		clearTimeout(this._tooltipShowTimer);
 		clearTimeout(this._transactionRevealTooltipTimer);
 		this._tooltipShowTimer=this._transactionRevealTooltipTimer=null;
+		if (this._tooltipReposition) {
+			window.removeEventListener("resize",this._tooltipReposition);
+			window.removeEventListener("scroll",this._tooltipReposition,true);
+			document.removeEventListener("scroll",this._tooltipReposition,true);
+			window.visualViewport?.removeEventListener("resize",this._tooltipReposition);
+			window.visualViewport?.removeEventListener("scroll",this._tooltipReposition);
+			this._tooltipReposition=null;
+		}
+		this._tooltipResizeObserver?.disconnect();
+		this._tooltipResizeObserver=null;
+		if (this._tooltipPositionFrame!=null)
+			cancelAnimationFrame(this._tooltipPositionFrame);
+		this._tooltipPositionFrame=null;
+		this._tooltipAnchor=null;
+		this._tooltipPreferredVertical=null;
+		if (this._tooltipDescribedEditor) {
+			const editor=this._tooltipDescribedEditor;
+			const ids=(editor.getAttribute("aria-describedby")??"").split(/\s+/)
+				.filter(id=>id&&id!==this._tooltip.id);
+			if (ids.length) editor.setAttribute("aria-describedby",ids.join(" "));
+			else editor.removeAttribute("aria-describedby");
+			this._tooltipDescribedEditor=null;
+		}
 		if (!this._tooltip)
 			return true;
 		this._tooltip.style.visibility="hidden";
+		if (typeof this._tooltip.hidePopover==="function"&&this._tooltip.matches(":popover-open"))
+			this._tooltip.hidePopover();
 		this._tooltip.remove();
 		this._tooltip.style.removeProperty("top");
 		this._tooltip.style.removeProperty("left");
 		this._tooltip.style.removeProperty("position");
-		this._tooltip.classList.remove("above","below","left","right");
+		this._tooltip.style.removeProperty("--tooltip-caret-x");
+		this._tooltip.style.removeProperty("--tooltip-caret-y");
+		this._tooltip.classList.remove("above","below","left","right","cell-help");
 		if (this._tooltip.firstChild)
 			this._tooltip.firstChild.textContent="";
+		if (this._tooltip.lastChild) {
+			this._tooltip.lastChild.textContent="";
+			this._tooltip.lastChild.hidden=true;
+		}
 		return true;
 	}
 

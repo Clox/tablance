@@ -6,9 +6,9 @@ const fields=()=>[
  {dataKey:'none',nodeId:'none',title:'No hint',input:{type:'text'}},
  {dataKey:'editOnly',nodeId:'editOnly',title:'Edit only',input:{type:'text',placeholder:'Editor hint'}},
  {dataKey:'displayOnly',nodeId:'displayOnly',title:'Display only',displayPlaceholder:'Display hint',input:{type:'text'}},
- {dataKey:'both',nodeId:'both',title:'Both',displayPlaceholder:'Short hint',input:{type:'text',placeholder:'Long hint'}},
+ {dataKey:'both',nodeId:'both',title:'Both',displayPlaceholder:'Short hint',helpText:'Expanded detail help',input:{type:'text',placeholder:'Long hint'}},
  {dataKey:'boolean',nodeId:'boolean',displayPlaceholder:'Choose',input:{type:'select',boolean:true}},
- {dataKey:'selectEmpty',nodeId:'selectEmpty',displayPlaceholder:'Select a value',
+ {dataKey:'selectEmpty',nodeId:'selectEmpty',displayPlaceholder:'Select a value',helpText:'Select help',
   input:{type:'select',options:[{value:'',text:'None'},{value:'chosen',text:'Chosen'}]}},
 ];
 const row={none:'',editOnly:'',displayOnly:'',both:'',boolean:null,selectEmpty:''};
@@ -37,6 +37,11 @@ for(const [key,expected] of [['none',''],['editOnly','Editor hint'],['displayOnl
 	if(expected)assert(getComputedStyle(input,'::placeholder').color===getComputedStyle(cell('both').el).color&&getComputedStyle(input,'::placeholder').fontStyle==='normal',`${key} editor placeholder uses Tablance styling`);
  standalone._exitEditMode(false);
 }
+standalone.selectCell(0,'selectEmpty',{enterEditMode:true});
+assert(standalone._tooltip.classList.contains('cell-help')
+ &&standalone._selectContext.input.getAttribute('aria-describedby')===standalone._tooltip.id,
+ 'select editors receive the same contextual help and accessible description');
+standalone._exitEditMode(false);
 standalone.selectCell(0,'both');
 assert(getComputedStyle(standalone._cellCursor).backgroundColor==='rgba(0, 0, 0, 0)'&&getComputedStyle(standalone._cellCursor).paddingTop==='0px','cell cursor does not inherit the panel frame');
 standalone.selectCell(0,'both',{enterEditMode:true});
@@ -60,7 +65,10 @@ const expanded=new Tablance(expandedHost,{main:{columns:[{type:'expand'},{dataKe
 const expandedRow={name:'Row',...row,displayOnly:'',both:'',boolean:null,selectEmpty:''};expanded.setData([expandedRow]);expanded.expandRow(0);
 assert(expanded.getDetailCell(0,'editOnly').el.textContent===''&&expanded.getDetailCell(0,'both').el.textContent==='Short hint','expanded details use independent placeholders');
 assert(!expanded.rootEl.classList.contains('only-details')&&!expanded.rootEl.querySelector('.only-details-header'),'expanded details do not gain a standalone panel/header');
-expanded.selectCell(0,'both',{enterEditMode:true});assert(expanded._cellCursor.querySelector('input.text-editor')?.placeholder==='Long hint','expanded editor uses its own placeholder');expanded._exitEditMode(false);
+expanded.selectCell(0,'both',{enterEditMode:true});assert(expanded._cellCursor.querySelector('input.text-editor')?.placeholder==='Long hint','expanded editor uses its own placeholder');
+assert(expanded._tooltip.classList.contains('cell-help')
+ &&expanded._tooltip.firstChild.textContent==='Expanded detail help',
+ 'ordinary expanded details also show edit-only field help');expanded._exitEditMode(false);
 expanded.updateData(expandedRow,'both','Filled');assert(expanded.getDetailCell(0,'both').el.textContent==='Filled','expanded real value replaces placeholder');
 expanded.selectCell(0,'both');expandedHost.style.width='420px';await settleLayout();
 const expandedRect=expanded._getCursorGeometryEl().getBoundingClientRect(),expandedCursorRect=expanded._cellCursor.getBoundingClientRect();
@@ -238,4 +246,94 @@ mainTables[1].selectCell(0,'value');
 assert(mainTables[0]._cellCursor.style.display==='none'
  &&mainTables[1]._cellCursor.style.display==='block',
  'programmatic selection also transfers cursor ownership for chained main tables');
+const helpTable=new Tablance(host(),{details:{type:'grid',columns:2,entries:[
+ {type:'field',dataKey:'helped',nodeId:'helped',helpText:'How to enter this value',input:{type:'text'}},
+ {type:'field',dataKey:'plain',nodeId:'plain',input:{type:'text'}},
+]}},true,true,{searchbar:false});
+helpTable.setData({helped:'',plain:''});
+helpTable.selectCell(0,'helped');
+assert(!helpTable._tooltip.isConnected,'cell help does not appear for the selected cursor');
+helpTable.selectCell(0,'helped',{enterEditMode:true});
+let helpEditor=helpTable._cellCursor.querySelector('input.text-editor');
+assert(helpTable._tooltip.isConnected&&helpTable._tooltip.classList.contains('cell-help')
+ &&helpTable._tooltip.textContent.includes('How to enter this value')
+ &&helpEditor.getAttribute('aria-describedby')===helpTable._tooltip.id,
+ 'entering edit mode opens accessible cell help without a hover trigger');
+await new Promise(resolve=>setTimeout(resolve,0));
+assert(getComputedStyle(helpTable._tooltip).visibility==='visible',
+ 'cell help becomes visible while the editor remains active');
+const tooltipAnchor=document.createElement('div');
+tooltipAnchor.style.cssText=`position:fixed;left:${document.documentElement.clientWidth-160}px;top:260px;width:110px;height:28px`;
+helpTable.rootEl.appendChild(tooltipAnchor);
+const longHelp='Antal månader är en uppskattning. Den särskilda postadressen tas inte bort automatiskt när perioden har gått ut. Borttagande måste anmälas separat.';
+helpTable.rootEl.parentElement.style.width='500px';
+helpTable._showTooltip(longHelp,tooltipAnchor,undefined,true);
+await settleLayout();
+let tooltipRect=helpTable._tooltip.getBoundingClientRect();
+let anchorRect=tooltipAnchor.getBoundingClientRect();
+let caretX=parseFloat(helpTable._tooltip.style.getPropertyValue('--tooltip-caret-x'));
+assert(helpTable._tooltip.matches(':popover-open')&&helpTable._tooltip.classList.contains('above')
+ &&tooltipRect.bottom<anchorRect.top&&tooltipRect.width<=380&&tooltipRect.height>40
+ &&tooltipRect.right>helpTable.rootEl.getBoundingClientRect().right
+ &&tooltipRect.right<=document.documentElement.clientWidth-12,
+ 'cell help prefers above, may extend past the table, and keeps a viewport margin');
+assert(document.activeElement===helpEditor,
+ 'opening the popover leaves keyboard focus in the active editor');
+assert(Math.abs(tooltipRect.left+caretX-(anchorRect.left+anchorRect.width/2))<1
+ &&getComputedStyle(helpTable._tooltip,'::after').borderTopColor!==getComputedStyle(helpTable._tooltip,'::after').borderBottomColor
+ &&getComputedStyle(helpTable._tooltip).overflow==='visible',
+ 'visible lower-edge caret points to the actual cell after horizontal shifting');
+tooltipAnchor.style.top='8px';
+window.dispatchEvent(new Event('resize'));
+await settleLayout();
+tooltipRect=helpTable._tooltip.getBoundingClientRect();
+anchorRect=tooltipAnchor.getBoundingClientRect();
+caretX=parseFloat(helpTable._tooltip.style.getPropertyValue('--tooltip-caret-x'));
+assert(helpTable._tooltip.classList.contains('below')&&tooltipRect.top>anchorRect.bottom
+ &&tooltipRect.left>=12&&tooltipRect.right<=document.documentElement.clientWidth-12
+ &&Math.abs(tooltipRect.left+caretX-(anchorRect.left+anchorRect.width/2))<1
+ &&getComputedStyle(helpTable._tooltip,'::after').borderBottomColor!==getComputedStyle(helpTable._tooltip,'::after').borderTopColor,
+ 'popover moves below near the top edge and keeps its caret aimed at the cell');
+tooltipAnchor.style.top='120px';
+document.dispatchEvent(new Event('scroll'));
+await settleLayout();
+assert(helpTable._tooltip.getBoundingClientRect().top!==tooltipRect.top,
+ 'tooltip position follows scrolling and anchor movement');
+tooltipAnchor.remove();
+helpTable.rootEl.parentElement.style.removeProperty('width');
+helpTable._dismissTooltip();
+helpTable._showCellEditHelp();
+helpEditor.dispatchEvent(new KeyboardEvent('keydown',{key:'a',code:'KeyA',bubbles:true}));
+assert(helpTable._tooltip.isConnected,'typing leaves edit help visible');
+helpTable._showTooltip('Invalid value');
+assert(!helpTable._tooltip.classList.contains('cell-help')
+ &&helpTable._tooltip.firstChild.textContent==='Invalid value'
+ &&helpTable._tooltip.lastChild.textContent==='How to enter this value'
+ &&helpTable._tooltip.matches(':popover-open')
+ &&getComputedStyle(helpTable._tooltip).position==='fixed',
+ 'validation takes the primary tooltip position while retaining secondary help');
+helpEditor.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true,cancelable:true}));
+assert(!helpTable._inEditMode&&!helpTable._tooltip.isConnected,
+ 'Escape closes both editor and cell help');
+helpTable.selectCell(0,'helped');
+helpTable._cellCursor.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true,button:0}));
+assert(helpTable._inEditMode&&helpTable._tooltip.isConnected,
+ 'pointer activation opens the same cell help');
+helpTable._exitEditMode(false);
+helpTable.selectCell(0,'helped');
+helpTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:'Enter',code:'Enter',bubbles:true,cancelable:true}));
+assert(helpTable._inEditMode&&helpTable._tooltip.isConnected
+ &&helpTable._tooltip.classList.contains('cell-help'),
+ 'keyboard activation opens cell help without pointer interaction');
+helpTable._exitEditMode(false);
+helpTable.selectCell(0,'plain',{enterEditMode:true});
+assert(!helpTable._tooltip.isConnected,'changing to a field without help leaves no tooltip');
+helpTable._exitEditMode(false);
+const mainHelp=new Tablance(host(),{main:{columns:[{dataKey:'helped',helpText:'Main cell help',input:{type:'text'}}]}},true,true,{searchbar:false});
+mainHelp.setData([{helped:''}]);
+mainHelp.selectCell(0,'helped',{enterEditMode:true});
+assert(mainHelp._tooltip.isConnected&&mainHelp._tooltip.textContent.includes('Main cell help'),
+ 'main-table fields use the same edit help behavior');
+mainHelp._exitEditMode(false);
 const result=document.getElementById('test-results');result.textContent='standalone, expanded, bulkEdit, and linked table checks passed';result.dataset.status='passed';
