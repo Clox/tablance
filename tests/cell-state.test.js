@@ -125,6 +125,87 @@ try {
 		"refresh reveals search when visible options cross the threshold");
 	key(thresholdCtx.input,"Escape");
 
+	const manualTable=new Tablance(host(),{main:{columns:[{dataKey:"source",input:{
+		type:"select",minOptsFilter:0,stickyAction:{label:"Show ended",checked:false},
+		initialActiveValueWhenEmpty:"manual",
+		options:[{text:"Manual entry",value:"manual",alwaysVisible:true},
+			{text:"Andreas",value:"a"},{text:"Daniel",value:"d"}],
+	}}]}},true,true,{ordering:false});
+	const manualData=[{source:null}];
+	manualTable.setData(manualData);
+	await tick();
+	manualTable.selectCell(0,"source",{enterEditMode:true});
+	const manualCtx=manualTable._selectContext;
+	assert(manualCtx.pinnedUl.textContent.includes("Show ended")
+		&&!manualCtx.mainUl.textContent.includes("<None>")
+		&&manualCtx.mainUl.children[0].textContent==="Manual entry"
+		&&manualCtx.mainUl.children[0].classList.contains("highlighted"),
+		"manual option opens first in the ordinary list without an empty choice");
+	assert(manualData[0].source===null,"initial highlight does not write a model value");
+	key(manualCtx.input,"ArrowDown");
+	assert(manualCtx.mainUl.children[1].classList.contains("highlighted"),
+		"ArrowDown moves from manual entry to the first ordinary option");
+	key(manualCtx.input,"ArrowUp");
+	manualCtx.input.value="dan";
+	manualCtx.input.dispatchEvent(new Event("input",{bubbles:true}));
+	assert(manualCtx.mainUl.children.length===2
+		&&manualCtx.mainUl.children[0].textContent==="Manual entry"
+		&&manualCtx.mainUl.children[1].textContent==="Daniel",
+		"search filters ordinary options but retains the manual option first");
+	key(manualCtx.input,"Escape");
+	assert(manualTable._selectContext===null&&manualData[0].source===null,
+		"Escape leaves the initially highlighted value uncommitted");
+	manualTable.selectCell(0,"source",{enterEditMode:true});
+	key(manualTable._selectContext.input,"Enter");
+	assert(manualTable._selectContext===null
+		&&manualData[0].source==="manual",
+		"Enter immediately selects the manual option when the dropdown opens");
+	manualTable.updateData(manualData[0],"source","d");
+	manualTable.selectCell(0,"source",{enterEditMode:true});
+	assert(manualTable._selectContext.mainUl.children[2].classList.contains("highlighted"),
+		"an existing value is highlighted instead of the configured empty-value start");
+	key(manualTable._selectContext.input,"Escape");
+	assert(manualData[0].source==="d","Escape preserves an existing value");
+
+	const noSearchTable=new Tablance(host(),{main:{columns:[{dataKey:"choice",input:{
+		type:"select",minOptsFilter:100,allowSelectEmpty:true,
+		initialActiveValueWhenEmpty:"second",
+		options:[{text:"First",value:"first"},{text:"Second",value:"second"}],
+	}}]}},true,true,{ordering:false});
+	const noSearchData=[{choice:null}];
+	noSearchTable.setData(noSearchData);
+	await tick();
+	noSearchTable.selectCell(0,"choice",{enterEditMode:true});
+	assert(noSearchTable._selectContext.inputWrapper.classList.contains("hide")
+		&&noSearchTable._selectContext.mainUl.children[0].classList.contains("selected")
+		&&noSearchTable._selectContext.mainUl.children[2].classList.contains("highlighted"),
+		"configured initial option also works without a visible search field");
+	key(noSearchTable._selectContext.input,"Escape");
+	assert(noSearchData[0].choice===null,"closed unsearched select stays empty");
+	const emptyStringTable=new Tablance(host(),{main:{columns:[{dataKey:"choice",input:{
+		type:"select",initialActiveValueWhenEmpty:"manual",
+		options:[{text:"Zero",value:0},{text:"Manual",value:"manual"}],
+	}}]}},true,true,{ordering:false});
+	const emptyStringData=[{choice:""}];
+	emptyStringTable.setData(emptyStringData);
+	await tick();
+	emptyStringTable.selectCell(0,"choice",{enterEditMode:true});
+	assert(!emptyStringTable._selectContext.mainUl.children[0].classList.contains("selected")
+		&&emptyStringTable._selectContext.mainUl.children[1].classList.contains("highlighted"),
+		"an empty string is not mistaken for a numeric zero option");
+	key(emptyStringTable._selectContext.input,"Escape");
+	assert(emptyStringData[0].choice==="","Escape preserves an empty string value");
+	const fallbackTable=new Tablance(host(),{main:{columns:[{dataKey:"choice",input:{
+		type:"select",stickyAction:{label:"Show more"},
+		options:[{text:"Always visible",value:"first",alwaysVisible:true}],
+	}}]}},true,true,{ordering:false});
+	fallbackTable.setData([{choice:null}]);
+	await tick();
+	fallbackTable.selectCell(0,"choice",{enterEditMode:true});
+	assert(fallbackTable._selectContext.pinnedUl.querySelector(".select-action.highlighted"),
+		"selects without initialActiveValueWhenEmpty keep their original fallback");
+	key(fallbackTable._selectContext.input,"Escape");
+
 	const shortcuts=new Tablance(host(),{
 		main:{columns:[{dataKey:"name",input:{type:"text"}}]},
 		details:{type:"list",entries:[{dataKey:"detail"}]},

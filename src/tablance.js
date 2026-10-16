@@ -671,6 +671,7 @@ class TablanceBase {
 	 * 							value * The value of the cell will be mapped to the option with the same value
 	 * 							text String Unless a render-method has been set then this string will be shown
 	 * 							pinned Bool If true then this option will be pinned at the top. Default is false
+	 * 							alwaysVisible Bool Keep an ordinary option above searched results without pinning it.
 	 * 							visibleIf Function Optional callback evaluated when opening or refreshing the select.
 	 * 							cssClass: Css-classes to be added to the opt which actually is a li-element
 	 * 						}
@@ -678,6 +679,8 @@ class TablanceBase {
 	 * 							{label,checked,onActivate}; a function may return this object on each refresh.
 	 * 							Activation receives the usual callback payload plus event and can call
 	 * 							tablance.refreshOpenSelect(). It never changes the selected value.
+	 * 						initialActiveValueWhenEmpty * Option value to highlight when the cell value is empty.
+	 * 							This affects keyboard position only; no value is committed until selection.
 	 * 						allowCreateNew bool - Allows user to create new options.
 	 * 								If this is true then minOptsFilter will be ignored, input-field is required anyway.
 	 * 						createNewOptionHandler Function - Callback which is called when the user creates a new 
@@ -9973,7 +9976,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			else
 				li.innerText=opt.text;
 				const optVal=this._getSelectValue(opt);
-				if (selectedVal==opt||selectedValNorm==optVal) {
+				if (selectedVal===opt||selectedValNorm===optVal
+					||selectedValNorm!=null&&optVal!=null
+						&&selectedValNorm!==""&&optVal!==""&&selectedValNorm==optVal) {
 					foundSelected=true;
 					li.classList.add("selected","highlighted");
 					ctx.highlightLiIndex=ul.children.length-1;
@@ -10071,13 +10076,22 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 
 		/**
-		 * Highlight the first rendered option when an empty cell opens a select.
-		 * Pinned options are rendered before the main list and therefore take precedence.
+		 * Highlight a configured option when an empty cell opens a select, or fall back
+		 * to the first navigable row. Highlighting alone never changes the cell value.
 		 * @param {Object} ctx
 		 * @returns {boolean} whether an option was highlighted
 		 */
 		_highlightFirstSelectOption(ctx) {
-			const first=this._selectNavigableRows(ctx)[0];
+			const rows=this._selectNavigableRows(ctx);
+			const preferred=Object.prototype.hasOwnProperty.call(ctx.strctInp,"initialActiveValueWhenEmpty")
+				?rows.find(li=>{
+					const row=ctx.rowByLi.get(li);
+					return row?.kind==="option"&&this._getSelectValue(row.option)
+						==ctx.strctInp.initialActiveValueWhenEmpty;
+				}):null;
+			if (!preferred&&ctx.highlightUlIndex!=null)
+				return true;
+			const first=preferred??rows[0];
 			if (!first)
 				return false;
 			this._highlightSelectRow(ctx,first);
@@ -10133,8 +10147,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			for (let i=-1,opt; opt=ctx.looseOpts[++i];) {
 				// Normalize option text for case-insensitive matching.
 				const optText=typeof opt.text==="string"?opt.text.toLowerCase():String(opt.text??"");
-				// Narrowing search: remove non-matching, non-empty, non-pinned options in place for efficiency.
-				if ((opt.pinned||!optText.includes(filter))&&!opt.isEmpty)
+				// Narrowing search: keep empty and explicitly always-visible options.
+				if ((opt.pinned||!optText.includes(filter))&&!opt.isEmpty&&!opt.alwaysVisible)
 					ctx.looseOpts.splice(i--,1);
 				else if (optText===filter)
 					ctx.canCreate=false;
@@ -10144,6 +10158,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				ctx.looseOpts.sort((a,b)=>{
 					if (a.isEmpty) return -1;
 					if (b.isEmpty) return 1;
+					if (a.alwaysVisible!==b.alwaysVisible)
+						return a.alwaysVisible?-1:1;
 					return (ctx.matchScores.get(b)??0)-(ctx.matchScores.get(a)??0);
 				});
 			this._updateCreateOptionVisibility(ctx);
@@ -10400,7 +10416,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._renderSelectOptions(ctx.pinnedUl,ctx.pinnedOpts,this._inputVal,ctx);
 			this._renderSelectAction(ctx);
 			this._renderSelectOptions(ctx.mainUl,ctx.looseOpts,this._inputVal,ctx);
-			if (this._getSelectValue(this._inputVal)==null&&ctx.highlightUlIndex==null)
+			if (this._getSelectValue(this._inputVal)==null
+				||this._getSelectValue(this._inputVal)==="")
 				this._highlightFirstSelectOption(ctx);
 			this._cellCursor.parentElement.appendChild(ctx.selectContainer);
 			ctx.selectContainer.className="tablance-select-container";
