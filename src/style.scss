@@ -369,6 +369,11 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		&.details.group-cell-cursor {
 			outline-offset: -1px;
 		}
+		&.action-cell:not(.delete-confirmation-action) {
+			// Keep the shared cursor color, but separate its ring from filled button surfaces.
+			outline-offset: 2px;
+			box-shadow: 0 0 0 2px var(--tablance-cell-background);
+		}
 		&.delete-confirmation-action {
 			outline: none;
 		}

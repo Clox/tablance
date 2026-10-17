@@ -340,4 +340,39 @@ mainHelp.selectCell(0,'helped',{enterEditMode:true});
 assert(mainHelp._tooltip.isConnected&&mainHelp._tooltip.textContent.includes('Main cell help'),
  'main-table fields use the same edit help behavior');
 mainHelp._exitEditMode(false);
+let buttonActivations=0;
+const buttonTable=new Tablance(host(),{details:{type:'grid',columns:2,entries:[
+ {type:'field',nodeId:'primaryAction',input:{type:'button',text:'Primary',onClick:()=>buttonActivations++}},
+ {type:'field',nodeId:'secondaryAction',input:{type:'button',text:'Secondary',onClick:()=>buttonActivations++}},
+]}},true,true,{searchbar:false});
+buttonTable.setData({});
+const primaryButton=buttonTable.getDetailCell(0,'primaryAction').el;
+const secondaryButton=buttonTable.getDetailCell(0,'secondaryAction').el;
+primaryButton.style.cssText='background:#2563eb;color:white;border:1px solid #1d4ed8;padding:8px 12px';
+secondaryButton.style.cssText='background:white;color:#1d4ed8;border:1px solid #1d4ed8;padding:8px 12px';
+buttonTable.selectCell(0,'primaryAction');
+const buttonCursorStyle=getComputedStyle(buttonTable._cellCursor);
+const accentSample=document.body.appendChild(document.createElement('span'));
+accentSample.style.color='var(--tablance-accent-color)';
+buttonTable.rootEl.appendChild(accentSample);
+assert(buttonCursorStyle.outlineOffset==='2px'
+ &&buttonCursorStyle.outlineColor===getComputedStyle(accentSample).color
+ &&buttonCursorStyle.boxShadow.includes('2px'),
+ 'primary button cursor uses the shared blue ring outside a light separation');
+accentSample.remove();
+buttonTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:'Enter',code:'Enter',bubbles:true,cancelable:true}));
+assert(buttonActivations===1,'Enter activates the selected primary button');
+buttonTable.selectCell(0,'secondaryAction');
+assert(getComputedStyle(buttonTable._cellCursor).outlineOffset==='2px'
+ &&getComputedStyle(buttonTable._cellCursor).boxShadow.includes('2px'),
+ 'outline button receives the same external cursor ring');
+buttonTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:' ',code:'Space',bubbles:true,cancelable:true}));
+assert(buttonActivations===2,'Space activates the selected secondary button');
+primaryButton.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0}));
+primaryButton.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,button:0,detail:1}));
+assert(buttonTable._activeSchemaNode?.nodeId==='primaryAction'
+ &&getComputedStyle(buttonTable._cellCursor).outlineOffset==='2px',
+ 'pointer selection also shows the external button cursor ring');
 const result=document.getElementById('test-results');result.textContent='standalone, expanded, bulkEdit, and linked table checks passed';result.dataset.status='passed';
