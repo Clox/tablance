@@ -526,6 +526,8 @@ class TablanceBase {
  *			{
 	 *			type "grid" lays entries out in a fixed logical grid with equal-width columns
 	 *			columns Positive integer number of equal flexible columns, or a non-empty array of CSS track values
+	 *			preserveRowsWhenHidden Bool Keep schema row boundaries when visibleIf hides grid fields;
+	 *				the last visible field in a row fills the hidden trailing tracks. Defaults to false.
 	 *			entries Array of entries, placed left-to-right and then top-to-bottom in schema order. A repeated
 	 *				container cannot be a direct grid child in Grid v1.
 	 *			A direct child may set columnSpan to a positive integer no larger than columns. It defaults to 1.
@@ -6441,19 +6443,46 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return;
 		const oldRows=grid.gridRows;
 		const columns=grid.gridColumns;
+		const preserveRowsWhenHidden=grid.schemaNode.preserveRowsWhenHidden===true;
 		const rows=[];
 		let row=0,column=0;
+		let schemaColumn=0,hiddenInSchemaRow=false,lastVisibleInSchemaRow=null;
 		let lastVisible=null;
+		const finishSchemaRow=()=>{
+			if (hiddenInSchemaRow&&lastVisibleInSchemaRow&&column>0) {
+				const remaining=columns-column;
+				lastVisibleInSchemaRow.gridColumnSpan+=remaining;
+				for (let slot=column;slot<columns;slot++)
+					rows[lastVisibleInSchemaRow.gridRow][slot]=lastVisibleInSchemaRow;
+				lastVisibleInSchemaRow.outerContainerEl.style.gridColumn=`${lastVisibleInSchemaRow.gridColumn+1} / span ${lastVisibleInSchemaRow.gridColumnSpan}`;
+				row++;
+				column=0;
+			}
+			schemaColumn=0;
+			hiddenInSchemaRow=false;
+			lastVisibleInSchemaRow=null;
+		};
 		for (const child of grid.children??[]) {
 			const span=child.schemaNode.columnSpan??1;
 			if (!Number.isInteger(span)||span<1||span>columns)
 				throw new TypeError("A grid child columnSpan must be a positive integer no larger than grid.columns.");
 			child.gridColumnSpan=span;
+			if (preserveRowsWhenHidden&&(child.present||child.hidden&&child.schemaNode.visibleIf)) {
+				if (schemaColumn+span>columns)
+					finishSchemaRow();
+				schemaColumn+=span;
+			}
 			if (child.hidden||!child.present) {
 				child.gridRow=child.gridColumn=null;
+				if (preserveRowsWhenHidden&&child.hidden&&child.schemaNode.visibleIf)
+					hiddenInSchemaRow=true;
+				if (preserveRowsWhenHidden&&schemaColumn===columns)
+					finishSchemaRow();
 				continue;
 			}
 			lastVisible=child;
+			if (preserveRowsWhenHidden)
+				lastVisibleInSchemaRow=child;
 			if (column+span>columns) {
 				row++;
 				column=0;
@@ -6471,6 +6500,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				row++;
 				column=0;
 			}
+			if (preserveRowsWhenHidden&&schemaColumn===columns)
+				finishSchemaRow();
 		}
 		// When visibleIf removes trailing fields from the final row, the preceding field
 		// occupies their empty tracks as one real grid cell. The schema spans stay unchanged.

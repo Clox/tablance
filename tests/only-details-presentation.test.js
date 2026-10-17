@@ -78,11 +78,13 @@ const mainRect=expanded._selectedCell.getBoundingClientRect(),mainCursorRect=exp
 assert(Math.abs(mainRect.left-mainCursorRect.left)<1&&Math.abs(mainRect.width-mainCursorRect.width)<1,'ordinary main cells reuse cursor geometry synchronization');
 for(const withMain of [false,true]){
  const conditionalData={name:'Conditional',show:false,value:''};
- const conditionalSchema={details:{type:'grid',columns:3,entries:[
+ const conditionalSchema={details:{type:'grid',columns:3,preserveRowsWhenHidden:true,entries:[
   {type:'field',title:'Duration',disabledIf:()=>true,render:()=>({content:'',presenceValue:true})},
   {type:'field',dataKey:'show',nodeId:'show',input:{type:'select',options:[{value:false,text:'Hide'},{value:true,text:'Show'}]}},
   {type:'field',dataKey:'value',nodeId:'value',dependsOn:'show',
    visibleIf:({rowData})=>rowData.show,input:{type:'text'}},
+  {type:'field',title:'Next row',disabledIf:()=>true,render:()=>({content:'',presenceValue:true})},
+  {type:'field',dataKey:'next',nodeId:'next',columnSpan:2,input:{type:'text'}},
  ]}};
  if(withMain)conditionalSchema.main={columns:[{type:'expand'},{dataKey:'name'}]};
  const conditionalHost=host();conditionalHost.style.width='700px';
@@ -91,14 +93,16 @@ for(const withMain of [false,true]){
  if(withMain)conditionalTable.expandRow(0);
  const conditionalCell=conditionalTable.getDetailCell(0,'value');
  const showCell=conditionalTable.getDetailCell(0,'show');
+ const nextCell=conditionalTable.getDetailCell(0,'next');
  const grid=showCell.parent;
  const matchesCursor=()=>{const cellRect=showCell.outerContainerEl.getBoundingClientRect();
   const cursorRect=conditionalTable._cellCursor.getBoundingClientRect();
   return Math.abs(cellRect.left-cursorRect.left)<1&&Math.abs(cellRect.width-cursorRect.width)<1};
  assert(conditionalCell.hidden&&!conditionalCell.outerContainerEl.isConnected
   &&showCell.gridColumn===1&&showCell.gridColumnSpan===2
-  &&grid.gridRows[0][1]===showCell&&grid.gridRows[0][2]===showCell,
-  'a trailing visibleIf field is absent and the preceding real grid cell fills its tracks');
+  &&grid.gridRows[0][1]===showCell&&grid.gridRows[0][2]===showCell
+  &&nextCell.gridRow===1,
+  'a hidden final field in a schema row expands the preceding cell without pulling up the next row');
  assert(conditionalTable.selectCell(0,'value')===false,
   'a hidden field cannot be selected through the public cell API');
  conditionalTable.selectCell(0,'show');
@@ -118,7 +122,7 @@ for(const withMain of [false,true]){
  conditionalData.show=true;conditionalTable.refreshSubtree(conditionalCell);
  assert(!conditionalCell.hidden&&conditionalCell.outerContainerEl.isConnected
   &&showCell.gridColumnSpan===1&&conditionalCell.gridColumn===2
-  &&grid.gridRows[0][2]===conditionalCell,
+  &&grid.gridRows[0][2]===conditionalCell&&nextCell.gridRow===1,
   'revealing visibleIf restores the two separate grid cells');
  assert(matchesCursor(),'the selected cell and cursor both return to their original width');
  conditionalTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
