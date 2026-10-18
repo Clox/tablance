@@ -375,4 +375,72 @@ primaryButton.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true
 assert(buttonTable._activeSchemaNode?.nodeId==='primaryAction'
  &&getComputedStyle(buttonTable._cellCursor).outlineOffset==='2px',
  'pointer selection also shows the external button cursor ring');
+const explicitData={first:'A',second:'B',source:'hidden',detail:'D',postalCode:'12345'};
+const explicit=new Tablance(host(),{details:{type:'grid',columns:['13ch','1fr','1fr'],rows:[
+ {id:'names',label:'Names',cells:[
+  {type:'field',nodeId:'first',dataKey:'first',input:{type:'text'}},
+  {type:'field',nodeId:'second',dataKey:'second',dependsOn:['source'],
+   visibleIf:({rowData})=>rowData.source!=='single',input:{type:'text'}}]},
+ {rowBand:{id:'person',label:'Person',visibleIf:({rowData})=>rowData.source!=='gone',
+  dependsOn:['source']},rows:[
+  {cells:[{type:'field',nodeId:'source',dataKey:'source',columnSpan:2,input:{type:'text'}}]},
+  {visibleIf:({rowData})=>rowData.source==='shown',dependsOn:['source'],cells:[
+   {type:'field',nodeId:'detail',dataKey:'detail',columnSpan:2,input:{type:'text'}}]}]},
+ {id:'postal',label:'Postnummer',cells:[
+  {type:'field',nodeId:'postalCode',dataKey:'postalCode',columnSpan:2,input:{type:'text'}}]},
+]}},true,true,{searchbar:false});
+explicit.setData(explicitData);
+const explicitGrid=explicit.getDetailCell(0,'first').parent;
+assert(explicitGrid.gridRows.length===3&&explicitGrid.gridRows[0][0]===null
+ &&explicitGrid.gridRows[0][1]===explicit.getDetailCell(0,'first')
+ &&explicitGrid.gridRows[0][2]===explicit.getDetailCell(0,'second'),
+ 'explicit row labels are static and values share logical grid tracks');
+assert(explicit.getGridLabel(0,'names')?.textContent==='Names'
+ &&explicit.getGridLabel(0,'person')?.style.gridRow==='3 / 4'
+ &&explicit.getDetailCell(0,'detail').hidden,
+ 'hidden band rows leave no track and the band label spans only shown rows');
+assert(explicit.getDetailCell(0,'source').gridColumnSpan===2
+ &&explicit.getDetailCell(0,'postalCode').gridColumnSpan===2,
+ 'columnSpan is relative to the two value columns');
+explicit.selectCell(0,'first');
+explicit.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:'ArrowDown',code:'ArrowDown',bubbles:true,cancelable:true}));
+assert(explicit._activeSchemaNode?.nodeId==='source',
+ 'down navigation stays in the same value column across labeled and band rows');
+explicit.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:'Tab',code:'Tab',bubbles:true,cancelable:true}));
+assert(explicit._activeSchemaNode?.nodeId==='postalCode',
+ 'Tab continues through band rows in schema order');
+explicit.selectCell(0,'second');
+explicit.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:'Home',code:'Home',bubbles:true,cancelable:true}));
+assert(explicit._activeSchemaNode?.nodeId==='first',
+ 'Home skips the presentation-only label');
+explicit.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:'End',code:'End',bubbles:true,cancelable:true}));
+assert(explicit._activeSchemaNode?.nodeId==='second',
+ 'End stays within value cells');
+explicit.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:'ArrowDown',code:'ArrowDown',shiftKey:true,bubbles:true,cancelable:true}));
+assert(explicit._cellRange?.surface===explicitGrid,
+ 'range selection uses the same grid across ordinary and band rows');
+explicit.selectCell(0,'first');
+explicit.updateData(explicitData,'source','shown');
+assert(explicitGrid.gridRows.length===4
+ &&explicit.getGridLabel(0,'person')?.style.gridRow==='3 / 6'
+ &&explicit.getDetailCell(0,'detail').gridRow===2,
+ 'showing a band row extends its label and inserts one logical row');
+explicit.updateData(explicitData,'source','hidden');
+assert(explicitGrid.gridRows.length===3
+ &&explicit.getGridLabel(0,'person')?.style.gridRow==='3 / 4',
+ 'hiding the band row removes its track and recomputes the span');
+explicit.updateData(explicitData,'source','single');
+assert(explicitGrid.gridRows.length===3
+ &&explicit.getDetailCell(0,'second').hidden
+ &&explicit.getDetailCell(0,'first').gridColumnSpan===2,
+ 'a hidden cell preserves its labeled row and extends the remaining value cell');
+explicit.updateData(explicitData,'source','gone');
+assert(explicitGrid.gridRows.length===2
+ &&!explicit.getGridLabel(0,'person').isConnected,
+ 'a fully hidden band leaves neither a row nor a label');
 const result=document.getElementById('test-results');result.textContent='standalone, expanded, bulkEdit, and linked table checks passed';result.dataset.status='passed';

@@ -1299,6 +1299,14 @@
 .tablance .details .details-grid > span > div.input-cell {
   border: 0;
 }
+.tablance .details .details-grid > span.grid-row-label {
+  z-index: 1;
+  cursor: default;
+  background: var(--tablance-cell-background);
+}
+.tablance .details .details-grid > span.grid-row-label > span.title {
+  display: block;
+}
 .tablance .details .details-grid > span:has(> div.value:not(.group-cell)) > span.title {
   position: relative;
   width: fit-content;

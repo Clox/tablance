@@ -1959,6 +1959,49 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			wrappedNode.entry = this._buildSchemaFacade(rawNode.entry, wrappedNode);
 
 		// entries (multiple schema-nodes)
+		if (rawNode.type==="grid"&&rawNode.rows!=null) {
+			if (rawNode.entries!=null||!Array.isArray(rawNode.rows))
+				throw new TypeError('grid.rows must be an array and cannot be combined with grid.entries.');
+			wrappedNode.entries=[];
+			wrappedNode.gridRowPlan=[];
+			const bandIds=new Set;
+			const addRow=(row,band=null)=>{
+				if (!row||!Array.isArray(row.cells)||!row.cells.length)
+					throw new TypeError('Each grid row must contain cells.');
+				const planned={id:row.id??null,label:row.label??null,band,cells:[]};
+				for (const cell of row.cells) {
+					if (!cell||typeof cell!=="object") throw new TypeError('Invalid grid cell.');
+					const visibleIf=row.visibleIf||band?.visibleIf
+						?payload=>(!band?.visibleIf||band.visibleIf(payload))
+							&&(!row.visibleIf||row.visibleIf(payload))
+							&&(!cell.visibleIf||cell.visibleIf(payload)) :cell.visibleIf;
+					const disabledIf=row.disabledIf||band?.disabledIf
+						?payload=>(!!band?.disabledIf&&band.disabledIf(payload))
+							||(!!row.disabledIf&&row.disabledIf(payload))
+							||(!!cell.disabledIf&&cell.disabledIf(payload)) :cell.disabledIf;
+					const dependsOn=[...new Set([...(Array.isArray(cell.dependsOn)?cell.dependsOn:cell.dependsOn?[cell.dependsOn]:[]),
+						...(Array.isArray(row.dependsOn)?row.dependsOn:row.dependsOn?[row.dependsOn]:[]),
+						...(Array.isArray(band?.dependsOn)?band.dependsOn:band?.dependsOn?[band.dependsOn]:[])])];
+					const schema={...cell, ...(visibleIf?{visibleIf}:{}),
+						...(disabledIf?{disabledIf}:{}), ...(dependsOn.length?{dependsOn}:{})};
+					const wrapped=this._buildSchemaFacade(schema,wrappedNode);
+					wrappedNode.entries.push(wrapped);
+					planned.cells.push(wrapped);
+				}
+				wrappedNode.gridRowPlan.push(planned);
+			};
+			for (const item of rawNode.rows) {
+				if (item?.rowBand) {
+					if (!Array.isArray(item.rows)||!item.rows.length
+						||typeof item.rowBand.id!=="string"||!item.rowBand.id
+						||typeof item.rowBand.label!=="string"||bandIds.has(item.rowBand.id))
+						throw new TypeError('grid rowBand requires a unique id, label, and rows.');
+					bandIds.add(item.rowBand.id);
+					for (const row of item.rows) addRow(row,item.rowBand);
+				} else addRow(item);
+			}
+			return wrappedNode;
+		}
 		if (Array.isArray(rawNode.entries)) {
 			const arr = [];
 			for (const child of rawNode.entries) {
@@ -2873,6 +2916,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!root)
 			return;
 		return this._findInstanceNodeByCellId(root,nodeId);
+	}
+
+	/**Return a presentation-only row or rowBand label in an explicit details grid. */
+	getGridLabel(dataRow_or_mainIndex,id) {
+		const mainIndex=typeof dataRow_or_mainIndex==="number"
+			?dataRow_or_mainIndex:this._filteredData.indexOf(dataRow_or_mainIndex);
+		const root=this._openDetailsPanes?.[mainIndex];
+		const find=node=>node?.gridLabels?.get(id)
+			??node?.children?.map(find).find(Boolean)??null;
+		return find(root);
 	}
 
 	/**Select a cell by nodeId. Prefers details, falls back to main table if no details match.
@@ -6432,6 +6485,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		instanceNode.containerEl.classList.add("details-grid","collection",
 			...gridSchemaNode.cssClass?.split(" ")??[]);
 		instanceNode.containerEl.style.gridTemplateColumns=gridTemplateColumns;
+		if (gridSchemaNode.gridRowPlan) instanceNode.gridLabels=new Map;
 		const generated=this._generateDetailsCollection(gridSchemaNode,mainIndex,instanceNode,parentEl,path,rowData);
 		this._refreshGridLayout(instanceNode);
 		this._resolveDetailsPresence(instanceNode,{recurse:true,reconcile:false});
@@ -6441,6 +6495,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_refreshGridLayout(grid) {
 		if (grid?.schemaNode?.type!=="grid")
 			return;
+		if (grid.schemaNode.gridRowPlan)
+			return this._refreshExplicitGridRows(grid);
 		const oldRows=grid.gridRows;
 		const columns=grid.gridColumns;
 		const preserveRowsWhenHidden=grid.schemaNode.preserveRowsWhenHidden===true;
@@ -6535,6 +6591,92 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		grid.gridRowSeparators.forEach((separator,index)=>{
 			separator.style.gridRow=String((index+1)*2);
 			separator.style.gridColumn="1 / -1";
+		});
+		this._refreshGridRowExtensions(grid);
+	}
+
+	_refreshExplicitGridRows(grid) {
+		const columns=grid.gridColumns,oldRows=grid.gridRows,rows=[];
+		const bands=new Map,labels=new Map;
+		const placeLabel=(key,label,first,last,band)=>{
+			let element=grid.gridLabels.get(key);
+			if (!element) {
+				element=document.createElement("span");
+				element.className=band?"grid-row-label grid-row-band-label":"grid-row-label";
+				const title=element.appendChild(document.createElement("span"));
+				title.className="title";
+				title.textContent=label;
+				grid.containerEl.appendChild(element);
+				grid.gridLabels.set(key,element);
+			}
+			if (!element.isConnected) grid.containerEl.appendChild(element);
+			element.style.gridColumn="1";
+			element.style.gridRow=`${first*2+1} / ${last*2+2}`;
+			labels.set(key,element);
+		};
+		for (const plan of grid.schemaNode.gridRowPlan) {
+			const children=plan.cells.map(schema=>grid.children.find(child=>child.schemaNode===schema));
+			const visible=children.filter(child=>child?.present&&!child.hidden);
+			for (const child of children) if (child) child.gridRow=child.gridColumn=null;
+			if (!visible.length) continue;
+			const rowIndex=rows.length,hasLabel=plan.label!=null||plan.band!=null;
+			const start=hasLabel?1:0,capacity=columns-start;
+			if (capacity<1) throw new TypeError('A labeled grid row needs at least one value column.');
+			const slots=rows[rowIndex]=Array(columns).fill(null);
+			let schemaWidth=0,used=0;
+			for (const child of children) {
+				const span=child?.schemaNode.columnSpan??1;
+				if (!Number.isInteger(span)||span<1||span>capacity||schemaWidth+span>capacity)
+					throw new TypeError('Grid row cells exceed available value columns.');
+				schemaWidth+=span;
+				if (!child?.present||child.hidden) continue;
+				child.gridRow=rowIndex;
+				child.gridColumn=start+used;
+				child.gridColumnSpan=span;
+				child.outerContainerEl.classList.toggle("details-grid-column-divider",start+used>0);
+				child.outerContainerEl.style.gridRow=String(rowIndex*2+1);
+				child.outerContainerEl.style.gridColumn=`${start+used+1} / span ${span}`;
+				for (let slot=start+used;slot<start+used+span;slot++) slots[slot]=child;
+				used+=span;
+			}
+			const trailing=children.slice(children.indexOf(visible.at(-1))+1);
+			if (used<capacity&&trailing.some(child=>child?.hidden&&child.schemaNode.visibleIf)) {
+				const child=visible.at(-1);
+				child.gridColumnSpan+=capacity-used;
+				child.outerContainerEl.style.gridColumn=`${child.gridColumn+1} / span ${child.gridColumnSpan}`;
+				for (let slot=start+used;slot<columns;slot++) slots[slot]=child;
+			}
+			if (plan.band) {
+				const key=plan.band.id??plan.band.label;
+				const band=bands.get(key);
+				if (band) band.last=rowIndex;
+				else bands.set(key,{label:plan.band.label,first:rowIndex,last:rowIndex});
+			} else if (plan.label!=null)
+				placeLabel(plan.id??plan,plan.label,rowIndex,rowIndex,false);
+		}
+		for (const [key,band] of bands)
+			placeLabel(key,band.label,band.first,band.last,true);
+		for (const [key,element] of grid.gridLabels)
+			if (!labels.has(key)) element.remove();
+		grid.gridRows=rows;
+		if (this._cellRange?.surface===grid&&oldRows
+			&&(oldRows.length!==rows.length||oldRows.some((oldRow,index)=>
+				oldRow.length!==rows[index]?.length||oldRow.some((cell,col)=>cell!==rows[index]?.[col]))))
+			this._clearCellRange();
+		const separatorCount=Math.max(0,rows.length-1);
+		grid.gridRowSeparators??=[];
+		while (grid.gridRowSeparators.length<separatorCount) {
+			const separator=grid.containerEl.appendChild(document.createElement("hr"));
+			separator.className="grid-row-separator";
+			separator.setAttribute("aria-hidden","true");
+			grid.gridRowSeparators.push(separator);
+		}
+		while (grid.gridRowSeparators.length>separatorCount)
+			grid.gridRowSeparators.pop().remove();
+		grid.gridRowSeparators.forEach((separator,index)=>{
+			separator.style.gridRow=String((index+1)*2);
+			separator.style.gridColumn=[...bands.values()].some(band=>band.first<=index&&band.last>index)
+				?"2 / -1":"1 / -1";
 		});
 		this._refreshGridRowExtensions(grid);
 	}

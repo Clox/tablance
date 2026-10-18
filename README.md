@@ -461,6 +461,29 @@ defines the logical column count. Grid renders one subtle full-width separator b
 Grid v1 intentionally excludes direct repeated children, explicit coordinates, row spans, responsive column changes,
 and responsive column changes.
 
+For explicit rows, use `rows` instead of `entries` on the same details grid. Both formats remain supported, but cannot
+be combined in one grid. Each row has `cells`, optional `label`, and optional `visibleIf`, `disabledIf`, and `dependsOn`.
+The label is presentation only and occupies the first column; `columnSpan` counts only the remaining value columns.
+If every cell in a row is hidden, the row occupies no grid track. Hidden cells in a visible row retain the grid's
+existing hidden-cell behavior. All cells in all rows share the same column tracks and navigation context.
+
+```js
+details: {type: "grid", columns: ["16ch", "1fr", "1fr"], rows: [
+  {label: "Postnummer", cells: [{type: "field", dataKey: "postalCode", columnSpan: 2}]},
+  {rowBand: {id: "person1", label: "Person 1"}, rows: [
+    {cells: [{type: "field", dataKey: "source", columnSpan: 2}]},
+    {visibleIf: () => selectedSource, dependsOn: ["source"], cells: [
+      {type: "field", dataKey: "personnummer"}, {type: "field", dataKey: "name"}
+    ]}
+  ]}
+]}
+```
+
+`rowBand` is a static layout label spanning its visible rows. It does not create an interactive Tablance `group`,
+a nested grid, or another navigation context. Its label disappears when all band rows are hidden. Use
+`getGridLabel(row, id)` to access a rendered row or band label by its `id` when a host application needs to
+decorate it.
+
 ## Repeated group previews
 
 Entries in `repeated.grouping.order` may set `preview` to compact that group while its enclosing group is closed.
