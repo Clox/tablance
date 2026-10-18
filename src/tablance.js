@@ -3539,7 +3539,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (this._opts.searchbar!=false) {
 			this._searchInput=rightWrap.appendChild(document.createElement("input"));
 			this._searchInput.type="search";
-			this._searchInput.className="search";
+			this._searchInput.className="search tablance-search-input";
 			this._searchInput.placeholder=this.lang.filterPlaceholder;
 			this._searchInput.addEventListener("input",e=>this._onSearchInput(e));
 			this._registerControl(this._searchInput,toolbarCfg?.search?.visible,true);
