@@ -3290,7 +3290,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!this._opts.autoHeight||this._onlyDetails)
 			return;
 		let contentHeight=this._naturalAutoHeight?this._mainTable.offsetHeight
-			:Math.max(parseInt(this._tableSizer.style.height)||0,0);
+			:Math.max(parseInt(this._tableSizer.style.height)||0,this._mainTable.offsetHeight);
 		if (this._emptyState&&!this._emptyState.hidden)
 			contentHeight=Math.max(contentHeight,96);
 		if (this._naturalAutoHeight)
@@ -11421,6 +11421,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._cellCursor.classList.toggle("editable-indicator",cellState?.kind==="editable");
 		this._cellCursor.classList.toggle("disabled",cellState?.kind==="disabled");
 		this._cellCursor.classList.toggle("action-cell",cellState?.kind==="action");
+		this._cellCursor.classList.toggle("button-action-cell",
+			cellState?.kind==="action"&&schemaNode.input?.type==="button");
 		this._cellCursor.classList.toggle("delete-confirmation-action",
 			["no","yes"].includes(schemaNode.cssClass));
 		this._cellCursor.classList.toggle("repeated-reorder-cell-cursor",schemaNode.type==="reorder");
@@ -11532,7 +11534,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			// Keep the same fractional geometry used for positioning. offsetHeight/offsetWidth round to
 			// whole pixels, which can leave an inline editor extending below its cursor outline.
 			const cursorRect=el.getBoundingClientRect();
-			this._cellCursor.style.height=cursorRect.height+"px";
+			let cursorHeight=cursorRect.height;
+			if (!this._inEditMode&&el.parentElement?.parentElement===this._mainTbody) {
+				const viewportRect=this._scrollBody.getBoundingClientRect();
+				const viewportBottom=viewportRect.bottom
+					-(parseFloat(getComputedStyle(this._scrollBody).borderBottomWidth)||0);
+				const bottomOverhang=cursorRect.bottom-viewportBottom;
+				// A rounded auto-height can leave the last cell one pixel past the scroll clip.
+				// Keep both pixels of its focus border within the visible viewport.
+				if (bottomOverhang>0&&bottomOverhang<=2)
+					cursorHeight-=bottomOverhang;
+			}
+			this._cellCursor.style.height=cursorHeight+"px";
 			this._cellCursor.style.width=cursorRect.width+"px";
 			if (el===this._selectedCell)
 				this._updateStaticCellOverflowPreview();
@@ -13246,6 +13259,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._cellCursor?.classList.toggle("editable-indicator",state.kind==="editable");
 			this._cellCursor?.classList.toggle("disabled",state.kind==="disabled");
 			this._cellCursor?.classList.toggle("action-cell",state.kind==="action");
+			this._cellCursor?.classList.toggle("button-action-cell",
+				state.kind==="action"&&this._activeSchemaNode?.input?.type==="button");
 			this._cellCursor?.classList.toggle("action-indicator",this._showsActionIndicator(state,this._activeSchemaNode));
 			if (!state.mutable&&this._inEditMode)
 				this._exitEditMode(false);

@@ -360,8 +360,15 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 				animation: tablance-copy-feedback-success 1350ms linear forwards;
 			}
 		}
-		&:not(.details) {
-			outline-offset:-2px;
+		&:not(.details):not(.edit-mode):not(.has-static-row-overflow-preview) {
+			// Main-table cells can touch the scroll viewport's bottom edge. Paint the ring
+			// as a border inside the measured cell box so no side is clipped there.
+			box-sizing: border-box;
+			outline: none;
+			border: 2px solid var(--tablance-accent-color);
+		}
+		&:not(.details).edit-mode {
+			outline-offset: -2px;
 		}
 		&.details:not(.group-cell-cursor) {
 			outline-offset: -2px;
@@ -369,8 +376,9 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		&.details.group-cell-cursor {
 			outline-offset: -1px;
 		}
-		&.action-cell:not(.delete-confirmation-action) {
-			// Keep the shared cursor color, but separate its ring from filled button surfaces.
+		&.details.button-action-cell:not(.delete-confirmation-action) {
+			// Compact details buttons need a ring outside the filled button surface.
+			// Main-table buttons keep the ordinary cursor inside their full-width cell.
 			outline-offset: 2px;
 			box-shadow: 0 0 0 2px var(--tablance-cell-background);
 		}

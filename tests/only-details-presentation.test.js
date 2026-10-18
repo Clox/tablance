@@ -76,6 +76,13 @@ assert(Math.abs(expandedRect.left-expandedCursorRect.left)<1&&Math.abs(expandedR
 expanded.selectCell(0,'name');expandedHost.style.width='560px';await settleLayout();
 const mainRect=expanded._selectedCell.getBoundingClientRect(),mainCursorRect=expanded._cellCursor.getBoundingClientRect();
 assert(Math.abs(mainRect.left-mainCursorRect.left)<1&&Math.abs(mainRect.width-mainCursorRect.width)<1,'ordinary main cells reuse cursor geometry synchronization');
+const expandCell=expanded._mainTbody.querySelector('tr:not(.details)>td.expand-col');
+expanded._selectCell(expandCell,expanded._colSchemaNodes[0],expandedRow);
+assert(expanded._cellCursor.classList.contains('action-cell')
+ &&!expanded._cellCursor.classList.contains('button-action-cell')
+ &&getComputedStyle(expanded._cellCursor).outlineStyle==='none'
+ &&getComputedStyle(expanded._cellCursor).borderBottomWidth==='2px',
+ 'expand controls keep a complete inset cell cursor instead of a button ring');
 for(const withMain of [false,true]){
  const conditionalData={name:'Conditional',show:false,value:''};
  const conditionalSchema={details:{type:'grid',columns:3,preserveRowsWhenHidden:true,entries:[
@@ -356,6 +363,7 @@ const accentSample=document.body.appendChild(document.createElement('span'));
 accentSample.style.color='var(--tablance-accent-color)';
 buttonTable.rootEl.appendChild(accentSample);
 assert(buttonCursorStyle.outlineOffset==='2px'
+ &&buttonTable._cellCursor.classList.contains('button-action-cell')
  &&buttonCursorStyle.outlineColor===getComputedStyle(accentSample).color
  &&buttonCursorStyle.boxShadow.includes('2px'),
  'primary button cursor uses the shared blue ring outside a light separation');
@@ -367,6 +375,40 @@ buttonTable.selectCell(0,'secondaryAction');
 assert(getComputedStyle(buttonTable._cellCursor).outlineOffset==='2px'
  &&getComputedStyle(buttonTable._cellCursor).boxShadow.includes('2px'),
  'outline button receives the same external cursor ring');
+const mainButtonTable=new Tablance(host(),{main:{columns:[
+ {dataKey:'name',title:'Name'},
+ {nodeId:'openAction',title:'Action',input:{type:'button',text:'Open',onClick:()=>{}}},
+]}},true,true,{searchbar:false,ordering:false});
+mainButtonTable.setData([{name:'Example'}]);
+mainButtonTable.selectCell(0,'openAction');
+assert(mainButtonTable._cellCursor.classList.contains('button-action-cell')
+ &&!mainButtonTable._cellCursor.classList.contains('details')
+ &&getComputedStyle(mainButtonTable._cellCursor).outlineStyle==='none'
+ &&getComputedStyle(mainButtonTable._cellCursor).borderBottomWidth==='2px',
+ 'main-table action buttons retain the complete inset cursor around their whole cell');
+const bottomEdgeTable=new Tablance(host(),{main:{columns:[
+ {type:'expand',width:32},{dataKey:'name',title:'Name'},
+ {nodeId:'openAction',title:'Action',input:{type:'button',text:'Open',onClick:()=>{}}},
+]},details:{type:'list',entries:[{dataKey:'description',title:'Information'}]}},true,true,
+ {searchbar:false,ordering:false,autoHeight:true});
+bottomEdgeTable.setData([{name:'Last row',description:'Details'}]);
+const bottomRow=bottomEdgeTable._mainTbody.querySelector('tr:not(.details)');
+const paintedHeight=bottomEdgeTable._mainTable.offsetHeight;
+bottomEdgeTable._tableSizer.style.height=`${paintedHeight-1}px`;
+bottomEdgeTable._updateAutoHeight();
+const cursorFitsViewport=()=>bottomEdgeTable._cellCursor.getBoundingClientRect().bottom
+ <=bottomEdgeTable._scrollBody.getBoundingClientRect().top+bottomEdgeTable._scrollBody.clientHeight;
+bottomEdgeTable._selectMainTableCell(bottomRow.cells[2]);
+assert(bottomEdgeTable._scrollBody.clientHeight>=paintedHeight&&cursorFitsViewport(),
+ 'auto-height includes the final painted row even when the virtual sizer is one pixel short');
+bottomEdgeTable._selectMainTableCell(bottomRow.cells[0]);
+assert(cursorFitsViewport(),'the last-row expand cursor also fits above the viewport bottom');
+bottomEdgeTable._scrollBody.style.height=`${paintedHeight-1}px`;
+bottomEdgeTable._selectMainTableCell(bottomRow.cells[2]);
+assert(cursorFitsViewport()&&bottomEdgeTable._cellCursor.getBoundingClientRect().height<bottomRow.cells[2].getBoundingClientRect().height,
+ 'a one-pixel scroll clip does not hide half of the main action cursor border');
+bottomEdgeTable._selectMainTableCell(bottomRow.cells[0]);
+assert(cursorFitsViewport(),'the expand cursor also keeps its full lower border at a clipped viewport edge');
 buttonTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
  {key:' ',code:'Space',bubbles:true,cancelable:true}));
 assert(buttonActivations===2,'Space activates the selected secondary button');

@@ -309,7 +309,12 @@
   transform: translate(-50%, -50%);
   animation: tablance-copy-feedback-success 1350ms linear forwards;
 }
-.tablance .cell-cursor:not(.details) {
+.tablance .cell-cursor:not(.details):not(.edit-mode):not(.has-static-row-overflow-preview) {
+  box-sizing: border-box;
+  outline: none;
+  border: 2px solid var(--tablance-accent-color);
+}
+.tablance .cell-cursor:not(.details).edit-mode {
   outline-offset: -2px;
 }
 .tablance .cell-cursor.details:not(.group-cell-cursor) {
@@ -318,7 +323,7 @@
 .tablance .cell-cursor.details.group-cell-cursor {
   outline-offset: -1px;
 }
-.tablance .cell-cursor.action-cell:not(.delete-confirmation-action) {
+.tablance .cell-cursor.details.button-action-cell:not(.delete-confirmation-action) {
   outline-offset: 2px;
   box-shadow: 0 0 0 2px var(--tablance-cell-background);
 }
