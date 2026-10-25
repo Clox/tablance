@@ -640,6 +640,9 @@ class TablanceBase {
 	 * 							}
 	 * 							
 	 * 						maxLength int Sets max-length for the string							
+	 * 					----Properties specific to input "number"----
+	 * 						integer Bool Uses a numeric keyboard without a decimal separator and whole-number arrow steps.
+	 * 						The editor remains text-based so applications can validate and retain invalid raw input.
 	 * 					----Properties specific to input "combobox"----
 	 * 						options Array|Function Suggestions using the select option shape or callback payload.
 	 * 							Option text is inserted as unrestricted free text and never constrains validity.
@@ -7363,7 +7366,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._inEditMode=true;
 			this._clearCellRange();
 			this._cellCursor.classList.add("edit-mode");
-			({textarea:this._openTextAreaEdit,date:this._openDateEdit,select:this._openSelectEdit,
+			({textarea:this._openTextAreaEdit,date:this._openDateEdit,number:this._openNumberEdit,select:this._openSelectEdit,
 				combobox:this._openComboboxEdit
 				,file:this._openFileEdit}[this._activeSchemaNode.input.type]??this._openTextEdit).call(this,e);
 			this._showCellEditHelp();
@@ -9752,6 +9755,34 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (this._activeSchemaNode.input.maxLength)
 			input.maxLength=this._activeSchemaNode.input.maxLength;
 		input.placeholder=this._activeSchemaNode.input.placeholder??"";
+	}
+
+	_openNumberEdit() {
+		this._openTextEdit();
+		const input=this._cellCursor.querySelector("input");
+		const integer=this._activeSchemaNode.input.integer===true;
+		input.inputMode=integer?"numeric":"decimal";
+		input.addEventListener("keydown",event=>{
+			if (event.key!=="ArrowUp"&&event.key!=="ArrowDown"||event.altKey||event.ctrlKey||event.metaKey)
+				return;
+			event.preventDefault();
+			event.stopPropagation();
+			const raw=input.value.trim();
+			if (!/^[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)$/.test(raw))
+				return;//Never replace an invalid or empty draft with a sanitized number.
+			const current=Number(raw.replace(",","."));
+			if (!Number.isFinite(current))
+				return;
+			const direction=event.key==="ArrowUp"?1:-1;
+			const next=integer
+				?(direction>0?Math.floor(current)+1:Math.ceil(current)-1)
+				:current+direction;
+			if (!Number.isFinite(next)||next===current)
+				return;
+			input.value=String(next).replace(".",raw.includes(",")?",":".");
+			this._inputVal=input.value;
+			input.dispatchEvent(new Event("input",{bubbles:true}));
+		});
 	}
 
 	_comboboxOptionText(option) {
