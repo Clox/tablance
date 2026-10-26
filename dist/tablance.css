@@ -416,6 +416,52 @@
 .tablance .cell-cursor > .cell-value-editor > input.text-editor {
   display: block;
 }
+.tablance .cell-cursor > .number-editor,
+.tablance .cell-cursor > .cell-value-editor > .number-editor {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  background: var(--tablance-cell-background);
+}
+.tablance .cell-cursor > .number-editor > input,
+.tablance .cell-cursor > .cell-value-editor > .number-editor > input {
+  min-width: 0;
+  flex: 1;
+  box-sizing: border-box;
+  padding-left: 4px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+}
+.tablance .cell-cursor > .number-editor > .number-stepper,
+.tablance .cell-cursor > .cell-value-editor > .number-editor > .number-stepper {
+  display: flex;
+  flex-direction: column;
+  width: 20px;
+  border-left: 1px solid var(--tablance-border-color);
+}
+.tablance .cell-cursor > .number-editor > .number-stepper > .number-stepper-button,
+.tablance .cell-cursor > .cell-value-editor > .number-editor > .number-stepper > .number-stepper-button {
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: var(--tablance-cell-background);
+  color: var(--tablance-muted-color);
+  font: inherit;
+  font-size: 8px;
+  line-height: 1;
+  cursor: pointer;
+}
+.tablance .cell-cursor > .number-editor > .number-stepper > .number-stepper-button:first-child,
+.tablance .cell-cursor > .cell-value-editor > .number-editor > .number-stepper > .number-stepper-button:first-child {
+  border-bottom: 1px solid var(--tablance-border-color);
+}
+.tablance .cell-cursor > .number-editor > .number-stepper > .number-stepper-button:hover,
+.tablance .cell-cursor > .cell-value-editor > .number-editor > .number-stepper > .number-stepper-button:hover {
+  background: var(--tablance-hover-background);
+}
 .tablance .cell-cursor > input, .tablance .cell-cursor > textarea,
 .tablance .cell-cursor > .cell-value-editor > input,
 .tablance .cell-cursor > .cell-value-editor > textarea {

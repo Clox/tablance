@@ -6,7 +6,7 @@ const host=()=>document.body.appendChild(document.createElement("div"));
 const Tablance=window.Tablance;
 try {
 	const numericData={amount:""};
-	const numericTable=new Tablance(host(),{main:{columns:[{dataKey:"amount",input:{type:"number",integer:true}}]}},
+	const numericTable=new Tablance(host(),{main:{columns:[{dataKey:"amount",input:{type:"number",integer:true,min:6,max:8}}]}},
 		true,true,{ordering:false,searchbar:false});
 	numericTable.setData([numericData]);
 	await tick();
@@ -14,6 +14,23 @@ try {
 	let numericInput=numericTable._cellCursor.querySelector("input");
 	assert(numericInput.type==="text"&&numericInput.inputMode==="numeric",
 		"number editor uses a text control with a numeric keyboard");
+	const stepper=numericTable._cellCursor.querySelectorAll(".number-stepper-button");
+	assert(stepper.length===2,"number editor exposes visible increment and decrement controls");
+	stepper[0].click();
+	assert(numericInput.value==="6","increment from empty begins at the minimum");
+	stepper[1].click();
+	assert(numericInput.value==="6","decrement cannot step below the minimum");
+	key(numericInput,"ArrowUp");
+	assert(numericInput.value==="7","keyboard uses the same stepper semantics");
+	stepper[0].click();
+	stepper[0].click();
+	assert(numericInput.value==="8","increment stops at the maximum");
+	numericInput.value="3";
+	key(numericInput,"ArrowUp");
+	assert(numericInput.value==="6","stepping toward the range corrects a manually typed low value");
+	numericInput.value="9";
+	key(numericInput,"ArrowDown");
+	assert(numericInput.value==="8","stepping toward the range corrects a manually typed high value");
 	numericInput.value="abc";
 	key(numericInput,"ArrowUp");
 	assert(numericInput.value==="abc","stepping leaves an invalid raw draft untouched");
@@ -27,6 +44,8 @@ try {
 	assert(numericInput.value==="7","integer ArrowUp steps by one");
 	key(numericInput,"ArrowDown");
 	assert(numericInput.value==="6","integer ArrowDown steps by one");
+	key(numericInput,"ArrowDown");
+	assert(numericInput.value==="6","keyboard decrement stops at the minimum");
 	numericTable._exitEditMode(true);
 	const decimalData={amount:"2,5"};
 	const decimalTable=new Tablance(host(),{main:{columns:[{dataKey:"amount",input:{type:"number"}}]}},

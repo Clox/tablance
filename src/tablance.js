@@ -138,6 +138,8 @@ const DEFAULT_LANG=Object.freeze({
 	reorderUp:"Move up",
 	reorderDown:"Move down",
 	textareaNewLine:"New line",
+	numberIncrease:"Increase value",
+	numberDecrease:"Decrease value",
 });
 let defaultLangOverrides=Object.create(null);
 
@@ -528,6 +530,8 @@ class TablanceBase {
 	 *			columns Positive integer number of equal flexible columns, or a non-empty array of CSS track values
 	 *			preserveRowsWhenHidden Bool Keep schema row boundaries when visibleIf hides grid fields;
 	 *				the last visible field in a row fills the hidden trailing tracks. Defaults to false.
+	 *			onRowsRendered Function Called after an explicit grid.rows layout has reconciled its row labels.
+	 *				Receives the rendered label elements as a Map keyed by row or rowBand id.
 	 *			entries Array of entries, placed left-to-right and then top-to-bottom in schema order. A repeated
 	 *				container cannot be a direct grid child in Grid v1.
 	 *			A direct child may set columnSpan to a positive integer no larger than columns. It defaults to 1.
@@ -599,6 +603,8 @@ class TablanceBase {
 	 * 								data. This function allows reading that data easily. It traverses up the schema tree
 	 * 								until it finds a meta with the specified key or reaches the root.
 	 * 							- cancelUpdate: function() to prevent the value from being persisted
+	 * 						afterChange Function Called after a changed value has been rendered in its cell
+	 * 							and declared dependents. It receives the same payload as onChange.
 	 * 						onBlur Function Callback fired when cellcursor goes from being inside the container
 	 * 							to outside. It will get passed arguments 1:instanceNode, 2:mainIndex
 	 * 				readOnly Bool If true, the field is permanently read-only and cannot be activated.
@@ -642,6 +648,7 @@ class TablanceBase {
 	 * 						maxLength int Sets max-length for the string							
 	 * 					----Properties specific to input "number"----
 	 * 						integer Bool Uses a numeric keyboard without a decimal separator and whole-number arrow steps.
+	 * 						min|max Number Optional stepper bounds; manually typed values remain unrestricted.
 	 * 						The editor remains text-based so applications can validate and retain invalid raw input.
 	 * 					----Properties specific to input "combobox"----
 	 * 						options Array|Function Suggestions using the select option shape or callback payload.
@@ -6682,6 +6689,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				?"2 / -1":"1 / -1";
 		});
 		this._refreshGridRowExtensions(grid);
+		grid.schemaNode.onRowsRendered?.(grid.gridLabels);
 	}
 
 	_refreshGridRowExtensions(grid) {
@@ -9733,8 +9741,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return {deletedDataItem:deletedData,itemIndex:dataIndex,visualIndex,wasCreating};
 	}
 
-	_openTextEdit() {
-		const input=this._appendCellEditor(document.createElement("input"));
+	_openTextEdit(host=null) {
+		if (typeof host?.appendChild!=="function") host=null;
+		const input=host?host.appendChild(document.createElement("input"))
+			:this._appendCellEditor(document.createElement("input"));
 		input.className="text-editor";
 
 		//for when blurring by clicking outside of table etc. exit edit-mode and commit the change but keep the cell
@@ -9755,34 +9765,64 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (this._activeSchemaNode.input.maxLength)
 			input.maxLength=this._activeSchemaNode.input.maxLength;
 		input.placeholder=this._activeSchemaNode.input.placeholder??"";
+		return input;
 	}
 
 	_openNumberEdit() {
-		this._openTextEdit();
-		const input=this._cellCursor.querySelector("input");
+		const wrapper=this._appendCellEditor(document.createElement("div"));
+		wrapper.className="number-editor";
+		const input=this._openTextEdit(wrapper);
 		const integer=this._activeSchemaNode.input.integer===true;
+		const min=this._activeSchemaNode.input.min;
+		const max=this._activeSchemaNode.input.max;
 		input.inputMode=integer?"numeric":"decimal";
+		const step=direction=>{
+			const raw=input.value.trim();
+			let current,next;
+			if (raw==="")
+				next=min??(direction<0&&max!=null?max:direction);
+			else {
+				if (!/^[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)$/.test(raw))
+					return;//Keep invalid raw drafts for soft validation.
+				current=Number(raw.replace(",","."));
+				if (!Number.isFinite(current)) return;
+				next=integer?(direction>0?Math.floor(current)+1:Math.ceil(current)-1)
+					:current+direction;
+				if (min!=null&&next<min) {
+					if (direction>0&&current<min) next=min;
+					else return;
+				}
+				if (max!=null&&next>max) {
+					if (direction<0&&current>max) next=max;
+					else return;
+				}
+			}
+			if (!Number.isFinite(next)||next===current||min!=null&&next<min||max!=null&&next>max)
+				return;
+			input.value=String(next).replace(".",raw.includes(",")?",":".");
+			this._inputVal=input.value;
+			input.dispatchEvent(new Event("input",{bubbles:true}));
+		};
 		input.addEventListener("keydown",event=>{
 			if (event.key!=="ArrowUp"&&event.key!=="ArrowDown"||event.altKey||event.ctrlKey||event.metaKey)
 				return;
 			event.preventDefault();
 			event.stopPropagation();
-			const raw=input.value.trim();
-			if (!/^[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)$/.test(raw))
-				return;//Never replace an invalid or empty draft with a sanitized number.
-			const current=Number(raw.replace(",","."));
-			if (!Number.isFinite(current))
-				return;
-			const direction=event.key==="ArrowUp"?1:-1;
-			const next=integer
-				?(direction>0?Math.floor(current)+1:Math.ceil(current)-1)
-				:current+direction;
-			if (!Number.isFinite(next)||next===current)
-				return;
-			input.value=String(next).replace(".",raw.includes(",")?",":".");
-			this._inputVal=input.value;
-			input.dispatchEvent(new Event("input",{bubbles:true}));
+			step(event.key==="ArrowUp"?1:-1);
 		});
+		const controls=wrapper.appendChild(document.createElement("span"));
+		controls.className="number-stepper";
+		for (const [direction,label,symbol] of [[1,this.lang.numberIncrease,"▲"],
+			[-1,this.lang.numberDecrease,"▼"]]) {
+			const button=controls.appendChild(document.createElement("button"));
+			button.type="button";
+			button.className="number-stepper-button";
+			button.tabIndex=-1;
+			button.setAttribute("aria-label",label);
+			button.textContent=symbol;
+			button.addEventListener("pointerdown",event=>event.preventDefault());
+			button.addEventListener("click",()=>step(direction));
+		}
 	}
 
 	_comboboxOptionText(option) {
@@ -13761,9 +13801,10 @@ export default class Tablance extends TablanceBase {
 				this._ensureRepeatedEntryInsertion(this._activeDetailsCell);
 			const mode=rowIsNew||isRepeatedCreate?"create":"update";
 
-			this._activeSchemaNode.input.onChange?.(this._makeCallbackPayload(this._activeDetailsCell,{
+			const changePayload=this._makeCallbackPayload(this._activeDetailsCell,{
 				newValue: inputVal,oldValue: this._selectedCellVal,cancelUpdate: () => doUpdate=false
-			},{schemaNode: this._activeSchemaNode,mainIndex,rowData}));
+			},{schemaNode: this._activeSchemaNode,mainIndex,rowData});
+			this._activeSchemaNode.input.onChange?.(changePayload);
 
 		if (doUpdate) {
 				if (this._activeDetailsCell){
@@ -13802,6 +13843,7 @@ export default class Tablance extends TablanceBase {
 				}
 				if (isRepeatedCreate)
 					this._activeDetailsCell.creating=false;
+				this._activeSchemaNode.input.afterChange?.(changePayload);
 			} else {
 				// Revert data if change was cancelled.
 				this._cellCursorDataObj[this._activeSchemaNode.dataKey]=prevVal;
