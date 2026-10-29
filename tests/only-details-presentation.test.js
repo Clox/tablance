@@ -163,6 +163,28 @@ assert(reflowTable._activeDetailsCell===reflowNext,
 reflowData.show=true;reflowTable.refreshSubtree(reflowConditional);
 assert(!reflowConditional.hidden&&reflowConditional.gridColumn===1&&reflowNext.gridRow===1,
  'reveal returns the following field to its original row');
+const hiddenEditData={show:true,choice:'Visible',value:'Draft',next:'Next'};
+const hiddenEditTable=new Tablance(host(),{details:{type:'grid',columns:1,entries:[
+ {dataKey:'choice',nodeId:'choice',input:{type:'text'}},
+ {dataKey:'value',nodeId:'value',visibleIf:({rowData})=>rowData.show,input:{type:'text'}},
+ {dataKey:'next',nodeId:'next',input:{type:'text'}},
+]}},true,true,{searchbar:false});
+hiddenEditTable.setData(hiddenEditData);
+hiddenEditTable.selectCell(0,'value',{enterEditMode:true});
+hiddenEditData.show=false;
+hiddenEditTable.refreshSubtree(hiddenEditTable._openDetailsPanes[0]);
+assert(hiddenEditTable.getDetailCell(0,'value').hidden
+ &&hiddenEditTable._cellCursor.style.display==='none',
+ 'hiding an edited only-details cell during refresh hides its detached cursor without accessing a main-table viewport');
+assert(hiddenEditTable.selectCell(0,'choice'),
+ 'a later click can still select a visible cell after the edited cell disappeared');
+assert(hiddenEditTable.selectCell(0,'choice',{enterEditMode:true})&&hiddenEditTable._inEditMode,
+ 'the remaining visible cell can still enter edit mode after the conditional row disappears');
+hiddenEditTable._exitEditMode(false);
+hiddenEditTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:'ArrowDown',code:'ArrowDown',bubbles:true,cancelable:true}));
+assert(hiddenEditTable._activeSchemaNode?.dataKey==='next',
+ 'keyboard navigation still reaches the next visible cell after a conditional row disappears');
 const bulk=new Tablance(host(),{main:{columns:[{type:'select'},{dataKey:'name',input:{type:'text',bulkEdit:true}}]}},true,true,{searchbar:false,ordering:false});
 bulk.setData([{name:'First'},{name:'Second'}]);
 const bulkRoot=bulk._bulkEditTable.rootEl,bulkPanel=bulkRoot.querySelector(':scope>.only-details-content');

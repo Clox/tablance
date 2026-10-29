@@ -11620,8 +11620,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._cellCursor.style.display="none";
 			return;
 		}
-		if (!el)
+		if (!el?.isConnected) {
+			this._cellCursor.style.display="none";
 			return;
+		}
 		this._syncCursorCornerShape(el);
 		const elPos=this._getElPos(el);
 		this._cellCursor.style.top=elPos.y+"px";
@@ -11632,7 +11634,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			// whole pixels, which can leave an inline editor extending below its cursor outline.
 			const cursorRect=el.getBoundingClientRect();
 			let cursorHeight=cursorRect.height;
-			if (!this._inEditMode&&el.parentElement?.parentElement===this._mainTbody) {
+			if (!this._inEditMode&&this._mainTbody&&this._scrollBody
+				&&el.parentElement?.parentElement===this._mainTbody) {
 				const viewportRect=this._scrollBody.getBoundingClientRect();
 				const viewportBottom=viewportRect.bottom
 					-(parseFloat(getComputedStyle(this._scrollBody).borderBottomWidth)||0);
