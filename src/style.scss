@@ -419,6 +419,21 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			background-color: var(--tablance-cell-background);
 			box-shadow: 0 3px 10px rgba(15, 43, 75, .18);
 			cursor:auto;
+			.committed-length-indicator {
+				position: absolute;
+				z-index: 3;
+				top: calc(100% + 2px);
+				right: 0;
+				padding: 2px 5px;
+				border: 1px solid var(--tablance-border-color);
+				border-radius: 3px;
+				background: var(--tablance-cell-background);
+				color: var(--tablance-indicator-color);
+				font-size: .75em;
+				white-space: nowrap;
+				pointer-events: none;
+				&.over-limit { color: #b33b22; border-color: #d78673; }
+			}
 			&.inline-title-indicator {
 				background-color: transparent;
 				// The logical cursor includes both the inline title and value. Its elevation must not paint outside

@@ -363,6 +363,24 @@
   box-shadow: 0 3px 10px rgba(15, 43, 75, 0.18);
   cursor: auto;
 }
+.tablance .cell-cursor.edit-mode .committed-length-indicator {
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 2px);
+  right: 0;
+  padding: 2px 5px;
+  border: 1px solid var(--tablance-border-color);
+  border-radius: 3px;
+  background: var(--tablance-cell-background);
+  color: var(--tablance-indicator-color);
+  font-size: 0.75em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.tablance .cell-cursor.edit-mode .committed-length-indicator.over-limit {
+  color: #b33b22;
+  border-color: #d78673;
+}
 .tablance .cell-cursor.edit-mode.inline-title-indicator {
   background-color: transparent;
   box-shadow: none;

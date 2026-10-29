@@ -58,6 +58,34 @@ try {
 	key(decimalInput,"ArrowUp");
 	assert(decimalInput.value==="3,5","decimal stepping retains the typed separator");
 	decimalTable._exitEditMode(true);
+	const textData={name:"Redan för långt"};
+	const textTable=new Tablance(host(),{main:{columns:[{dataKey:"name",
+		input:{type:"text",commitMaxLength:3}}]}},true,true,{ordering:false,searchbar:false});
+	textTable.setData([textData]);
+	await tick();
+	textTable.selectCell(0,"name",{enterEditMode:true});
+	const textInput=textTable._cellCursor.querySelector("input");
+	assert(textInput.value==="Redan för långt"&&textInput.maxLength<0,
+		"an existing overlong value remains complete and has no native maxlength");
+	assert(textTable._exitEditMode(true)===false&&textTable._inEditMode,
+		"an existing overlong value cannot be recommitted");
+	textInput.value="ab";
+	textInput.dispatchEvent(new Event("input",{bubbles:true}));
+	assert(textTable._exitEditMode(true)===true&&textData.name==="ab",
+		"shortening the full value permits commit");
+	textTable.selectCell(0,"name",{enterEditMode:true});
+	const nextInput=textTable._cellCursor.querySelector("input");
+	for (const value of ["abcd","klistrad text"])
+		{ nextInput.value=value; nextInput.dispatchEvent(new Event("input",{bubbles:true}));
+			assert(nextInput.value===value,"typing and paste retain every character"); }
+	assert(textTable._cellCursor.querySelector(".committed-length-indicator.over-limit")
+		?.textContent==="13 / 3 tecken","the editor shows a live over-limit count");
+	assert(textTable._exitEditMode(true)===false&&nextInput.value==="klistrad text"
+		&&textData.name==="ab","an overlong draft cannot commit and remains editable");
+	nextInput.value="abc";
+	nextInput.dispatchEvent(new Event("input",{bubbles:true}));
+	assert(textTable._exitEditMode(true)===true&&textData.name==="abc",
+		"commit succeeds after a pasted value is shortened");
 
  result.dataset.status="passed";
  result.textContent="Numeric editor assertions passed";

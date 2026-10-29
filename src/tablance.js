@@ -645,7 +645,9 @@ class TablanceBase {
 	 * 								format: { date: true, blocks: [4, 2, 2], delimiter: "-", numericOnly: true }
 	 * 							}
 	 * 							
-	 * 						maxLength int Sets max-length for the string							
+	 * 						maxLength int Native input limit that prevents typing beyond the length.
+	 * 						commitMaxLength int Positive code-point limit checked only when committing text;
+	 * 													typing and pasting remain unrestricted and an editor counter shows the raw length.
 	 * 					----Properties specific to input "number"----
 	 * 						integer Bool Uses a numeric keyboard without a decimal separator and whole-number arrow steps.
 	 * 						min|max Number Optional stepper bounds; manually typed values remain unrestricted.
@@ -9764,8 +9766,24 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		input.focus();
 		if (this._activeSchemaNode.input.maxLength)
 			input.maxLength=this._activeSchemaNode.input.maxLength;
+		this._attachCommittedLengthIndicator(input);
 		input.placeholder=this._activeSchemaNode.input.placeholder??"";
 		return input;
+	}
+
+	_attachCommittedLengthIndicator(input) {
+		const limit=this._activeSchemaNode.input.commitMaxLength;
+		if (!Number.isInteger(limit)||limit<1) return;
+		const indicator=input.parentElement.appendChild(document.createElement("span"));
+		indicator.className="committed-length-indicator";
+		indicator.setAttribute("aria-live","polite");
+		const update=()=>{
+			const length=Array.from(input.value).length;
+			indicator.textContent=`${length} / ${limit} tecken`;
+			indicator.classList.toggle("over-limit",length>limit);
+		};
+		input.addEventListener("input",update);
+		update();
 	}
 
 	_openNumberEdit() {
@@ -10159,6 +10177,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		textarea.addEventListener("change",_e=>this._inputVal=textarea.value);
 		if (this._activeSchemaNode.input.maxLength)
 			textarea.maxLength=this._activeSchemaNode.input.maxLength;
+		this._attachCommittedLengthIndicator(textarea);
 		textarea.placeholder=this._activeSchemaNode.input.placeholder??"";
 		if (this._activeSchemaNode.input.newLineShortcutHint) {
 			this._appendTextAreaNewLineHint(textarea);
@@ -10688,7 +10707,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_validateInput(newVal) {
 		let message;
-		const input=this._cellCursor.querySelector("input");
+		const input=this._cellCursor.querySelector("input,textarea");
+		const limit=this._activeSchemaNode.input.commitMaxLength;
+		if (Number.isInteger(limit)&&limit>0&&Array.from(newVal).length>limit) {
+			input.focus();
+			this._showTooltip(`${Array.from(newVal).length} / ${limit} tecken. Korta texten innan du fortsätter.`);
+			return false;
+		}
 		const validator=this._activeSchemaNode.input.validation;
 		let doCommit;
 		if (validator instanceof RegExp)
@@ -10824,7 +10849,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		// replaced with the auxiliary/native input string.
 		if (input&&!['select','file'].includes(this._activeSchemaNode.input.type))
 			this._inputVal=input.value;
-		if (this._activeSchemaNode.input.validation&&save&&!this._validateInput(input.value))
+		if (save&&(this._activeSchemaNode.input.validation||this._activeSchemaNode.input.commitMaxLength)
+			&&!this._validateInput(input.value))
 			return false;
 		const inputValNorm=this._normalizeCommitValue(this._activeSchemaNode,this._inputVal);
 		const selectedValNorm=this._normalizeCommitValue(this._activeSchemaNode,this._selectedCellVal);
