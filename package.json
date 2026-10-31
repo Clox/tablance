@@ -23,7 +23,8 @@
 		"build:css": "mkdir -p styles dist && sass --style=expanded --source-map src/style.scss styles/tablance.css && sass --style=compressed --source-map src/style.scss styles/tablance.min.css && cp styles/tablance.css styles/tablance.css.map styles/tablance.min.css styles/tablance.min.css.map dist/",
 		"test": "node tests/run-browser-tests.mjs",
 		"test:only-details": "node tests/run-browser-tests.mjs --only-details",
-		"test:number-editor": "node tests/run-browser-tests.mjs --number-editor"
+		"test:number-editor": "node tests/run-browser-tests.mjs --number-editor",
+		"test:date-free-text": "node tests/run-browser-tests.mjs --date-free-text"
 	},
 	"repository": {
 		"type": "git",

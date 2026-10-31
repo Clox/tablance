@@ -648,10 +648,16 @@ class TablanceBase {
 	 * 						maxLength int Native input limit that prevents typing beyond the length.
 	 * 						commitMaxLength int Positive code-point limit checked only when committing text;
 	 * 													typing and pasting remain unrestricted and an editor counter shows the raw length.
+	 * 						normalizeOnCommit Function Maps an accepted editor value to stored data after validation;
+	 * 							it does not rewrite the live input while the user edits.
 	 * 					----Properties specific to input "number"----
 	 * 						integer Bool Uses a numeric keyboard without a decimal separator and whole-number arrow steps.
 	 * 						min|max Number Optional stepper bounds; manually typed values remain unrestricted.
 	 * 						The editor remains text-based so applications can validate and retain invalid raw input.
+	 * 					----Properties specific to input "date"----
+	 * 						allowFreeText Bool Opt in to unmasked text with the same calendar picker. Manual input and paste
+	 * 							are preserved exactly, including non-dates; calendar selections write YYYY-MM-DD.
+	 * 						The default date editor keeps its existing formatter and keyboard behavior.
 	 * 					----Properties specific to input "combobox"----
 	 * 						options Array|Function Suggestions using the select option shape or callback payload.
 	 * 							Option text is inserted as unrestricted free text and never constrains validity.
@@ -1980,7 +1986,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const addRow=(row,band=null)=>{
 				if (!row||!Array.isArray(row.cells)||!row.cells.length)
 					throw new TypeError('Each grid row must contain cells.');
-				const planned={id:row.id??null,label:row.label??null,band,cells:[]};
+				const planned={id:row.id??null,label:row.label??null,help:row.help??null,band,cells:[]};
 				for (const cell of row.cells) {
 					if (!cell||typeof cell!=="object") throw new TypeError('Invalid grid cell.');
 					const visibleIf=row.visibleIf||band?.visibleIf
@@ -2908,6 +2914,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 	}
 
+	_linkedCursorOwner() {
+		for (const peer of this._linkedTablePeers())
+			if (peer._selectedCell&&peer._cellCursor.style.display!=="none")
+				return peer;
+		return null;
+	}
+
 	selectTopBottomCellOnlyDetails(top) {
 		this._highlightOnFocus=false;
 		return this._selectFirstSelectableDetailsCell(this._openDetailsPanes[0],top);
@@ -3784,6 +3797,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return trigger;
 	}
 
+	/** Create a keyboard-accessible trigger for contextual help attached to an external heading. */
+	createHelpTrigger(help) {
+		const trigger=this._createHelpTrigger({help});
+		trigger.tabIndex=0;
+		return trigger;
+	}
+
 	_setupMainHeaderHelp(trigger,schemaNode) {
 		trigger.classList.add("has-help");
 		trigger.addEventListener("mouseenter",()=>this._scheduleHelpOpen(trigger,schemaNode,null,{},600));
@@ -4425,8 +4445,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		focusEl.addEventListener("focus",e=>this._spreadsheetOnFocus(e));
 		focusEl.addEventListener("blur",e=>this._spreadsheetOnBlur(e));
 		focusEl.tabIndex=0;//so that the table can be tabbed to
-		this.rootEl.addEventListener("keydown",e=>this._spreadsheetKeyDown(e));
-		this.rootEl.addEventListener("mousedown",e=>this._spreadsheetMouseDown(e));
+		this.rootEl.addEventListener("keydown",e=>this._handleUserCellSelection(()=>this._spreadsheetKeyDown(e)));
+		this.rootEl.addEventListener("copy",e=>this._spreadsheetCopy(e));
+		this.rootEl.addEventListener("mousedown",e=>this._handleUserCellSelection(()=>this._spreadsheetMouseDown(e)));
 		this.rootEl.addEventListener("dblclick",e=>this._detailsRowExtensionDoubleClick(e));
 		this._cellCursor.addEventListener("click",e=>{
 			if (!this._activeRepeatedReorderEntry||e.target.closest("button"))
@@ -4459,6 +4480,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_spreadsheetOnFocus(_e) {
+		// A pointer press on a non-cell surface may focus a linked table without selecting a cell.
+		// Keep keyboard navigation with the table that still owns the visible cell cursor.
+		const linkedOwner=this._pointerFocusPending&&!this._selectedCell?this._linkedCursorOwner():null;
+		if (linkedOwner) {
+			linkedOwner._focusEl.focus({preventScroll:true});
+			return;
+		}
 		const hasLogicalCursor=this._mainRowIndex!=null&&this._mainColIndex!=null;
 		const tabFocusIntent=getTabFocusIntent(this._focusEl.ownerDocument);
 		const tabbedTo=!this._pointerFocusPending&&(tabFocusIntent.target===this._focusEl
@@ -5148,6 +5176,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return;
 		if (this._toolbar?.contains(e.target))
 			return;
+		if (e.target.closest?.(".tablance-help-trigger"))
+			return;
 		if (this._searchInput && document.activeElement === this._searchInput) {
 			// Block navigation when the search bar is active; add keys here to passthrough in the future.
 			const searchPassthroughKeys=[];
@@ -5196,12 +5226,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._focusEl.style.outline="none";//see #spreadsheetOnFocus
 
 		if (this._inEditMode&&this._activeSchemaNode.input?.type==="date") {
+			const freeText=this._activeSchemaNode.input.allowFreeText===true;
 			if (e.key.slice(0,5)==="Arrow") {
-				if (e.ctrlKey)
-					e.stopPropagation();//allow moving textcursor if ctrl is held so prevent date-change then
+				const validDate=!freeText||this._parseExactDate(this._cellCursor.querySelector("input")?.value);
+				if (e.ctrlKey||!validDate)
+					e.stopPropagation();//keep text navigation when the picker has no valid date to adjust
 				else
-					e.preventDefault();//prevent textcursor from moving when arrowkey-selecting dates in date-picker
-			} else if (e.key==="Backspace")
+					e.preventDefault();//let Pikaday handle date navigation without moving the text cursor
+			} else if (e.key==="Backspace"||(freeText&&(e.key==="Delete"||e.key==="Escape")))
 				e.stopPropagation();
 		}
 		if (!this._inEditMode) {
@@ -5293,7 +5325,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			break; case "NumpadSubtract":
 				this._contractRow(this._selectedCell.closest(".main-table>tbody>tr"));
 			break; case "KeyC":
-				if (e.ctrlKey&&!e.metaKey) {
+				if ((e.ctrlKey||e.metaKey)&&!e.altKey) {
+					if (e.target?.closest?.("input,textarea")||e.target?.isContentEditable)
+						break;
+					if (!e.shiftKey&&this._hasRelevantTextSelection())
+						break;
 					e.preventDefault();
 					if (e.shiftKey)
 						this._openCopyMenu(e);
@@ -5315,6 +5351,49 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					return this._enterCell(e);
 				}
 			}
+	}
+
+	_hasRelevantTextSelection() {
+		const selection=this.rootEl.ownerDocument.getSelection();
+		const element=node=>node?.nodeType===1?node:node?.parentElement;
+		return !!selection&&!selection.isCollapsed&&selection.toString().length>0
+			&&element(selection.anchorNode)?.closest(".tablance")===this.rootEl
+			&&element(selection.focusNode)?.closest(".tablance")===this.rootEl;
+	}
+
+	_handleUserCellSelection(callback) {
+		const previousCell=this._selectedCell;
+		const previousDetailsCell=this._activeDetailsCell;
+		const previousRow=this._mainRowIndex;
+		const previousColumn=this._mainColIndex;
+		const result=callback();
+		if (this._selectedCell!==previousCell||this._activeDetailsCell!==previousDetailsCell
+			||this._mainRowIndex!==previousRow||this._mainColIndex!==previousColumn)
+			this._clearSelectedTextOnCellChange();
+		return result;
+	}
+
+	_clearSelectedTextOnCellChange() {
+		if (!this._hasRelevantTextSelection())
+			return;
+		const selection=this.rootEl.ownerDocument.getSelection();
+		const element=node=>node?.nodeType===1?node:node?.parentElement;
+		if (element(selection.anchorNode)?.isContentEditable
+			||element(selection.focusNode)?.isContentEditable)
+			return;
+		selection.removeAllRanges();
+	}
+
+	_spreadsheetCopy(e) {
+		const target=e.target;
+		if (e.defaultPrevented||target?.closest?.(".tablance")!==this.rootEl
+			||target?.closest?.("input,textarea")||target?.isContentEditable
+			||this._inEditMode||this._inReadOnlyMode||this._hasRelevantTextSelection())
+			return;
+		if (!this._getActiveClipboardCellContext())
+			return;
+		e.preventDefault();
+		this._copySelectedCellText();
 	}
 
 	_groupEscape() {
@@ -6610,7 +6689,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_refreshExplicitGridRows(grid) {
 		const columns=grid.gridColumns,oldRows=grid.gridRows,rows=[];
 		const bands=new Map,labels=new Map;
-		const placeLabel=(key,label,first,last,band)=>{
+		const placeLabel=(key,label,help,first,last,band)=>{
 			let element=grid.gridLabels.get(key);
 			if (!element) {
 				element=document.createElement("span");
@@ -6618,6 +6697,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				const title=element.appendChild(document.createElement("span"));
 				title.className="title";
 				title.textContent=label;
+				if (help!=null)
+					title.appendChild(this.createHelpTrigger(help));
 				grid.containerEl.appendChild(element);
 				grid.gridLabels.set(key,element);
 			}
@@ -6662,12 +6743,12 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				const key=plan.band.id??plan.band.label;
 				const band=bands.get(key);
 				if (band) band.last=rowIndex;
-				else bands.set(key,{label:plan.band.label,first:rowIndex,last:rowIndex});
+				else bands.set(key,{label:plan.band.label,help:plan.band.help,first:rowIndex,last:rowIndex});
 			} else if (plan.label!=null)
-				placeLabel(plan.id??plan,plan.label,rowIndex,rowIndex,false);
+				placeLabel(plan.id??plan,plan.label,plan.help,rowIndex,rowIndex,false);
 		}
 		for (const [key,band] of bands)
-			placeLabel(key,band.label,band.first,band.last,true);
+			placeLabel(key,band.label,band.help,band.first,band.last,true);
 		for (const [key,element] of grid.gridLabels)
 			if (!labels.has(key)) element.remove();
 		grid.gridRows=rows;
@@ -7197,18 +7278,29 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._updateAutoHeight();
 	}
 
+	_parseExactDate(value) {
+		if (typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+		const [year,month,day]=value.split("-").map(Number);
+		const date=new Date(0);
+		date.setFullYear(year,month-1,day);
+		date.setHours(0,0,0,0);
+		return date.getFullYear()===year&&date.getMonth()===month-1&&date.getDate()===day?date:null;
+	}
+
 	_openDateEdit(e) {
 		const input=document.createElement("input");
 		let pika,pikaContainer;
+		const allowFreeText=this._activeSchemaNode.input.allowFreeText===true;
 		//this._input.type="date";//using Pikaday instead which I find more user-friendly. Calendar can be opened
 								//up right away and typing manualy is still permitted
-		this._attachInputFormatter(input,{date:true});
+		if (!allowFreeText) this._attachInputFormatter(input,{date:true});
 		if (!window.Pikaday)
 			console.warn("Pikaday-library not found");
 		else {
 			pikaContainer=this._cellCursor.parentElement.appendChild(document.createElement("div"));
 			pikaContainer.className="pika-container";
 			pika=new Pikaday({field:input,
+				...(allowFreeText?{parse:value=>this._parseExactDate(value)}:{}),
 				toString: d=>d.getFullYear()+"-"+('0'+(d.getMonth()+1)).slice(-2)+"-"+('0'+d.getDate()).slice(-2),
 				onClose:()=>{
 					pikaContainer.remove();
@@ -7221,7 +7313,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				container:pikaContainer,
 				firstDay:1,//week starts on monday
 				showWeekNumber:true,
-				defaultDate: this._selectedCellVal ? new Date(this._selectedCellVal) : undefined,
+				defaultDate: allowFreeText?this._parseExactDate(this._selectedCellVal??"")
+					:(this._selectedCellVal ? new Date(this._selectedCellVal) : undefined),
 				setDefaultDate:true,
 				i18n: {
 					previousMonth : 'Tidigare Månad',
@@ -7249,10 +7342,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		
 		function onInput(_e) {
 			const inputVal=input.value;
-			pika.setDate(input.value);
-			//the above line will change the text above by guessing where there should be zeroes and such so prevent
-			//that by setting it back so that the user can type freely
+			const date=allowFreeText?this._parseExactDate(inputVal):inputVal;
+			if (date===null) return;
+			const start=input.selectionStart,end=input.selectionEnd;
+			pika.setDate(date,allowFreeText);
+			// Pikaday writes to its bound field even for silent date synchronization. Keep the user's exact text.
 			input.value=inputVal;
+			if (allowFreeText&&start!==null&&end!==null) input.setSelectionRange(start,end);
 		}
 	}
 
@@ -10852,6 +10948,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (save&&(this._activeSchemaNode.input.validation||this._activeSchemaNode.input.commitMaxLength)
 			&&!this._validateInput(input.value))
 			return false;
+		if (save&&typeof this._activeSchemaNode.input.normalizeOnCommit==="function")
+			this._inputVal=this._activeSchemaNode.input.normalizeOnCommit(this._inputVal);
 		const inputValNorm=this._normalizeCommitValue(this._activeSchemaNode,this._inputVal);
 		const selectedValNorm=this._normalizeCommitValue(this._activeSchemaNode,this._selectedCellVal);
 		if (save&&inputValNorm!=selectedValNorm) {

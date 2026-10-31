@@ -8,6 +8,8 @@ import {fileURLToPath} from "node:url";
 const root=normalize(join(fileURLToPath(new URL(".",import.meta.url)),".."));
 const onlyDetails=process.argv.includes("--only-details");
 const numberEditor=process.argv.includes("--number-editor");
+const dateFreeText=process.argv.includes("--date-free-text");
+const copySelection=process.argv.includes("--copy-selection");
 const types={".css":"text/css",".htm":"text/html",".html":"text/html",".js":"text/javascript",".mjs":"text/javascript"};
 const server=createServer(async (req,res)=>{
 	try {
@@ -26,14 +28,17 @@ const server=createServer(async (req,res)=>{
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
 const {port}=server.address();
 const profile=await mkdtemp(join(tmpdir(),"tablance-chrome-"));
-const chrome=spawn(process.env.CHROME_BIN??"/usr/bin/google-chrome",[
+const externalEndpoint=process.env.CODEX_BROWSER_ENDPOINT;
+const chrome=externalEndpoint?null:spawn(process.env.CHROME_BIN??"/usr/bin/google-chrome",[
 	"--headless=new","--no-sandbox","--disable-gpu","--disable-dev-shm-usage",
 	"--remote-debugging-port=0","--remote-allow-origins=*",`--user-data-dir=${profile}`,"about:blank",
 ],{stdio:["ignore","ignore","pipe"]});
 
 let socket;
 try {
-	const debuggerUrl=await new Promise((resolve,reject)=>{
+	const debuggerUrl=externalEndpoint
+		?(await (await fetch(`${externalEndpoint}/json/version`)).json()).webSocketDebuggerUrl
+		:await new Promise((resolve,reject)=>{
 		let stderr="";
 		const timeout=setTimeout(()=>reject(new Error(`Chrome debugging endpoint timed out.\n${stderr}`)),10000);
 		chrome.stderr.on("data",chunk=>{
@@ -69,7 +74,9 @@ try {
 		pending.set(id,{resolve,reject});
 		socket.send(JSON.stringify({id,method,params,...sessionId?{sessionId}:{}}));
 	});
-const testUrl=`http://127.0.0.1:${port}/tests/${numberEditor
+const testUrl=`http://127.0.0.1:${port}/tests/${copySelection
+		?"copy-selection.test.htm":dateFreeText
+		?"date-free-text.test.htm":numberEditor
 		?"number-editor.test.htm":onlyDetails
 		?"only-details-presentation.test.htm":"cell-state.test.htm"}`;
 	const {targetId}=await send("Target.createTarget",{url:testUrl});
@@ -97,7 +104,17 @@ const testUrl=`http://127.0.0.1:${port}/tests/${numberEditor
 		}
 		throw new Error(`Browser test timed out in state: ${JSON.stringify(await readResult())}`);
 	};
-	if (!onlyDetails&&!numberEditor) {
+	if (onlyDetails) {
+		await waitForStatus(["awaiting-native-linked-header"]);
+		const point=await evaluate(`(()=>{const rect=window.nativeLinkedHeader.getBoundingClientRect();return {
+			x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
+		await send("Input.dispatchMouseEvent",{type:"mousePressed",x:point.x,y:point.y,
+			button:"left",buttons:1,clickCount:1},sessionId);
+		await send("Input.dispatchMouseEvent",{type:"mouseReleased",x:point.x,y:point.y,
+			button:"left",buttons:0,clickCount:1},sessionId);
+		await evaluate(`window.finishNativeLinkedHeader()`);
+	}
+	if (!onlyDetails&&!numberEditor&&!dateFreeText&&!copySelection) {
 	await waitForStatus(["awaiting-native-keys"]);
 	const dispatch=(type,key,code,keyCode,modifiers=0)=>send("Input.dispatchKeyEvent",{
 		type,key,code,modifiers,windowsVirtualKeyCode:keyCode,nativeVirtualKeyCode:keyCode,
@@ -178,10 +195,12 @@ const testUrl=`http://127.0.0.1:${port}/tests/${numberEditor
 	process.exitCode=1;
 } finally {
 	socket?.close();
-	const chromeExited=chrome.exitCode==null
-		?new Promise(resolve=>chrome.once("exit",resolve)):Promise.resolve();
-	chrome.kill("SIGTERM");
-	await chromeExited;
+	if (chrome) {
+		const chromeExited=chrome.exitCode==null
+			?new Promise(resolve=>chrome.once("exit",resolve)):Promise.resolve();
+		chrome.kill("SIGTERM");
+		await chromeExited;
+	}
 	await new Promise(resolve=>server.close(resolve));
 	await rm(profile,{recursive:true,force:true,maxRetries:3,retryDelay:50});
 }

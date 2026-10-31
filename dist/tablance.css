@@ -2339,6 +2339,7 @@
   z-index: 10000;
   box-shadow: 0 5px 15px -5px rgba(0, 0, 0, 0.5);
   border: 1px solid #ccc;
+  padding: 0;
   background-color: white;
   min-width: 15em;
 }
@@ -2364,6 +2365,9 @@
   opacity: 0;
   position: absolute;
   pointer-events: none;
+  box-sizing: border-box;
+  width: 100%;
+  overflow: hidden;
 }
 .tablance .tablance-select-container > div.no-results {
   display: none;

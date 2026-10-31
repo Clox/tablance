@@ -2791,6 +2791,24 @@ try {
 		"a text cell editor keeps its spacing and hides the now-redundant pencil while editing");
 	table._exitEditMode(false);
 
+	const normalizedRow={code:"12345"};
+	let normalizedChange=null;
+	const normalizedTable=new Tablance(host(),{main:{columns:[{dataKey:"code",input:{type:"text",
+		normalizeOnCommit:value=>value.replace(" ",""),
+		onChange:({newValue})=>{ normalizedChange=newValue; }}}]}},true,true,
+		{searchbar:false,ordering:false});
+	normalizedTable.setData([normalizedRow]);
+	await tick();
+	normalizedTable.selectCell(normalizedRow,"code",{enterEditMode:true});
+	const normalizedEditor=normalizedTable._cellCursor.querySelector("input.text-editor");
+	assert(normalizedEditor.value==="12345","commit normalization does not change the initial editor value");
+	normalizedEditor.value="987 65";
+	normalizedEditor.dispatchEvent(new Event("input",{bubbles:true}));
+	assert(normalizedEditor.value==="987 65","commit normalization leaves live editor text untouched");
+	normalizedTable._exitEditMode(true);
+	assert(normalizedRow.code==="98765"&&normalizedChange==="98765",
+		"commit normalization updates stored data and onChange together");
+
 	const pasteRow={numeric:"12",pattern:"+46",plain:"ordinary"};
 	const pasteTable=new Tablance(host(),{main:{columns:[
 		{dataKey:"numeric",input:{type:"text",format:{numericOnly:true},maxLength:6}},
@@ -4879,6 +4897,43 @@ try {
 	lockedPresentationTable.selectCell(lockedPresentationRow,"lockedMain");
 	assert(!lockedPresentationTable._cellCursor.querySelector(".tablance-copy-feedback"),
 		"cell selection clears copy feedback so it remains attached to the copied cell");
+	const label=lockedPresentationTable.getDetailCell(lockedPresentationRow,"lockedDetail")
+		.el.closest("tr").querySelector(".title");
+	const textSelection=getSelection();
+	const labelRange=document.createRange();
+	labelRange.selectNodeContents(label);
+	textSelection.removeAllRanges();
+	textSelection.addRange(labelRange);
+	assert(textSelection.toString().trim()==="Source"
+		&&lockedPresentationTable._activeSchemaNode.nodeId==="lockedMain",
+		"a details label can have a native text selection while another cell remains active");
+	for (const modifier of [{ctrlKey:true},{metaKey:true}]) {
+		copied="not-written";
+		const shortcut=key(lockedPresentationTable.rootEl,"c","KeyC",modifier);
+		const nativeCopy=new Event("copy",{bubbles:true,cancelable:true});
+		lockedPresentationTable.rootEl.dispatchEvent(nativeCopy);
+		assert(!shortcut.defaultPrevented&&!nativeCopy.defaultPrevented&&copied==="not-written"
+			&&lockedPresentationTable._activeSchemaNode.nodeId==="lockedMain",
+			"selected label text keeps native Ctrl+C/Cmd+C and browser copy behavior");
+	}
+	textSelection.removeAllRanges();
+	copied="not-written";
+	key(lockedPresentationTable.rootEl,"c","KeyC",{metaKey:true});
+	await Promise.resolve();
+	assert(copied==="Ratsit","Cmd+C copies the active cell without selected text");
+	const externalText=document.body.appendChild(document.createElement("span"));
+	externalText.textContent="Old selection";
+	const externalRange=document.createRange();
+	externalRange.selectNodeContents(externalText);
+	textSelection.addRange(externalRange);
+	copied="not-written";
+	const commandCopy=new Event("copy",{bubbles:true,cancelable:true});
+	lockedPresentationTable.rootEl.dispatchEvent(commandCopy);
+	await Promise.resolve();
+	assert(commandCopy.defaultPrevented&&copied==="Ratsit",
+		"a stale selection outside Tablance does not block browser-command cell copy");
+	textSelection.removeAllRanges();
+	externalText.remove();
 	let clipboardPayload;
 	let groupClipboardPayload;
 	const clipboardRow={plain:"Raw value",rendered:"source",html:"markup",status:"active",enabled:true,

@@ -38,6 +38,10 @@ for(const [key,expected] of [['none',''],['editOnly','Editor hint'],['displayOnl
  standalone._exitEditMode(false);
 }
 standalone.selectCell(0,'selectEmpty',{enterEditMode:true});
+const selectPopup=standalone._selectContext.selectContainer;
+assert(selectPopup.scrollWidth<=selectPopup.clientWidth
+ &&selectPopup.querySelector('ul.main').scrollWidth<=selectPopup.querySelector('ul.main').clientWidth,
+ 'short select options do not scroll horizontally because of the hidden keyboard input');
 assert(standalone._tooltip.classList.contains('cell-help')
  &&standalone._selectContext.input.getAttribute('aria-describedby')===standalone._tooltip.id,
  'select editors receive the same contextual help and accessible description');
@@ -240,6 +244,13 @@ assert(linkedTables[1]._cellCursor.style.display==='none'
  &&linkedTables[0]._cellCursor.style.display==='block',
  'public selectCell transfers cursor ownership across linked tables');
 clickLinked(linkedTables[0]);
+linkedTables[1].rootEl.dispatchEvent(new MouseEvent('mousedown',
+ {bubbles:true,cancelable:true,button:0}));
+linkedTables[1]._focusEl.focus();
+assert(document.activeElement===linkedTables[0]._focusEl
+ &&linkedTables[0]._cellCursor.style.display==='block'
+ &&linkedTables[1]._cellCursor.style.display==='none',
+ 'a non-cell click in a linked onlyDetails table keeps focus with the active cell');
 linkedTables[0].rootEl.dispatchEvent(new KeyboardEvent('keydown',
  {key:'ArrowDown',code:'ArrowDown',bubbles:true,cancelable:true}));
 assert(linkedTables[0]._cellCursor.style.display==='none'
@@ -279,6 +290,59 @@ mainTables[1].selectCell(0,'value');
 assert(mainTables[0]._cellCursor.style.display==='none'
  &&mainTables[1]._cellCursor.style.display==='block',
  'programmatic selection also transfers cursor ownership for chained main tables');
+const focusTables=Array.from({length:2},(_,index)=>{
+ const table=new Tablance(host(),{main:{columns:[{title:'Value',dataKey:'value'}]}},true,true,
+  {searchbar:false,ordering:index===1});
+ table.setData([{value:`${index}-0`},{value:`${index}-1`}]);
+ return table;
+});
+focusTables[0].chainTables(focusTables[1]);
+focusTables[1].selectCell(0,'value');
+focusTables[0].selectCell(0,'value');
+const chainedHeader=focusTables[1]._headerTr.cells[0];
+chainedHeader.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0}));
+focusTables[1]._focusEl.focus();
+assert(document.activeElement===focusTables[0]._focusEl
+ &&focusTables[0]._cellCursor.style.display==='block'
+ &&focusTables[1]._cellCursor.style.display==='none',
+ 'a non-cell pointer focus in a chained table returns to the visible cursor owner');
+window.nativeLinkedHeader=chainedHeader;
+chainedHeader.scrollIntoView({block:'center'});
+document.getElementById('test-results').dataset.status='awaiting-native-linked-header';
+await new Promise(resolve=>window.finishNativeLinkedHeader=resolve);
+assert(document.activeElement===focusTables[0]._focusEl
+ &&focusTables[0]._cellCursor.style.display==='block'
+ &&focusTables[1]._cellCursor.style.display==='none',
+ 'a trusted linked-header click keeps keyboard focus on the active cell table');
+const headerSelection=getSelection(),headerRange=document.createRange();
+headerRange.selectNodeContents(chainedHeader.querySelector('.tablance-main-header-title'));
+headerSelection.removeAllRanges();headerSelection.addRange(headerRange);
+chainedHeader.click();
+assert(headerSelection.toString().trim()==='Value'&&focusTables[1]._sortingCols.length===1
+ &&document.activeElement===focusTables[0]._focusEl,
+ 'linked header sorting and ordinary text selection remain available without transferring focus');
+headerSelection.removeAllRanges();
+focusTables[0]._focusEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:'ArrowDown',code:'ArrowDown',bubbles:true,cancelable:true}));
+assert(focusTables[0]._mainRowIndex===1&&focusTables[1]._mainRowIndex===0,
+ 'arrow navigation after a linked header click moves the owning table cursor');
+const separateTables=Array.from({length:2},()=>{
+ const table=new Tablance(host(),{main:{columns:[{title:'Value',dataKey:'value'}]}},true,true,
+  {searchbar:false,ordering:false});
+ table.setData([{value:'First'},{value:'Second'}]);
+ return table;
+});
+separateTables[1].selectCell(0,'value');
+separateTables[0].selectCell(0,'value');
+separateTables[1]._headerTr.cells[0].dispatchEvent(new MouseEvent('mousedown',
+ {bubbles:true,cancelable:true,button:0}));
+separateTables[1]._focusEl.focus();
+assert(document.activeElement===separateTables[1]._focusEl,
+ 'a non-cell pointer focus transfers to an unchained table');
+separateTables[1]._focusEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:'ArrowDown',code:'ArrowDown',bubbles:true,cancelable:true}));
+assert(separateTables[1]._mainRowIndex===1&&separateTables[0]._mainRowIndex===0,
+ 'arrow navigation after an unchained header click moves the clicked table cursor');
 const helpTable=new Tablance(host(),{details:{type:'grid',columns:2,entries:[
  {type:'field',dataKey:'helped',nodeId:'helped',helpText:'How to enter this value',input:{type:'text'}},
  {type:'field',dataKey:'plain',nodeId:'plain',input:{type:'text'}},

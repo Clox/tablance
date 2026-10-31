@@ -93,6 +93,11 @@ string, a DOM `Node`, or a `DocumentFragment`; build rich help with DOM APIs rat
 shows transient help, click pins it, and F1 pins help only when the selected cell has `help`. Escape or an outside click
 closes pinned help.
 
+Explicit `details.grid.rows` may set `help` beside a row `label`; a `rowBand` may also
+set `help` beside its label. These buttons are keyboard focusable and use the same
+popover as entry help. For an external heading owned by the host application, call
+`table.createHelpTrigger(help)` and append the returned button to that heading.
+
 The permanent help trigger at the right edge of the main header renders root-schema `help` followed by sections for
 main columns that have `help`; detail help is not included. Details containers without an existing visible title,
 including transparent repeated containers, do not gain a heading solely for help.
