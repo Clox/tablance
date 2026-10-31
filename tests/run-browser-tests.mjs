@@ -10,6 +10,7 @@ const onlyDetails=process.argv.includes("--only-details");
 const numberEditor=process.argv.includes("--number-editor");
 const dateFreeText=process.argv.includes("--date-free-text");
 const copySelection=process.argv.includes("--copy-selection");
+const keyboardScroll=process.argv.includes("--keyboard-scroll");
 const types={".css":"text/css",".htm":"text/html",".html":"text/html",".js":"text/javascript",".mjs":"text/javascript"};
 const server=createServer(async (req,res)=>{
 	try {
@@ -74,7 +75,8 @@ try {
 		pending.set(id,{resolve,reject});
 		socket.send(JSON.stringify({id,method,params,...sessionId?{sessionId}:{}}));
 	});
-const testUrl=`http://127.0.0.1:${port}/tests/${copySelection
+const testUrl=`http://127.0.0.1:${port}/tests/${keyboardScroll
+		?"keyboard-scroll.test.htm":copySelection
 		?"copy-selection.test.htm":dateFreeText
 		?"date-free-text.test.htm":numberEditor
 		?"number-editor.test.htm":onlyDetails
@@ -124,7 +126,7 @@ const testUrl=`http://127.0.0.1:${port}/tests/${copySelection
 			await evaluate(`window.finishNativeLinkedNonCell()`);
 		}
 	}
-	if (!onlyDetails&&!numberEditor&&!dateFreeText&&!copySelection) {
+	if (!onlyDetails&&!numberEditor&&!dateFreeText&&!copySelection&&!keyboardScroll) {
 	await waitForStatus(["awaiting-native-keys"]);
 	const dispatch=(type,key,code,keyCode,modifiers=0)=>send("Input.dispatchKeyEvent",{
 		type,key,code,modifiers,windowsVirtualKeyCode:keyCode,nativeVirtualKeyCode:keyCode,

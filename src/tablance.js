@@ -2923,7 +2923,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_focusTableAfterNonCellClick(e) {
 		if (e.target.closest?.("input,textarea,select,button,a[href],[contenteditable]")
-			||this._toolbar?.contains(e.target))
+			||this._toolbar?.contains(e.target)
+			||this._comboboxContext?.popup.contains(e.target))
 			return;
 		(this._linkedCursorOwner()?._focusEl??this._focusEl).focus({preventScroll:true});
 	}
@@ -5887,7 +5888,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * @returns */
 	_renderDetails(tr,rowIndex) {
 		tr.classList.add("expanded");
-		const detailsRow=tr.parentElement.insertRow(tr.rowIndex+1);
+		const detailsRow=tr.parentElement.insertRow(tr.sectionRowIndex+1);
 		detailsRow.className="details";
 		detailsRow.dataset.dataRowIndex=rowIndex;
 		const detailsCell=detailsRow.insertCell();
@@ -11039,7 +11040,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_cellEditHelpText() {
-		const help=this._inEditMode&&this._activeSchemaNode?.helpText;
+		if (!this._inEditMode)
+			return "";
+		const help=this._activeSchemaNode?.helpText;
 		if (help==null)
 			return "";
 		if (typeof help!=="string")
@@ -14001,7 +14004,11 @@ export default class Tablance extends TablanceBase {
 					//distanceRatioDeadzone then minimum scrolling will occur only to get within distanceRatioDeadzone
 		const scrollHeight=this._scrollBody.offsetHeight;
 		const viewportRect=this._scrollBody.getBoundingClientRect();
-		const cursorRect=this._cellCursor.getBoundingClientRect();
+		// The visual cursor can be shortened to keep its focus border inside a clipped viewport.
+		// Follow-scroll must use the selected cell's stable geometry or a horizontal move can
+		// change the cursor height and add a spurious vertical scroll step.
+		const cursorRect=(this._activeDetailsCell?this._getCursorGeometryEl():this._selectedCell)
+			?.getBoundingClientRect()??this._cellCursor.getBoundingClientRect();
 		const cursorHeight=cursorRect.height;
 		const distanceFromCenter=cursorRect.top+cursorHeight/2-(viewportRect.top+scrollHeight/2);
 		const distanceFromCenterRatio=Math.abs(distanceFromCenter/scrollHeight);

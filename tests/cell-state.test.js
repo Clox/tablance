@@ -2896,7 +2896,8 @@ try {
 	key(comboboxInput,"ArrowDown","ArrowDown");
 	assert(comboboxInput.value==="Mobil"
 		&&comboboxInput.selectionStart===comboboxInput.value.length
-		&&comboboxInput.selectionEnd===comboboxInput.value.length&&comboboxPopup.isConnected,
+		&&comboboxInput.selectionEnd===comboboxInput.value.length&&comboboxPopup.isConnected
+		&&document.activeElement===comboboxInput,
 		"Down starts at the first suggestion and immediately writes it into the focused input");
 	key(comboboxInput,"ArrowDown","ArrowDown");
 	assert(comboboxInput.value==="Hemtelefon"&&document.activeElement===comboboxInput,
@@ -2925,6 +2926,10 @@ try {
 	assert(comboboxInput.value==="Arbete"&&document.activeElement===comboboxInput
 		&&comboboxTable._inEditMode&&comboboxTable._comboboxContext.popup.isConnected,
 		"pointer selection inserts a suggestion while keeping the editable combobox open and focused");
+	key(comboboxInput,"ArrowDown","ArrowDown");
+	assert(comboboxInput.value==="Mobil"&&document.activeElement===comboboxInput
+		&&comboboxTable._inEditMode,
+		"keyboard suggestion navigation continues in the same editor after a pointer choice");
 	key(comboboxInput,"Escape","Escape");
 	assert(comboboxRow.label==="Fritt värde"&&!comboboxTable._inEditMode
 		&&!comboboxTable._comboboxContext,
@@ -2938,8 +2943,14 @@ try {
 		&&table._tableArea.contains(table._headerTable)&&table._tableArea.contains(table._scrollBody),
 		"the keyboard focus stop wraps the header and rows without wrapping the toolbar");
 	const headerStyle=getComputedStyle(table._headerTable);
-	assert(headerStyle.backgroundColor==="rgb(243, 246, 250)"&&headerStyle.borderTopColor==="rgb(217, 226, 239)"
-		&&headerStyle.borderTopLeftRadius==="10px","the modern header theme is the Tablance default");
+	const headerOutlineStyle=getComputedStyle(table._headerTable,"::after");
+	assert(headerStyle.backgroundColor==="rgb(243, 246, 250)"&&headerStyle.borderTopWidth==="0px"
+		&&headerStyle.borderTopLeftRadius==="10px"
+		&&headerOutlineStyle.borderTopWidth==="1px"
+		&&headerOutlineStyle.borderTopStyle==="solid"
+		&&headerOutlineStyle.borderTopColor==="rgb(217, 226, 239)"
+		&&headerOutlineStyle.borderTopLeftRadius==="10px",
+		"the modern header theme draws its rounded outline without widening header tracks");
 	assert(getComputedStyle(cells[0]).backgroundColor==="rgb(255, 255, 255)"
 		&&getComputedStyle(cells[1]).backgroundColor==="rgb(255, 255, 255)",
 		"ordinary and read-only cells share the default white cell surface");
@@ -5560,11 +5571,26 @@ try {
 		&&detailsPanelStyle.backgroundImage.includes("linear-gradient")&&detailsShadowStyle.zIndex==="2",
 		"expanded details use Tablance's native transparent wrapper and layered indented panel");
 	const detail=table.getDetailCell(0,"detail");
-	assert(detail.cellState.kind==="readOnly"&&detail.el.classList.contains("read-only")
+	assert(detail?.cellState.kind==="readOnly"&&detail.el.classList.contains("read-only")
 		&&detail.el.classList.contains("tablance-cell-state"),"details presentation field resolves readOnly with a canonical styling hook");
 	const detailStyle=getComputedStyle(detail.el);
 	assert(detailStyle.paddingLeft==="5px"&&detailStyle.paddingTop==="12px"&&detailStyle.paddingBottom==="3px",
 		`detail value content moves down without inheriting main-row indicator spacing or changing total padding (${detailStyle.paddingTop}/${detailStyle.paddingBottom}/${detailStyle.paddingLeft})`);
+	const recoveredDetailsTable=new Tablance(host(),{main:{columns:[{dataKey:"name"}]},
+		details:{type:"list",entries:[{dataKey:"note",nodeId:"recoverNote",input:{type:"text"}}]}},
+		true,true,{searchbar:false});
+	const recoveryRow={name:"Recovery",note:"intact"};
+	recoveredDetailsTable.setData([recoveryRow]);
+	await tick();
+	recoveredDetailsTable.expandRow(0);
+	const previousHeight=recoveredDetailsTable._rowMeta.get(recoveryRow).h;
+	recoveredDetailsTable._rebaseVirtualWindow(0);
+	const recoveredDetail=recoveredDetailsTable.getDetailCell(0,"recoverNote");
+	assert(recoveredDetail?.dataObj.note==="intact"
+		&&recoveredDetailsTable._mainTbody.querySelectorAll("tr.details").length===1
+		&&recoveredDetailsTable._rowMeta.get(recoveryRow).h>0
+		&&Math.abs(recoveredDetailsTable._rowMeta.get(recoveryRow).h-previousHeight)<1,
+		"a virtual-window rebase rematerializes one coherent expanded details pane and height");
 	detail.select();
 	assert(detail.el.classList.contains("tablance-active-cell")&&!cells[1].classList.contains("tablance-active-cell"),
 		"native active-cell ownership also follows selection into details");
@@ -5989,7 +6015,10 @@ try {
 		&&getComputedStyle(historyGroup.el).overflow==="hidden"
 		&&getComputedStyle(historyEntries[0].el).overflow==="hidden"
 		&&getComputedStyle(historyGroup.el).borderCollapse==="separate"
-		&&getComputedStyle(historyEntries[0].el).borderSpacing==="0px 0px",
+		&&groupStyles.every(style=>{
+			const [horizontal,vertical=horizontal]=style.borderSpacing.split(/\s+/);
+			return horizontal==="0px"&&vertical==="0px";
+		}),
 		"details groups use the finalized transparent inset design and clip child hover to their rounded shape");
 	historyEntries[1].select();
 	await waitFor(()=>!historyGroup.viewportEl._tablanceGroupTransition,"history group animation cleanup");
@@ -6622,9 +6651,9 @@ try {
 	listIndicatorField.select();
 	const listIndicatorStyle=getComputedStyle(indicatorLayoutTable._cellCursor,"::before");
 	assert(!(listIndicatorField.selEl??listIndicatorField.el).querySelector(":scope>span.title")
-		&&listIndicatorStyle.content==='""'&&listIndicatorStyle.left==="4px"
-		&&listIndicatorStyle.top==="2px",
-		"List fields retain their separate title cell and top-left selected edit indicator");
+		&&listIndicatorStyle.content==="none"
+		&&indicatorLayoutTable._selectedCellState?.kind==="editable",
+		"List fields retain their separate title cell and only-details selection suppresses the redundant edit icon");
 	const gridEditTitle=gridIndicatorEdit.outerContainerEl.querySelector(":scope>span.title");
 	const gridEditTitleBefore=gridEditTitle.getBoundingClientRect();
 	assert(getComputedStyle(gridEditTitle,"::after").content==="none"
@@ -6832,13 +6861,18 @@ try {
 	assert(!explicitFirstExtension.classList.contains("grid-extension-hover")
 		&&!explicitRight.outerContainerEl.classList.contains("grid-extension-target-hover"),
 		"hovering the real cell does not activate its separate extension presentation");
+	const hoverColorProbe=explicitGridTable.rootEl.appendChild(document.createElement("span"));
+	hoverColorProbe.style.backgroundColor="var(--tablance-hover-background)";
+	const expectedTargetHoverColor=getComputedStyle(hoverColorProbe).backgroundColor;
+	hoverColorProbe.remove();
 	explicitFirstExtension.dispatchEvent(new MouseEvent("mouseenter"));
-	await new Promise(resolve=>setTimeout(resolve,140));
+	await waitFor(()=>getComputedStyle(explicitRight.outerContainerEl).backgroundColor===expectedTargetHoverColor,
+		"Grid extension target hover transition");
 	const extensionHoverColor=getComputedStyle(explicitFirstExtension).backgroundColor;
 	const extensionTargetHoverColor=getComputedStyle(explicitRight.outerContainerEl).backgroundColor;
 	assert(explicitFirstExtension.classList.contains("grid-extension-hover")
 		&&explicitRight.outerContainerEl.classList.contains("grid-extension-target-hover")
-		&&["rgb(243, 247, 252)","rgba(243, 247, 252, 1)"].includes(extensionTargetHoverColor)
+		&&extensionTargetHoverColor===expectedTargetHoverColor
 		&&extensionHoverColor!=="rgba(0, 0, 0, 0)"&&extensionHoverColor!==extensionTargetHoverColor,
 		`extension hover keeps the target's normal hover and adds a distinct weaker tone only over empty space (${extensionTargetHoverColor}/${extensionHoverColor})`);
 	explicitFirstExtension.dispatchEvent(new MouseEvent("mouseleave"));
@@ -7133,10 +7167,12 @@ try {
 	matchingGridEditorTable.getDetailCell(0,"matchingGridLabel").select();
 	key(matchingGridEditorTable.rootEl,"Enter","Enter");
 	const matchingGridEditor=matchingGridEditorTable._cellCursor.querySelector("input.text-editor");
-	assert(Math.abs(matchingGridEditor.getBoundingClientRect().height-editorRect.height)<.05
+	assert(Math.abs(matchingGridEditor.getBoundingClientRect().height
+		-matchingGridEditor.parentElement.getBoundingClientRect().height)<.05
+		&&getComputedStyle(matchingGridEditorTable.getDetailCell(0,"matchingGridLabel").el).padding==="2px 4px"
 		&&getComputedStyle(matchingGridEditorTable._cellCursor,"::after").borderBottomWidth==="2px"
 		&&getComputedStyle(matchingGridEditor.parentElement).outlineStyle==="none",
-		"grid and list-style group text editors share value height and keep the full-field cursor outline in edit mode");
+		"standalone Grid text editors fill their compact value box beneath the full-field cursor outline");
 	key(matchingGridEditor,"Escape","Escape");
 	key(creatorEmptyEditor,"Escape","Escape");
 	key(creatorEmptyTable.rootEl,"Escape","Escape");
@@ -8679,14 +8715,14 @@ try {
 		"an empty editable group stays present and shows its closed placeholder");
 	const namePlaceholder=editableNameGroup.el.querySelector(".tablance-presentation-placeholder");
 	const placeholderStyle=getComputedStyle(namePlaceholder);
-	const mutedColorProbe=editableNameTable.rootEl.appendChild(document.createElement("span"));
-	mutedColorProbe.style.color="var(--tablance-muted-color)";
-	const mutedColor=getComputedStyle(mutedColorProbe).color;
-	mutedColorProbe.remove();
-	assert(placeholderStyle.color===mutedColor
-		&&placeholderStyle.fontStyle==="italic"
+	const placeholderColorProbe=editableNameTable.rootEl.appendChild(document.createElement("span"));
+	placeholderColorProbe.style.color="var(--tablance-placeholder-color)";
+	const placeholderColor=getComputedStyle(placeholderColorProbe).color;
+	placeholderColorProbe.remove();
+	assert(placeholderStyle.color===placeholderColor
+		&&placeholderStyle.fontStyle==="normal"
 		&&!namePlaceholder.closest(".repeat-insertion"),
-		"the neutral placeholder style shares the muted token without creator structure or semantics");
+		"the neutral placeholder uses the dedicated placeholder token without creator structure or semantics");
 	assert(editablePreferred.present&&editablePreferred.el.textContent==="Not specified"
 		&&editablePreferred.el.classList.contains("tablance-presentation-placeholder"),
 		"an editable preferred-name field shows its placeholder without treating it as information");
