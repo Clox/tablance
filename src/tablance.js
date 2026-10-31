@@ -4471,6 +4471,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this.rootEl.addEventListener("keydown",e=>this._handleUserCellSelection(()=>this._spreadsheetKeyDown(e)));
 		this.rootEl.addEventListener("copy",e=>this._spreadsheetCopy(e));
 		this.rootEl.addEventListener("mousedown",e=>this._handleUserCellSelection(()=>this._spreadsheetMouseDown(e)));
+		this.rootEl.addEventListener("pointermove",e=>this._handleCellTypeTooltipPointer(e));
+		this.rootEl.addEventListener("pointerleave",()=>this._clearCellTypeTooltip());
 		this.rootEl.addEventListener("click",e=>this._focusTableAfterNonCellClick(e));
 		this.rootEl.addEventListener("dblclick",e=>this._detailsRowExtensionDoubleClick(e));
 		this._cellCursor.addEventListener("click",e=>{
@@ -11839,6 +11841,82 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			&&rowIndex===this._mainRowIndex&&this._filteredData[rowIndex]===this._cellCursorDataObj;
 	}
 
+	/**Create a non-action type hint that shares Tablance's cell tooltip and click-through behavior.*/
+	createCellTypeIcon(kind,description) {
+		const labels={source:"Källkopplad cell",navigation:"Navigeringscell",editable:"Redigeringscell"};
+		if (!Object.hasOwn(labels,kind)||typeof description!=="string"||!description.trim())
+			throw new TypeError("A cell type icon needs a supported kind and a non-empty description.");
+		const icon=document.createElement("span");
+		icon.className=`tablance-cell-type-icon tablance-cell-type-icon-${kind}`;
+		icon.dataset.tablanceCellTypeTooltip=`${labels[kind]} – ${description.trim()}`;
+		icon.setAttribute("role","img");
+		icon.setAttribute("aria-label",icon.dataset.tablanceCellTypeTooltip);
+		return icon;
+	}
+
+	_handleCellTypeTooltipPointer(event) {
+		const {clientX,clientY}=event;
+		const sourceIcon=document.elementsFromPoint?.(clientX,clientY)
+			.find(element=>element?.matches?.(".tablance-cell-type-icon,.tablance-cell-state-icon"));
+		if (sourceIcon?.dataset.tablanceCellTypeTooltip)
+			return this._showCellTypeTooltip(sourceIcon.dataset.tablanceCellTypeTooltip,sourceIcon);
+		const hit=(element,pseudo)=>{
+			if (!element?.isConnected) return false;
+			const style=getComputedStyle(element,pseudo);
+			if (!style.content||style.content==="none"||style.display==="none"||style.visibility==="hidden") return false;
+			const rect=element.getBoundingClientRect();
+			const width=parseFloat(style.width)||12,height=parseFloat(style.height)||12;
+			const left=parseFloat(style.left),right=parseFloat(style.right),top=parseFloat(style.top);
+			const x=Number.isFinite(left)?rect.left+(style.left.endsWith("%")?rect.width*left/100:left)
+				+parseFloat(style.marginLeft||0):rect.right-(Number.isFinite(right)?right:0)-width;
+			const y=Number.isFinite(top)&&style.top.endsWith("px")?rect.top+top:rect.top+(rect.height-height)/2;
+			return clientX>=x&&clientX<=x+width&&clientY>=y&&clientY<=y+height;
+		};
+		const describe=(state,cell,title)=>{
+			if (state?.kind==="editable"&&!cell.classList.contains("edit-mode"))
+				return hit(cell,"::before")||title&&hit(title,"::after")
+					?["Redigeringscell – Värdet kan redigeras.",title&&hit(title,"::after")?title:cell]:null;
+			if (state?.kind==="readOnly")
+				return hit(cell,"::before")||title&&hit(title,"::after")
+					?["Låst cell – Värdet visas utan att kunna redigeras.",title&&hit(title,"::after")?title:cell]:null;
+			return null;
+		};
+		const cursor=this._cellCursor?.style.display!=="none"&&this._cellCursor?.matches(":hover")
+			?this._cellCursor:null;
+		if (cursor) {
+			const title=this._selectedCell?.querySelector(":scope>span.title");
+			const result=describe(this._selectedCellState,cursor,title);
+			if (result) return this._showCellTypeTooltip(result[0],result[1]);
+		}
+		const cell=event.target?.closest?.(".tablance-cell-state");
+		if (!cell||cell===cursor) return this._clearCellTypeTooltip();
+		const title=cell.querySelector(":scope>span.title");
+		const result=describe(this._getCellState(cell),cell,title);
+		if (result) return this._showCellTypeTooltip(result[0],result[1]);
+		this._clearCellTypeTooltip();
+	}
+
+	_showCellTypeTooltip(message,anchor) {
+		if (this._cellTypeTooltipAnchor===anchor&&this._cellTypeTooltipMessage===message)
+			return;
+		this._cellTypeTooltipAnchor=anchor;
+		this._cellTypeTooltipMessage=message;
+		if (this._cellCursor?.matches(":hover")&&anchor===this._selectedCell?.querySelector(":scope>span.title")) {
+			this._cellCursor.style.cursor="help";
+			this._cellTypeTooltipCursor=this._cellCursor;
+		}
+		this._showTooltip(message,anchor);
+	}
+
+	_clearCellTypeTooltip() {
+		if (!this._cellTypeTooltipAnchor) return;
+		this._cellTypeTooltipAnchor=null;
+		this._cellTypeTooltipMessage=null;
+		this._cellTypeTooltipCursor?.style.removeProperty("cursor");
+		this._cellTypeTooltipCursor=null;
+		this._dismissTooltip();
+	}
+
 	_showsActionIndicator(cellState,schemaNode) {
 		return cellState?.kind==="action"&&!["expand","select","menu","group","reorder"].includes(schemaNode?.type)
 			&&!["button","checkbox"].includes(schemaNode?.input?.type);
@@ -13586,6 +13664,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (control)
 				control.disabled=state.kind==="disabled"||!state.mutable&&schemaNode?.input?.type==="checkbox";
 		}
+		this._syncCellStateIcon(cellEl,state,schemaNode);
 		if (state.kind==="readOnly")
 			cellEl.setAttribute("aria-readonly","true");
 		else
@@ -13614,6 +13693,27 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._adjustCursorPosSize(cellEl);
 		}
 		return state;
+	}
+
+	_syncCellStateIcon(cellEl,state,schemaNode) {
+		const kind=state?.kind==="action"&&this._showsActionIndicator(state,schemaNode)?"navigation":null;
+		let icon=cellEl.querySelector(":scope>.tablance-cell-state-icon, :scope>span.title>.tablance-cell-state-icon");
+		if (!kind) {
+			icon?.remove();
+			return;
+		}
+		const title=cellEl.querySelector(":scope>span.title");
+		const parent=title??cellEl;
+		if (!icon) {
+			icon=document.createElement("span");
+			icon.className="tablance-cell-state-icon";
+			icon.setAttribute("aria-hidden","true");
+		}
+		icon.className=`tablance-cell-state-icon tablance-cell-state-icon-${kind}`;
+		const labels={navigation:"Navigeringscell – Öppnar relaterad information."};
+		icon.dataset.tablanceCellTypeTooltip=labels[kind];
+		if (parent!==icon.parentElement)
+			parent.appendChild(icon);
 	}
 
 	_getCellState(cellEl,instanceNode=null) {

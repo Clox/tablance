@@ -41,7 +41,8 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		margin-left: 4px;
 		background-color: var(--tablance-indicator-color);
 		transform: translateY(-50%);
-		pointer-events: none;
+		pointer-events: auto;
+		cursor: help;
 	}
 	&.read-only:is(:hover,.tablance-active-cell)>span.title::after {
 		content: "";
@@ -648,7 +649,8 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		content: "";
 		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
 		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
-		pointer-events: none;
+		pointer-events: auto;
+		cursor: help;
 	}
 	.action-indicator.navigation-activation-feedback::before,
 	.tablance-cell-state.action-indicator.navigation-activation-feedback>span.title::after {
@@ -682,7 +684,8 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		content: "";
 		-webkit-mask: $tablance-edit-icon center / contain no-repeat;
 		mask: $tablance-edit-icon center / contain no-repeat;
-		pointer-events: none;
+		pointer-events: auto;
+		cursor: help;
 	}
 	.cell-cursor.read-only::before,
 	.read-only:not(.cell-cursor):hover::before {
@@ -697,7 +700,8 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		content: "";
 		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center / contain no-repeat;
 		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center / contain no-repeat;
-		pointer-events: none;
+		pointer-events: auto;
+		cursor: help;
 	}
 	.cell-cursor.details.inline-title-indicator.read-only::before,
 	.cell-cursor.details.inline-title-indicator.action-indicator::before,
@@ -1519,13 +1523,6 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		}
 		.read-only {
 			background-color: transparent;
-		}
-		// A positioned table cell snaps its pseudo-element half a pixel below the equivalent cursor overlay in
-		// Chromium. Compensate only for detail table cells so hover and selected state indicators share a baseline.
-		td.editable-indicator:not(.cell-cursor):hover::before,
-		td.action-indicator:not(.cell-cursor):hover::before,
-		td.read-only:not(.cell-cursor):hover::before {
-			top: 1.5px;
 		}
 		.disabled {
 			background-color: var(--tablance-disabled-background);
@@ -2541,6 +2538,82 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			}
 		}
 	}
+}
+
+.tablance-cell-type-icon {
+	position: relative;
+	z-index: 2;
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	margin-inline-start: 5px;
+	vertical-align: text-bottom;
+	background-color: currentColor;
+	cursor: help;
+	&.tablance-cell-type-icon-source {
+		@include tablance-mask-icon(url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.07 0l-3 3A5 5 0 0 0 11 21.07l1.71-1.71'/%3E%3C/svg%3E"));
+	}
+	&.tablance-cell-type-icon-navigation {
+		@include tablance-mask-icon(url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E"));
+	}
+	&.tablance-cell-type-icon-editable {
+		@include tablance-mask-icon($tablance-edit-icon);
+	}
+}
+
+// Navigation indicators use one real node on the cell for hover and active presentation. The cursor is only a
+// selection outline; drawing another pseudo-element on it gave the same icon a second coordinate space.
+.tablance-cell-state-icon {
+	position: absolute;
+	z-index: 3;
+	box-sizing: border-box;
+	display: block;
+	width: 12px;
+	height: 12px;
+	background-color: var(--tablance-indicator-color);
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: auto;
+	cursor: help;
+	transition: opacity 80ms linear;
+	&.tablance-cell-state-icon-navigation {
+		@include tablance-mask-icon(url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E"));
+	}
+}
+.tablance-cell-state.action-indicator:is(:hover,.tablance-active-cell)
+	>.tablance-cell-state-icon,
+.tablance-cell-state.action-indicator:is(:hover,.tablance-active-cell)
+	>span.title>.tablance-cell-state-icon {
+	opacity: 1;
+	visibility: visible;
+}
+.tablance-cell-state.action-indicator {
+	&::before { content: none !important; }
+	>span.title::after { content: none !important; }
+}
+.cell-cursor.action-indicator::before { content: none !important; }
+.tablance-cell-state>span.title>.tablance-cell-state-icon {
+	top: 50%;
+	left: 100%;
+	margin-left: 4px;
+	transform: translateY(-50%);
+}
+.lineup>span.action-indicator>span.title>.tablance-cell-state-icon {
+	right: 0;
+	left: auto;
+	margin-left: 0;
+}
+.tablance-cell-state:not(:has(>span.title))>.tablance-cell-state-icon {
+	top: 2px;
+	left: 4px;
+}
+td.tablance-cell-state:not(:has(>span.title))>.tablance-cell-state-icon { top: 1.5px; }
+.tablance-cell-state.action-indicator.navigation-activation-feedback
+	>.tablance-cell-state-icon-navigation,
+.tablance-cell-state.action-indicator.navigation-activation-feedback
+	>span.title>.tablance-cell-state-icon-navigation {
+	animation: tablance-navigation-arrow-feedback 280ms ease-out;
+	transform-origin: center;
 }
 
 .tablance-view-switcher {

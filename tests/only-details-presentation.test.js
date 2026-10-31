@@ -15,6 +15,45 @@ const row={none:'',editOnly:'',displayOnly:'',both:'',boolean:null,selectEmpty:'
 const standalone=new Tablance(host(),{details:{type:'grid',title:'Contact details',columns:2,entries:fields()}},true,true,{searchbar:false});
 standalone.setData(row);
 const cell=key=>standalone.getDetailCell(0,key);
+const sourceIndicator=standalone.createCellTypeIcon('source','Kan hämta värden från en vald källa eller fyllas manuellt.');
+cell('both').outerContainerEl.querySelector(':scope>span.title').appendChild(sourceIndicator);
+let sourceIconClickBubbled=false;
+cell('both').outerContainerEl.addEventListener('click',()=>sourceIconClickBubbled=true,{once:true});
+sourceIndicator.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+assert(sourceIconClickBubbled&&sourceIndicator.dataset.tablanceCellTypeTooltip.startsWith('Källkopplad cell')
+ &&getComputedStyle(sourceIndicator).cursor==='help',
+ 'the source type icon explains its cell type and clicks bubble normally without becoming an action');
+const elementsFromPoint=document.elementsFromPoint;
+document.elementsFromPoint=()=>[sourceIndicator];
+standalone.rootEl.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:0,clientY:0}));
+await new Promise(resolve=>setTimeout(resolve,0));
+assert(standalone._tooltip.isConnected&&standalone._tooltip.firstChild.textContent.startsWith('Källkopplad cell'),
+ 'source type icons use the shared Tablance tooltip');
+document.elementsFromPoint=elementsFromPoint;
+standalone._clearCellTypeTooltip();
+const indicatorTable=new Tablance(host(),{details:{type:'grid',columns:1,entries:[
+ {title:'Navigation',dataKey:'navigation',nodeId:'navigation',onEnter:()=>{}},
+ {title:'Editable',dataKey:'editable',nodeId:'editable',input:{type:'text'}},
+]}},true,true,{searchbar:false});
+const indicatorRow={navigation:'Open details',editable:'Value'};
+indicatorTable.setData(indicatorRow);
+const activeIndicatorTooltip=async key=>{
+ indicatorTable.selectCell(0,key);
+ const cursor=indicatorTable._cellCursor;
+ const originalMatches=cursor.matches.bind(cursor);
+ cursor.matches=selector=>selector===':hover'||originalMatches(selector);
+ const title=indicatorTable.getDetailCell(0,key).outerContainerEl.querySelector(':scope>span.title');
+ const rect=title.getBoundingClientRect();
+ indicatorTable._handleCellTypeTooltipPointer({target:cursor,clientX:rect.right+5,clientY:rect.top+rect.height/2});
+ await new Promise(resolve=>setTimeout(resolve,0));
+ const text=indicatorTable._tooltip.firstChild.textContent;
+ cursor.matches=originalMatches;
+ indicatorTable._clearCellTypeTooltip();
+ return text;
+};
+assert((await activeIndicatorTooltip('navigation')).startsWith('Navigeringscell')
+ &&(await activeIndicatorTooltip('editable')).startsWith('Redigeringscell'),
+ 'navigation and editing icons show concise, named cell-type tooltips while their cells are active');
 const panel=standalone.rootEl.querySelector(':scope>.only-details-content');
 const header=panel.querySelector(':scope>.only-details-header');
 const body=panel.querySelector(':scope>.only-details-body');
@@ -31,6 +70,10 @@ assert(getComputedStyle(cell('both').el).color===getComputedStyle(colorSample).c
 colorSample.remove();
 assert(getComputedStyle(cell('both').el).fontStyle==='normal'&&getComputedStyle(cell('both').el).cursor==='cell','display placeholder uses normal text style with a cell cursor');
 assert(cell('none').outerContainerEl.getBoundingClientRect().height<55&&getComputedStyle(cell('editOnly').outerContainerEl).borderInlineStartWidth==='1px'&&panel.querySelector('.grid-row-separator'),'standalone grid is compact with subtle separators');
+const editIndicatorTitle=cell('none').outerContainerEl.querySelector(':scope>span.title');
+assert(getComputedStyle(editIndicatorTitle,'::after').cursor==='help'
+ &&getComputedStyle(editIndicatorTitle,'::after').pointerEvents==='auto',
+ 'cell type indicators expose a help cursor and remain pointer-addressable in the shared title slot');
 for(const [key,expected] of [['none',''],['editOnly','Editor hint'],['displayOnly',''],['both','Long hint']]){
  standalone.selectCell(0,key,{enterEditMode:true});const input=standalone._cellCursor.querySelector('input.text-editor');
  assert(input?.placeholder===expected&&getComputedStyle(input).cursor==='text',`${key} has its own edit placeholder`);

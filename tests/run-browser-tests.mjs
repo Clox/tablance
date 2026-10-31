@@ -198,6 +198,19 @@ const testUrl=`http://127.0.0.1:${port}/tests/${keyboardScroll
 	await dispatch("keyUp","Tab","Tab",9,8);
 	await press("ArrowRight","ArrowRight",39);
 	await evaluate(`window.verifyNativeTableFocus("interaction");window.finishNativeTableFocus()`);
+	await waitForStatus(["awaiting-navigation-icon-reset"]);
+	await send("Input.dispatchMouseEvent",{type:"mouseMoved",x:2,y:2,button:"none",buttons:0},sessionId);
+	await evaluate(`window.prepareNavigationIconRegression()`);
+	await waitForStatus(["awaiting-navigation-icon-hover"]);
+	const navigationIconPoint=await evaluate(`(()=>{const rect=window.navigationIconRegression.cell.getBoundingClientRect();return {
+		x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
+	await send("Input.dispatchMouseEvent",{type:"mouseMoved",x:navigationIconPoint.x,y:navigationIconPoint.y,
+		button:"none",buttons:0},sessionId);
+	const navigationIconResult=await evaluate(`window.finishNavigationIconRegression()`);
+	if (!navigationIconResult.passed)
+		throw new Error(navigationIconResult.message);
+	console.log(`Navigation icon rects: ${JSON.stringify({
+		normal:navigationIconResult.normal,hover:navigationIconResult.hover,active:navigationIconResult.active})}`);
 	}
 	const finalResult=await waitForStatus(["passed"]);
 	console.log(finalResult.text);

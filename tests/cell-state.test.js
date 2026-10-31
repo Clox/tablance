@@ -4655,6 +4655,7 @@ try {
 		const rect=element.getBoundingClientRect();
 		return [rect.left,rect.top,rect.width,rect.height];
 	};
+	table.selectCell(row,"computed");
 	const editableCellGeometry=geometry(cells[0]);
 	const editableTextGeometry=geometry(cells[0].firstElementChild);
 	assert(cells[0].classList.contains("editable-indicator")
@@ -4665,22 +4666,25 @@ try {
 	assert(cells[0].classList.contains("tablance-active-cell")
 		&&table._cellCursor.classList.contains("editable-indicator")&&editIndicatorStyle.content==='""'
 		&&(editIndicatorStyle.maskImage!=="none"||editIndicatorStyle.webkitMaskImage!=="none")
-		&&editIndicatorStyle.pointerEvents==="none",
-		"a selected editable cell shows a non-interactive pencil indicator");
+		&&editIndicatorStyle.pointerEvents==="auto"&&editIndicatorStyle.cursor==="help",
+		"a selected editable cell shows a help-cursor pencil indicator that remains hoverable");
 	assert(JSON.stringify(geometry(cells[0]))===JSON.stringify(editableCellGeometry)
 		&&JSON.stringify(geometry(cells[0].firstElementChild))===JSON.stringify(editableTextGeometry),
 		"the pencil indicator does not move text or change cell dimensions");
 	const actionCellGeometry=geometry(cells[5]);
 	const actionTextGeometry=geometry(cells[5].firstElementChild);
-	assert(cells[5].classList.contains("action-indicator")&&getComputedStyle(cells[5],"::before").content==="none",
+	const actionStateIcon=cells[5].querySelector(":scope>.tablance-cell-state-icon-navigation");
+	assert(cells[5].classList.contains("action-indicator")&&actionStateIcon
+		&&getComputedStyle(actionStateIcon).visibility==="hidden",
 		"an unselected text-like action cell exposes its canonical indicator hook without showing it permanently");
 	table.selectCell(row,"action");
-	const actionIndicatorStyle=getComputedStyle(table._cellCursor,"::before");
+	const actionIndicatorStyle=getComputedStyle(actionStateIcon);
 	assert(cells[5].classList.contains("tablance-active-cell")
-		&&table._cellCursor.classList.contains("action-indicator")&&actionIndicatorStyle.content==="\"\""
+		&&table._cellCursor.classList.contains("action-indicator")&&actionIndicatorStyle.visibility==="visible"
 		&&(actionIndicatorStyle.maskImage!=="none"||actionIndicatorStyle.webkitMaskImage!=="none"),
 		"a selected text-like action cell receives the native active hook and shows the action indicator");
-	assert(actionIndicatorStyle.pointerEvents==="none","the action indicator cannot intercept pointer interaction");
+	assert(actionIndicatorStyle.pointerEvents==="auto"&&actionIndicatorStyle.cursor==="help",
+		"the action indicator exposes its tooltip hover area without becoming a separate action");
 	assert(JSON.stringify(geometry(cells[5]))===JSON.stringify(actionCellGeometry)
 		&&JSON.stringify(geometry(cells[5].firstElementChild))===JSON.stringify(actionTextGeometry),
 		"the action indicator does not move text or change cell dimensions");
@@ -4701,7 +4705,7 @@ try {
 	key(navigationAnimationTable.rootEl,"Enter","Enter");
 	const navigationTransition=navigationAnimationTable._navigationCursorTransition;
 	const cursorDestination=navigationAnimationTable._cellCursor.getBoundingClientRect();
-	const arrowFeedback=getComputedStyle(navigationSource,"::before");
+	const arrowFeedback=getComputedStyle(navigationSource.querySelector(":scope>.tablance-cell-state-icon-navigation"));
 	assert(navigationAnimationTable._activeSchemaNode.dataKey==="target"
 		&&navigationTransition&&navigationSource.classList.contains("navigation-activation-feedback")
 		&&arrowFeedback.animationName==="tablance-navigation-arrow-feedback"
@@ -4838,7 +4842,7 @@ try {
 	key(inlineNavigationTable.rootEl,"Enter","Enter");
 	const inlineNavigationCell=inlineNavigationSource.selEl??inlineNavigationSource.el;
 	const inlineNavigationTitle=inlineNavigationCell.querySelector(":scope>span.title");
-	assert(getComputedStyle(inlineNavigationTitle,"::after").animationName
+	assert(getComputedStyle(inlineNavigationTitle.querySelector(":scope>.tablance-cell-state-icon-navigation")).animationName
 			==="tablance-navigation-arrow-feedback"
 		&&getComputedStyle(inlineNavigationCell,"::before").content==="none"
 		&&inlineNavigationTable._activeSchemaNode.nodeId==="inlineNavigationTarget",
@@ -6375,12 +6379,12 @@ try {
 	forcedAction.select();
 	const forcedActionTitle=forcedAction.outerContainerEl.querySelector(":scope>span.title");
 	const forcedHelpActionTitle=forcedHelpAction.outerContainerEl.querySelector(":scope>span.title");
-	assert(getComputedStyle(forcedActionTitle,"::after").content==='""'
+	assert(getComputedStyle(forcedActionTitle.querySelector(":scope>.tablance-cell-state-icon-navigation")).visibility==="visible"
 		&&getComputedStyle(forcedActionTitle).paddingRight==="16px"
 		&&getComputedStyle(lineupVariantTable._cellCursor,"::before").content==="none",
 		"a label-only Lineup action reserves and uses the same inline indicator presentation");
 	forcedHelpAction.select();
-	assert(getComputedStyle(forcedHelpActionTitle,"::after").content==='""'
+	assert(getComputedStyle(forcedHelpActionTitle.querySelector(":scope>.tablance-cell-state-icon-navigation")).visibility==="visible"
 		&&getComputedStyle(forcedHelpActionTitle).paddingRight==="16px"
 		&&forcedHelpAction.helpTriggerEl?.closest(".tablance-title-layout"),
 		"a Lineup action with help keeps both affordances inside its stable title width");
@@ -6673,10 +6677,11 @@ try {
 	const gridActionTitle=gridIndicatorAction.outerContainerEl.querySelector(":scope>span.title");
 	const gridActionTitleBefore=gridActionTitle.getBoundingClientRect();
 	gridIndicatorAction.select();
-	const gridActionIndicatorStyle=getComputedStyle(gridActionTitle,"::after");
+	const gridActionIcon=gridActionTitle.querySelector(":scope>.tablance-cell-state-icon-navigation");
+	const gridActionIndicatorStyle=getComputedStyle(gridActionIcon);
 	const gridActionTitleSelected=gridActionTitle.getBoundingClientRect();
 	assert(gridIndicatorAction.outerContainerEl.classList.contains("action-indicator")
-		&&gridActionIndicatorStyle.content==='""'
+		&&gridActionIndicatorStyle.visibility==="visible"
 		&&(gridActionIndicatorStyle.maskImage!=="none"||gridActionIndicatorStyle.webkitMaskImage!=="none")
 		&&getComputedStyle(indicatorLayoutTable._cellCursor,"::before").content==="none"
 		&&Math.abs(gridActionTitleSelected.left-gridActionTitleBefore.left)<.05
@@ -6684,10 +6689,10 @@ try {
 		"Grid action icons share the same stable title-adjacent selected presentation as edit icons");
 	const gridIndicatorRule=[...document.styleSheets].flatMap(sheet=>{
 		try { return [...sheet.cssRules]; } catch(error) { return []; }
-	}).find(rule=>rule.selectorText?.includes(".details-grid")
-		&&rule.selectorText.includes(".editable-indicator:is(:hover, .tablance-active-cell)"));
+	}).find(rule=>rule.selectorText?.includes(".tablance-cell-state-icon")
+		&&rule.selectorText.includes(".tablance-active-cell"));
 	assert(gridIndicatorRule,
-		"Grid title indicators retain one shared hover and active-cell visibility rule");
+		"Grid title icons share the same persistent DOM slot and active-cell visibility rule");
 
 	const gridHost=host();
 	gridHost.style.width="640px";
@@ -9026,9 +9031,61 @@ try {
 	assert(!pinnedPresenceNode.present&&!pinnedPresenceNode.outerContainerEl.isConnected,
 		"temporary interaction pinning is released after selection leaves the absent details node");
 
+	const navigationIconTable=new Tablance(host(),{main:{columns:[
+		{dataKey:"name",title:"Name"},
+		{dataKey:"navigation",title:"Open",onEnter:()=>{}},
+	]}},true,true,{searchbar:false,ordering:false});
+	navigationIconTable.setData([{name:"Navigation icon",navigation:"Open"}]);
+	await tick();
+	const navigationIconCell=navigationIconTable._mainTbody.rows[0].cells[1];
+	const navigationIcon=navigationIconCell.querySelector(":scope>.tablance-cell-state-icon-navigation");
+	let navigationIconNormal;
+	window.navigationIconRegression={cell:navigationIconCell};
+	let prepareNavigationIconRegression;
+	const navigationIconPrepared=new Promise(resolve=>prepareNavigationIconRegression=resolve);
+	window.prepareNavigationIconRegression=()=>{
+		navigationIconCell.scrollIntoView({block:"center"});
+		requestAnimationFrame(()=>{
+			navigationIconNormal=navigationIcon.getBoundingClientRect();
+			const hidden=getComputedStyle(navigationIcon).visibility==="hidden";
+			prepareNavigationIconRegression({normalRect:navigationIconNormal,hidden});
+		});
+		return true;
+	};
+	let finishNavigationIconRegression;
+	const navigationIconRegressionDone=new Promise(resolve=>finishNavigationIconRegression=resolve);
+	window.finishNavigationIconRegression=()=>{
+		const hoverRect=navigationIcon.getBoundingClientRect();
+		const hoverVisible=getComputedStyle(navigationIcon).visibility==="visible";
+		navigationIconTable.selectCell(0,"navigation");
+		const activeRect=navigationIcon.getBoundingClientRect();
+		const activeVisible=getComputedStyle(navigationIcon).visibility==="visible";
+		const iconCenter={x:activeRect.left+activeRect.width/2,y:activeRect.top+activeRect.height/2};
+		const iconIsTopmost=document.elementsFromPoint(iconCenter.x,iconCenter.y).includes(navigationIcon);
+		const sameNode=navigationIconCell.querySelector(":scope>.tablance-cell-state-icon-navigation")===navigationIcon;
+		const rectData=rect=>({x:rect.x,y:rect.y,width:rect.width,height:rect.height});
+		const report={passed:navigationIconNormal.width===12&&navigationIconNormal.height===12
+			&&hoverVisible&&activeVisible&&sameNode&&iconIsTopmost
+			&&navigationIconNormal.x===hoverRect.x&&navigationIconNormal.y===hoverRect.y
+			&&hoverRect.x===activeRect.x&&hoverRect.y===activeRect.y,
+			normal:rectData(navigationIconNormal),hover:rectData(hoverRect),active:rectData(activeRect),
+			message:`Navigation icon measurement failed: normal (${navigationIconNormal.x}, ${navigationIconNormal.y}), hover (${hoverRect.x}, ${hoverRect.y}), active (${activeRect.x}, ${activeRect.y}); visible=${hoverVisible}/${activeVisible}, sameNode=${sameNode}, topmost=${iconIsTopmost}`};
+		finishNavigationIconRegression(report);
+		return report;
+	};
+
 	result.textContent="awaiting trusted table focus navigation";
 	result.dataset.status="awaiting-native-table-focus";
 	await new Promise(resolve=>window.finishNativeTableFocus=resolve);
+	result.textContent="awaiting actual navigation icon hover measurement";
+	result.dataset.status="awaiting-navigation-icon-reset";
+	const navigationIconNormalState=await navigationIconPrepared;
+	assert(navigationIconNormalState.normalRect.width===12&&navigationIconNormalState.normalRect.height===12
+		&&navigationIconNormalState.hidden,
+		"a navigation cell has one persistent, measurable indicator slot in its normal state");
+	result.dataset.status="awaiting-navigation-icon-hover";
+	const navigationIconMeasurement=await navigationIconRegressionDone;
+	assert(navigationIconMeasurement.passed,navigationIconMeasurement.message);
 
 	result.textContent=`${assertions.length} cell-state assertions passed`;
 	result.dataset.status="passed";
