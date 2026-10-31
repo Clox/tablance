@@ -291,7 +291,9 @@ assert(mainTables[0]._cellCursor.style.display==='none'
  &&mainTables[1]._cellCursor.style.display==='block',
  'programmatic selection also transfers cursor ownership for chained main tables');
 const focusTables=Array.from({length:2},(_,index)=>{
- const table=new Tablance(host(),{main:{columns:[{title:'Value',dataKey:'value'}]}},true,true,
+ const columns=[{title:'Value',dataKey:'value'}];
+ if(index===1)columns.push({title:'Unavailable',dataKey:'disabled',disabled:true});
+ const table=new Tablance(host(),{main:{columns}},true,true,
   {searchbar:false,ordering:index===1});
  table.setData([{value:`${index}-0`},{value:`${index}-1`}]);
  return table;
@@ -307,7 +309,7 @@ assert(document.activeElement===focusTables[0]._focusEl
  &&focusTables[1]._cellCursor.style.display==='none',
  'a non-cell pointer focus in a chained table returns to the visible cursor owner');
 window.nativeLinkedHeader=chainedHeader;
-chainedHeader.scrollIntoView({block:'center'});
+chainedHeader.scrollIntoView({behavior:'instant',block:'center'});
 document.getElementById('test-results').dataset.status='awaiting-native-linked-header';
 await new Promise(resolve=>window.finishNativeLinkedHeader=resolve);
 assert(document.activeElement===focusTables[0]._focusEl
@@ -322,10 +324,37 @@ assert(headerSelection.toString().trim()==='Value'&&focusTables[1]._sortingCols.
  &&document.activeElement===focusTables[0]._focusEl,
  'linked header sorting and ordinary text selection remain available without transferring focus');
 headerSelection.removeAllRanges();
+const linkedPassiveRow=focusTables[1]._mainRowIndex;
 focusTables[0]._focusEl.dispatchEvent(new KeyboardEvent('keydown',
  {key:'ArrowDown',code:'ArrowDown',bubbles:true,cancelable:true}));
-assert(focusTables[0]._mainRowIndex===1&&focusTables[1]._mainRowIndex===0,
+assert(focusTables[0]._mainRowIndex===1&&focusTables[1]._mainRowIndex===linkedPassiveRow,
  'arrow navigation after a linked header click moves the owning table cursor');
+focusTables[0].selectCell(0,'value');
+for(const [surface,label] of [
+ [focusTables[1]._tableArea,'blank table area'],
+ [focusTables[1]._mainTbody.rows[0].cells[1],'nonselectable cell'],
+]){
+ surface.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0}));
+ focusTables[1]._focusEl.focus();
+ assert(document.activeElement===focusTables[0]._focusEl
+  &&focusTables[0]._cellCursor.style.display==='block'
+  &&focusTables[1]._cellCursor.style.display==='none',
+  `${label} in a chained table keeps keyboard focus with its active cell owner`);
+}
+const blankLinkedArea=focusTables[1]._tableArea.insertBefore(
+ document.createElement('div'),focusTables[1]._tableArea.firstChild);
+blankLinkedArea.textContent='Blank table area';
+blankLinkedArea.style.height='24px';
+window.nativeLinkedNonCellTargets=[blankLinkedArea,focusTables[1]._mainTbody.rows[0].cells[1]];
+for(let index=0;index<window.nativeLinkedNonCellTargets.length;index++){
+ window.nativeLinkedNonCellTargets[index].scrollIntoView({behavior:'instant',block:'center'});
+ document.getElementById('test-results').dataset.status=`awaiting-native-linked-noncell-${index}`;
+ await new Promise(resolve=>window.finishNativeLinkedNonCell=resolve);
+ assert(document.activeElement===focusTables[0]._focusEl
+  &&focusTables[0]._cellCursor.style.display==='block'
+  &&focusTables[1]._cellCursor.style.display==='none',
+  `a trusted non-cell click ${index} in a chained table preserves the active cell owner`);
+}
 const separateTables=Array.from({length:2},()=>{
  const table=new Tablance(host(),{main:{columns:[{title:'Value',dataKey:'value'}]}},true,true,
   {searchbar:false,ordering:false});
@@ -339,6 +368,12 @@ separateTables[1]._headerTr.cells[0].dispatchEvent(new MouseEvent('mousedown',
 separateTables[1]._focusEl.focus();
 assert(document.activeElement===separateTables[1]._focusEl,
  'a non-cell pointer focus transfers to an unchained table');
+separateTables[0]._focusEl.focus();
+separateTables[1]._tableArea.dispatchEvent(new MouseEvent('mousedown',
+ {bubbles:true,cancelable:true,button:0}));
+separateTables[1]._focusEl.focus();
+assert(document.activeElement===separateTables[1]._focusEl,
+ 'blank space focuses a clicked unchained table');
 separateTables[1]._focusEl.dispatchEvent(new KeyboardEvent('keydown',
  {key:'ArrowDown',code:'ArrowDown',bubbles:true,cancelable:true}));
 assert(separateTables[1]._mainRowIndex===1&&separateTables[0]._mainRowIndex===0,

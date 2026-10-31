@@ -113,6 +113,16 @@ const testUrl=`http://127.0.0.1:${port}/tests/${copySelection
 		await send("Input.dispatchMouseEvent",{type:"mouseReleased",x:point.x,y:point.y,
 			button:"left",buttons:0,clickCount:1},sessionId);
 		await evaluate(`window.finishNativeLinkedHeader()`);
+		for (const index of [0,1]) {
+			await waitForStatus([`awaiting-native-linked-noncell-${index}`]);
+			const nonCellPoint=await evaluate(`(()=>{const rect=window.nativeLinkedNonCellTargets[${index}].getBoundingClientRect();return {
+				x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
+			await send("Input.dispatchMouseEvent",{type:"mousePressed",x:nonCellPoint.x,y:nonCellPoint.y,
+				button:"left",buttons:1,clickCount:1},sessionId);
+			await send("Input.dispatchMouseEvent",{type:"mouseReleased",x:nonCellPoint.x,y:nonCellPoint.y,
+				button:"left",buttons:0,clickCount:1},sessionId);
+			await evaluate(`window.finishNativeLinkedNonCell()`);
+		}
 	}
 	if (!onlyDetails&&!numberEditor&&!dateFreeText&&!copySelection) {
 	await waitForStatus(["awaiting-native-keys"]);

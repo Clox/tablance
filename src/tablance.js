@@ -2921,6 +2921,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return null;
 	}
 
+	_focusTableAfterNonCellClick(e) {
+		if (e.target.closest?.("input,textarea,select,button,a[href],[contenteditable]")
+			||this._toolbar?.contains(e.target))
+			return;
+		(this._linkedCursorOwner()?._focusEl??this._focusEl).focus({preventScroll:true});
+	}
+
 	selectTopBottomCellOnlyDetails(top) {
 		this._highlightOnFocus=false;
 		return this._selectFirstSelectableDetailsCell(this._openDetailsPanes[0],top);
@@ -4448,6 +4455,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this.rootEl.addEventListener("keydown",e=>this._handleUserCellSelection(()=>this._spreadsheetKeyDown(e)));
 		this.rootEl.addEventListener("copy",e=>this._spreadsheetCopy(e));
 		this.rootEl.addEventListener("mousedown",e=>this._handleUserCellSelection(()=>this._spreadsheetMouseDown(e)));
+		this.rootEl.addEventListener("click",e=>this._focusTableAfterNonCellClick(e));
 		this.rootEl.addEventListener("dblclick",e=>this._detailsRowExtensionDoubleClick(e));
 		this._cellCursor.addEventListener("click",e=>{
 			if (!this._activeRepeatedReorderEntry||e.target.closest("button"))
@@ -7061,7 +7069,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_spreadsheetMouseDown(e) {
 		this._resetVerticalLayoutPreferredColumn();
 		this._pointerFocusPending=true;
-		queueMicrotask(()=>this._pointerFocusPending=false);
+		// Native focus can follow the microtask checkpoint after mousedown dispatch.
+		setTimeout(()=>this._pointerFocusPending=false,0);
 		this._highlightOnFocus=false;//see decleration
 		this._focusEl.classList.remove("show-focus-ring");
 		this._focusEl.style.outline="none";//see #spreadsheetOnFocus
@@ -12982,7 +12991,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_lookForActiveCellInRow(tr) {
 		const rowIndex=Number(tr.dataset.dataRowIndex);
 		if (rowIndex!==this._mainRowIndex||this._activeDetailsCell
-			||this._filteredData[rowIndex]!==this._cellCursorDataObj)
+			||this._filteredData[rowIndex]!==this._cellCursorDataObj
+			||this._linkedCursorOwner())
 			return;
 		const cell=tr.cells[this._mainColIndex];
 		this._setSelectedCellElement(cell);
