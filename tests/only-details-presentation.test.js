@@ -554,6 +554,11 @@ const explicit=new Tablance(host(),{details:{type:'grid',columns:['13ch','1fr','
 ]}},true,true,{searchbar:false});
 explicit.setData(explicitData);
 const explicitGrid=explicit.getDetailCell(0,'first').parent;
+const listLabelStyle=getComputedStyle(expanded.rootEl.querySelector('.details-list td.title'));
+const gridLabelStyle=getComputedStyle(explicit.getGridLabel(0,'postal').querySelector(':scope > span.title'));
+assert(['fontFamily','fontSize','fontWeight','color','lineHeight'].every(property=>
+ listLabelStyle[property]===gridLabelStyle[property]),
+ 'ordinary list and labeled grid details share Tablance label typography');
 assert(explicitGrid.gridRows.length===3&&explicitGrid.gridRows[0][0]===null
  &&explicitGrid.gridRows[0][1]===explicit.getDetailCell(0,'first')
  &&explicitGrid.gridRows[0][2]===explicit.getDetailCell(0,'second'),

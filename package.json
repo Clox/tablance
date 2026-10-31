@@ -15,7 +15,8 @@
 		"./tablance.min.css": "./dist/tablance.min.css"
 	},
 	"files": [
-		"dist"
+		"dist",
+		"fonts"
 	],
 	"scripts": {
 		"build": "rm -rf dist && npm run build:js && npm run build:css",

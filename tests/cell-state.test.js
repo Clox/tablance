@@ -7477,8 +7477,13 @@ try {
 	await tick();
 	assert(!detailsOnlyTable._resultStatus&&!detailsOnlyTable._emptyState
 		&&detailsOnlyTable.rootEl.querySelector(".details .tablance-cell-state")
-		&&getComputedStyle(detailsOnlyTable.rootEl).fontFamily.includes("Inter"),
+		&&getComputedStyle(detailsOnlyTable.rootEl).fontFamily.includes("Tablance Noto Sans"),
 		"details-only tables ignore result-status opt-in and keep their native state hooks and theme");
+	const onlyDetailsTitle=detailsOnlyTable.rootEl.querySelector(".details-list .title");
+	assert(onlyDetailsTitle&&getComputedStyle(onlyDetailsTitle).fontFamily.includes("Tablance Noto Sans"),
+		"list field labels inherit Tablance's default readable font");
+	assert((await document.fonts.load('14px "Tablance Noto Sans"')).length>0,
+		"the bundled Tablance font loads from the published stylesheet path");
 	const onlyDetail=detailsOnlyTable.getDetailCell(0,"onlyDetail");
 	onlyDetail.select();
 	key(detailsOnlyTable.rootEl,"Enter","Enter");
