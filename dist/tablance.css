@@ -2472,6 +2472,24 @@
 .tablance .boolean-select-value > .boolean-select-label {
   min-width: 0;
 }
+.tablance .tablance-checkbox-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.tablance .tablance-checkbox-control > input[type=checkbox] {
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--tablance-accent-color);
+  cursor: pointer;
+}
+.tablance .tablance-checkbox-control > span {
+  min-width: 0;
+}
 .tablance .bulk-edit-area {
   overflow: hidden;
   width: 100%;

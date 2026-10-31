@@ -2494,6 +2494,22 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			min-width: 0;
 		}
 	}
+	.tablance-checkbox-control {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		box-sizing: border-box;
+		min-height: 36px;
+		padding: 7px 10px;
+		cursor: pointer;
+		>input[type="checkbox"] {
+			flex: 0 0 auto;
+			margin: 0;
+			accent-color: var(--tablance-accent-color);
+			cursor: pointer;
+		}
+		>span { min-width: 0; }
+	}
 	.bulk-edit-area {
 		//overflow: visible;//for picker-containers to be able to reach out of the container
 		overflow: hidden;

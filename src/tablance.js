@@ -571,6 +571,7 @@ class TablanceBase {
 	 * 										specified in one the the options in "options", or it can be an actual 
 	 * 										reference to the option)
 	 * 							"button"(simple button)
+	 * 							"checkbox"(boolean control; click, Enter and Space toggle directly without edit mode)
 	 * 							"file" (An input for uploading files. The data for a file entry may be a 
 	 * 								File-object which it will be if the file has been uploaded during the current
 	 * 								session. Or it may be an object which basically have the same properties
@@ -716,6 +717,9 @@ class TablanceBase {
 	 * 							Receives payload from _makeCallbackPayload with {event,rowData,mainIndex,...}.
 	 * 							It will get passed arguments 1:event, 2:dataObject
 	 * 							,3:mainDataIndex,4:schemaNode,5:instanceNode(if inside details)
+	 * 					----Properties specific to input "checkbox"----
+	 * 						label String Text associated with the native checkbox. The field's dataKey stores a boolean.
+	 * 						onChange Function Standard input change callback. Enter, Space and click commit immediately.
   	 * 				}
 	 * 			}
 	 * 			{
@@ -2922,11 +2926,22 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_focusTableAfterNonCellClick(e) {
-		if (e.target.closest?.("input,textarea,select,button,a[href],[contenteditable]")
+		if (this._explicitCellPointerControl(e.target)
+			||e.target.closest?.("input,textarea,select,button,a[href],[contenteditable]")
 			||this._toolbar?.contains(e.target)
 			||this._comboboxContext?.popup.contains(e.target))
 			return;
 		(this._linkedCursorOwner()?._focusEl??this._focusEl).focus({preventScroll:true});
+	}
+
+	_explicitCellPointerControl(target) {
+		const nativeChoiceLabel=target?.closest?.("label");
+		const control=nativeChoiceLabel?.querySelector("input[type=checkbox],input[type=radio]")
+			?nativeChoiceLabel
+			:target?.closest?.("button,a[href],.expand-col a,input,select,textarea,[contenteditable],[role=button]");
+		if (!control||!this.rootEl.contains(control))
+			return null;
+		return control.closest(".main-table>tbody>tr>td,[data-path]")?control:null;
 	}
 
 	selectTopBottomCellOnlyDetails(top) {
@@ -5346,6 +5361,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 						this._copySelectedCellText();
 				}
 			break; case "Enter": case "NumpadEnter": case "Space":
+				if (this._activeSchemaNode.input?.type==="checkbox") {
+					e.preventDefault();
+					e.stopPropagation();
+					return this._enterCell(e);
+				}
 				if (e.code=="Space")
 					e.preventDefault();//prevent scrolling when pressing space
 				if (this._activeSchemaNode.type=="expand")
@@ -6428,6 +6448,105 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return btn;
 	}
 
+	_generateCheckbox(schemaNode,parentEl,value,scopedData,mainIndex,instanceNode=null) {
+		if (!schemaNode.dataKey)
+			throw new TypeError('A checkbox input requires a dataKey.');
+		let label=parentEl.querySelector(":scope > .tablance-checkbox-control");
+		if (!label) {
+			parentEl.replaceChildren();
+			label=parentEl.appendChild(document.createElement("label"));
+			label.className="tablance-checkbox-control";
+			const input=label.appendChild(document.createElement("input"));
+			input.type="checkbox";
+			input.tabIndex=-1;
+			label.appendChild(document.createElement("span"));
+			let pointerFocusTarget=null;
+			label.addEventListener("mousedown",event=>{
+				pointerFocusTarget=document.activeElement;
+				event.preventDefault();
+			});
+			input.addEventListener("change",()=>{
+				const cell=instanceNode?.selEl??instanceNode?.el
+					??parentEl.closest(".main-table>tbody>tr>td");
+				const dataObj=instanceNode?.dataObj??scopedData;
+				this._commitCheckboxValue(schemaNode,instanceNode,cell,dataObj,mainIndex,input.checked);
+				input.checked=dataObj?.[schemaNode.dataKey]===true;
+				const restoreFocus=pointerFocusTarget;
+				pointerFocusTarget=null;
+				if (restoreFocus?.isConnected)
+					queueMicrotask(()=>restoreFocus.focus({preventScroll:true}));
+			});
+		}
+		label.querySelector("span").textContent=schemaNode.input.label??"";
+		label.querySelector("input").checked=value===true;
+	}
+
+	_toggleCheckboxCell(checked=this._cellCursorDataObj?.[this._activeSchemaNode?.dataKey]!==true) {
+		if (this._activeSchemaNode?.input?.type!=="checkbox")
+			return false;
+		return this._commitCheckboxValue(this._activeSchemaNode,this._activeDetailsCell,
+			this._selectedCell,this._cellCursorDataObj,this._mainRowIndex,checked);
+	}
+
+	_commitCheckboxValue(schemaNode,instanceNode,cell,dataObj,mainIndex,checked) {
+		if (this._hasPendingCommitHandoff()||!dataObj||!cell
+			||!this._getCellState(cell,instanceNode)?.mutable||!this._exitEditMode(true))
+			return false;
+		mainIndex=Number(mainIndex);
+		const key=schemaNode.dataKey;
+		const oldValue=dataObj[key];
+		if (checked===(oldValue===true))
+			return true;
+		const rowData=this._filteredData?.[mainIndex]??null;
+		const openGroup=this._getOpenGroupAncestor(instanceNode);
+		const isRepeatedCreate=instanceNode?.creating
+			&&instanceNode.parent?.schemaNode?.type==="repeated";
+		let doUpdate=true;
+		dataObj[key]=checked;
+		const changePayload=this._makeCallbackPayload(instanceNode,{
+			newValue:checked,oldValue,cancelUpdate:()=>doUpdate=false,
+		},{schemaNode,mainIndex,rowData});
+		schemaNode.input.onChange?.(changePayload);
+		if (!doUpdate) {
+			dataObj[key]=oldValue;
+			return false;
+		}
+		if (isRepeatedCreate)
+			this._ensureRepeatedEntryInsertion(instanceNode);
+		if (instanceNode) {
+			if (openGroup)
+				this._markDirtyField(instanceNode);
+			const heightChanged=this._updateDetailsCell(instanceNode,dataObj);
+			if (heightChanged&&!this._onlyDetails)
+				this._updateDetailsHeight(cell.closest("tr.details"));
+			for (let parent=instanceNode.parent;parent;parent=parent.parent)
+				if (parent.schemaNode.closedRender)
+					parent.updateRenderOnClose=true;
+		} else {
+			this._updateMainRowCell(cell,schemaNode);
+			this._unsortCol(key);
+		}
+		if (this._selectedRows.includes(dataObj))
+			this._updateBulkEditAreaCells([schemaNode]);
+		this._updateDependentCells(schemaNode,instanceNode,mainIndex);
+		if (this._selectedCell===cell) {
+			this._selectedCellVal=checked;
+			this._inputVal=checked;
+		}
+		if (!openGroup) {
+			const mode=this._rowMeta.get(rowData)?.isNew||isRepeatedCreate?"create":"update";
+			const commitKey=this._getCommitChangeKey(schemaNode);
+			const changes=mode==="create"||!commitKey?null:{[commitKey]:this._normalizeCommitValue(schemaNode,checked)};
+			const payload=this._makeCallbackPayload(instanceNode,{data:dataObj,changes,mode},
+				{schemaNode,rowData,mainIndex,instanceNode});
+			this._queueDataCommit(payload,instanceNode);
+		}
+		if (isRepeatedCreate)
+			instanceNode.creating=false;
+		schemaNode.input.afterChange?.(changePayload);
+		return true;
+	}
+
 		/**
 	 * Creates details content based on the provided structure.
 	 *
@@ -7068,6 +7187,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 	
 	_spreadsheetMouseDown(e) {
+		const control=this._explicitCellPointerControl(e.target);
+		if (control) {
+			const td=control.closest(".main-table>tbody>tr>td");
+			if (td?.classList.contains("expand-col"))
+				this._toggleRowExpanded(td.parentElement);
+			else if (td?.classList.contains("select-col"))
+				this._rowCheckboxChange(td,e.shiftKey);
+			return;
+		}
 		this._resetVerticalLayoutPreferredColumn();
 		this._pointerFocusPending=true;
 		// Native focus can follow the microtask checkpoint after mousedown dispatch.
@@ -7475,6 +7603,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			e.preventDefault();//prevent text selection upon entering editmode
 			if (this._activeSchemaNode.input.type==="button")
 				return (this._activeDetailsCell?.el??this._selectedCell.querySelector("button"))?.click();
+			if (this._activeSchemaNode.input.type==="checkbox")
+				return this._toggleCheckboxCell();
 			if (!this._selectedCellState.mutable)
 				return false;
 			this._clearStaticCellOverflowPreview();
@@ -10849,7 +10979,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * @param {Object} [editedInstanceNode] - The instance-node representing the edited cell. This is used to determine
 	 *                                   the closest scope for dependency updates.
 	 */
-	_updateDependentCells(editedCellSchemaNode, editedInstanceNode) {
+	_updateDependentCells(editedCellSchemaNode, editedInstanceNode, mainIndex=this._mainRowIndex) {
 		if (!editedCellSchemaNode)
 			return;
 		const queue=[];
@@ -10876,7 +11006,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const resolveDetailsCells=(depPath,sourceInstance)=>{
 			let sourceRoot=sourceInstance;
 			while (sourceRoot?.parent) sourceRoot=sourceRoot.parent;
-			const detailsIndex=sourceRoot?.rowIndex??this._mainRowIndex??(this._onlyDetails?0:null);
+			const detailsIndex=sourceRoot?.rowIndex??mainIndex??(this._onlyDetails?0:null);
 			const detailsRoot=depPath[0]==="r"?null:this._openDetailsPanes[detailsIndex];
 			let cells=depPath[0]==="r"?[sourceInstance]:[detailsRoot];
 			if (!cells[0])
@@ -10915,7 +11045,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					const dependentSchema=this._colSchemaNodes[depPath[1]];
 					if (!enqueue(dependentSchema,null))
 						continue;
-					const rowSelector=`[data-data-row-index="${this._mainRowIndex}"]:not(.details)`;
+					const rowSelector=`[data-data-row-index="${mainIndex}"]:not(.details)`;
 					const tr=this._mainTbody.querySelector(rowSelector);
 					if (tr?.cells?.[depPath[1]])
 						this._updateMainRowCell(tr.cells[depPath[1]],dependentSchema);
@@ -10925,7 +11055,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					if (!enqueue(cell.schemaNode,cell))
 						continue;
 					// Hidden cells still propagate their dependency signal, but need no content repaint.
-					if (cell.schemaNode.visibleIf&&!this._applyVisibleIf(cell,cell.rowIndex??this._mainRowIndex))
+					if (cell.schemaNode.visibleIf&&!this._applyVisibleIf(cell,cell.rowIndex??mainIndex))
 						continue;
 					this._updateDetailsCell(cell,cell.dataObj);
 				}
@@ -11640,7 +11770,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._activeSchemaNode=schemaNode;
 		//make cellcursor click-through if it's on an expand-row-button-td, select-row-button-td or button
 		const noPtrEvent=schemaNode.type==="expand"||schemaNode.type==="select"||schemaNode.type==="menu"
-			||schemaNode.input?.type==="button";
+			||["button","checkbox"].includes(schemaNode.input?.type);
 		this._cellCursor.style.pointerEvents=noPtrEvent?"none":"auto";
 		this._cellCursor.style.removeProperty("background-color");//select-input sets it to transparent, revert here
 		this._cellCursorDataObj=dataObj;
@@ -11711,7 +11841,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_showsActionIndicator(cellState,schemaNode) {
 		return cellState?.kind==="action"&&!["expand","select","menu","group","reorder"].includes(schemaNode?.type)
-			&&schemaNode?.input?.type!=="button";
+			&&!["button","checkbox"].includes(schemaNode?.input?.type);
 	}
 
 	_getElPos(el,container) {
@@ -13420,6 +13550,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return {kind:"readOnly",selectable:true,activatable:hasReadOnlyPresentation,mutable:false,
 				activation:hasReadOnlyPresentation?"presentation":"none",message:editableResult?.message};
 		}
+		if (schemaNode.input?.type==="checkbox")
+			return {kind:"action",selectable:true,activatable:true,mutable:true,activation:"action"};
 
 		return {kind:"editable",selectable:true,activatable:true,mutable:true,activation:"editor"};
 	}
@@ -13450,9 +13582,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					||this._getCellState(controlCell??control)?.kind==="disabled";
 			}
 		} else if (instanceNode?.schemaNode.type!=="group") {
-			const button=cellEl.querySelector("button:not(.tablance-help-trigger)");
-			if (button)
-				button.disabled=state.kind==="disabled";
+			const control=cellEl.querySelector("button:not(.tablance-help-trigger),.tablance-checkbox-control input");
+			if (control)
+				control.disabled=state.kind==="disabled"||!state.mutable&&schemaNode?.input?.type==="checkbox";
 		}
 		if (state.kind==="readOnly")
 			cellEl.setAttribute("aria-readonly","true");
@@ -13517,6 +13649,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			(selEl??el).className=instanceNode.baseCss;
 		if (schemaNode.input?.type==="button") {
 			this._generateButton(schemaNode,mainIndex,el,scopedData,instanceNode);
+		} else if (schemaNode.input?.type==="checkbox") {
+			this._generateCheckbox(schemaNode,el,valueBundle.value,scopedData,mainIndex,instanceNode);
 		} else if (schemaNode.input?.type==="select"&&schemaNode.input.boolean&&!schemaNode.render) {
 			if (schemaNode.displayPlaceholder!=null&&!this._hasPresenceValue(valueBundle.value)
 				&&this._hasPresenceValue(presentation.placeholder))
@@ -13579,7 +13713,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_applyFieldPresentationPlaceholder(instanceNode) {
 		if (!instanceNode?.presentationContentEl||!instanceNode.presencePresentation
-			||instanceNode.schemaNode.input?.type==="button")
+			||["button","checkbox"].includes(instanceNode.schemaNode.input?.type))
 			return;
 		this._renderFieldPresentation(instanceNode.presentationContentEl,instanceNode.schemaNode,
 			instanceNode.presencePresentation,instanceNode.present);

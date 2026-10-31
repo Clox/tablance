@@ -535,9 +535,8 @@ buttonTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
 assert(buttonActivations===2,'Space activates the selected secondary button');
 primaryButton.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0}));
 primaryButton.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,button:0,detail:1}));
-assert(buttonTable._activeSchemaNode?.nodeId==='primaryAction'
- &&getComputedStyle(buttonTable._cellCursor).outlineOffset==='2px',
- 'pointer selection also shows the external button cursor ring');
+assert(buttonActivations===3&&buttonTable._activeSchemaNode?.nodeId==='secondaryAction',
+ 'pointer button action runs without selecting its underlying cell');
 const explicitData={first:'A',second:'B',source:'hidden',detail:'D',postalCode:'12345'};
 const explicit=new Tablance(host(),{details:{type:'grid',columns:['13ch','1fr','1fr'],rows:[
  {id:'names',label:'Names',cells:[
@@ -611,4 +610,100 @@ explicit.updateData(explicitData,'source','gone');
 assert(explicitGrid.gridRows.length===2
  &&!explicit.getGridLabel(0,'person').isConnected,
  'a fully hidden band leaves neither a row nor a label');
+const checkboxData={approved:false,ordinary:'Text'};
+let checkboxChanges=0;
+const checkboxTable=new Tablance(document.body.appendChild(document.createElement('div')),
+ {details:{type:'grid',columns:2,entries:[
+  {type:'field',nodeId:'approved',dataKey:'approved',input:{type:'checkbox',label:'Approve',onChange:()=>checkboxChanges++}},
+  {type:'field',nodeId:'ordinary',dataKey:'ordinary',input:{type:'text'}},
+ ]}},true,true,{searchbar:false});
+checkboxTable.setData(checkboxData);
+const checkboxCell=checkboxTable.getDetailCell(0,'approved');
+const checkboxInput=checkboxCell.el.querySelector('input[type="checkbox"]');
+assert(checkboxInput&&checkboxInput.closest('label')?.textContent==='Approve'&&checkboxInput.tabIndex===-1,
+ `checkbox cell exposes a native labeled control inside the Tablance navigation model: ${checkboxCell.el.outerHTML} / ${checkboxCell.schemaNode.input?.type}`);
+const checkboxPadding=getComputedStyle(checkboxInput.closest('label'));
+assert(parseFloat(checkboxPadding.paddingLeft)>=8&&parseFloat(checkboxPadding.paddingTop)>=6,
+ 'checkbox action controls keep breathing room inside their cell cursor');
+checkboxTable.selectCell(0,'approved');
+let bubbledCheckboxKeys=0;
+checkboxTable.hostEl.addEventListener('keydown',()=>bubbledCheckboxKeys++);
+const checkboxKey=code=>{
+ const event=new KeyboardEvent('keydown',{key:code==='Space'?' ':code,code,bubbles:true,cancelable:true});
+ const allowed=checkboxTable.rootEl.dispatchEvent(event);
+ assert(!allowed,'checkbox keyboard action prevents native scrolling or submit');
+};
+checkboxKey('Enter');
+assert(checkboxData.approved===true&&checkboxInput.checked&&!checkboxTable._inEditMode
+ &&document.activeElement===checkboxTable._focusEl,'Enter toggles without edit mode or losing table focus');
+checkboxKey('Space');
+assert(checkboxData.approved===false&&!checkboxInput.checked&&checkboxChanges===2
+ &&checkboxTable._activeDetailsCell===checkboxCell&&bubbledCheckboxKeys===0,
+ 'Space toggles once, stops propagation and retains the active cell');
+checkboxInput.click();
+assert(checkboxData.approved===true&&checkboxChanges===3&&document.activeElement===checkboxTable._focusEl
+ &&checkboxTable._activeDetailsCell===checkboxCell,'native click toggles once and returns focus to active cell');
+checkboxInput.closest('label').click();
+assert(checkboxData.approved===false&&checkboxChanges===4,'clicking the native label toggles exactly once');
+checkboxTable.selectCell(0,'ordinary');
+checkboxTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true,cancelable:true}));
+assert(checkboxTable._inEditMode,'ordinary cells still use edit mode');
+checkboxTable._exitEditMode(false);
+checkboxTable.selectCell(0,'ordinary');
+checkboxInput.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0}));
+checkboxInput.click();
+assert(checkboxData.approved===true&&checkboxChanges===5
+ &&checkboxTable._activeSchemaNode?.dataKey==='ordinary'
+ &&document.activeElement===checkboxTable._focusEl,
+ 'pointer checkbox toggle preserves the previously active details cell and focus');
+const checkboxLabel=checkboxInput.closest('label');
+checkboxLabel.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0}));
+checkboxLabel.click();
+await Promise.resolve();
+assert(checkboxData.approved===false&&checkboxChanges===6
+ &&checkboxTable._activeSchemaNode?.dataKey==='ordinary'
+ &&document.activeElement===checkboxTable._focusEl,
+ 'pointer label click toggles without selecting the checkbox cell or moving focus');
+const mainCheckboxData=[{approved:false,name:'First'},{approved:false,name:'Second'}];
+const mainCheckboxTable=new Tablance(document.body.appendChild(document.createElement('div')),
+ {main:{columns:[{dataKey:'approved',input:{type:'checkbox',label:'Approve'}},
+  {dataKey:'name',input:{type:'text'}},
+  {dataKey:'status',dependsOn:'approved',render:({rowData})=>rowData.approved?'Approved':'Pending'}]}},true,true,
+ {searchbar:false,ordering:false});
+mainCheckboxTable.setData(mainCheckboxData);
+mainCheckboxTable.selectCell(0,'name');
+const mainCheckboxInput=mainCheckboxTable.rootEl.querySelector('.main-table tbody input[type="checkbox"]');
+mainCheckboxInput.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0}));
+mainCheckboxInput.click();
+assert(mainCheckboxData[0].approved===true&&mainCheckboxTable._activeSchemaNode?.dataKey==='name'
+ &&document.activeElement===mainCheckboxTable._focusEl,
+ 'main-table checkbox click commits without selecting its cell or losing prior focus');
+const secondCheckbox=mainCheckboxTable._mainTbody.querySelectorAll('tr:not(.details)')[1]
+ .querySelector('input[type="checkbox"]');
+secondCheckbox.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0}));
+secondCheckbox.click();
+const mainRows=[...mainCheckboxTable._mainTbody.querySelectorAll('tr:not(.details)')];
+assert(mainCheckboxData[1].approved===true&&mainCheckboxTable._activeSchemaNode?.dataKey==='name'
+ &&mainCheckboxTable._mainRowIndex===0
+ &&mainRows[0].cells[2].textContent.includes('Approved')
+ &&mainRows[1].cells[2].textContent.includes('Approved'),
+ 'pointer checkbox updates the clicked row and its dependents without moving the active row');
+const pointerActionTable=new Tablance(document.body.appendChild(document.createElement('div')),
+ {main:{columns:[{type:'expand'},{dataKey:'name',input:{type:'text'}},
+  {type:'menu',actions:[{text:'Inspect'}]}]},details:{type:'list',entries:[
+  {dataKey:'note',title:'Note'}]}},true,true,{searchbar:false,ordering:false});
+pointerActionTable.setData([{name:'Record',note:'Detail'}]);
+pointerActionTable.selectCell(0,'name');
+const actionRow=pointerActionTable._mainTbody.querySelector('tr:not(.details)');
+const wasExpanded=actionRow.classList.contains('expanded');
+const expandControl=actionRow.querySelector('.expand-col a');
+expandControl.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0}));
+assert(actionRow.classList.contains('expanded')!==wasExpanded
+ &&pointerActionTable._activeSchemaNode?.dataKey==='name',
+ 'expand child control toggles details without selecting the action cell');
+const menuControl=actionRow.querySelector('.tablance-menu-trigger');
+menuControl.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0}));
+menuControl.click();
+assert(pointerActionTable._menuState&&pointerActionTable._activeSchemaNode?.dataKey==='name',
+ 'menu child control opens its menu without selecting the action cell');
 const result=document.getElementById('test-results');result.textContent='standalone, expanded, bulkEdit, and linked table checks passed';result.dataset.status='passed';
