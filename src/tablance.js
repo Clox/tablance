@@ -7431,21 +7431,67 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_openDateEdit(e) {
 		const input=document.createElement("input");
 		let pika,pikaContainer;
+		let calendarListenersAttached=false;
+		let calendarDestroyed=false;
 		const allowFreeText=this._activeSchemaNode.input.allowFreeText===true;
+		const repositionCalendar=()=>{
+			if (pikaContainer?.isConnected&&(typeof pikaContainer.showPopover!=="function"
+				||pikaContainer.matches(":popover-open")))
+				this._alignDropdown(pikaContainer,this._cellCursor,undefined,0,true);
+		};
+		const openCalendarLayer=()=>{
+			if (!pikaContainer?.isConnected)
+				return;
+			if (typeof pikaContainer.showPopover==="function"&&!pikaContainer.matches(":popover-open"))
+				pikaContainer.showPopover();
+			if (!calendarListenersAttached) {
+				calendarListenersAttached=true;
+				document.addEventListener("scroll",repositionCalendar,true);
+				window.addEventListener("resize",repositionCalendar);
+				window.visualViewport?.addEventListener("scroll",repositionCalendar);
+				window.visualViewport?.addEventListener("resize",repositionCalendar);
+			}
+			this._alignDropdown(pikaContainer,this._cellCursor,undefined,0,true);
+		};
+		const closeCalendarLayer=()=>{
+			if (calendarListenersAttached) {
+				calendarListenersAttached=false;
+				document.removeEventListener("scroll",repositionCalendar,true);
+				window.removeEventListener("resize",repositionCalendar);
+				window.visualViewport?.removeEventListener("scroll",repositionCalendar);
+				window.visualViewport?.removeEventListener("resize",repositionCalendar);
+			}
+			if (typeof pikaContainer?.hidePopover==="function"&&pikaContainer.matches(":popover-open"))
+				pikaContainer.hidePopover();
+		};
+		const destroyCalendar=()=>{
+			if (calendarDestroyed)
+				return;
+			calendarDestroyed=true;
+			closeCalendarLayer();
+			pikaContainer?.remove();
+			pika?.destroy();
+			pika=null;
+			if (this._datePickerCleanup===destroyCalendar)
+				this._datePickerCleanup=null;
+		};
 		//this._input.type="date";//using Pikaday instead which I find more user-friendly. Calendar can be opened
 								//up right away and typing manualy is still permitted
 		if (!allowFreeText) this._attachInputFormatter(input,{date:true});
 		if (!window.Pikaday)
 			console.warn("Pikaday-library not found");
 		else {
-			pikaContainer=this._cellCursor.parentElement.appendChild(document.createElement("div"));
+			// Keep the calendar outside details/grid/scroll clipping ancestors. The Popover API promotes it to
+			// the browser's top layer, so following sections and local stacking contexts cannot cover it.
+			pikaContainer=document.body.appendChild(document.createElement("div"));
 			pikaContainer.className="pika-container";
+			if (typeof pikaContainer.showPopover==="function")
+				pikaContainer.popover="manual";
 			pika=new Pikaday({field:input,
 				...(allowFreeText?{parse:value=>this._parseExactDate(value)}:{}),
 				toString: d=>d.getFullYear()+"-"+('0'+(d.getMonth()+1)).slice(-2)+"-"+('0'+d.getDate()).slice(-2),
 				onClose:()=>{
-					pikaContainer.remove();
-					pika.destroy();
+					destroyCalendar();
 					setTimeout(()=>{
 						if (this._ownsCellEditor(input))
 							this._exitEditMode(true);
@@ -7465,10 +7511,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					weekdays      : ['Söndag','Måndag','Tisdag','Onsdag','Torsdag','Fredag','Lördag'],
 					weekdaysShort : ['Sön','Mån','Tis','Ons','Tor','Fre','Lör']
 				},
-				onOpen:()=>this._alignDropdown(pikaContainer),//have to wait until onOpen or size is 0
-				onDraw: () => this._alignDropdown(pikaContainer)//not all months include the same number of weeks,
+				onOpen:openCalendarLayer,//wait until onOpen or size is 0, then promote and align above the page
+				onDraw: () => this._alignDropdown(pikaContainer,this._cellCursor,undefined,0,true)//not all months include the same number of weeks,
 								//so sometimes the calendar gets taller or shorter and that's why we have to re-align
 			});
+			this._datePickerCleanup=destroyCalendar;
 			pika.el.style.position="static";//otherwise size of pikaContainer will be 0 and alignDropdown wont work
 			if (e instanceof KeyboardEvent)
 				e.stopPropagation();//otherwise the enter-press is propagated to Pikaday, immediately closing it
@@ -7494,9 +7541,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	/**Aligns dropdowns like select and date-picker correctly by the cellcursor or any other target-element specified */
-	_alignDropdown(dropdown,target=this._cellCursor,preferredVertical,viewportMargin=0) {
+	_alignDropdown(dropdown,target=this._cellCursor,preferredVertical,viewportMargin=0,forceViewport=false) {
 		const isOpenPopover=typeof dropdown.showPopover==="function"&&dropdown.matches(":popover-open");
-		if (isOpenPopover) {
+		if (isOpenPopover||forceViewport) {
 			const targetRect=target.getBoundingClientRect();
 			const viewportWidth=document.documentElement.clientWidth;
 			const viewportHeight=document.documentElement.clientHeight;
@@ -11168,6 +11215,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_finishEditModeExit() {
+		this._datePickerCleanup?.();
 		//make the table focused again so that it accepts keystrokes and also trigger any blur-event on input-element
 		this._dismissTooltip();
 		this._focusEl.focus({preventScroll:true});

@@ -2733,10 +2733,27 @@ td.tablance-cell-state:not(:has(>span.title))>.tablance-cell-state-icon-navigati
 
 
 
-.pika-container {//added by clox
-	position: absolute;//added by clox
+.pika-container {//Added by Tablance to host Pikaday outside clipping detail/grid containers.
+	position: fixed;
+	z-index: 1000;//Fallback when the browser does not support the top-layer Popover API.
+	margin: 0;
+	inset: auto;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	overflow: visible;
+	&[popover] {
+		//A manual popover is promoted to the browser top layer and is not constrained by ancestor stacking contexts.
+		position: fixed;
+		margin: 0;
+		inset: auto;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		overflow: visible;
+	}
 	.pika-single {
-		z-index: 9999;
+		z-index: auto;
 		display: block;
 		position: relative;
 		color: #333;

@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles/tablance.css">
+<style>
+  body { margin: 0; padding: 24px; }
+  .calendar-case { position: relative; width: 620px; height: 150px; margin: 0 0 30px; overflow: hidden; }
+  .calendar-case .host { width: 600px; height: 140px; }
+  .following-section { position: absolute; z-index: 2000; box-sizing: border-box; height: 54px;
+    border: 1px solid #b91c1c; background: rgba(255,0,0,.2); pointer-events: auto; }
+</style>
+<div id="test-results" data-status="running">running</div>
+<script>
+  const fail = value => {
+    const result = document.getElementById("test-results");
+    result.textContent = value?.error?.stack || value?.reason?.stack || String(value);
+    result.dataset.status = "failed";
+  };
+  addEventListener("error", fail);
+  addEventListener("unhandledrejection", fail);
+</script>
+<script src="../dist/tablance.umd.js"></script>
+<script type="module" src="date-calendar-stacking.test.js"></script>

@@ -9,6 +9,7 @@ const root=normalize(join(fileURLToPath(new URL(".",import.meta.url)),".."));
 const onlyDetails=process.argv.includes("--only-details");
 const numberEditor=process.argv.includes("--number-editor");
 const dateFreeText=process.argv.includes("--date-free-text");
+const dateCalendarStacking=process.argv.includes("--date-calendar-stacking");
 const copySelection=process.argv.includes("--copy-selection");
 const keyboardScroll=process.argv.includes("--keyboard-scroll");
 const types={".css":"text/css",".htm":"text/html",".html":"text/html",".js":"text/javascript",".mjs":"text/javascript"};
@@ -75,7 +76,8 @@ try {
 		pending.set(id,{resolve,reject});
 		socket.send(JSON.stringify({id,method,params,...sessionId?{sessionId}:{}}));
 	});
-const testUrl=`http://127.0.0.1:${port}/tests/${keyboardScroll
+	const testUrl=`http://127.0.0.1:${port}/tests/${dateCalendarStacking
+		?"date-calendar-stacking.test.htm":keyboardScroll
 		?"keyboard-scroll.test.htm":copySelection
 		?"copy-selection.test.htm":dateFreeText
 		?"date-free-text.test.htm":numberEditor
@@ -176,7 +178,7 @@ const testUrl=`http://127.0.0.1:${port}/tests/${keyboardScroll
 		console.log("Cell type hit testing stayed on the help wrapper across four icon types, hover/active states and six points per icon.");
 		await evaluate(`window.finishCellTypeIconHitTest()`);
 	}
-	if (!onlyDetails&&!numberEditor&&!dateFreeText&&!copySelection&&!keyboardScroll) {
+	if (!onlyDetails&&!numberEditor&&!dateFreeText&&!dateCalendarStacking&&!copySelection&&!keyboardScroll) {
 	await waitForStatus(["awaiting-native-keys"]);
 	const dispatch=(type,key,code,keyCode,modifiers=0)=>send("Input.dispatchKeyEvent",{
 		type,key,code,modifiers,windowsVirtualKeyCode:keyCode,nativeVirtualKeyCode:keyCode,
@@ -264,6 +266,8 @@ const testUrl=`http://127.0.0.1:${port}/tests/${keyboardScroll
 	}
 	const finalResult=await waitForStatus(["passed"]);
 	console.log(finalResult.text);
+	if (dateCalendarStacking)
+		console.log(`Date calendar stacking diagnostics: ${JSON.stringify(await evaluate("window.calendarStackingDiagnostics"))}`);
 	await send("Target.closeTarget",{targetId});
 } catch (error) {
 	console.error(error.stack??String(error));

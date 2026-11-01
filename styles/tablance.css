@@ -2676,10 +2676,26 @@ td.tablance-cell-state:not(:has(> span.title)) > .tablance-cell-state-icon-navig
   }
 }
 .pika-container {
-  position: absolute;
+  position: fixed;
+  z-index: 1000;
+  margin: 0;
+  inset: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+.pika-container[popover] {
+  position: fixed;
+  margin: 0;
+  inset: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
 }
 .pika-container .pika-single {
-  z-index: 9999;
+  z-index: auto;
   display: block;
   position: relative;
   color: #333;
