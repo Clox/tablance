@@ -248,6 +248,8 @@ class TablanceBase {
 	_pendingColumnCursorRemap=null;//row/column anchor restored after an effective column-set rebuild
 	_cursorBookmarks=new Map();//logical main-cell cursor anchor per lifecycle/view scope
 	_inEditMode;//whether the user is currently in edit-mode
+	_activeDatePicker;//Pikaday instance currently owned by the active date editor
+	_datePickerCleanup;//removes the active date calendar layer and its viewport listeners
 	_pendingStandaloneCommit=null;//non-editor row action waiting for local durable persistence
 	_editModeController;//optional non-field editor participating in the ordinary commit/cancel/navigation lifecycle
 	_inReadOnlyMode=false;//whether a read-only presentation textarea is currently open
@@ -5255,11 +5257,22 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (this._inEditMode&&this._activeSchemaNode.input?.type==="date") {
 			const freeText=this._activeSchemaNode.input.allowFreeText===true;
 			if (e.key.slice(0,5)==="Arrow") {
-				const validDate=!freeText||this._parseExactDate(this._cellCursor.querySelector("input")?.value);
+				const input=this._cellCursor.querySelector("input");
+				const inputValue=input?.value??"";
+				const emptyFreeText=freeText&&inputValue.trim()==="";
+				const validDate=!freeText||emptyFreeText||this._parseExactDate(inputValue);
 				if (e.ctrlKey||!validDate)
 					e.stopPropagation();//keep text navigation when the picker has no valid date to adjust
-				else
+				else {
+					if (emptyFreeText) {
+						// Match Pikaday's ordinary no-selection behavior (adjustDate starts from today). Clearing first also
+						// removes whitespace and any stale picker selection before the document-level key handler runs.
+						this._activeDatePicker?.setDate(null,true);
+						if (input)
+							input.value="";
+					}
 					e.preventDefault();//let Pikaday handle date navigation without moving the text cursor
+				}
 			} else if (e.key==="Backspace"||(freeText&&(e.key==="Delete"||e.key==="Escape")))
 				e.stopPropagation();
 		}
@@ -7470,7 +7483,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			calendarDestroyed=true;
 			closeCalendarLayer();
 			pikaContainer?.remove();
-			pika?.destroy();
+			const destroyedPicker=pika;
+			destroyedPicker?.destroy();
+			if (this._activeDatePicker===destroyedPicker)
+				this._activeDatePicker=null;
 			pika=null;
 			if (this._datePickerCleanup===destroyCalendar)
 				this._datePickerCleanup=null;
@@ -7515,6 +7531,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				onDraw: () => this._alignDropdown(pikaContainer,this._cellCursor,undefined,0,true)//not all months include the same number of weeks,
 								//so sometimes the calendar gets taller or shorter and that's why we have to re-align
 			});
+			this._activeDatePicker=pika;
 			this._datePickerCleanup=destroyCalendar;
 			pika.el.style.position="static";//otherwise size of pikaContainer will be 0 and alignDropdown wont work
 			if (e instanceof KeyboardEvent)
