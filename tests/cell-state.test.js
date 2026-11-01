@@ -104,6 +104,48 @@ try {
 	selectCtx.mainUl.children[0].click();
 	assert(selectTable._selectContext===null&&selectTable._inputVal===3,
 		"ordinary option selection still commits its value and closes the dropdown");
+	let restores=0;
+	const multiActionTable=new Tablance(host(),{main:{columns:[{dataKey:"source",input:{
+		type:"select",options:[{text:"Person",value:"person"}],
+		stickyActions:()=>[{id:"restore",label:"Restore from Person",onActivate:()=>{restores++;}}],
+		stickyAction:{label:"Show ended",checked:false,onActivate:()=>{}},
+	}}]}},true,true,{ordering:false});
+	multiActionTable.setData([{source:"person"}]);
+	await tick();
+	multiActionTable.selectCell(0,"source",{enterEditMode:true});
+	const multiCtx=multiActionTable._selectContext;
+	const actionRows=[...multiCtx.pinnedUl.querySelectorAll(".select-action")];
+	assert(actionRows.length===2&&actionRows[0].textContent==="Restore from Person"
+		&&actionRows[0].getAttribute("role")==="button"
+		&&actionRows[1].getAttribute("role")==="checkbox",
+		"multiple select actions preserve order and distinguish buttons from toggles");
+	actionRows[0].click();
+	assert(restores===1&&multiCtx.selectContainer.isConnected
+		&&multiActionTable._inputVal==="person",
+		"a select action can run without changing or closing the source selection");
+	multiActionTable.refreshOpenSelect();
+	assert(multiCtx.pinnedUl.querySelectorAll(".select-action").length===2,
+		"refresh retains both independent action rows");
+	multiActionTable._highlightSelectRow(multiCtx,multiCtx.pinnedUl.querySelector(".select-action"));
+	key(multiCtx.input,"Enter");
+	assert(restores===2&&multiCtx.selectContainer.isConnected
+		&&multiActionTable._inputVal==="person",
+		"Enter activates an additional action without changing the selected value");
+	key(multiCtx.input,"Escape");
+	let closedActionRuns=0;
+	const closingActionTable=new Tablance(host(),{main:{columns:[{dataKey:"source",input:{
+		type:"select",options:[{text:"Person",value:"person"}],
+		stickyAction:{label:"Restore",closeOnActivate:true,onActivate:()=>{closedActionRuns++;}},
+	}}]}},true,true,{ordering:false});
+	const closingActionRecord={source:"person"};
+	closingActionTable.setData([closingActionRecord]);
+	await tick();
+	closingActionTable.selectCell(0,"source",{enterEditMode:true});
+	closingActionTable._selectContext.pinnedUl.querySelector(".select-action").click();
+	assert(closedActionRuns===1&&closingActionTable._selectContext===null
+		&&closingActionTable._inEditMode===false
+		&&closingActionRecord.source==="person",
+		"closeOnActivate closes the select without changing its selected value");
 	let showSearchOption=false;
 	const thresholdTable=new Tablance(host(),{main:{columns:[{dataKey:"choice",input:{
 		type:"select",minOptsFilter:2,

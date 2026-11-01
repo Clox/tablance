@@ -714,6 +714,10 @@ class TablanceBase {
 	 * 							{label,checked,onActivate}; a function may return this object on each refresh.
 	 * 							Activation receives the usual callback payload plus event and can call
 	 * 							tablance.refreshOpenSelect(). It never changes the selected value.
+	 * 						stickyActions Object[]|Function Optional additional action rows with the same
+	 * 							semantics. An action without checked is a button rather than a checkbox.
+	 * 							Set closeOnActivate to close the select without changing its value before
+	 * 							onActivate runs.
 	 * 						initialActiveValueWhenEmpty * Option value to highlight when the cell value is empty.
 	 * 							This affects keyboard position only; no value is committed until selection.
 	 * 						allowCreateNew bool - Allows user to create new options.
@@ -10596,35 +10600,36 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return foundSelected;
 		}
 
-		_selectActionDefinition(ctx) {
-			const source=ctx.strctInp.stickyAction;
-			return typeof source==="function"
-				?source(this._makeCallbackPayload(this._activeDetailsCell,{},
-					{schemaNode:this._activeSchemaNode,rowData:this._cellCursorDataObj,mainIndex:this._mainRowIndex}))
-				:source;
+		_selectActionDefinitions(ctx) {
+			const payload=this._makeCallbackPayload(this._activeDetailsCell,{},
+				{schemaNode:this._activeSchemaNode,rowData:this._cellCursorDataObj,mainIndex:this._mainRowIndex});
+			const resolve=source=>typeof source==="function"?source(payload):source;
+			const additional=resolve(ctx.strctInp.stickyActions);
+			return [...(Array.isArray(additional)?additional:additional?[additional]:[]),
+				resolve(ctx.strctInp.stickyAction)].filter(Boolean);
 		}
 
-		_renderSelectAction(ctx) {
-			const action=this._selectActionDefinition(ctx);
-			if (!action)
-				return;
-			const li=document.createElement("li");
-			li.className="select-action";
-			li.dataset.type="action";
-			li.setAttribute("role","checkbox");
-			const mark=li.appendChild(document.createElement("span"));
-			mark.className="select-action-mark";
-			mark.textContent=action.checked?"✓":"";
-			mark.setAttribute("aria-hidden","true");
-			const label=li.appendChild(document.createElement("span"));
-			label.textContent=action.label??"";
-			li.setAttribute("aria-checked",action.checked?"true":"false");
-			ctx.rowByLi.set(li,{kind:"action",action});
-			const empty=ctx.pinnedUl.querySelector(".empty-option");
-			if (empty)
-				empty.after(li);
-			else
-				ctx.pinnedUl.prepend(li);
+		_renderSelectActions(ctx) {
+			let previous=ctx.pinnedUl.querySelector(".empty-option");
+			for (const action of ctx.actions) {
+				const li=document.createElement("li");
+				li.className="select-action";
+				li.dataset.type="action";
+				const isToggle=Object.prototype.hasOwnProperty.call(action,"checked");
+				li.setAttribute("role",isToggle?"checkbox":"button");
+				if (isToggle) {
+					const mark=li.appendChild(document.createElement("span"));
+					mark.className="select-action-mark";
+					mark.textContent=action.checked?"✓":"";
+					mark.setAttribute("aria-hidden","true");
+					li.setAttribute("aria-checked",action.checked?"true":"false");
+				}
+				li.appendChild(document.createElement("span")).textContent=action.label??"";
+				ctx.rowByLi.set(li,{kind:"action",action});
+				if (previous) previous.after(li);
+				else ctx.pinnedUl.prepend(li);
+				previous=li;
+			}
 		}
 
 		_selectNavigableRows(ctx) {
@@ -10640,8 +10645,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		_selectRowMatches(a,b) {
 			if (!a||!b||a.kind!==b.kind)
 				return false;
-			if (a.kind==="action"||a.kind==="create")
-				return true;
+			if (a.kind==="action")
+				return (a.action.id??a.action.label)===(b.action.id??b.action.label);
+			if (a.kind==="create") return true;
 			if (a.option===b.option)
 				return true;
 			if (a.option.isEmpty&&b.option.isEmpty)
@@ -10720,12 +10726,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		ctx.allOpts=allOpts.filter(opt=>!opt.visibleIf||opt.visibleIf({
 			dataContext:this._cellCursorDataObj,schemaNode:this._activeSchemaNode,
 			rowIndex:this._mainRowIndex,instanceNode:this._activeDetailsCell}));
-		ctx.pinnedOpts=ctx.allOpts.filter(opt=>opt.pinned||!!ctx.strctInp.stickyAction&&opt.isEmpty);
+		ctx.actions=this._selectActionDefinitions(ctx);
+		const hasActions=ctx.actions.length>0;
+		ctx.pinnedOpts=ctx.allOpts.filter(opt=>opt.pinned||hasActions&&opt.isEmpty);
 		ctx.looseOpts=ctx.allOpts.filter(opt=>!ctx.pinnedOpts.includes(opt));
 		this._updateSelectSearchVisibility(ctx);
 		ctx.rowByLi=new Map();
 		this._renderSelectOptions(ctx.pinnedUl,ctx.pinnedOpts,this._inputVal,ctx);
-		this._renderSelectAction(ctx);
+		this._renderSelectActions(ctx);
 		this._handleSelectInputChange(ctx,{preserveHighlight:true});
 		const rows=this._selectNavigableRows(ctx);
 		const matching=oldHighlighted&&rows.find(li=>this._selectRowMatches(oldHighlighted,ctx.rowByLi.get(li)));
@@ -10751,7 +10759,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const value=ctx.input.value;
 			const filter=value.toLowerCase();
 			ctx.canCreate=!!value;
-			ctx.looseOpts=ctx.allOpts.filter(opt=>!opt.pinned&&!(ctx.strctInp.stickyAction&&opt.isEmpty));
+			ctx.looseOpts=ctx.allOpts.filter(opt=>!ctx.pinnedOpts.includes(opt));
 			for (let i=-1,opt; opt=ctx.looseOpts[++i];) {
 				// Normalize option text for case-insensitive matching.
 				const optText=typeof opt.text==="string"?opt.text.toLowerCase():String(opt.text??"");
@@ -10856,8 +10864,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			const row=this._selectHighlightedRow(ctx);
 			if (row?.kind!=="action")
 				return false;
-			row.action.onActivate?.(this._makeCallbackPayload(this._activeDetailsCell,{event:e},
-				{schemaNode:this._activeSchemaNode,rowData:this._cellCursorDataObj,mainIndex:this._mainRowIndex}));
+			const payload=this._makeCallbackPayload(this._activeDetailsCell,{event:e},
+				{schemaNode:this._activeSchemaNode,rowData:this._cellCursorDataObj,mainIndex:this._mainRowIndex});
+			if (row.action.closeOnActivate) {
+				this._closeSelectDropdown(ctx,e,true);
+				this._exitEditMode(false);
+			}
+			row.action.onActivate?.(payload);
 			return true;
 		}
 	
@@ -10918,10 +10931,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				this._mainRowIndex,this._activeDetailsCell).filter(opt=>!opt.visibleIf||opt.visibleIf({
 					dataContext:this._cellCursorDataObj,schemaNode:this._activeSchemaNode,
 					rowIndex:this._mainRowIndex,instanceNode:this._activeDetailsCell}));
+			const actions=this._selectActionDefinitions({strctInp});
+			const hasActions=actions.length>0;
 			for (const opt of allOpts)
-				(opt.pinned||!!strctInp.stickyAction&&opt.isEmpty?pinnedOpts:looseOpts).push(opt);
+				(opt.pinned||hasActions&&opt.isEmpty?pinnedOpts:looseOpts).push(opt);
 			const ctx=Object.assign(Object.create(null),{
 				strctInp,
+				actions,
 				selectContainer,
 				inputWrapper,
 				input,
@@ -11022,7 +11038,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				ctx.creationLi.dataset.type="create";
 			}
 			this._renderSelectOptions(ctx.pinnedUl,ctx.pinnedOpts,this._inputVal,ctx);
-			this._renderSelectAction(ctx);
+			this._renderSelectActions(ctx);
 			this._renderSelectOptions(ctx.mainUl,ctx.looseOpts,this._inputVal,ctx);
 			if (this._getSelectValue(this._inputVal)==null
 				||this._getSelectValue(this._inputVal)==="")
