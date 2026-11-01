@@ -125,6 +125,56 @@ const testUrl=`http://127.0.0.1:${port}/tests/${keyboardScroll
 				button:"left",buttons:0,clickCount:1},sessionId);
 			await evaluate(`window.finishNativeLinkedNonCell()`);
 		}
+		await waitForStatus(["awaiting-cell-type-icon-hit-test"]);
+		const targets=await evaluate(`window.cellTypeIconHitTest.targets.map((target,index)=>({index,name:target.name}))`);
+		for (const target of targets) {
+			for (const state of ["hover","active"]) {
+				if (state==="hover") {
+					const parentPoint=await evaluate(`(()=>{const icon=window.cellTypeIconHitTest.targets[${target.index}].icon;
+						icon.closest(".tablance-cell-state")?.scrollIntoView({behavior:"instant",block:"center"});
+						const rect=icon.closest(".tablance-cell-state").getBoundingClientRect();return {
+							x:rect.left+rect.width/2,y:rect.top+rect.height/2};})()`);
+					await send("Input.dispatchMouseEvent",{type:"mouseMoved",x:parentPoint.x,y:parentPoint.y,
+						button:"none",buttons:0},sessionId);
+					await new Promise(resolve=>setTimeout(resolve,25));
+				}
+				const box=await evaluate(`(()=>{const target=window.cellTypeIconHitTest.targets[${target.index}];
+					if (${JSON.stringify(state)}==="active") target.table.selectCell(0,target.dataKey);
+					target.icon.scrollIntoView({behavior:"instant",block:"center",inline:"center"});
+					const rect=target.icon.getBoundingClientRect();return {
+						left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom,
+						width:rect.width,height:rect.height};})()`);
+			const iconPoints=[
+				[box.left+1,box.top+1],[box.right-1,box.top+1],
+				[box.right-1,box.bottom-1],[box.left+1,box.bottom-1],
+				[box.left+box.width*.25,box.top+box.height*.5],
+				[box.left+box.width*.75,box.top+box.height*.5],
+			];
+			const iconHits=[];
+			for (const [x,y] of iconPoints) {
+				await send("Input.dispatchMouseEvent",{type:"mouseMoved",x,y,button:"none",buttons:0},sessionId);
+				await new Promise(resolve=>setTimeout(resolve,15));
+				iconHits.push(await evaluate(`(()=>{const target=window.cellTypeIconHitTest.targets[${target.index}];
+					const x=${x},y=${y},hit=document.elementFromPoint(x,y),tooltip=target.table._tooltip;
+					return {x,y,target:hit?.className??hit?.tagName,targetHtml:hit?.outerHTML?.slice(0,140),cursor:hit?getComputedStyle(hit).cursor:null,
+						wrapper:target.icon.className,wrapperCursor:getComputedStyle(target.icon).cursor,
+						wrapperPointerEvents:getComputedStyle(target.icon).pointerEvents,
+						visualPointerEvents:getComputedStyle(target.icon,"::before").pointerEvents,
+						tooltipPointerEvents:getComputedStyle(tooltip).pointerEvents,
+						tooltipVisible:tooltip.style.visibility==="visible",
+						tooltipMatches:tooltip.firstChild.textContent===target.icon.dataset.tablanceCellTypeTooltip};})()`));
+			}
+			if (!iconHits.every(hit=>hit.target?.includes?.("tablance-cell-type-icon")
+				||hit.target?.includes?.(`tablance-cell-state-icon-${target.name}`)))
+				throw new Error(`Cell type icon hit testing must stay on the wrapper (${target.name}): ${JSON.stringify(iconHits)}`);
+			if (!iconHits.every(hit=>hit.cursor==="help"&&hit.wrapperPointerEvents==="auto"
+				&&hit.visualPointerEvents==="none"&&hit.tooltipPointerEvents==="none"
+				&&hit.tooltipVisible&&hit.tooltipMatches))
+				throw new Error(`Cell type icon cursor/tooltip hit area changed (${target.name}): ${JSON.stringify(iconHits)}`);
+			}
+		}
+		console.log("Cell type hit testing stayed on the help wrapper across four icon types, hover/active states and six points per icon.");
+		await evaluate(`window.finishCellTypeIconHitTest()`);
 	}
 	if (!onlyDetails&&!numberEditor&&!dateFreeText&&!copySelection&&!keyboardScroll) {
 	await waitForStatus(["awaiting-native-keys"]);

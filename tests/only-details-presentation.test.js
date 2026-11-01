@@ -23,31 +23,24 @@ sourceIndicator.dispatchEvent(new MouseEvent('click',{bubbles:true}));
 assert(sourceIconClickBubbled&&sourceIndicator.dataset.tablanceCellTypeTooltip.startsWith('Källkopplad cell')
  &&getComputedStyle(sourceIndicator).cursor==='help',
  'the source type icon explains its cell type and clicks bubble normally without becoming an action');
-const elementsFromPoint=document.elementsFromPoint;
-document.elementsFromPoint=()=>[sourceIndicator];
-standalone.rootEl.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:0,clientY:0}));
+sourceIndicator.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:0,clientY:0}));
 await new Promise(resolve=>setTimeout(resolve,0));
 assert(standalone._tooltip.isConnected&&standalone._tooltip.firstChild.textContent.startsWith('Källkopplad cell'),
  'source type icons use the shared Tablance tooltip');
-document.elementsFromPoint=elementsFromPoint;
 standalone._clearCellTypeTooltip();
 const indicatorTable=new Tablance(host(),{details:{type:'grid',columns:1,entries:[
  {title:'Navigation',dataKey:'navigation',nodeId:'navigation',onEnter:()=>{}},
  {title:'Editable',dataKey:'editable',nodeId:'editable',input:{type:'text'}},
+ {title:'Locked',dataKey:'locked',nodeId:'locked',readOnly:true,input:{type:'text'}},
 ]}},true,true,{searchbar:false});
-const indicatorRow={navigation:'Open details',editable:'Value'};
+const indicatorRow={navigation:'Open details',editable:'Value',locked:'Locked'};
 indicatorTable.setData(indicatorRow);
 const activeIndicatorTooltip=async key=>{
  indicatorTable.selectCell(0,key);
- const cursor=indicatorTable._cellCursor;
- const originalMatches=cursor.matches.bind(cursor);
- cursor.matches=selector=>selector===':hover'||originalMatches(selector);
- const title=indicatorTable.getDetailCell(0,key).outerContainerEl.querySelector(':scope>span.title');
- const rect=title.getBoundingClientRect();
- indicatorTable._handleCellTypeTooltipPointer({target:cursor,clientX:rect.right+5,clientY:rect.top+rect.height/2});
+ const icon=indicatorTable.getDetailCell(0,key).outerContainerEl.querySelector('.tablance-cell-state-icon');
+ indicatorTable._handleCellTypeTooltipPointer({target:icon});
  await new Promise(resolve=>setTimeout(resolve,0));
  const text=indicatorTable._tooltip.firstChild.textContent;
- cursor.matches=originalMatches;
  indicatorTable._clearCellTypeTooltip();
  return text;
 };
@@ -71,9 +64,11 @@ colorSample.remove();
 assert(getComputedStyle(cell('both').el).fontStyle==='normal'&&getComputedStyle(cell('both').el).cursor==='cell','display placeholder uses normal text style with a cell cursor');
 assert(cell('none').outerContainerEl.getBoundingClientRect().height<55&&getComputedStyle(cell('editOnly').outerContainerEl).borderInlineStartWidth==='1px'&&panel.querySelector('.grid-row-separator'),'standalone grid is compact with subtle separators');
 const editIndicatorTitle=cell('none').outerContainerEl.querySelector(':scope>span.title');
-assert(getComputedStyle(editIndicatorTitle,'::after').cursor==='help'
- &&getComputedStyle(editIndicatorTitle,'::after').pointerEvents==='auto',
- 'cell type indicators expose a help cursor and remain pointer-addressable in the shared title slot');
+const editIndicatorIcon=editIndicatorTitle.querySelector(':scope>.tablance-cell-state-icon-editable');
+assert(getComputedStyle(editIndicatorIcon).cursor==='help'
+ &&getComputedStyle(editIndicatorIcon).pointerEvents==='auto'
+ &&getComputedStyle(editIndicatorIcon,'::before').pointerEvents==='none',
+ 'cell type indicators expose one full-box help target with a pointer-transparent visual in the shared title slot');
 for(const [key,expected] of [['none',''],['editOnly','Editor hint'],['displayOnly',''],['both','Long hint']]){
  standalone.selectCell(0,key,{enterEditMode:true});const input=standalone._cellCursor.querySelector('input.text-editor');
  assert(input?.placeholder===expected&&getComputedStyle(input).cursor==='text',`${key} has its own edit placeholder`);
@@ -749,4 +744,14 @@ menuControl.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:tr
 menuControl.click();
 assert(pointerActionTable._menuState&&pointerActionTable._activeSchemaNode?.dataKey==='name',
  'menu child control opens its menu without selecting the action cell');
-const result=document.getElementById('test-results');result.textContent='standalone, expanded, bulkEdit, and linked table checks passed';result.dataset.status='passed';
+const result=document.getElementById('test-results');
+window.cellTypeIconHitTest={targets:[
+ {name:'source',icon:sourceIndicator,table:standalone,dataKey:'both'},
+ ...[['editable','editable'],['navigation','navigation'],['read-only','locked']].map(([kind,key])=>({
+  name:kind,icon:indicatorTable.getDetailCell(0,key).outerContainerEl.querySelector(`.tablance-cell-state-icon-${kind}`),
+  table:indicatorTable,dataKey:key,
+ })),
+]};
+result.textContent='awaiting-cell-type-icon-hit-test';result.dataset.status='awaiting-cell-type-icon-hit-test';
+await new Promise(resolve=>window.finishCellTypeIconHitTest=resolve);
+result.textContent='standalone, expanded, bulkEdit, and linked table checks passed';result.dataset.status='passed';

@@ -4662,18 +4662,23 @@ try {
 		&&getComputedStyle(cells[0],"::before").content==="none",
 		"an unselected editable cell exposes its indicator hook without showing the pencil permanently");
 	table.selectCell(row,"editable");
-	const editIndicatorStyle=getComputedStyle(table._cellCursor,"::before");
+	const editIndicatorIcon=cells[0].querySelector(":scope>.tablance-cell-state-icon-editable");
+	const editIndicatorStyle=getComputedStyle(editIndicatorIcon);
+	const editIndicatorVisual=getComputedStyle(editIndicatorIcon,"::before");
 	assert(cells[0].classList.contains("tablance-active-cell")
-		&&table._cellCursor.classList.contains("editable-indicator")&&editIndicatorStyle.content==='""'
-		&&(editIndicatorStyle.maskImage!=="none"||editIndicatorStyle.webkitMaskImage!=="none")
+		&&table._cellCursor.classList.contains("editable-indicator")&&editIndicatorStyle.visibility==="visible"
+		&&(editIndicatorVisual.maskImage!=="none"||editIndicatorVisual.webkitMaskImage!=="none")
 		&&editIndicatorStyle.pointerEvents==="auto"&&editIndicatorStyle.cursor==="help",
 		"a selected editable cell shows a help-cursor pencil indicator that remains hoverable");
+	assert(editIndicatorVisual.pointerEvents==="none",
+		"the icon visual cannot create a second or masked hit target inside the help-cursor wrapper");
 	assert(JSON.stringify(geometry(cells[0]))===JSON.stringify(editableCellGeometry)
 		&&JSON.stringify(geometry(cells[0].firstElementChild))===JSON.stringify(editableTextGeometry),
 		"the pencil indicator does not move text or change cell dimensions");
 	const actionCellGeometry=geometry(cells[5]);
 	const actionTextGeometry=geometry(cells[5].firstElementChild);
 	const actionStateIcon=cells[5].querySelector(":scope>.tablance-cell-state-icon-navigation");
+	const actionStateVisual=getComputedStyle(actionStateIcon,"::before");
 	assert(cells[5].classList.contains("action-indicator")&&actionStateIcon
 		&&getComputedStyle(actionStateIcon).visibility==="hidden",
 		"an unselected text-like action cell exposes its canonical indicator hook without showing it permanently");
@@ -4681,7 +4686,7 @@ try {
 	const actionIndicatorStyle=getComputedStyle(actionStateIcon);
 	assert(cells[5].classList.contains("tablance-active-cell")
 		&&table._cellCursor.classList.contains("action-indicator")&&actionIndicatorStyle.visibility==="visible"
-		&&(actionIndicatorStyle.maskImage!=="none"||actionIndicatorStyle.webkitMaskImage!=="none"),
+		&&(actionStateVisual.maskImage!=="none"||actionStateVisual.webkitMaskImage!=="none"),
 		"a selected text-like action cell receives the native active hook and shows the action indicator");
 	assert(actionIndicatorStyle.pointerEvents==="auto"&&actionIndicatorStyle.cursor==="help",
 		"the action indicator exposes its tooltip hover area without becoming a separate action");
@@ -4865,12 +4870,14 @@ try {
 		"a disabled cell cannot show the selected action indicator");
 
 	table.selectCell(row,"computed");
-	const lockIndicatorStyle=getComputedStyle(table._cellCursor,"::before");
+	const lockIndicatorIcon=cells[1].querySelector(":scope>.tablance-cell-state-icon-read-only");
+	const lockIndicatorStyle=getComputedStyle(lockIndicatorIcon);
+	const lockIndicatorVisual=getComputedStyle(lockIndicatorIcon,"::before");
 	assert(cells[1].classList.contains("read-only")&&!cells[1].classList.contains("action-indicator")
 		&&cells[1].classList.contains("tablance-active-cell")&&table._cellCursor.classList.contains("read-only")
 		&&!table._cellCursor.classList.contains("action-indicator")
-		&&!table._cellCursor.classList.contains("editable-indicator")&&lockIndicatorStyle.content==="\"\""
-		&&(lockIndicatorStyle.maskImage!=="none"||lockIndicatorStyle.webkitMaskImage!=="none"),
+		&&!table._cellCursor.classList.contains("editable-indicator")&&lockIndicatorStyle.visibility==="visible"
+		&&(lockIndicatorVisual.maskImage!=="none"||lockIndicatorVisual.webkitMaskImage!=="none"),
 		"a selected readOnly cell shows Tablance's native lock without the action indicator");
 	let copied="";
 	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:text=>{copied=text;return Promise.resolve();}}});
@@ -5357,7 +5364,8 @@ try {
 	const doubleClickLockedCursor=()=>lockedPresentationTable._cellCursor.dispatchEvent(
 		new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
 	key(lockedPresentationTable.rootEl,"Enter","Enter");
-	const mainLockFeedback=getComputedStyle(lockedPresentationTable._cellCursor,"::before");
+	const mainLockIcon=lockedPresentationTable._selectedCell.querySelector(":scope>.tablance-cell-state-icon-read-only");
+	const mainLockFeedback=getComputedStyle(mainLockIcon);
 	const [lockPivotX,lockPivotY]=mainLockFeedback.transformOrigin.split(" ").map(parseFloat);
 	assert(lockedPresentationTable._cellCursor.classList.contains("read-only-activation-feedback")
 		&&mainLockFeedback.animationName==="tablance-read-only-lock-feedback"
@@ -5367,8 +5375,12 @@ try {
 		&&Math.abs(parseFloat(mainLockFeedback.left)-4)<.01
 		&&Math.abs(parseFloat(mainLockFeedback.top)-2)<.01
 		&&!lockedPresentationTable._inEditMode&&!lockedPresentationTable._inReadOnlyMode,
-		"blocked main-cell activation animates only its existing lock while remaining non-activatable");
-	const lockAnimation=document.getAnimations().find(animation=>
+		`blocked main-cell activation animates only its existing lock while remaining non-activatable: ${JSON.stringify({
+			class:mainLockIcon?.className,animationName:mainLockFeedback.animationName,
+			animationDuration:mainLockFeedback.animationDuration,width:mainLockFeedback.width,height:mainLockFeedback.height,
+			transformOrigin:mainLockFeedback.transformOrigin,left:mainLockFeedback.left,top:mainLockFeedback.top,
+			inEdit:lockedPresentationTable._inEditMode,inReadOnly:lockedPresentationTable._inReadOnlyMode})}`);
+	const lockAnimation=mainLockIcon.getAnimations().find(animation=>
 		animation.animationName==="tablance-read-only-lock-feedback");
 	assert(JSON.stringify(lockAnimation?.effect.getKeyframes().map(frame=>frame.rotate))===JSON.stringify([
 		"0deg","28deg","28deg","-28deg","-28deg","28deg","28deg",
@@ -5391,7 +5403,8 @@ try {
 	lockedDetail.select();
 	key(lockedPresentationTable.rootEl,"Enter","Enter");
 	const lockedDetailTitle=lockedDetail.selEl.querySelector(":scope>span.title");
-	const lockedDetailFeedback=getComputedStyle(lockedDetailTitle,"::after");
+	const lockedDetailIcon=lockedDetailTitle.querySelector(":scope>.tablance-cell-state-icon-read-only");
+	const lockedDetailFeedback=getComputedStyle(lockedDetailIcon);
 	assert(lockedDetail.selEl.classList.contains("read-only-activation-feedback")
 		&&lockedDetailFeedback.animationName==="tablance-read-only-lock-feedback"
 		&&lockedDetailFeedback.width==="12px"&&lockedDetailFeedback.height==="12px"
@@ -5413,8 +5426,9 @@ try {
 	lockedLineupDetail.select();
 	key(lockedPresentationTable.rootEl,"Enter","Enter");
 	const lockedLineupTitle=lockedLineupDetail.selEl.querySelector(":scope>span.title");
+	const lockedLineupIcon=lockedLineupTitle.querySelector(":scope>.tablance-cell-state-icon-read-only");
 	assert(lockedLineupDetail.selEl.classList.contains("read-only-activation-feedback")
-		&&getComputedStyle(lockedLineupTitle,"::after").animationName
+		&&getComputedStyle(lockedLineupIcon).animationName
 			==="tablance-read-only-lock-feedback",
 		"a blocked Lineup field applies feedback to the inline lock on its canonical cell");
 	assert(getComputedStyle(lockedLineupTitle).paddingRight==="16px"
@@ -5434,8 +5448,9 @@ try {
 	const lockedGridDetail=lockedPresentationTable.getDetailCell(lockedPresentationRow,"lockedGridDetail");
 	lockedGridDetail.select();
 	key(lockedPresentationTable.rootEl,"Enter","Enter");
+	const lockedGridIcon=lockedGridDetail.selEl.querySelector(":scope>span.title>.tablance-cell-state-icon-read-only");
 	assert(lockedGridDetail.selEl.classList.contains("read-only-activation-feedback")
-		&&getComputedStyle(lockedGridDetail.selEl.querySelector(":scope>span.title"),"::after").animationName
+		&&getComputedStyle(lockedGridIcon).animationName
 			==="tablance-read-only-lock-feedback"
 		&&!lockedPresentationTable._inEditMode&&!lockedPresentationTable._inReadOnlyMode,
 		"a blocked Grid field receives identical lock-only feedback without changing activation state");
@@ -6153,9 +6168,11 @@ try {
 	assert(nestedGroupChevron.hidden,
 		"an open child group no longer displays an open-state chevron");
 	const [editableHistoryField,readOnlyHistoryField]=historyEntries[0].children;
+	const editableHistoryIcon=editableHistoryField.selEl.querySelector(":scope>span.title>.tablance-cell-state-icon-editable");
 	assert(getComputedStyle(editableHistoryField.selEl).paddingLeft==="4px"
 		&&getComputedStyle(readOnlyHistoryField.selEl).paddingLeft==="4px"
-		&&getComputedStyle(editableHistoryField.selEl.querySelector(":scope>span.title"),"::after").content==='""',
+		&&getComputedStyle(editableHistoryIcon).visibility==="visible"
+		&&getComputedStyle(editableHistoryIcon,"::before").pointerEvents==="none",
 		"group value fields retain their compact left edge while the active editable field shows its pencil");
 	const readOnlyTitle=readOnlyHistoryField.selEl.querySelector(":scope>span.title");
 	const readOnlyValue=readOnlyHistoryField.selEl.querySelector(":scope>div.value");
@@ -6166,7 +6183,8 @@ try {
 		valueTop:readOnlyValue.getBoundingClientRect().top,
 	};
 	readOnlyHistoryField.select();
-	const readOnlyTitleIndicator=getComputedStyle(readOnlyTitle,"::after");
+	const readOnlyTitleIcon=readOnlyTitle.querySelector(":scope>.tablance-cell-state-icon-read-only");
+	const readOnlyTitleIndicator=getComputedStyle(readOnlyTitleIcon);
 	const layoutWithIndicator={
 		cellHeight:readOnlyHistoryField.selEl.getBoundingClientRect().height,
 		titleTop:readOnlyTitle.getBoundingClientRect().top,
@@ -6176,11 +6194,12 @@ try {
 	assert(readOnlyHistoryField.selEl.classList.contains("read-only")
 		&&table._cellCursor.classList.contains("inline-title-indicator")
 		&&getComputedStyle(table._cellCursor,"::before").content==="none"
-		&&readOnlyTitleIndicator.content==='""'&&readOnlyTitleIndicator.width==="12px"
+		&&readOnlyTitleIndicator.visibility==="visible"&&readOnlyTitleIndicator.width==="12px"
 		&&readOnlyTitleIndicator.marginLeft==="4px"&&readOnlyTitleIndicator.position==="absolute"
 		&&JSON.stringify(layoutWithIndicator)===JSON.stringify(layoutWithoutIndicator),
 		"a selected group-field indicator is rendered inline directly after its title instead of at the cell edge");
-	const lockedGroupTitleHtml=readOnlyTitle.innerHTML;
+	const lockedGroupTitleText=readOnlyTitle.textContent;
+	const lockedGroupTitleIcon=readOnlyTitleIcon;
 	const lockedGroupValue=readOnlyHistoryField.dataObj.event;
 	copied="";
 	key(table.rootEl,"c","KeyC",{ctrlKey:true});
@@ -6189,11 +6208,15 @@ try {
 		`copying a titled group field includes only its value, never its label (${JSON.stringify(copied)})`);
 	key(table.rootEl,"Enter","Enter");
 	assert(!table._inEditMode&&!table._inReadOnlyMode&&!table._cellCursor.querySelector("input,textarea")
-		&&readOnlyTitle.innerHTML===lockedGroupTitleHtml&&readOnlyHistoryField.dataObj.event===lockedGroupValue,
+		&&readOnlyTitle.textContent===lockedGroupTitleText
+		&&readOnlyTitle.querySelector(":scope>.tablance-cell-state-icon-read-only")===lockedGroupTitleIcon
+		&&readOnlyHistoryField.dataObj.event===lockedGroupValue,
 		"a locked titled group field cannot activate an editor or involve its label via Enter");
 	table._cellCursor.dispatchEvent(new MouseEvent("dblclick",{bubbles:true,cancelable:true}));
 	assert(!table._inEditMode&&!table._inReadOnlyMode&&!table._cellCursor.querySelector("input,textarea")
-		&&readOnlyTitle.innerHTML===lockedGroupTitleHtml&&readOnlyHistoryField.dataObj.event===lockedGroupValue,
+		&&readOnlyTitle.textContent===lockedGroupTitleText
+		&&readOnlyTitle.querySelector(":scope>.tablance-cell-state-icon-read-only")===lockedGroupTitleIcon
+		&&readOnlyHistoryField.dataObj.event===lockedGroupValue,
 		"a locked titled group field cannot activate an editor or involve its label via double-click");
 	assert(getComputedStyle(firstHistorySeparator).borderTopStyle==="solid"
 		&&getComputedStyle(firstHistorySeparator).marginLeft==="0px"
@@ -6324,7 +6347,7 @@ try {
 		titleHeight:streetTitle.getBoundingClientRect().height,
 	};
 	assert(getComputedStyle(streetTitle).paddingRight==="16px"
-		&&getComputedStyle(streetTitle,"::after").content==="none",
+		&&getComputedStyle(streetTitle.querySelector(":scope>.tablance-cell-state-icon-editable")).visibility==="hidden",
 		"an inactive editable Lineup cell reserves stable title space without showing its pencil permanently");
 	variantStreet.select();
 	const streetRect=variantStreet.outerContainerEl.getBoundingClientRect();
@@ -6339,14 +6362,15 @@ try {
 	assert(Math.abs(streetCursorRect.left-streetRect.left)<1&&Math.abs(streetCursorRect.top-streetRect.top)<1
 		&&Math.abs(streetCursorRect.width-streetRect.width)<1&&Math.abs(streetCursorRect.height-streetRect.height)<1
 		&&streetTitleRect.top>=streetCursorRect.top&&streetTitleRect.bottom<=streetCursorRect.bottom
-		&&getComputedStyle(streetTitle,"::after").content==='""'
+		&&getComputedStyle(streetTitle.querySelector(":scope>.tablance-cell-state-icon-editable")).visibility==="visible"
 		&&getComputedStyle(lineupVariantTable._cellCursor,"::before").content==="none"
 		&&JSON.stringify(streetLayoutSelected)===JSON.stringify(streetLayoutBefore),
 		"a Lineup cursor and pencil cover the logical cell without moving its title");
 	const sourceTitle=variantSource.outerContainerEl.querySelector(":scope>span.title");
+	const sourceTitleIcon=sourceTitle.querySelector(":scope>.tablance-cell-state-icon-read-only");
 	const sourceTitleStyle=getComputedStyle(sourceTitle);
 	assert(sourceTitleStyle.paddingRight==="16px"
-		&&getComputedStyle(sourceTitle,"::after").right==="0px"
+		&&getComputedStyle(sourceTitleIcon).right==="0px"
 		&&variantSource.helpTriggerEl?.closest(".tablance-title-layout"),
 		"a Lineup title with help permanently reserves its inline lock inside its own cellbox");
 	const sourceLayoutBefore={
@@ -6355,17 +6379,17 @@ try {
 		titleTop:sourceTitle.getBoundingClientRect().top,
 		titleHeight:sourceTitle.getBoundingClientRect().height,
 	};
-	assert(getComputedStyle(sourceTitle,"::after").content==="none",
+	assert(getComputedStyle(sourceTitle.querySelector(":scope>.tablance-cell-state-icon-read-only")).visibility==="hidden",
 		"an inactive textlike read-only Lineup cell does not show a state icon");
 	variantSource.select();
-	const selectedSourceIndicator=getComputedStyle(sourceTitle,"::after");
+	const selectedSourceIndicator=getComputedStyle(sourceTitle.querySelector(":scope>.tablance-cell-state-icon-read-only"));
 	const sourceLayoutSelected={
 		cellHeight:variantSource.outerContainerEl.getBoundingClientRect().height,
 		titleLeft:sourceTitle.getBoundingClientRect().left,
 		titleTop:sourceTitle.getBoundingClientRect().top,
 		titleHeight:sourceTitle.getBoundingClientRect().height,
 	};
-	assert(selectedSourceIndicator.content==='""'&&selectedSourceIndicator.position==="absolute"
+	assert(selectedSourceIndicator.visibility==="visible"&&selectedSourceIndicator.position==="absolute"
 		&&selectedSourceIndicator.right==="0px"
 		&&sourceTitle.getBoundingClientRect().right
 			<=variantSource.outerContainerEl.getBoundingClientRect().right+.5
@@ -6373,7 +6397,7 @@ try {
 		&&JSON.stringify(sourceLayoutSelected)===JSON.stringify(sourceLayoutBefore),
 		"a selected Lineup lock sits inside the stable title structure without moving the label or cell");
 	key(lineupVariantTable.rootEl,"Enter","Enter");
-	assert(lineupVariantTable._inReadOnlyMode&&getComputedStyle(sourceTitle,"::after").content==='""',
+	assert(lineupVariantTable._inReadOnlyMode&&getComputedStyle(sourceTitle.querySelector(":scope>.tablance-cell-state-icon-read-only")).visibility==="visible",
 		"the inline Lineup lock remains visible during an active read-only presentation");
 	key(lineupVariantTable.rootEl,"Escape","Escape");
 	forcedAction.select();
@@ -6654,19 +6678,23 @@ try {
 	const gridIndicatorAction=indicatorLayoutTable.getDetailCell(0,"gridIndicatorAction");
 	listIndicatorField.select();
 	const listIndicatorStyle=getComputedStyle(indicatorLayoutTable._cellCursor,"::before");
+	const listEditIcon=(listIndicatorField.selEl??listIndicatorField.el)
+		.querySelector(":scope>.tablance-cell-state-icon-editable");
 	assert(!(listIndicatorField.selEl??listIndicatorField.el).querySelector(":scope>span.title")
 		&&listIndicatorStyle.content==="none"
+		&&(!listEditIcon||getComputedStyle(listEditIcon).visibility==="hidden")
 		&&indicatorLayoutTable._selectedCellState?.kind==="editable",
 		"List fields retain their separate title cell and only-details selection suppresses the redundant edit icon");
 	const gridEditTitle=gridIndicatorEdit.outerContainerEl.querySelector(":scope>span.title");
 	const gridEditTitleBefore=gridEditTitle.getBoundingClientRect();
-	assert(getComputedStyle(gridEditTitle,"::after").content==="none"
+	const gridEditIcon=gridEditTitle.querySelector(":scope>.tablance-cell-state-icon-editable");
+	assert(getComputedStyle(gridEditIcon).visibility==="hidden"
 		&&getComputedStyle(gridIndicatorEdit.outerContainerEl,"::before").content==="none",
 		"an inactive Grid field keeps both indicator layers hidden until hover or selection");
 	gridIndicatorEdit.select();
 	const gridEditTitleSelected=gridEditTitle.getBoundingClientRect();
-	const gridEditIndicatorStyle=getComputedStyle(gridEditTitle,"::after");
-	assert(gridEditIndicatorStyle.content==='""'
+	const gridEditIndicatorStyle=getComputedStyle(gridEditIcon);
+	assert(gridEditIndicatorStyle.visibility==="visible"
 		&&Math.abs(parseFloat(gridEditIndicatorStyle.left)-gridEditTitleSelected.width)<.05
 		&&gridEditIndicatorStyle.marginLeft==="4px"
 		&&getComputedStyle(indicatorLayoutTable._cellCursor,"::before").content==="none"
@@ -6679,10 +6707,11 @@ try {
 	gridIndicatorAction.select();
 	const gridActionIcon=gridActionTitle.querySelector(":scope>.tablance-cell-state-icon-navigation");
 	const gridActionIndicatorStyle=getComputedStyle(gridActionIcon);
+	const gridActionVisualStyle=getComputedStyle(gridActionIcon,"::before");
 	const gridActionTitleSelected=gridActionTitle.getBoundingClientRect();
 	assert(gridIndicatorAction.outerContainerEl.classList.contains("action-indicator")
 		&&gridActionIndicatorStyle.visibility==="visible"
-		&&(gridActionIndicatorStyle.maskImage!=="none"||gridActionIndicatorStyle.webkitMaskImage!=="none")
+		&&(gridActionVisualStyle.maskImage!=="none"||gridActionVisualStyle.webkitMaskImage!=="none")
 		&&getComputedStyle(indicatorLayoutTable._cellCursor,"::before").content==="none"
 		&&Math.abs(gridActionTitleSelected.left-gridActionTitleBefore.left)<.05
 		&&Math.abs(gridActionTitleSelected.width-gridActionTitleBefore.width)<.05,

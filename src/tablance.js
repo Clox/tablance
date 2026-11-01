@@ -339,6 +339,7 @@ class TablanceBase {
 	_detailsScrollTween=null;//single cancelable tween shared by outer details expansion and collapse
 	_detailsScrollTarget=null;
 	_readOnlyFeedbackTarget;
+	_readOnlyFeedbackIcon;
 	_readOnlyFeedbackTimer;
 	_navigationFeedbackTarget;
 	_navigationFeedbackTimer;
@@ -7627,17 +7628,25 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_showReadOnlyActivationFeedback() {
 		const inlineTitle=this._selectedCell?.querySelector(":scope>span.title");
 		const target=inlineTitle?this._selectedCell:this._cellCursor;
+		const icon=this._selectedCell?.querySelector(":scope>.tablance-cell-state-icon-read-only,"
+			+":scope>span.title>.tablance-cell-state-icon-read-only");
 		if (!target)
 			return false;
 		this._clearReadOnlyActivationFeedback();
 		target.classList.remove("read-only-activation-feedback");
+		icon?.classList.remove("read-only-activation-feedback");
 		void target.offsetWidth;//Restart one short animation instead of queueing repeated activation attempts.
 		target.classList.add("read-only-activation-feedback");
+		icon?.classList.add("read-only-activation-feedback");
 		this._readOnlyFeedbackTarget=target;
+		this._readOnlyFeedbackIcon=icon??null;
 		this._readOnlyFeedbackTimer=setTimeout(()=>{
 			target.classList.remove("read-only-activation-feedback");
+			icon?.classList.remove("read-only-activation-feedback");
 			if (this._readOnlyFeedbackTarget===target)
 				this._readOnlyFeedbackTarget=null;
+			if (this._readOnlyFeedbackIcon===icon)
+				this._readOnlyFeedbackIcon=null;
 		},640);
 		return true;
 	}
@@ -7645,7 +7654,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_clearReadOnlyActivationFeedback() {
 		clearTimeout(this._readOnlyFeedbackTimer);
 		this._readOnlyFeedbackTarget?.classList.remove("read-only-activation-feedback");
+		this._readOnlyFeedbackIcon?.classList.remove("read-only-activation-feedback");
 		this._readOnlyFeedbackTarget=null;
+		this._readOnlyFeedbackIcon=null;
 	}
 
 	_showNavigationActivationFeedback() {
@@ -11855,44 +11866,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_handleCellTypeTooltipPointer(event) {
-		const {clientX,clientY}=event;
-		const sourceIcon=document.elementsFromPoint?.(clientX,clientY)
-			.find(element=>element?.matches?.(".tablance-cell-type-icon,.tablance-cell-state-icon"));
-		if (sourceIcon?.dataset.tablanceCellTypeTooltip)
-			return this._showCellTypeTooltip(sourceIcon.dataset.tablanceCellTypeTooltip,sourceIcon);
-		const hit=(element,pseudo)=>{
-			if (!element?.isConnected) return false;
-			const style=getComputedStyle(element,pseudo);
-			if (!style.content||style.content==="none"||style.display==="none"||style.visibility==="hidden") return false;
-			const rect=element.getBoundingClientRect();
-			const width=parseFloat(style.width)||12,height=parseFloat(style.height)||12;
-			const left=parseFloat(style.left),right=parseFloat(style.right),top=parseFloat(style.top);
-			const x=Number.isFinite(left)?rect.left+(style.left.endsWith("%")?rect.width*left/100:left)
-				+parseFloat(style.marginLeft||0):rect.right-(Number.isFinite(right)?right:0)-width;
-			const y=Number.isFinite(top)&&style.top.endsWith("px")?rect.top+top:rect.top+(rect.height-height)/2;
-			return clientX>=x&&clientX<=x+width&&clientY>=y&&clientY<=y+height;
-		};
-		const describe=(state,cell,title)=>{
-			if (state?.kind==="editable"&&!cell.classList.contains("edit-mode"))
-				return hit(cell,"::before")||title&&hit(title,"::after")
-					?["Redigeringscell – Värdet kan redigeras.",title&&hit(title,"::after")?title:cell]:null;
-			if (state?.kind==="readOnly")
-				return hit(cell,"::before")||title&&hit(title,"::after")
-					?["Låst cell – Värdet visas utan att kunna redigeras.",title&&hit(title,"::after")?title:cell]:null;
-			return null;
-		};
-		const cursor=this._cellCursor?.style.display!=="none"&&this._cellCursor?.matches(":hover")
-			?this._cellCursor:null;
-		if (cursor) {
-			const title=this._selectedCell?.querySelector(":scope>span.title");
-			const result=describe(this._selectedCellState,cursor,title);
-			if (result) return this._showCellTypeTooltip(result[0],result[1]);
-		}
-		const cell=event.target?.closest?.(".tablance-cell-state");
-		if (!cell||cell===cursor) return this._clearCellTypeTooltip();
-		const title=cell.querySelector(":scope>span.title");
-		const result=describe(this._getCellState(cell),cell,title);
-		if (result) return this._showCellTypeTooltip(result[0],result[1]);
+		const icon=event.target?.closest?.(".tablance-cell-type-icon,.tablance-cell-state-icon");
+		if (icon?.dataset.tablanceCellTypeTooltip)
+			return this._showCellTypeTooltip(icon.dataset.tablanceCellTypeTooltip,icon);
 		this._clearCellTypeTooltip();
 	}
 
@@ -13696,7 +13672,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_syncCellStateIcon(cellEl,state,schemaNode) {
-		const kind=state?.kind==="action"&&this._showsActionIndicator(state,schemaNode)?"navigation":null;
+		const kind=state?.kind==="action"&&this._showsActionIndicator(state,schemaNode)?"navigation"
+			:state?.kind==="editable"?"editable":state?.kind==="readOnly"?"read-only":null;
 		let icon=cellEl.querySelector(":scope>.tablance-cell-state-icon, :scope>span.title>.tablance-cell-state-icon");
 		if (!kind) {
 			icon?.remove();
@@ -13710,8 +13687,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			icon.setAttribute("aria-hidden","true");
 		}
 		icon.className=`tablance-cell-state-icon tablance-cell-state-icon-${kind}`;
-		const labels={navigation:"Navigeringscell – Öppnar relaterad information."};
+		const labels={
+			navigation:"Navigeringscell – Öppnar relaterad information.",
+			editable:"Redigeringscell – Värdet kan redigeras.",
+			"read-only":"Låst cell – Värdet visas utan att kunna redigeras.",
+		};
 		icon.dataset.tablanceCellTypeTooltip=labels[kind];
+		icon.setAttribute("role","img");
+		icon.setAttribute("aria-label",labels[kind]);
+		icon.removeAttribute("aria-hidden");
 		if (parent!==icon.parentElement)
 			parent.appendChild(icon);
 	}

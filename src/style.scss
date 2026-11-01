@@ -31,39 +31,6 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		position: relative;
 		width: fit-content;
 	}
-	>span.title::after {
-		position: absolute;
-		top: 50%;
-		left: 100%;
-		display: block;
-		width: 12px;
-		height: 12px;
-		margin-left: 4px;
-		background-color: var(--tablance-indicator-color);
-		transform: translateY(-50%);
-		pointer-events: auto;
-		cursor: help;
-	}
-	&.read-only:is(:hover,.tablance-active-cell)>span.title::after {
-		content: "";
-		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center / contain no-repeat;
-		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center / contain no-repeat;
-	}
-	&.action-indicator:is(:hover,.tablance-active-cell,.navigation-activation-feedback)>span.title::after {
-		content: "";
-		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
-		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
-	}
-	&.editable-indicator:is(:hover,.tablance-active-cell)>span.title::after {
-		content: "";
-		-webkit-mask: $tablance-edit-icon center / contain no-repeat;
-		mask: $tablance-edit-icon center / contain no-repeat;
-	}
-	&.read-only:hover::before,
-	&.action-indicator:is(:hover,.navigation-activation-feedback)::before,
-	&.editable-indicator:hover::before {
-		content: none;
-	}
 }
 
 @mixin details-row-separator {
@@ -190,6 +157,9 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		.cell-cursor.editable-indicator::before,
 		.only-details-content .details-grid>span.editable-indicator::before {
 			content: none;
+		}
+		.only-details-content .details-grid>span.editable-indicator>.tablance-cell-state-icon-editable {
+			visibility: hidden !important;
 		}
 	}
 
@@ -636,27 +606,6 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	.editable-indicator:not(.cell-cursor) {
 		position: relative;
 	}
-	.cell-cursor.action-indicator::before,
-	.action-indicator:not(.cell-cursor):is(:hover,.navigation-activation-feedback)::before {
-		position: absolute;
-		z-index: 1;
-		top: 2px;
-		left: 4px;
-		display: block;
-		width: 12px;
-		height: 12px;
-		background-color: var(--tablance-indicator-color);
-		content: "";
-		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
-		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
-		pointer-events: auto;
-		cursor: help;
-	}
-	.action-indicator.navigation-activation-feedback::before,
-	.tablance-cell-state.action-indicator.navigation-activation-feedback>span.title::after {
-		animation: tablance-navigation-arrow-feedback 280ms ease-out;
-		transform-origin: center;
-	}
 	@keyframes tablance-navigation-arrow-feedback {
 		from { rotate: 0deg; }
 		to { rotate: -360deg; }
@@ -670,55 +619,6 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		0%, 22% { opacity: 0; }
 		34%, 78% { opacity: 1; }
 		100% { opacity: 0; }
-	}
-	.cell-cursor.editable-indicator:not(.edit-mode)::before,
-	.editable-indicator:not(.cell-cursor):hover::before {
-		position: absolute;
-		z-index: 1;
-		top: 2px;
-		left: 4px;
-		display: block;
-		width: 12px;
-		height: 12px;
-		background-color: var(--tablance-indicator-color);
-		content: "";
-		-webkit-mask: $tablance-edit-icon center / contain no-repeat;
-		mask: $tablance-edit-icon center / contain no-repeat;
-		pointer-events: auto;
-		cursor: help;
-	}
-	.cell-cursor.read-only::before,
-	.read-only:not(.cell-cursor):hover::before {
-		position: absolute;
-		z-index: 1;
-		top: 2px;
-		left: 4px;
-		display: block;
-		width: 12px;
-		height: 12px;
-		background-color: var(--tablance-indicator-color);
-		content: "";
-		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center / contain no-repeat;
-		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center / contain no-repeat;
-		pointer-events: auto;
-		cursor: help;
-	}
-	.cell-cursor.details.inline-title-indicator.read-only::before,
-	.cell-cursor.details.inline-title-indicator.action-indicator::before,
-	.cell-cursor.details.inline-title-indicator.editable-indicator::before {
-		content: none;
-	}
-	.cell-cursor.read-only.read-only-activation-feedback::before,
-	.tablance-cell-state.read-only.read-only-activation-feedback>span.title::after {
-		animation: tablance-read-only-lock-feedback 620ms linear;
-		transform-origin: 6px 1.5px;
-	}
-	.tablance-cell-state.read-only.read-only-activation-feedback>span.title::after {
-		// Keep vertical centering out of the glyph's transform pipeline while it rotates. Combining the base
-		// translateY(-50%) with individual rotate moves the visible pivot even when transform-origin is correct.
-		top: calc(50% - 6px) !important;
-		transform: none !important;
-		transform-origin: 6px 1.5px !important;
 	}
 	@keyframes tablance-read-only-lock-feedback {
 		0% {
@@ -1592,11 +1492,6 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 				&:is(.editable-indicator,.read-only,.action-indicator)>span.title {
 					box-sizing: border-box;
 					padding-right: 16px;
-					&::after {
-						right: 0;
-						left: auto;
-						margin-left: 0;
-					}
 				}
 			}
 			>.lineup-row-extension {
@@ -2372,6 +2267,10 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		&.left::before { border-left-color: var(--tooltip-outline); }
 		&.left::after { border-left-color: var(--tooltip-surface); }
 	}
+	.tooltip::before,
+	.tooltip::after {
+		pointer-events: none;
+	}
 	.tablance-select-container {
 		position: absolute;
 		z-index: 10000;
@@ -2548,21 +2447,36 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	height: 12px;
 	margin-inline-start: 5px;
 	vertical-align: text-bottom;
-	background-color: currentColor;
 	cursor: help;
+	&::before {
+		position: absolute;
+		inset: 0;
+		background-color: currentColor;
+		content: "";
+		pointer-events: none;
+	}
 	&.tablance-cell-type-icon-source {
-		@include tablance-mask-icon(url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.07 0l-3 3A5 5 0 0 0 11 21.07l1.71-1.71'/%3E%3C/svg%3E"));
+		&::before {
+			-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.07 0l-3 3A5 5 0 0 0 11 21.07l1.71-1.71'/%3E%3C/svg%3E") center / contain no-repeat;
+			mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'/%3E%3Cpath d='M14 11a5 5 0 0 0-7.07 0l-3 3A5 5 0 0 0 11 21.07l1.71-1.71'/%3E%3C/svg%3E") center / contain no-repeat;
+		}
 	}
 	&.tablance-cell-type-icon-navigation {
-		@include tablance-mask-icon(url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E"));
+		&::before {
+			-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
+			mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
+		}
 	}
 	&.tablance-cell-type-icon-editable {
-		@include tablance-mask-icon($tablance-edit-icon);
+		&::before {
+			-webkit-mask: $tablance-edit-icon center / contain no-repeat;
+			mask: $tablance-edit-icon center / contain no-repeat;
+		}
 	}
 }
 
-// Navigation indicators use one real node on the cell for hover and active presentation. The cursor is only a
-// selection outline; drawing another pseudo-element on it gave the same icon a second coordinate space.
+// The wrapper owns the complete hit box; the masked visual is pointer-transparent so transparent SVG regions
+// never fall through to a different cursor or event target.
 .tablance-cell-state-icon {
 	position: absolute;
 	z-index: 3;
@@ -2570,19 +2484,36 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	display: block;
 	width: 12px;
 	height: 12px;
-	background-color: var(--tablance-indicator-color);
 	opacity: 0;
 	visibility: hidden;
 	pointer-events: auto;
 	cursor: help;
 	transition: opacity 80ms linear;
+	&::before {
+		position: absolute;
+		inset: 0;
+		background-color: var(--tablance-indicator-color);
+		content: "";
+		pointer-events: none;
+	}
 	&.tablance-cell-state-icon-navigation {
-		@include tablance-mask-icon(url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E"));
+		&::before {
+			-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
+			mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 10l5 5-5 5'/%3E%3Cpath d='M4 4v7a4 4 0 0 0 4 4h12'/%3E%3C/svg%3E") center / contain no-repeat;
+		}
+	}
+	&.tablance-cell-state-icon-editable::before {
+		-webkit-mask: $tablance-edit-icon center / contain no-repeat;
+		mask: $tablance-edit-icon center / contain no-repeat;
+	}
+	&.tablance-cell-state-icon-read-only::before {
+		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center / contain no-repeat;
+		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='12' height='10' x='6' y='11' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E") center / contain no-repeat;
 	}
 }
-.tablance-cell-state.action-indicator:is(:hover,.tablance-active-cell)
+.tablance-cell-state:is(.action-indicator,.editable-indicator,.read-only):is(:hover,.tablance-active-cell)
 	>.tablance-cell-state-icon,
-.tablance-cell-state.action-indicator:is(:hover,.tablance-active-cell)
+.tablance-cell-state:is(.action-indicator,.editable-indicator,.read-only):is(:hover,.tablance-active-cell)
 	>span.title>.tablance-cell-state-icon {
 	opacity: 1;
 	visibility: visible;
@@ -2591,14 +2522,18 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	&::before { content: none !important; }
 	>span.title::after { content: none !important; }
 }
-.cell-cursor.action-indicator::before { content: none !important; }
+.tablance-cell-state:is(.editable-indicator,.read-only) {
+	&::before,
+	>span.title::after { content: none !important; }
+}
+.cell-cursor:is(.action-indicator,.editable-indicator,.read-only)::before { content: none !important; }
 .tablance-cell-state>span.title>.tablance-cell-state-icon {
 	top: 50%;
 	left: 100%;
 	margin-left: 4px;
 	transform: translateY(-50%);
 }
-.lineup>span.action-indicator>span.title>.tablance-cell-state-icon {
+.lineup>span:is(.action-indicator,.editable-indicator,.read-only)>span.title>.tablance-cell-state-icon {
 	right: 0;
 	left: auto;
 	margin-left: 0;
@@ -2607,13 +2542,28 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	top: 2px;
 	left: 4px;
 }
-td.tablance-cell-state:not(:has(>span.title))>.tablance-cell-state-icon { top: 1.5px; }
+td.tablance-cell-state:not(:has(>span.title))>.tablance-cell-state-icon-navigation { top: 1.5px; }
 .tablance-cell-state.action-indicator.navigation-activation-feedback
 	>.tablance-cell-state-icon-navigation,
 .tablance-cell-state.action-indicator.navigation-activation-feedback
 	>span.title>.tablance-cell-state-icon-navigation {
 	animation: tablance-navigation-arrow-feedback 280ms ease-out;
 	transform-origin: center;
+}
+.tablance-cell-state.read-only.read-only-activation-feedback>.tablance-cell-state-icon-read-only,
+.tablance-cell-state.read-only.read-only-activation-feedback
+	>span.title>.tablance-cell-state-icon-read-only {
+	animation: tablance-read-only-lock-feedback 620ms linear;
+	transform-origin: 6px 1.5px;
+}
+.tablance-cell-state-icon-read-only.read-only-activation-feedback {
+	animation: tablance-read-only-lock-feedback 620ms linear;
+	transform-origin: 6px 1.5px;
+}
+.tablance-cell-state>span.title>.tablance-cell-state-icon-read-only.read-only-activation-feedback {
+	top: calc(50% - 6px) !important;
+	transform: none !important;
+	transform-origin: 6px 1.5px !important;
 }
 
 .tablance-view-switcher {
