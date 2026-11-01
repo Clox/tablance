@@ -28,6 +28,245 @@ await new Promise(resolve=>setTimeout(resolve,0));
 assert(standalone._tooltip.isConnected&&standalone._tooltip.firstChild.textContent.startsWith('Källkopplad cell'),
  'source type icons use the shared Tablance tooltip');
 standalone._clearCellTypeTooltip();
+const sourceRelationTable=new Tablance(host(),{details:{type:'grid',columns:3,rows:[
+ {cells:[{type:'field',nodeId:'priorValue',dataKey:'priorValue',title:'Prior value',input:{type:'text'}}]},
+ {cells:[{type:'field',nodeId:'recordSource',dataKey:'recordSource',title:'Record source',sourceLinked:true,
+  input:{type:'text'}}]},
+ {cells:[{type:'field',nodeId:'recordNumber',dataKey:'recordNumber',title:'Record number',dependsOn:'recordSource',input:{type:'text'}},
+  {type:'field',nodeId:'recordName',dataKey:'recordName',title:'Record name',dependsOn:'recordSource',input:{type:'text'}},
+  {type:'field',nodeId:'hiddenValue',dataKey:'hiddenValue',title:'Hidden value',dependsOn:'recordSource',
+   visibleIf:()=>false,input:{type:'text'}}]},
+ {cells:[{type:'field',nodeId:'unrelatedValue',dataKey:'unrelatedValue',title:'Unrelated source',sourceLinked:true,input:{type:'text'}}]},
+]}},true,true,{searchbar:false});
+sourceRelationTable.setData({priorValue:'Prior',recordSource:'',recordNumber:'123',recordName:'Example',hiddenValue:'Hidden',unrelatedValue:'Other'});
+const relationCell=id=>sourceRelationTable.getDetailCell(0,id);
+const relationSource=relationCell('recordSource');
+const relationNumber=relationCell('recordNumber');
+const relationName=relationCell('recordName');
+const relationHidden=relationCell('hiddenValue');
+const ordinaryRelationShadow=getComputedStyle(relationNumber.selEl).boxShadow;
+const ordinaryRelationBackground=getComputedStyle(relationNumber.selEl).backgroundImage;
+const relationGrid=relationNumber.selEl.closest('.details-grid');
+const relationRowSeparator=relationGrid.querySelector(':scope>.grid-row-separator');
+const ordinarySeparatorColor=getComputedStyle(relationRowSeparator).borderTopColor;
+const ordinaryColumnDividerColor=getComputedStyle(relationName.selEl).borderInlineStartColor;
+assert(relationSource.selEl.classList.contains('tablance-source-linked-cell'),
+ 'source-linked cells have a persistent semantic styling hook');
+assert(getComputedStyle(relationSource.selEl).backgroundColor
+ ===getComputedStyle(relationCell('unrelatedValue').selEl).backgroundColor,
+ 'source-linked cells have no permanent background fill');
+assert(getComputedStyle(relationSource.selEl).boxShadow!=='none',
+ 'source-linked cells keep a thin permanent accent line');
+assert(getComputedStyle(relationSource.selEl).boxShadow.includes('3px')
+ &&getComputedStyle(relationSource.selEl).getPropertyValue('--tablance-relation-source-color').trim()==='#71849a',
+ 'the permanent source accent uses its independent blue-grey color and three-pixel width');
+assert(relationSource.schemaNode.dependencyPaths?.length===3,
+ 'source relations reuse the existing dependency graph');
+sourceRelationTable._handleCellTypeTooltipPointer({target:relationSource.selEl});
+const relationClock=relationSource.selEl.closest('.tablance');
+const relationIntensity=cellEl=>getComputedStyle(cellEl).getPropertyValue('--tablance-relation-intensity').trim();
+assert(relationIntensity(relationSource.selEl)===relationIntensity(relationNumber.selEl),
+ 'source and target read the same inherited animation phase');
+const sourceAccent=getComputedStyle(relationSource.selEl).boxShadow;
+if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+ assert(getComputedStyle(relationClock).animationName==='none',
+  'reduced motion keeps the relation visible without animation');
+ assert(getComputedStyle(relationNumber.selEl).backgroundImage!==ordinaryRelationBackground,
+  'reduced motion keeps a static target fill');
+} else {
+ assert(getComputedStyle(relationClock).animationName==='tablance-relation-breathe',
+  'a hovered source starts the shared relation clock');
+ const samples=[parseFloat(relationIntensity(relationSource.selEl))];
+ for(let index=0;index<2;index++) {
+  await new Promise(resolve=>setTimeout(resolve,240));
+  samples.push(parseFloat(relationIntensity(relationSource.selEl)));
+  assert(relationIntensity(relationSource.selEl)===relationIntensity(relationNumber.selEl),
+   'source and target remain synchronized during the animation');
+  assert(getComputedStyle(relationSource.selEl).boxShadow===sourceAccent,
+   'source identity accent stays static while targets breathe');
+ }
+ assert(Math.max(...samples)-Math.min(...samples)>1,
+  'relation intensity breathes rather than staying constant');
+}
+assert(relationSource.selEl.classList.contains('tablance-source-relation-active')
+ &&getComputedStyle(relationSource.selEl).boxShadow.includes('3px')
+ &&getComputedStyle(relationNumber.selEl).backgroundImage!==ordinaryRelationBackground
+ &&getComputedStyle(relationNumber.selEl).getPropertyValue('--tablance-relation-outline-width').trim()==='0px',
+ 'active relations use a static source accent and a breathing target fill without an outline');
+assert(getComputedStyle(relationNumber.selEl).backgroundClip==='padding-box'
+ &&getComputedStyle(relationRowSeparator).borderTopColor===ordinarySeparatorColor
+ &&getComputedStyle(relationName.selEl).borderInlineStartColor===ordinaryColumnDividerColor,
+ 'target fill stays inside the cell while grid dividers retain their original colors');
+assert(relationNumber.selEl.classList.contains('tablance-source-related-highlight')
+ &&relationName.selEl.classList.contains('tablance-source-related-highlight')
+ &&!relationHidden.selEl.classList.contains('tablance-source-related-highlight'),
+ 'hovering a source highlights only visible, already rendered dependents');
+sourceRelationTable.rootEl.dispatchEvent(new PointerEvent('pointerleave'));
+assert(sourceRelationClassesCleared()
+ &&!relationSource.selEl.classList.contains('tablance-source-relation-active')
+ &&getComputedStyle(relationNumber.selEl).boxShadow===ordinaryRelationShadow,
+ 'leaving the table restores a dependent exactly to ordinary styling');
+sourceRelationTable._handleCellTypeTooltipPointer({target:relationSource.selEl});
+assert(getComputedStyle(relationNumber.selEl).backgroundColor
+ ===getComputedStyle(relationCell('unrelatedValue').selEl).backgroundColor,
+ 'related cells leave their underlying background color intact');
+assert(getComputedStyle(relationNumber.selEl).backgroundImage!==ordinaryRelationBackground,
+ 'related cells use the blue fill without an outline');
+sourceRelationTable._handleCellTypeTooltipPointer({target:relationNumber.selEl});
+assert(!relationSource.selEl.classList.contains('tablance-source-related-highlight')
+ &&!relationNumber.selEl.classList.contains('tablance-source-related-highlight')
+ &&!relationName.selEl.classList.contains('tablance-source-related-highlight'),
+ 'hovering a dependent does not reverse-highlight a source relation');
+sourceRelationTable._handleCellTypeTooltipPointer({target:relationName.selEl});
+sourceRelationTable.selectCell(0,'recordSource');
+sourceRelationTable._handleCellTypeTooltipPointer({target:relationName.selEl});
+assert(!relationSource.selEl.classList.contains('tablance-source-related-highlight')
+ &&relationNumber.selEl.classList.contains('tablance-source-related-highlight'),
+ 'active and hovered source relations remain synchronized');
+sourceRelationTable.rootEl.dispatchEvent(new PointerEvent('pointerleave'));
+assert(!relationSource.selEl.classList.contains('tablance-source-related-highlight')
+ &&relationNumber.selEl.classList.contains('tablance-source-related-highlight'),
+ 'active source relation remains highlighted after pointer leaves');
+sourceRelationTable.selectCell(0,'unrelatedValue');
+assert(!relationSource.selEl.classList.contains('tablance-source-related-highlight')
+ &&!relationSource.selEl.classList.contains('tablance-source-relation-active')
+ &&!relationNumber.selEl.classList.contains('tablance-source-related-highlight'),
+ 'source relation highlight clears after selection moves away');
+assert(!relationCell('unrelatedValue').selEl.classList.contains('tablance-source-related-highlight'),
+ 'another source cell keeps its own accent without becoming a relation target');
+
+// Pointer selection and the public API must use the same active-cell relation transition as keyboard navigation.
+sourceRelationTable.selectCell(0,'recordSource');
+sourceRelationTable._handleCellTypeTooltipPointer({target:relationSource.selEl});
+assert(sourceRelationClassesCleared()===false,'source is related before pointer navigation');
+relationName.selEl.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0}));
+assert(sourceRelationTable._activeDetailsCell?.schemaNode?.nodeId==='recordName'
+ &&sourceRelationClassesCleared()
+ &&!relationSource.selEl.classList.contains('tablance-source-relation-active'),
+ 'clicking an ordinary cell clears the old source relation immediately');
+sourceRelationTable.selectCell(0,'recordSource');
+sourceRelationTable.selectCell(0,'recordNumber');
+assert(sourceRelationClassesCleared(),'programmatic navigation clears the old source relation');
+sourceRelationTable.refreshSubtree(relationCell('recordNumber'));
+assert(sourceRelationClassesCleared(),'passive repaint cannot resurrect a relation from the formerly active source');
+
+// Leaving the active source in either keyboard direction clears the relation immediately.
+sourceRelationTable.selectCell(0,'recordSource');
+sourceRelationTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:'ArrowDown',code:'ArrowDown',bubbles:true,cancelable:true}));
+assert(sourceRelationTable._activeDetailsCell?.schemaNode?.nodeId==='recordNumber',
+ 'ArrowDown moves from the active source to its next cell');
+assert(sourceRelationClassesCleared());
+sourceRelationTable.selectCell(0,'recordSource');
+sourceRelationTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:'ArrowUp',code:'ArrowUp',bubbles:true,cancelable:true}));
+assert(sourceRelationTable._activeDetailsCell?.schemaNode?.nodeId==='priorValue',
+ 'ArrowUp moves from the active source to its previous cell');
+assert(sourceRelationClassesCleared());
+
+const horizontalRelations=new Tablance(host(),{details:{type:'grid',columns:3,rows:[
+ {cells:[
+  {type:'field',nodeId:'leftCell',dataKey:'left',input:{type:'text'}},
+  {type:'field',nodeId:'horizontalSource',dataKey:'source',sourceLinked:true,input:{type:'text'}},
+  {type:'field',nodeId:'rightCell',dataKey:'right',input:{type:'text'}},
+ ]},
+ {cells:[{type:'field',nodeId:'horizontalDependent',dataKey:'dependent',dependsOn:'horizontalSource',input:{type:'text'}}]},
+]}},true,true,{searchbar:false});
+horizontalRelations.setData({left:'Left',source:'Source',right:'Right',dependent:'Dependent'});
+const horizontalDependent=horizontalRelations.getDetailCell(0,'horizontalDependent').selEl;
+for (const [key,destination] of [['ArrowLeft','leftCell'],['ArrowRight','rightCell']]) {
+ horizontalRelations.selectCell(0,'horizontalSource');
+ assert(horizontalDependent.classList.contains('tablance-source-related-highlight'),
+  'active source highlights its dependent before horizontal navigation');
+ horizontalRelations.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+  {key,code:key,bubbles:true,cancelable:true}));
+ assert(horizontalRelations._activeDetailsCell?.schemaNode?.nodeId===destination
+  &&!horizontalDependent.classList.contains('tablance-source-related-highlight'),
+  `${key} leaves the source without a stale relation`);
+}
+for (const direction of ['ArrowUp','ArrowDown']) {
+ const sourceEntry={type:'field',nodeId:'boundarySource',dataKey:'source',sourceLinked:true,input:{type:'text'}};
+ const dependentEntry={type:'field',nodeId:'boundaryDependent',dataKey:'dependent',
+  dependsOn:'boundarySource',input:{type:'text'}};
+ const entries=direction==='ArrowUp'?[sourceEntry,dependentEntry]:[dependentEntry,sourceEntry];
+ const boundaryTable=new Tablance(host(),{details:{type:'list',entries}},true,true,{searchbar:false});
+ boundaryTable.setData({source:'Source',dependent:'Dependent'});
+ const neighbour=new Tablance(host(),{details:{type:'list',entries:[
+  {type:'field',nodeId:'neighbourCell',dataKey:'value',input:{type:'text'}},
+ ]}},true,true,{searchbar:false});
+ neighbour.setData({value:'Neighbour'});
+ boundaryTable.neighbourTables=direction==='ArrowUp'?{up:neighbour}:{down:neighbour};
+ boundaryTable.selectCell(0,'boundarySource');
+ const dependent=boundaryTable.getDetailCell(0,'boundaryDependent');
+ const boundaryDependent=dependent.selEl??dependent.el;
+ assert(boundaryDependent.classList.contains('tablance-source-related-highlight'),
+  'active source highlights its dependent before leaving its table');
+ boundaryTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+  {key:direction,code:direction,bubbles:true,cancelable:true}));
+ assert(neighbour._activeDetailsCell?.schemaNode?.nodeId==='neighbourCell'
+  &&!boundaryDependent.classList.contains('tablance-source-related-highlight'),
+  `${direction} into a neighbouring table clears the old table's active relation`);
+}
+
+function sourceRelationClassesCleared() {
+ return !relationNumber.selEl.classList.contains('tablance-source-related-highlight')
+  &&!relationName.selEl.classList.contains('tablance-source-related-highlight');
+}
+const repeatedRelations=new Tablance(host(),{details:{type:'list',entries:[
+ {type:'repeated',nodeId:'people',dataKey:'people',entry:{type:'lineup',entries:[
+  {type:'field',nodeId:'personSource',dataKey:'source',title:'Huvudman',sourceLinked:true,
+   sourceLinkedTargets:['personNumber','personName'],input:{type:'text'}},
+  {type:'field',nodeId:'personNumber',dataKey:'number',title:'Personnummer',dependsOn:'personSource',input:{type:'text'}},
+  {type:'field',nodeId:'personName',dataKey:'name',title:'Namn',dependsOn:'personSource',input:{type:'text'}},
+ ]}},
+]}},true,true,{searchbar:false});
+repeatedRelations.setData({people:[
+ {id:'first',source:'A',number:'111',name:'First'},
+ {id:'second',source:'B',number:'222',name:'Second'},
+]});
+const repeatedPeople=repeatedRelations.getDetailCell(0,'people').children;
+const [firstPerson,secondPerson]=repeatedPeople;
+const [firstSource,firstNumber,firstName]=firstPerson.children;
+const [secondSource,secondNumber,secondName]=secondPerson.children;
+const ordinaryLineupDividerColor=getComputedStyle(firstName.selEl,'::before').borderInlineStartColor;
+const isRelated=node=>node.selEl.classList.contains('tablance-source-related-highlight');
+assert(firstSource.schemaNode===secondSource.schemaNode&&firstSource!==secondSource,
+ 'repeated people share a schema template but have distinct source instances');
+assert(firstSource.selEl.classList.contains('tablance-source-linked-cell')
+ &&secondSource.selEl.classList.contains('tablance-source-linked-cell')
+ &&![firstNumber,firstName,secondNumber,secondName].some(isRelated),
+ 'only repeated source cells have permanent styling');
+repeatedRelations._handleCellTypeTooltipPointer({target:firstSource.selEl});
+assert(getComputedStyle(firstName.selEl,'::before').borderInlineStartColor===ordinaryLineupDividerColor
+ &&getComputedStyle(firstName.selEl,'::before').zIndex==='1',
+ 'a filled lineup target paints its original column divider above the animated fill');
+assert(isRelated(firstNumber)&&isRelated(firstName)
+ &&![firstSource,secondSource,secondNumber,secondName].some(isRelated),
+ 'first repeated source highlights only its own two dependent instances');
+repeatedRelations.rootEl.dispatchEvent(new PointerEvent('pointerleave'));
+assert(![firstNumber,firstName,secondNumber,secondName].some(isRelated),
+ 'mouseleave clears the repeated source relation immediately');
+firstSource.select();
+assert(isRelated(firstNumber)&&isRelated(firstName)
+ &&![secondSource,secondNumber,secondName].some(isRelated),
+ 'an active repeated source has the same instance-scoped relation');
+repeatedRelations.refreshSubtree(firstPerson);
+assert(isRelated(firstNumber)&&isRelated(firstName)
+ &&![secondSource,secondNumber,secondName].some(isRelated),
+ 're-render keeps active relations only on the same repeated instance');
+secondSource.select();
+assert(!isRelated(firstNumber)&&!isRelated(firstName)
+ &&isRelated(secondNumber)&&isRelated(secondName),
+ 'selecting the second repeated source replaces the first relation without a stale class');
+secondNumber.select();
+assert(![firstNumber,firstName,secondNumber,secondName].some(isRelated),
+ 'an unrelated active cell leaves no repeated relation highlight');
+secondSource.select();
+repeatedRelations.updateData(secondSource.dataObj,'source','Picked source');
+const selectedSourceIcon=secondSource.selEl.querySelector('.tablance-cell-state-icon-editable');
+assert(secondSource.selEl.classList.contains('tablance-active-cell')
+ &&selectedSourceIcon&&getComputedStyle(selectedSourceIcon).visibility==='visible',
+ 'a source-linked cell keeps its editing icon after its selected value repaints the active cell');
 const indicatorTable=new Tablance(host(),{details:{type:'grid',columns:1,entries:[
  {title:'Navigation',dataKey:'navigation',nodeId:'navigation',onEnter:()=>{}},
  {title:'Editable',dataKey:'editable',nodeId:'editable',input:{type:'text'}},
@@ -47,6 +286,15 @@ const activeIndicatorTooltip=async key=>{
 assert((await activeIndicatorTooltip('navigation')).startsWith('Navigeringscell')
  &&(await activeIndicatorTooltip('editable')).startsWith('Redigeringscell'),
  'navigation and editing icons show concise, named cell-type tooltips while their cells are active');
+for(const [key,kind] of [['navigation','navigation'],['editable','editable'],['locked','read-only']]){
+ indicatorTable.selectCell(0,key);
+ const selected=indicatorTable.getDetailCell(0,key);
+ indicatorTable.updateData(indicatorRow,key,`Updated ${key}`);
+ const icon=selected.outerContainerEl.querySelector(`.tablance-cell-state-icon-${kind}`);
+ assert(selected.selEl.classList.contains('tablance-active-cell')
+  &&icon&&(kind==='editable'||getComputedStyle(icon).visibility==='visible'),
+  `${kind} cell-type icon remains visible when the selected cell is repainted`);
+}
 const panel=standalone.rootEl.querySelector(':scope>.only-details-content');
 const header=panel.querySelector(':scope>.only-details-header');
 const body=panel.querySelector(':scope>.only-details-body');

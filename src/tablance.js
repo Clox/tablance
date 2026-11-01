@@ -296,6 +296,10 @@ class TablanceBase {
 						//}
 	_activeDetailsCell;	//points to an object in #openDetailsNavMap and in extension the cell of an details.
 							//If this is set then it means the cursor is inside an details.
+	_relatedHighlightCells=new Set;
+	_relationSourceCells=new Set;
+	_hoveredDetailsRelationInstance=null;
+	_selectedDetailsRelationInstance=null;
 	/* #generatingDetails=false;//this is a flag that gets set to true when a row gets expanded or an already expanded
 		//row gets scrolled into view, in short whenever the details-elements are generated. Then it gets unset when
 		//creation finishes. The reason for having this flag is so that update */
@@ -489,6 +493,12 @@ class TablanceBase {
 	 * 						2. If `dataKey` is set (and `nodeId` is not), the value of `dataKey` becomes the entry’s identifier.
 	 * 						3. `dependsOn` must match the identifier of another entry. If both `dataKey` and `nodeId` exist,
 	 * 							`nodeId` takes priority.
+	 * 				* sourceLinked Bool Optional marker for a cell that supplies values to dependent cells through
+	 * 					`dependsOn`. Tablance gives the source a subtle persistent visual cue and highlights only its
+	 * 					already rendered dependents while the source is hovered or active.
+	 * 				* sourceLinkedTargets String[] Optional identifiers of the dependents that the source actually fills.
+	 * 					When omitted, all declared `dependsOn` dependents participate. This prevents structural
+	 * 					visibility dependencies from appearing as value relations.
 	 * 			Types of entries:
 	 * 			{
   	 *				type "list" this is an entry that holds multiple rows laid out vertically, each item in the list 
@@ -1143,6 +1153,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._pendingColumnCursorRemap=null;
 		this._mainRowIndex=this._mainColIndex=null;
 		this._activeDetailsCell=null;
+		this._clearSourceRelationHighlights();
 		this._cellCursorDataObj=null;
 		this._selectedCellState=null;
 		this._activeSchemaNode=null;
@@ -1228,6 +1239,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._clearStaticCellOverflowPreview();
 		this._cellCursor.style.display="none";
 		this._activeDetailsCell=null;
+		this._clearSourceRelationHighlights();
 
 		if (selectedRow&&nextAnchorIndex>=0) {
 			this._cellCursorDataObj=selectedRow;
@@ -1305,6 +1317,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._mainRowIndex=null;
 		this._mainColIndex=null;
 		this._activeDetailsCell=null;
+		this._clearSourceRelationHighlights();
 		this._cellCursorDataObj=null;
 		this._setSelectedCellElement(null);
 		this._scrollRowIndex=0;
@@ -2787,6 +2800,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._updateDetailsHeight(detailsTr);
 		this._adjustCursorPosSize?.(this._activeDetailsCell
 			?this._getCursorGeometryEl(this._activeDetailsCell):this._selectedCell);
+		this._syncSourceRelationHighlights();
 		return refreshed;
 	}
 
@@ -3159,6 +3173,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		let stack = [...ctx.initialRoots];
 
 		for (let schemaNode; schemaNode = stack.pop();) {
+			if (schemaNode.sourceLinkedTargets!==undefined
+				&&(!schemaNode.sourceLinked||!Array.isArray(schemaNode.sourceLinkedTargets)
+					||schemaNode.sourceLinkedTargets.some(id=>typeof id!=="string"||!id.trim())))
+				throw new TypeError("sourceLinkedTargets requires a source-linked cell and an array of field identifiers.");
 
 			if (schemaNode.dependsOn) {
 				const deps = Array.isArray(schemaNode.dependsOn) ? schemaNode.dependsOn : [schemaNode.dependsOn];
@@ -4475,7 +4493,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this.rootEl.addEventListener("copy",e=>this._spreadsheetCopy(e));
 		this.rootEl.addEventListener("mousedown",e=>this._handleUserCellSelection(()=>this._spreadsheetMouseDown(e)));
 		this.rootEl.addEventListener("pointermove",e=>this._handleCellTypeTooltipPointer(e));
-		this.rootEl.addEventListener("pointerleave",()=>this._clearCellTypeTooltip());
+		this.rootEl.addEventListener("pointerleave",()=>{
+			this._clearCellTypeTooltip();
+			this._hoveredDetailsRelationInstance=null;
+			this._syncSourceRelationHighlights();
+		});
 		this.rootEl.addEventListener("click",e=>this._focusTableAfterNonCellClick(e));
 		this.rootEl.addEventListener("dblclick",e=>this._detailsRowExtensionDoubleClick(e));
 		this._cellCursor.addEventListener("click",e=>{
@@ -4817,8 +4839,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!nextTable)
 			return false;
 		const selected=nextTable.selectTopBottomCellOnlyDetails(direction>0);
-		if (selected)
+		if (selected) {
 			this._mainColIndex=this._mainRowIndex=this._activeDetailsCell=null;
+			this._clearSourceRelationHighlights();
+		}
 		return selected;
 	}
 
@@ -5110,8 +5134,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		else {
 			const nextTable=this.neighbourTables?.[isGoingDown?"down":"up"];
 			if (nextTable) {
-				if (nextTable.selectTopBottomCellOnlyDetails(isGoingDown))
+				if (nextTable.selectTopBottomCellOnlyDetails(isGoingDown)) {
 					this._mainColIndex=this._mainRowIndex=this._activeDetailsCell=null;
+					this._clearSourceRelationHighlights();
+				}
 			}
 		}
 	}
@@ -5946,6 +5972,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (instanceNode.present)
 			detailsDiv.appendChild(visualFragment);
 		instanceNode.rowIndex=rowIndex;
+		this._syncSourceRelationHighlights();
 		return detailsRow;
 	}
 
@@ -8558,6 +8585,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		// The old subtree has already crossed its commit boundary. Do not try to close it a second time while
 		// resolving the logical destination captured before the asynchronous handoff.
 		this._activeDetailsCell=null;
+		this._clearSourceRelationHighlights();
 		if (continuation.kind==="main") {
 			const rowIndex=this._filteredData.indexOf(continuation.rowData);
 			const colIndex=this._colSchemaNodes.indexOf(continuation.schemaNode);
@@ -9093,7 +9121,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._activeSchemaNode=groupObject.schemaNode;
 		this._cellCursorDataObj=groupObject.dataObj;
 		this._selectedCellVal=this._getTargetVal(true,groupObject.schemaNode,groupObject,groupObject.dataObj);
-		this._setSelectedCellElement(groupObject.selEl??groupObject.el);
+		this._setSelectedCellElement(groupObject.selEl??groupObject.el,groupObject);
 	}
 
 	_setGroupPresentationState(groupObject,state) {
@@ -10009,6 +10037,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		for (let active=this._activeDetailsCell;active;active=active.parent)
 			if (active===instanceNode) {
 				this._activeDetailsCell=null;
+				this._clearSourceRelationHighlights();
 				break;
 			}
 		this._refreshPresenceChain(parent);
@@ -11043,6 +11072,104 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._showTooltip([message,this.lang.fieldValidationFailedHint].filter(Boolean).join("\n"));
 	}
 
+	_resolveDetailsDependencyInstances(depPath,sourceInstance) {
+		let sourceRoot=sourceInstance;
+		while (sourceRoot?.parent) sourceRoot=sourceRoot.parent;
+		const detailsIndex=sourceRoot?.rowIndex??this._mainRowIndex??(this._onlyDetails?0:null);
+		const detailsRoot=depPath[0]==="r"?null:this._openDetailsPanes[detailsIndex];
+		let cells=depPath[0]==="r"?[sourceInstance]:[detailsRoot];
+		if (!cells[0]) return [];
+		let step=1;
+		for (;depPath[step]==="..";step++) {
+			cells=[cells[0]?.parent].filter(Boolean);
+			if (!cells.length) return [];
+		}
+		for (;step<depPath.length;step++) {
+			const childIndex=depPath[step];
+			const next=[];
+			for (const cell of cells) {
+				const parents=cell?.schemaNode?.type==="repeated"?(cell.children??[]):[cell];
+				for (const parent of parents) {
+					const child=parent?.children?.[childIndex];
+					if (child) next.push(child);
+				}
+			}
+			cells=next;
+			if (!cells.length) break;
+		}
+		return cells;
+	}
+
+	_isVisibleMaterializedRelationCell(instanceNode) {
+		if (!instanceNode||instanceNode.present===false||instanceNode.hidden===true) return false;
+		for (let parent=instanceNode.parent;parent;parent=parent.parent)
+			if (parent.schemaNode?.type==="group"&&!this._isGroupPresentationOpen(parent)) return false;
+		const cellEl=instanceNode.selEl??instanceNode.el;
+		return !!cellEl?.isConnected&&!cellEl.closest("[hidden]");
+	}
+
+	_sharesRepeatedRelationScope(source,target) {
+		for (let sourceEntry=source;sourceEntry?.parent;sourceEntry=sourceEntry.parent) {
+			const repeated=sourceEntry.parent;
+			if (repeated.schemaNode?.type!=="repeated") continue;
+			for (let targetEntry=target;targetEntry?.parent;targetEntry=targetEntry.parent)
+				if (targetEntry.parent===repeated&&targetEntry!==sourceEntry) return false;
+		}
+		return true;
+	}
+
+	_syncSourceRelationHighlights() {
+		const activeInstance=this._selectedDetailsRelationInstance;
+		let hoveredInstance=this._hoveredDetailsRelationInstance;
+		if (hoveredInstance&&!this._isVisibleMaterializedRelationCell(hoveredInstance)) {
+			this._hoveredDetailsRelationInstance=null;
+			hoveredInstance=null;
+		}
+		if (!this._relatedHighlightCells.size&&!this._relationSourceCells.size&&!activeInstance?.schemaNode?.sourceLinked
+			&&!hoveredInstance?.schemaNode?.sourceLinked)
+			return;
+		const related=new Set;
+		const sources=new Set;
+		const addVisible=node=>{
+			if (this._isVisibleMaterializedRelationCell(node)) related.add(node.selEl??node.el);
+		};
+		const addSourceRelation=source=>{
+			if (!source?.schemaNode?.sourceLinked||!this._isVisibleMaterializedRelationCell(source)) return;
+			sources.add(source.selEl??source.el);
+			const targetIds=source.schemaNode.sourceLinkedTargets;
+			const allowedTargets=Array.isArray(targetIds)?new Set(targetIds):null;
+			for (const path of source.schemaNode.dependencyPaths??[]) {
+				if (path[0]==="m") continue;
+				for (const target of this._resolveDetailsDependencyInstances(path,source))
+					if ((!allowedTargets||allowedTargets.has(target.schemaNode?.nodeId))
+						&&(!target.schemaNode?.sourceLinked||allowedTargets?.has(target.schemaNode?.nodeId))
+						&&this._sharesRepeatedRelationScope(source,target)) addVisible(target);
+			}
+		};
+		for (const instance of new Set([activeInstance,hoveredInstance].filter(Boolean))) {
+			if (instance.schemaNode?.sourceLinked) addSourceRelation(instance);
+		}
+		for (const cellEl of this._relatedHighlightCells)
+			if (!related.has(cellEl)) cellEl.classList.remove("tablance-source-related-highlight");
+		for (const cellEl of related) cellEl.classList.add("tablance-source-related-highlight");
+		this._relatedHighlightCells=related;
+		for (const cellEl of this._relationSourceCells)
+			if (!sources.has(cellEl)) cellEl.classList.remove("tablance-source-relation-active");
+		for (const cellEl of sources) cellEl.classList.add("tablance-source-relation-active");
+		this._relationSourceCells=sources;
+	}
+
+	_clearSourceRelationHighlights() {
+		this._hoveredDetailsRelationInstance=null;
+		this._selectedDetailsRelationInstance=null;
+		for (const cellEl of this._relatedHighlightCells)
+			cellEl.classList.remove("tablance-source-related-highlight");
+		this._relatedHighlightCells.clear();
+		for (const cellEl of this._relationSourceCells)
+			cellEl.classList.remove("tablance-source-relation-active");
+		this._relationSourceCells.clear();
+	}
+
 	/**
 	 * Updates dependent cells when a cell's value changes.
 	 *
@@ -11080,38 +11207,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			queue.push({schemaNode,instanceNode});
 			return true;
 		};
-		const resolveDetailsCells=(depPath,sourceInstance)=>{
-			let sourceRoot=sourceInstance;
-			while (sourceRoot?.parent) sourceRoot=sourceRoot.parent;
-			const detailsIndex=sourceRoot?.rowIndex??mainIndex??(this._onlyDetails?0:null);
-			const detailsRoot=depPath[0]==="r"?null:this._openDetailsPanes[detailsIndex];
-			let cells=depPath[0]==="r"?[sourceInstance]:[detailsRoot];
-			if (!cells[0])
-				return [];
-			let step=1;
-			for (;depPath[step]==="..";step++) {
-				cells=[cells[0]?.parent].filter(Boolean);
-				if (!cells.length)
-					return [];
-			}
-			for (;step<depPath.length;step++) {
-				const childIndex=depPath[step];
-				const next=[];
-				for (const cell of cells) {
-					const parents=cell?.schemaNode?.type==="repeated"?(cell.children??[]):[cell];
-					for (const parent of parents) {
-						const child=parent?.children?.[childIndex];
-						if (child)
-							next.push(child);
-					}
-				}
-				cells=next;
-				if (!cells.length)
-					break;
-			}
-			return cells;
-		};
-
 		// The initiating cell is a signal source, not a dependent repaint target. Recording it up front is the
 		// cycle guard for graphs such as A -> B -> C -> A.
 		enqueue(editedCellSchemaNode,editedInstanceNode);
@@ -11128,7 +11223,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 						this._updateMainRowCell(tr.cells[depPath[1]],dependentSchema);
 					continue;
 				}
-				for (const cell of resolveDetailsCells(depPath,instanceNode)) {
+				for (const cell of this._resolveDetailsDependencyInstances(depPath,instanceNode)) {
 					if (!enqueue(cell.schemaNode,cell))
 						continue;
 					// Hidden cells still propagate their dependency signal, but need no content repaint.
@@ -11138,6 +11233,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				}
 			}
 		}
+		this._syncSourceRelationHighlights();
 	}
 
 	_exitEditMode(save) {
@@ -11635,7 +11731,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		this._finalizeGroupClose(group);
 		this._clearDiscardedGroupState(group);
-		this._selectCell(group.el,group.schemaNode,group.dataObj);
+		this._selectCell(group.el,group.schemaNode,group.dataObj,true,group);
 		this._activeDetailsCell=group;
 	}
 
@@ -11690,6 +11786,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				oldCellParent.schemaNode.onBlur?.(oldCellParent,this._mainRowIndex);
 			}
 			this._activeDetailsCell=null;//should be null when not inside details
+			this._clearSourceRelationHighlights();
 		}
 		if (detailsRoot)
 			this._resolveDetailsPresence(detailsRoot,{recurse:true,reconcile:true});
@@ -11859,6 +11956,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_setSelectedCellElement(cellEl,instanceNode=null) {
+		// All selection paths meet here. A previous pointer observation must not outlive a new active cell.
+		if (this._selectedCell!==cellEl&&this._hoveredDetailsRelationInstance!==instanceNode)
+			this._hoveredDetailsRelationInstance=null;
 		if (this._selectedCell!==cellEl)
 			this._selectedCell?.classList.remove("tablance-active-cell");
 		const groupEl=instanceNode?.schemaNode?.type==="group"?instanceNode.el:null;
@@ -11868,6 +11968,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		groupEl?.classList.add("tablance-selected-group");
 		this._selectedCell=cellEl;
 		cellEl?.classList.add("tablance-active-cell");
+		this._selectedDetailsRelationInstance=cellEl?instanceNode:null;
+		this._syncSourceRelationHighlights();
 		this._observeCursorGeometry(cellEl,instanceNode);
 	}
 
@@ -11931,6 +12033,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_handleCellTypeTooltipPointer(event) {
+		const cellEl=event.target?.closest?.("[data-path]");
+		const pointerInstance=cellEl?this._resolvePointerDetailsInstance(cellEl,cellEl.closest("tr.details")):null;
+		const hovered=pointerInstance?.schemaNode?.sourceLinked?pointerInstance:null;
+		if (hovered!==this._hoveredDetailsRelationInstance) {
+			this._hoveredDetailsRelationInstance=hovered??null;
+			this._syncSourceRelationHighlights();
+		}
 		const icon=event.target?.closest?.(".tablance-cell-type-icon,.tablance-cell-state-icon");
 		if (icon?.dataset.tablanceCellTypeTooltip)
 			return this._showCellTypeTooltip(icon.dataset.tablanceCellTypeTooltip,icon);
@@ -12877,12 +12986,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			replacement={targetIndex,direction:targetIndex===previousSelectedRowIndex?1:-1,preferredColIndex};
 			this._mainRowIndex=this._mainColIndex=null;
 			this._activeDetailsCell=null;
+			this._clearSourceRelationHighlights();
 			this._cellCursorDataObj=null;
 			this._selectedCellState=null;
 			this._setSelectedCellElement(null);
 		} else if (selectedRowIndex<0) {
 			this._mainRowIndex=this._mainColIndex=null;
 			this._activeDetailsCell=null;
+			this._clearSourceRelationHighlights();
 			this._cellCursorDataObj=null;
 			this._selectedCellState=null;
 			this._activeSchemaNode=null;
@@ -12894,6 +13005,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._mainRowIndex=selectedRowIndex;
 			// View changes close details panes. Preserve the selected row and return to its main-table anchor column.
 			this._activeDetailsCell=null;
+			this._clearSourceRelationHighlights();
 		}
 		this._scrollRowIndex=0;
 		this._refreshTable();
@@ -13686,6 +13798,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (instanceNode)
 			instanceNode.cellState=state;
 		cellEl.classList.add("tablance-cell-state");
+		cellEl.classList.toggle("tablance-source-linked-cell",schemaNode?.sourceLinked===true);
 		cellEl.classList.toggle("read-only",state.kind==="readOnly");
 		cellEl.classList.toggle("editable-indicator",state.kind==="editable");
 		cellEl.classList.toggle("disabled",state.kind==="disabled");
@@ -13823,6 +13936,11 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		if (instanceNode&&!instanceNode.schemaNode.baseCss)
 			instanceNode.baseCss=(selEl??el).className;
+		// Repainting restores the base classes, but the logical cell cursor may still be here.
+		// Keep its presentation state on the cell so type indicators remain visible after a value change.
+		if ((selEl??el)===this._selectedCell
+			&&this._cellElementRepresentsLogicalCursor(selEl??el,instanceNode))
+			(selEl??el).classList.add("tablance-active-cell");
 		this._setCellState(selEl??el,cellState,instanceNode,schemaNode);
 		if (schemaNode.cssClass) {
 			let cssAddition;

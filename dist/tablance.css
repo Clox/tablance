@@ -2390,6 +2390,63 @@
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21.174 6.812a1 1 0 0 0-3.986-3.986L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z'/%3E%3Cpath d='m15 5 4 4'/%3E%3C/svg%3E") center/contain no-repeat;
 }
 
+@property --tablance-relation-intensity {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 35%;
+}
+@keyframes tablance-relation-breathe {
+  0%, 100% {
+    --tablance-relation-intensity: var(--tablance-relation-low);
+  }
+  50% {
+    --tablance-relation-intensity: var(--tablance-relation-high);
+  }
+}
+.tablance {
+  --tablance-relation-color: #327e9b;
+  --tablance-relation-source-color: #71849a;
+  --tablance-relation-source-width: 3px;
+  --tablance-relation-outline-width: 0px;
+  --tablance-relation-tint: rgb(50 126 155 / 0.17);
+  --tablance-relation-low: 25%;
+  --tablance-relation-high: 95%;
+  --tablance-relation-duration: 1.5s;
+  --tablance-relation-easing: ease-in-out;
+  --tablance-relation-delay: 0s;
+  --tablance-relation-intensity: var(--tablance-relation-high);
+  --tablance-relation-source-intensity: var(--tablance-relation-high);
+  --tablance-relation-source-tint: transparent;
+}
+
+.tablance:has(.tablance-source-relation-active) {
+  animation: tablance-relation-breathe var(--tablance-relation-duration) var(--tablance-relation-easing) var(--tablance-relation-delay) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tablance:has(.tablance-source-relation-active) {
+    animation: none;
+  }
+}
+.tablance .tablance-cell-state.tablance-source-linked-cell:not(.disabled) {
+  box-shadow: inset var(--tablance-relation-source-width) 0 color-mix(in srgb, var(--tablance-relation-source-color) 75%, transparent);
+}
+
+.tablance .tablance-cell-state.tablance-source-linked-cell.tablance-source-relation-active:not(.disabled) {
+  box-shadow: inset var(--tablance-relation-source-width) 0 color-mix(in srgb, var(--tablance-relation-source-color) var(--tablance-relation-source-intensity), transparent);
+  background-image: linear-gradient(color-mix(in srgb, var(--tablance-relation-source-tint) var(--tablance-relation-source-intensity), transparent), color-mix(in srgb, var(--tablance-relation-source-tint) var(--tablance-relation-source-intensity), transparent));
+}
+
+.tablance .tablance-cell-state.tablance-source-related-highlight:not(.disabled):not(.tablance-active-cell) {
+  box-shadow: inset 0 0 0 var(--tablance-relation-outline-width) color-mix(in srgb, var(--tablance-relation-color) var(--tablance-relation-intensity), transparent);
+  background-clip: padding-box;
+  background-image: linear-gradient(color-mix(in srgb, var(--tablance-relation-tint) var(--tablance-relation-intensity), transparent), color-mix(in srgb, var(--tablance-relation-tint) var(--tablance-relation-intensity), transparent));
+}
+
+.tablance .details .lineup.lineup-fields > span.tablance-source-related-highlight::before {
+  z-index: 1;
+}
+
 .tablance-cell-state-icon {
   position: absolute;
   z-index: 3;
