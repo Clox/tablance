@@ -300,6 +300,7 @@ class TablanceBase {
 	_relationSourceCells=new Set;
 	_hoveredDetailsRelationInstance=null;
 	_selectedDetailsRelationInstance=null;
+	_sourceTransfer=null;
 	/* #generatingDetails=false;//this is a flag that gets set to true when a row gets expanded or an already expanded
 		//row gets scrolled into view, in short whenever the details-elements are generated. Then it gets unset when
 		//creation finishes. The reason for having this flag is so that update */
@@ -1401,6 +1402,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 *        highlight: clear filter, highlight, and scroll to the first row.
 	 *        resetFilter: clear the active filter/search before rendering. */
 	setData(data=[], options=null) {
+		this._cancelSourceTransfer();
 		if (!this._flushValidatedEdits())
 			this._editTransaction=null;
 		const {highlight=false,resetFilter=false}=options??{};
@@ -2773,6 +2775,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	 * @returns {boolean} True when a rendered node was refreshed.
 	 */
 	refreshSubtree(instanceNode) {
+		this._cancelSourceTransfer();
 		if (!instanceNode?.schemaNode)
 			return false;
 		let refreshed=false;
@@ -11170,6 +11173,200 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this._relationSourceCells.clear();
 	}
 
+	_sourceTransferSnapshot(source) {
+		if (!source?.schemaNode?.sourceLinked)
+			return null;
+		const allowed=source.schemaNode.sourceLinkedTargets;
+		const targetIds=Array.isArray(allowed)?new Set(allowed):null;
+		const targets=new Map;
+		for (const path of source.schemaNode.dependencyPaths??[]) {
+			if (path[0]==="m") continue;
+			for (const target of this._resolveDetailsDependencyInstances(path,source)) {
+				if (target===source||targetIds&&!targetIds.has(target.schemaNode?.nodeId)
+					||target.schemaNode?.sourceLinked&&!targetIds?.has(target.schemaNode?.nodeId)
+					||!this._sharesRepeatedRelationScope(source,target)) continue;
+				targets.set(target,this._getInstanceNodeValue(target));
+			}
+		}
+		return {source,targets};
+	}
+
+	_sourceTransferValuePoint(instance) {
+		const valueEl=instance.el;
+		const cellEl=instance.selEl??valueEl;
+		if (!cellEl) return null;
+		// Range rectangles describe the painted text, not the full-width value wrapper or cell.
+		const fragments=[];
+		if (valueEl) {
+			const walker=valueEl.ownerDocument.createTreeWalker(valueEl,NodeFilter.SHOW_TEXT);
+			for (let node=walker.nextNode();node;node=walker.nextNode()) {
+				if (!node.textContent.trim()||!node.parentElement?.getClientRects().length
+					||getComputedStyle(node.parentElement).visibility==="hidden") continue;
+				const range=valueEl.ownerDocument.createRange();
+				range.selectNodeContents(node);
+				for (const rect of range.getClientRects())
+					if (rect.width>0&&rect.height>0) fragments.push(rect);
+			}
+		}
+		if (fragments.length) {
+			return {x:(Math.min(...fragments.map(rect=>rect.left))+Math.max(...fragments.map(rect=>rect.right)))/2,
+				y:(Math.min(...fragments.map(rect=>rect.top))+Math.max(...fragments.map(rect=>rect.bottom)))/2};
+		}
+		const element=valueEl?.getClientRects().length?valueEl:cellEl;
+		const rect=element.getBoundingClientRect();
+		const style=getComputedStyle(element);
+		let alignment=style.textAlign;
+		if (alignment==="start") alignment=style.direction==="rtl"?"right":"left";
+		if (alignment==="end") alignment=style.direction==="rtl"?"left":"right";
+		const inset=8;
+		const x=alignment==="right"?rect.right-(parseFloat(style.paddingRight)||0)-inset
+			:alignment==="left"?rect.left+(parseFloat(style.paddingLeft)||0)+inset
+			:rect.left+rect.width/2;
+		return {x,y:rect.top+rect.height/2};
+	}
+
+	_sourceTransferRevealText(valueEl) {
+		const wrappers=[];
+		const walker=valueEl.ownerDocument.createTreeWalker(valueEl,NodeFilter.SHOW_TEXT);
+		const nodes=[];
+		for (let node=walker.nextNode();node;node=walker.nextNode())
+			if (node.textContent.trim()&&node.parentElement?.getClientRects().length
+				&&!node.parentElement.closest(".tablance-cell-state-icon")) nodes.push(node);
+		for (const node of nodes) {
+			const wrapper=valueEl.ownerDocument.createElement("span");
+			wrapper.className="tablance-source-transfer-reveal";
+			node.parentNode.insertBefore(wrapper,node);
+			wrapper.appendChild(node);
+			wrappers.push(wrapper);
+		}
+		return wrappers;
+	}
+
+	_cancelSourceTransfer() {
+		const transfer=this._sourceTransfer;
+		if (!transfer) return;
+		this._sourceTransfer=null;
+		if (transfer.frame!=null) cancelAnimationFrame(transfer.frame);
+		if (transfer.timer!=null) clearTimeout(transfer.timer);
+		transfer.observer?.disconnect();
+		for (const animation of transfer.animations??[]) animation.cancel();
+		for (const wrapper of transfer.reveals??[]) {
+			if (!wrapper.parentNode) continue;
+			while (wrapper.firstChild) wrapper.parentNode.insertBefore(wrapper.firstChild,wrapper);
+			wrapper.remove();
+		}
+		for (const target of transfer.arrivals??[]) target.classList.remove("tablance-source-transfer-arrival");
+		transfer.layer?.remove();
+		document.removeEventListener("scroll",transfer.cancel,true);
+		window.removeEventListener("resize",transfer.cancel);
+	}
+
+	_showSourceTransfer(snapshot) {
+		if (!snapshot) return;
+		this._cancelSourceTransfer();
+		const changed=[...snapshot.targets].filter(([target,oldValue])=>
+			!Object.is(oldValue,this._getInstanceNodeValue(target)));
+		if (!changed.length) return;
+		let visible=changed.filter(([target])=>this._isVisibleMaterializedRelationCell(target)
+			&&target.el?.innerText?.trim());
+		if (!visible.length) return;
+		const reduced=window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+		const canAnimate=!reduced&&typeof Element.prototype.animate==="function";
+		const transfer={frame:null,timer:null,animations:[],arrivals:[],reveals:[],layer:null,observer:null,
+			cancel:()=>this._cancelSourceTransfer()};
+		this._sourceTransfer=transfer;
+		const revealByTarget=new Map;
+		if (canAnimate) {
+			for (const [target] of visible) {
+				const wrappers=this._sourceTransferRevealText(target.el);
+				if (wrappers.length) revealByTarget.set(target,wrappers);
+				transfer.reveals.push(...wrappers);
+			}
+			visible=visible.filter(([target])=>revealByTarget.has(target));
+			if (!visible.length) return this._cancelSourceTransfer();
+		}
+		transfer.frame=requestAnimationFrame(()=>{
+			transfer.frame=null;
+			if (this._sourceTransfer!==transfer||!this._isVisibleMaterializedRelationCell(snapshot.source))
+				return this._cancelSourceTransfer();
+			const sourceEl=snapshot.source.selEl??snapshot.source.el;
+			if (visible.some(([target])=>!this._isVisibleMaterializedRelationCell(target)))
+				return this._cancelSourceTransfer();
+			if (reduced) {
+				transfer.arrivals=visible.map(([target])=>target.selEl??target.el);
+				for (const target of transfer.arrivals) target.classList.add("tablance-source-transfer-arrival");
+				transfer.timer=setTimeout(transfer.cancel,300);
+			} else {
+				if (!canAnimate) return this._cancelSourceTransfer();
+				const origin=this._sourceTransferValuePoint(snapshot.source);
+				if (!origin) return this._cancelSourceTransfer();
+				const layer=document.body.appendChild(document.createElement("div"));
+				layer.className="tablance-source-transfer-layer";
+				transfer.layer=layer;
+				const style=getComputedStyle(this.rootEl);
+				layer.style.fontFamily=style.fontFamily;
+				for (const property of ["color","background","shadow"])
+					layer.style.setProperty(`--tablance-transfer-${property}`,
+						style.getPropertyValue(`--tablance-transfer-${property}`));
+				const milliseconds=(property,fallback)=>{
+					const value=style.getPropertyValue(property).trim();
+					const numeric=parseFloat(value);
+					return Number.isFinite(numeric)&&numeric>=0?(value.endsWith("ms")?numeric:numeric*1000):fallback;
+				};
+				const duration=milliseconds("--tablance-transfer-duration",620);
+				const stagger=milliseconds("--tablance-transfer-stagger",45);
+				const easing=style.getPropertyValue("--tablance-transfer-easing").trim()||"cubic-bezier(.2,.7,.2,1)";
+				const opacityStart=style.getPropertyValue("--tablance-transfer-opacity-start").trim()||".7";
+				const opacityPeak=style.getPropertyValue("--tablance-transfer-opacity-peak").trim()||".9";
+				const scaleStart=style.getPropertyValue("--tablance-transfer-scale-start").trim()||".96";
+				const scaleEnd=style.getPropertyValue("--tablance-transfer-scale-end").trim()||"1";
+				const hiddenOpacity=Math.max(0,Math.min(1,parseFloat(style.getPropertyValue("--tablance-transfer-target-hidden-opacity"))||0));
+				const revealStart=milliseconds("--tablance-transfer-reveal-start",490);
+				const revealDuration=milliseconds("--tablance-transfer-reveal-duration",130);
+				const ghostFadeDuration=milliseconds("--tablance-transfer-ghost-fade-duration",130);
+				const revealAt=Math.min(1,Math.max(0,revealStart/Math.max(duration,1)));
+				const revealEnd=Math.min(1,Math.max(revealAt,(revealStart+revealDuration)/Math.max(duration,1)));
+				const ghostFadeAt=Math.min(1,Math.max(0,1-ghostFadeDuration/Math.max(duration,1)));
+				visible.forEach(([target],index)=>{
+					const end=this._sourceTransferValuePoint(target);
+					if (!end) return;
+					const ghost=layer.appendChild(document.createElement("span"));
+					ghost.className="tablance-source-transfer-ghost";
+					ghost.textContent=target.el.innerText.trim();
+					ghost.style.left=`${origin.x}px`;
+					ghost.style.top=`${origin.y}px`;
+					ghost.dataset.targetNodeId=target.schemaNode.nodeId??"";
+					const dx=end.x-origin.x;
+					const dy=end.y-origin.y;
+					transfer.animations.push(ghost.animate([
+						{transform:`translate(-50%, -50%) scale(${scaleStart})`,opacity:opacityStart},
+						{transform:`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(${scaleEnd})`,opacity:opacityPeak,offset:ghostFadeAt},
+						{transform:`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(${scaleEnd})`,opacity:0},
+					],{duration,delay:index*stagger,easing,fill:"forwards"}));
+					for (const wrapper of revealByTarget.get(target))
+						transfer.animations.push(wrapper.animate([
+							{opacity:hiddenOpacity,offset:0},
+							{opacity:hiddenOpacity,offset:revealAt},
+							{opacity:1,offset:revealEnd},
+							{opacity:1,offset:1},
+						],{duration,delay:index*stagger,easing,fill:"forwards"}));
+				});
+				transfer.timer=setTimeout(transfer.cancel,duration+(visible.length-1)*stagger+40);
+			}
+			transfer.observer=new MutationObserver(()=>{
+				if (!sourceEl.isConnected||!this._isVisibleMaterializedRelationCell(snapshot.source)
+					||transfer.reveals.some(wrapper=>!wrapper.isConnected)
+					||visible.some(([target])=>!this._isVisibleMaterializedRelationCell(target)
+						||!(target.selEl??target.el).getClientRects().length))
+					transfer.cancel();
+			});
+			transfer.observer.observe(document.body,{childList:true,subtree:true,attributes:true,
+				attributeFilter:["hidden","class","style"]});
+			document.addEventListener("scroll",transfer.cancel,true);
+			window.addEventListener("resize",transfer.cancel);
+		});
+	}
+
 	/**
 	 * Updates dependent cells when a cell's value changes.
 	 *
@@ -11237,6 +11434,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_exitEditMode(save) {
+		if (!save) this._cancelSourceTransfer();
 		if (this._inReadOnlyMode)
 			return this._exitReadOnlyMode();
 		if (!this._inEditMode)
@@ -14333,6 +14531,8 @@ export default class Tablance extends TablanceBase {
 			const rowData=Number.isInteger(mainIndex)?this._filteredData?.[mainIndex]:null;
 			const mainRow=!openGroup?rowData:null;
 			const prevVal=this._cellCursorDataObj[this._activeSchemaNode.dataKey];
+			const sourceTransfer=prevVal!==inputVal
+				?this._sourceTransferSnapshot(this._activeDetailsCell):null;
 			this._cellCursorDataObj[this._activeSchemaNode.dataKey]=inputVal;
 			const commitKey=this._getCommitChangeKey(this._activeSchemaNode);
 			const commitVal=this._normalizeCommitValue(this._activeSchemaNode,this._cellCursorDataObj[this._activeSchemaNode.dataKey]);
@@ -14385,6 +14585,7 @@ export default class Tablance extends TablanceBase {
 				if (isRepeatedCreate)
 					this._activeDetailsCell.creating=false;
 				this._activeSchemaNode.input.afterChange?.(changePayload);
+				this._showSourceTransfer(sourceTransfer);
 			} else {
 				// Revert data if change was cancelled.
 				this._cellCursorDataObj[this._activeSchemaNode.dataKey]=prevVal;

@@ -2417,6 +2417,20 @@
   --tablance-relation-intensity: var(--tablance-relation-high);
   --tablance-relation-source-intensity: var(--tablance-relation-high);
   --tablance-relation-source-tint: transparent;
+  --tablance-transfer-duration: 620ms;
+  --tablance-transfer-stagger: 45ms;
+  --tablance-transfer-easing: cubic-bezier(.2,.7,.2,1);
+  --tablance-transfer-opacity-start: .7;
+  --tablance-transfer-opacity-peak: .9;
+  --tablance-transfer-scale-start: .96;
+  --tablance-transfer-scale-end: 1;
+  --tablance-transfer-reveal-start: 490ms;
+  --tablance-transfer-reveal-duration: 130ms;
+  --tablance-transfer-target-hidden-opacity: .04;
+  --tablance-transfer-ghost-fade-duration: 130ms;
+  --tablance-transfer-color: #24566a;
+  --tablance-transfer-background: #f5fbfd;
+  --tablance-transfer-shadow: 0 2px 9px rgb(25 69 85 / .2);
 }
 
 .tablance:has(.tablance-source-relation-active) {
@@ -2445,6 +2459,40 @@
 
 .tablance .details .lineup.lineup-fields > span.tablance-source-related-highlight::before {
   z-index: 1;
+}
+
+.tablance .tablance-source-transfer-reveal {
+  opacity: var(--tablance-transfer-target-hidden-opacity, 0.04);
+}
+
+.tablance-source-transfer-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  pointer-events: none;
+}
+
+.tablance-source-transfer-ghost {
+  position: absolute;
+  max-width: min(22rem, 70vw);
+  padding: 5px 8px;
+  border-radius: 5px;
+  background: var(--tablance-transfer-background, #f5fbfd);
+  box-shadow: var(--tablance-transfer-shadow, 0 2px 9px rgba(25, 69, 85, 0.2));
+  color: var(--tablance-transfer-color, #24566a);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  will-change: transform, opacity;
+}
+
+.tablance .tablance-cell-state.tablance-source-transfer-arrival {
+  outline: 2px solid #327e9b;
+  outline-offset: -2px;
 }
 
 .tablance-cell-state-icon {

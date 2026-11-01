@@ -214,8 +214,12 @@ function sourceRelationClassesCleared() {
 }
 const repeatedRelations=new Tablance(host(),{details:{type:'list',entries:[
  {type:'repeated',nodeId:'people',dataKey:'people',entry:{type:'lineup',entries:[
-  {type:'field',nodeId:'personSource',dataKey:'source',title:'Huvudman',sourceLinked:true,
-   sourceLinkedTargets:['personNumber','personName'],input:{type:'text'}},
+ {type:'field',nodeId:'personSource',dataKey:'source',title:'Huvudman',sourceLinked:true,
+   sourceLinkedTargets:['personNumber','personName'],input:{type:'text',
+    onChange:({newValue,instanceNode})=>{
+     instanceNode.dataObj.number=`Number ${newValue}`;
+     instanceNode.dataObj.name=`Name ${newValue}`;
+    }}},
   {type:'field',nodeId:'personNumber',dataKey:'number',title:'Personnummer',dependsOn:'personSource',input:{type:'text'}},
   {type:'field',nodeId:'personName',dataKey:'name',title:'Namn',dependsOn:'personSource',input:{type:'text'}},
  ]}},
@@ -267,6 +271,17 @@ const selectedSourceIcon=secondSource.selEl.querySelector('.tablance-cell-state-
 assert(secondSource.selEl.classList.contains('tablance-active-cell')
  &&selectedSourceIcon&&getComputedStyle(selectedSourceIcon).visibility==='visible',
  'a source-linked cell keeps its editing icon after its selected value repaints the active cell');
+firstSource.select();
+repeatedRelations._inputVal='C';
+repeatedRelations._doEditSave();
+await settleLayout();
+const repeatedGhosts=[...document.querySelectorAll('.tablance-source-transfer-ghost')];
+assert(firstPerson.dataObj.number==='Number C'&&firstPerson.dataObj.name==='Name C'
+ &&secondPerson.dataObj.number==='222'&&secondPerson.dataObj.name==='Second'
+ &&repeatedGhosts.length===2
+ &&repeatedGhosts.every(node=>node.textContent.endsWith('C')),
+ 'repeatRows transfer animates only the changed values in the selected source instance');
+repeatedRelations._cancelSourceTransfer();
 const indicatorTable=new Tablance(host(),{details:{type:'grid',columns:1,entries:[
  {title:'Navigation',dataKey:'navigation',nodeId:'navigation',onEnter:()=>{}},
  {title:'Editable',dataKey:'editable',nodeId:'editable',input:{type:'text'}},
@@ -291,10 +306,173 @@ for(const [key,kind] of [['navigation','navigation'],['editable','editable'],['l
  const selected=indicatorTable.getDetailCell(0,key);
  indicatorTable.updateData(indicatorRow,key,`Updated ${key}`);
  const icon=selected.outerContainerEl.querySelector(`.tablance-cell-state-icon-${kind}`);
- assert(selected.selEl.classList.contains('tablance-active-cell')
+assert(selected.selEl.classList.contains('tablance-active-cell')
   &&icon&&(kind==='editable'||getComputedStyle(icon).visibility==='visible'),
   `${kind} cell-type icon remains visible when the selected cell is repainted`);
 }
+const transferData={source:'',number:'',name:'',hidden:''};
+const transferTable=new Tablance(host(),{details:{type:'list',entries:[
+ {type:'field',nodeId:'transferSource',dataKey:'source',sourceLinked:true,
+  sourceLinkedTargets:['transferNumber','transferName','transferHidden'],
+  input:{type:'select',options:['first','second','third','after-scroll','after-resize',
+   'after-refresh','fourth','source-only-change','mouse'].map(value=>({value,text:value})),
+   onChange:({newValue})=>{
+   transferData.number=`Number ${newValue}`;
+   transferData.name=`Name ${newValue}`;
+   transferData.hidden=`Hidden ${newValue}`;
+  }}},
+ {type:'field',nodeId:'transferNumber',dataKey:'number',dependsOn:'transferSource',input:{type:'text'}},
+ {type:'field',nodeId:'transferName',dataKey:'name',dependsOn:'transferSource',input:{type:'text'}},
+ {type:'field',nodeId:'transferHidden',dataKey:'hidden',dependsOn:'transferSource',
+  visibleIf:()=>false,input:{type:'text'}},
+]}},true,true,{searchbar:false});
+transferTable.setData(transferData);
+assert(!document.querySelector('.tablance-source-transfer-layer'),
+ 'initial rendering does not produce transfer presentation');
+const commitTransfer=value=>{
+ transferTable.selectCell(0,'transferSource');
+ transferTable._inputVal=value;
+ transferTable._doEditSave();
+};
+commitTransfer('first');
+assert(transferData.number==='Number first'&&transferData.name==='Name first',
+ 'source commit updates the real target values independently of transfer presentation');
+await settleLayout();
+let ghosts=[...document.querySelectorAll('.tablance-source-transfer-ghost')];
+assert(ghosts.length===2&&ghosts.map(node=>node.textContent).sort().join('|')==='Name first|Number first'
+ &&ghosts.every(node=>node.getAnimations().length===1),
+ 'one user source change sends two presentation ghosts to visible changed targets only');
+const firstGhosts=ghosts;
+const textCenter=element=>{
+ const range=document.createRange();
+ range.selectNodeContents(element);
+ const rects=[...range.getClientRects()].filter(rect=>rect.width&&rect.height);
+ return {x:(Math.min(...rects.map(rect=>rect.left))+Math.max(...rects.map(rect=>rect.right)))/2,
+  y:(Math.min(...rects.map(rect=>rect.top))+Math.max(...rects.map(rect=>rect.bottom)))/2};
+};
+const sourceValue=transferTable.getDetailCell(0,'transferSource').el;
+const sourcePoint=textCenter(sourceValue);
+for(const ghost of ghosts){
+ const target=transferTable.getDetailCell(0,ghost.dataset.targetNodeId);
+ const targetPoint=textCenter(target.el);
+ const dx=targetPoint.x-sourcePoint.x;
+ const dy=targetPoint.y-sourcePoint.y;
+ const transform=ghost.getAnimations()[0].effect.getKeyframes()[1].transform;
+ const offsets=[...transform.matchAll(/\+ (-?\d+(?:\.\d+)?)px/g)].map(match=>Number(match[1]));
+ assert(Math.abs(parseFloat(ghost.style.left)-sourcePoint.x)<.02
+  &&Math.abs(parseFloat(ghost.style.top)-sourcePoint.y)<.02
+  &&offsets.length===2&&Math.abs(offsets[0]-dx)<.02&&Math.abs(offsets[1]-dy)<.02,
+  `ghosts travel between painted text: ${JSON.stringify({sourcePoint,ghostLeft:ghost.style.left,ghostTop:ghost.style.top,targetPoint,offsets,dx,dy,sourceHtml:sourceValue.outerHTML,targetHtml:target.el.outerHTML})}`);
+ const reveal=target.el.querySelector('.tablance-source-transfer-reveal');
+ assert(target.el.textContent.trim()===ghost.textContent&&reveal
+  &&parseFloat(getComputedStyle(reveal).opacity)<1
+  &&getComputedStyle(target.el).opacity==='1',
+  'committed target text is in the DOM immediately but visually withheld without dimming its cell');
+}
+assert(Math.abs(sourcePoint.x-(sourceValue.getBoundingClientRect().left+sourceValue.getBoundingClientRect().width/2))>20,
+ 'text positioning, rather than the wide source-cell center, determines the launch point');
+const fallbackEl=document.createElement('div');
+fallbackEl.style.cssText='position:fixed;left:100px;top:100px;width:160px;height:40px;padding:0 10px;text-align:right';
+fallbackEl.textContent='Aligned';
+document.body.appendChild(fallbackEl);
+const paintedRight=textCenter(fallbackEl);
+const measuredRight=transferTable._sourceTransferValuePoint({el:fallbackEl});
+assert(Math.abs(paintedRight.x-measuredRight.x)<.02,
+ 'right-aligned value text, not its wide value container, supplies the transfer anchor');
+fallbackEl.textContent='';
+const rightFallback=transferTable._sourceTransferValuePoint({el:fallbackEl});
+fallbackEl.style.textAlign='left';
+const leftFallback=transferTable._sourceTransferValuePoint({el:fallbackEl});
+fallbackEl.style.textAlign='center';
+const centerFallback=transferTable._sourceTransferValuePoint({el:fallbackEl});
+assert(rightFallback.x>centerFallback.x&&centerFallback.x>leftFallback.x,
+ 'empty value nodes fall back to computed left/right/center alignment');
+fallbackEl.remove();
+await new Promise(resolve=>setTimeout(resolve,550));
+const fadingTarget=transferTable.getDetailCell(0,'transferNumber').el;
+const fadingOpacity=parseFloat(getComputedStyle(fadingTarget.querySelector('.tablance-source-transfer-reveal')).opacity);
+assert(fadingOpacity>.04&&fadingOpacity<1,
+ 'the real target value fades in near the end of the ghost flight');
+await new Promise(resolve=>setTimeout(resolve,250));
+assert(!document.querySelector('.tablance-source-transfer-layer')
+ &&!fadingTarget.querySelector('.tablance-source-transfer-reveal')
+ &&getComputedStyle(fadingTarget).opacity==='1',
+ 'after landing the real value is fully visible and temporary wrappers are removed');
+commitTransfer('second');
+await settleLayout();
+ghosts=[...document.querySelectorAll('.tablance-source-transfer-ghost')];
+assert(firstGhosts.every(node=>!node.isConnected)&&ghosts.length===2
+ &&ghosts.every(node=>node.textContent.endsWith('second')),
+ 'rapid source changes cancel old ghosts and show only the latest values');
+commitTransfer('second');
+await settleLayout();
+assert(ghosts.every(node=>node.isConnected)
+ ||!document.querySelector('.tablance-source-transfer-layer'),
+ 'an unchanged source may cancel the prior presentation when its cells repaint');
+assert(document.querySelectorAll('.tablance-source-transfer-ghost').length<=2,
+ 'choosing an unchanged source never creates another transfer');
+commitTransfer('third');
+await settleLayout();
+document.dispatchEvent(new Event('scroll'));
+assert(!document.querySelector('.tablance-source-transfer-layer'),
+ 'scroll cancels transfer and removes the overlay');
+assert(!transferTable.getDetailCell(0,'transferNumber').el.querySelector('.tablance-source-transfer-reveal')
+ &&getComputedStyle(transferTable.getDetailCell(0,'transferNumber').el).opacity==='1',
+ 'scroll cancellation immediately restores the real value');
+commitTransfer('after-scroll');
+await settleLayout();
+window.dispatchEvent(new Event('resize'));
+assert(!document.querySelector('.tablance-source-transfer-layer'),
+ 'resize also cancels transfer and removes the overlay');
+assert(getComputedStyle(transferTable.getDetailCell(0,'transferNumber').el).opacity==='1',
+ 'resize cancellation restores target visibility');
+commitTransfer('after-resize');
+await settleLayout();
+transferTable.refreshSubtree(transferTable.getDetailCell(0,'transferNumber'));
+assert(!document.querySelector('.tablance-source-transfer-layer'),
+ 're-rendering a participating cell cancels the transfer overlay');
+assert(getComputedStyle(transferTable.getDetailCell(0,'transferNumber').el).opacity==='1',
+ 're-render cancellation restores target visibility');
+commitTransfer('after-refresh');
+await settleLayout();
+transferTable._exitEditMode(false);
+assert(!document.querySelector('.tablance-source-transfer-layer'),
+ 'discarding or closing an editor cleans up the transfer overlay');
+assert(getComputedStyle(transferTable.getDetailCell(0,'transferNumber').el).opacity==='1',
+ 'editor close restores target visibility');
+const originalMatchMedia=window.matchMedia;
+window.matchMedia=()=>({matches:true});
+commitTransfer('fourth');
+await settleLayout();
+assert(!document.querySelector('.tablance-source-transfer-ghost')
+ &&(transferTable.getDetailCell(0,'transferNumber').selEl
+  ??transferTable.getDetailCell(0,'transferNumber').el).classList.contains('tablance-source-transfer-arrival'),
+ 'reduced motion uses a brief target highlight without flying text');
+assert(getComputedStyle(transferTable.getDetailCell(0,'transferNumber').el).opacity==='1',
+ 'reduced motion never delays the real target value');
+transferTable._cancelSourceTransfer();
+window.matchMedia=originalMatchMedia;
+const transferSourceEntry=transferTable.getDetailCell(0,'transferSource').schemaNode;
+const originalTransferChange=transferSourceEntry.input.onChange;
+transferSourceEntry.input.onChange=()=>{};
+commitTransfer('source-only-change');
+await settleLayout();
+assert(!document.querySelector('.tablance-source-transfer-layer'),
+ 'a changed source with unchanged target values does not animate');
+transferSourceEntry.input.onChange=originalTransferChange;
+transferTable.updateData(transferData,'number','Programmatic update');
+await settleLayout();
+assert(!document.querySelector('.tablance-source-transfer-layer'),
+ 'programmatic target repaint does not create a transfer');
+transferTable.selectCell(0,'transferSource',{enterEditMode:true});
+const mouseOption=[...transferTable._selectContext.mainUl.children]
+ .find(option=>option.textContent.trim()==='mouse');
+mouseOption.click();
+await settleLayout();
+assert(transferData.source==='mouse'&&transferData.number==='Number mouse'
+ &&document.querySelectorAll('.tablance-source-transfer-ghost').length===2,
+ 'clicking a source option starts transfer after the real targets update');
+transferTable._cancelSourceTransfer();
 const panel=standalone.rootEl.querySelector(':scope>.only-details-content');
 const header=panel.querySelector(':scope>.only-details-header');
 const body=panel.querySelector(':scope>.only-details-body');
