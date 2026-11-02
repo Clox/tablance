@@ -1000,6 +1000,11 @@
   cursor: pointer;
   transition: background-color 80ms ease;
 }
+.tablance > .table-area > .header-table th > .tablance-main-header-title {
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
 .tablance > .table-area > .header-table th:first-child {
   border-left: 1px solid var(--tablance-border-color);
 }

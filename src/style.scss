@@ -1010,6 +1010,12 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			cursor: pointer;
 			transition: background-color 80ms ease;
 
+			>.tablance-main-header-title {
+				font-size: 13px;
+				letter-spacing: .02em;
+				text-transform: uppercase;
+			}
+
 			&:first-child {
 				border-left: 1px solid var(--tablance-border-color);
 			}
