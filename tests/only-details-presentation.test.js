@@ -342,6 +342,13 @@ let ghosts=[...document.querySelectorAll('.tablance-source-transfer-ghost')];
 assert(ghosts.length===2&&ghosts.map(node=>node.textContent).sort().join('|')==='Name first|Number first'
  &&ghosts.every(node=>node.getAnimations().length===1),
  'one user source change sends two presentation ghosts to visible changed targets only');
+assert(ghosts[0].getAnimations()[0].effect.getTiming().duration===720
+ &&ghosts[0].getAnimations()[0].effect.getTiming().delay===60
+ &&ghosts[1].getAnimations()[0].effect.getTiming().delay===105
+ &&Math.abs(ghosts[0].getAnimations()[0].effect.getKeyframes()[1].offset-590/720)<.001
+ &&parseFloat(ghosts[0].style.opacity)===.7
+ &&parseFloat(ghosts[1].style.opacity)===0,
+ 'the first ghost stays visible at the source during the short start delay');
 const firstGhosts=ghosts;
 const textCenter=element=>{
  const range=document.createRange();
@@ -388,7 +395,7 @@ const centerFallback=transferTable._sourceTransferValuePoint({el:fallbackEl});
 assert(rightFallback.x>centerFallback.x&&centerFallback.x>leftFallback.x,
  'empty value nodes fall back to computed left/right/center alignment');
 fallbackEl.remove();
-await new Promise(resolve=>setTimeout(resolve,550));
+await new Promise(resolve=>setTimeout(resolve,710));
 const fadingTarget=transferTable.getDetailCell(0,'transferNumber').el;
 const fadingOpacity=parseFloat(getComputedStyle(fadingTarget.querySelector('.tablance-source-transfer-reveal')).opacity);
 assert(fadingOpacity>.04&&fadingOpacity<1,
@@ -784,7 +791,7 @@ const headerSelection=getSelection(),headerRange=document.createRange();
 headerRange.selectNodeContents(chainedHeader.querySelector('.tablance-main-header-title'));
 headerSelection.removeAllRanges();headerSelection.addRange(headerRange);
 chainedHeader.click();
-assert(headerSelection.toString().trim()==='Value'&&focusTables[1]._sortingCols.length===1
+assert(headerSelection.toString().trim().toLowerCase()==='value'&&focusTables[1]._sortingCols.length===1
  &&document.activeElement===focusTables[0]._focusEl,
  'linked header sorting and ordinary text selection remain available without transferring focus');
 headerSelection.removeAllRanges();

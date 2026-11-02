@@ -11329,15 +11329,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					const numeric=parseFloat(value);
 					return Number.isFinite(numeric)&&numeric>=0?(value.endsWith("ms")?numeric:numeric*1000):fallback;
 				};
-				const duration=milliseconds("--tablance-transfer-duration",620);
+				const duration=milliseconds("--tablance-transfer-duration",720);
 				const stagger=milliseconds("--tablance-transfer-stagger",45);
+				const startDelay=milliseconds("--tablance-transfer-start-delay",60);
 				const easing=style.getPropertyValue("--tablance-transfer-easing").trim()||"cubic-bezier(.2,.7,.2,1)";
 				const opacityStart=style.getPropertyValue("--tablance-transfer-opacity-start").trim()||".7";
 				const opacityPeak=style.getPropertyValue("--tablance-transfer-opacity-peak").trim()||".9";
 				const scaleStart=style.getPropertyValue("--tablance-transfer-scale-start").trim()||".96";
 				const scaleEnd=style.getPropertyValue("--tablance-transfer-scale-end").trim()||"1";
 				const hiddenOpacity=Math.max(0,Math.min(1,parseFloat(style.getPropertyValue("--tablance-transfer-target-hidden-opacity"))||0));
-				const revealStart=milliseconds("--tablance-transfer-reveal-start",490);
+				const revealStart=milliseconds("--tablance-transfer-reveal-start",590);
 				const revealDuration=milliseconds("--tablance-transfer-reveal-duration",130);
 				const ghostFadeDuration=milliseconds("--tablance-transfer-ghost-fade-duration",130);
 				const revealAt=Math.min(1,Math.max(0,revealStart/Math.max(duration,1)));
@@ -11351,6 +11352,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 					ghost.textContent=target.el.innerText.trim();
 					ghost.style.left=`${origin.x}px`;
 					ghost.style.top=`${origin.y}px`;
+					ghost.style.transform=`translate(-50%, -50%) scale(${scaleStart})`;
+					ghost.style.opacity=index===0?opacityStart:"0";
 					ghost.dataset.targetNodeId=target.schemaNode.nodeId??"";
 					const dx=end.x-origin.x;
 					const dy=end.y-origin.y;
@@ -11358,16 +11361,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 						{transform:`translate(-50%, -50%) scale(${scaleStart})`,opacity:opacityStart},
 						{transform:`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(${scaleEnd})`,opacity:opacityPeak,offset:ghostFadeAt},
 						{transform:`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(${scaleEnd})`,opacity:0},
-					],{duration,delay:index*stagger,easing,fill:"forwards"}));
+					],{duration,delay:startDelay+index*stagger,easing,fill:"forwards"}));
 					for (const wrapper of revealByTarget.get(target))
 						transfer.animations.push(wrapper.animate([
 							{opacity:hiddenOpacity,offset:0},
 							{opacity:hiddenOpacity,offset:revealAt},
 							{opacity:1,offset:revealEnd},
 							{opacity:1,offset:1},
-						],{duration,delay:index*stagger,easing,fill:"forwards"}));
+						],{duration,delay:startDelay+index*stagger,easing,fill:"forwards"}));
 				});
-				transfer.timer=setTimeout(transfer.cancel,duration+(visible.length-1)*stagger+40);
+				transfer.timer=setTimeout(transfer.cancel,startDelay+duration+(visible.length-1)*stagger+40);
 			}
 			transfer.observer=new MutationObserver(()=>{
 				if (!sourceEl.isConnected||!this._isVisibleMaterializedRelationCell(snapshot.source)

@@ -2422,14 +2422,15 @@
   --tablance-relation-intensity: var(--tablance-relation-high);
   --tablance-relation-source-intensity: var(--tablance-relation-high);
   --tablance-relation-source-tint: transparent;
-  --tablance-transfer-duration: 620ms;
+  --tablance-transfer-duration: 720ms;
   --tablance-transfer-stagger: 45ms;
+  --tablance-transfer-start-delay: 60ms;
   --tablance-transfer-easing: cubic-bezier(.2,.7,.2,1);
   --tablance-transfer-opacity-start: .7;
   --tablance-transfer-opacity-peak: .9;
   --tablance-transfer-scale-start: .96;
   --tablance-transfer-scale-end: 1;
-  --tablance-transfer-reveal-start: 490ms;
+  --tablance-transfer-reveal-start: 590ms;
   --tablance-transfer-reveal-duration: 130ms;
   --tablance-transfer-target-hidden-opacity: .04;
   --tablance-transfer-ghost-fade-duration: 130ms;
