@@ -495,11 +495,15 @@ class TablanceBase {
 	 * 						3. `dependsOn` must match the identifier of another entry. If both `dataKey` and `nodeId` exist,
 	 * 							`nodeId` takes priority.
 	 * 				* sourceLinked Bool Optional marker for a cell that supplies values to dependent cells through
-	 * 					`dependsOn`. Tablance gives the source a subtle persistent visual cue and highlights only its
-	 * 					already rendered dependents while the source is hovered or active.
+	 * 					`dependsOn`. Tablance highlights already rendered dependents while the source is
+	 * 					hovered or active, and gives editable target cells a source-link type icon.
 	 * 				* sourceLinkedTargets String[] Optional identifiers of the dependents that the source actually fills.
 	 * 					When omitted, all declared `dependsOn` dependents participate. This prevents structural
 	 * 					visibility dependencies from appearing as value relations.
+	 * 				* sourceSelector Object Optional closed-cell pill presentation for a source choice.
+	 * 					Set `manualValue` to identify the manual choice. Empty values show displayPlaceholder
+	 * 					inside a lighter outlined pill. The cell title is visually hidden by default;
+	 * 					set `showLabel: true` to display it above the pill.
 	 * 			Types of entries:
 	 * 			{
   	 *				type "list" this is an entry that holds multiple rows laid out vertically, each item in the list 
@@ -3180,6 +3184,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		let stack = [...ctx.initialRoots];
 
 		for (let schemaNode; schemaNode = stack.pop();) {
+			delete schemaNode._sourceLinkedTargetLabels;
 			if (schemaNode.sourceLinkedTargets!==undefined
 				&&(!schemaNode.sourceLinked||!Array.isArray(schemaNode.sourceLinkedTargets)
 					||schemaNode.sourceLinkedTargets.some(id=>typeof id!=="string"||!id.trim())))
@@ -3203,6 +3208,14 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 					const dependee = ctx.schemaNodeByAutoId[depAutoId];
 					const dependeeIsExp = dependee._path && dependee._path[0] !== "m";
+					const targetId=schemaNode.nodeId??schemaNode.dataKey;
+					if (schemaNode.type==="field"&&dependee.sourceLinked
+						&&(!Array.isArray(dependee.sourceLinkedTargets)
+							||dependee.sourceLinkedTargets.includes(targetId))) {
+						const label=String(dependee.title??dependee.nodeId??dependee.dataKey??"").trim();
+						if (label&&!(schemaNode._sourceLinkedTargetLabels??[]).includes(label))
+							(schemaNode._sourceLinkedTargetLabels??=[]).push(label);
+					}
 
 					const fwd = this._dep_computeForwardPath(dependee, schemaNode);
 
@@ -7070,6 +7083,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		let outerContainerEl,containerEl;
 		const type=collection.schemaNode.type;
 		const hasTitle=schemaNode.title!=null&&String(schemaNode.title)!=="";
+		const showTitle=hasTitle&&(!schemaNode.sourceSelector
+			||schemaNode.sourceSelector.showLabel===true);
 
 		// LIST: Each item is a <tr> with title cell optionally + value cell
 		if (type=="list") {
@@ -7077,12 +7092,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (collection.schemaNode.titlesColWidth!=false) {
 				const td=outerContainerEl.insertCell();
 				td.className="title";
-				this._populateSchemaTitle(td,schemaNode,itemObj,{reserveHelpSlot:true});
+				if (showTitle)
+					this._populateSchemaTitle(td,schemaNode,itemObj,{reserveHelpSlot:true});
 			}
 			containerEl=outerContainerEl.insertCell();
 		} else if (type=="lineup"||type==="grid") {// Flow/grid items use their outer box as the canonical cell.
 			outerContainerEl=document.createElement("span");
-			if (hasTitle) {
+			if (showTitle) {
 				const title=outerContainerEl.appendChild(document.createElement("span"));
 				title.className="title";
 				this._populateSchemaTitle(title,schemaNode,itemObj,{reserveHelpSlot:true});
@@ -7099,7 +7115,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			if (schemaNode.type!="group")
 				td.appendChild(document.createElement("hr")).className="separator";
 
-			if (hasTitle) {
+			if (showTitle) {
 				const title=td.appendChild(document.createElement("span"));
 				title.className="title";
 				this._populateSchemaTitle(title,schemaNode,itemObj,{reserveHelpSlot:true});
@@ -7728,7 +7744,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const inlineTitle=this._selectedCell?.querySelector(":scope>span.title");
 		const target=inlineTitle?this._selectedCell:this._cellCursor;
 		const icon=this._selectedCell?.querySelector(":scope>.tablance-cell-state-icon-read-only,"
-			+":scope>span.title>.tablance-cell-state-icon-read-only");
+			+":scope>span.title>.tablance-cell-state-icon-read-only,"
+			+":scope>.tablance-cell-state-icons>.tablance-cell-state-icon-read-only,"
+			+":scope>div.value>.tablance-cell-state-icons>.tablance-cell-state-icon-read-only");
 		if (!target)
 			return false;
 		this._clearReadOnlyActivationFeedback();
@@ -14070,32 +14088,57 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_syncCellStateIcon(cellEl,state,schemaNode) {
-		const kind=state?.kind==="action"&&this._showsActionIndicator(state,schemaNode)?"navigation"
-			:state?.kind==="editable"?"editable":state?.kind==="readOnly"?"read-only":null;
-		let icon=cellEl.querySelector(":scope>.tablance-cell-state-icon, :scope>span.title>.tablance-cell-state-icon");
-		if (!kind) {
-			icon?.remove();
-			return;
-		}
+		const kinds=[];
+		if (state?.kind==="action"&&this._showsActionIndicator(state,schemaNode))
+			kinds.push("navigation");
+		if (state?.kind==="editable")
+			kinds.push("editable");
+		if (state?.kind==="readOnly")
+			kinds.push("read-only");
+		if (state?.kind!=="disabled"&&schemaNode?._sourceLinkedTargetLabels?.length)
+			kinds.push("source-target");
+		const content=schemaNode?.type==="field"
+			?(cellEl.matches("td.value")&&cellEl.closest("table.details-list")?cellEl
+				:cellEl.parentElement?.classList.contains("details-grid")
+					?cellEl.querySelector(":scope>div.value"):null):null;
 		const title=cellEl.querySelector(":scope>span.title");
-		const parent=title??cellEl;
-		if (!icon) {
-			icon=document.createElement("span");
-			icon.className="tablance-cell-state-icon";
-			icon.setAttribute("aria-hidden","true");
+		const oldIcons=[...cellEl.querySelectorAll(":scope>.tablance-cell-state-icon, :scope>span.title>.tablance-cell-state-icon")];
+		let accessories=content?.querySelector(":scope>.tablance-cell-state-icons");
+		const existing=[...oldIcons,...(accessories?.querySelectorAll(":scope>.tablance-cell-state-icon")??[])];
+		for (const icon of existing)
+			if (!kinds.some(kind=>icon.classList.contains(`tablance-cell-state-icon-${kind}`)))
+				icon.remove();
+		if (content&&kinds.length&&!accessories) {
+			accessories=document.createElement("span");
+			accessories.className="tablance-cell-state-icons";
+			content.appendChild(accessories);
 		}
-		icon.className=`tablance-cell-state-icon tablance-cell-state-icon-${kind}`;
+		if (!kinds.length)
+			accessories?.remove();
+		const parent=accessories??title??cellEl;
+		cellEl.style.setProperty("--tablance-cell-state-icon-count",String(kinds.length));
 		const labels={
 			navigation:"Navigeringscell – Öppnar relaterad information.",
 			editable:"Redigeringscell – Värdet kan redigeras.",
 			"read-only":"Låst cell – Värdet visas utan att kunna redigeras.",
 		};
-		icon.dataset.tablanceCellTypeTooltip=labels[kind];
-		icon.setAttribute("role","img");
-		icon.setAttribute("aria-label",labels[kind]);
-		icon.removeAttribute("aria-hidden");
-		if (parent!==icon.parentElement)
-			parent.appendChild(icon);
+		for (const [index,kind] of kinds.entries()) {
+			let icon=existing.find(node=>node.classList.contains(`tablance-cell-state-icon-${kind}`));
+			if (!icon) {
+				icon=document.createElement("span");
+				icon.className=`tablance-cell-state-icon tablance-cell-state-icon-${kind}`;
+			}
+			const description=kind==="source-target"
+				?`Källkopplat fält – fylls från ${schemaNode._sourceLinkedTargetLabels.join(", ")}.`
+				:labels[kind];
+			icon.style.setProperty("--tablance-cell-state-icon-index",String(index));
+			icon.style.setProperty("--tablance-cell-state-icon-count",String(kinds.length));
+			icon.dataset.tablanceCellTypeTooltip=description;
+			icon.setAttribute("role","img");
+			icon.setAttribute("aria-label",description);
+			if (parent!==icon.parentElement)
+				parent.appendChild(icon);
+		}
 	}
 
 	_getCellState(cellEl,instanceNode=null) {
@@ -14187,15 +14230,37 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	}
 
 	_renderFieldPresentation(el,schemaNode,presentation,present) {
+		// Keep the accessory and its tooltip anchors stable when a value is repainted.
+		const accessories=el.querySelector(":scope>.tablance-cell-state-icons");
+		accessories?.remove();
 		const hasContent=this._hasPresenceValue(presentation?.content);
 		const hasPlaceholder=!!present&&!hasContent&&this._hasPresenceValue(presentation?.placeholder);
+		if (schemaNode.sourceSelector&&schemaNode.sourceSelector.showLabel!==true
+			&&schemaNode.title!=null) {
+			const displayed=hasPlaceholder?String(presentation.placeholder)
+				:hasContent?String(presentation.content):"";
+			el.parentElement?.setAttribute("aria-label",displayed
+				?`${schemaNode.title}: ${displayed}`:String(schemaNode.title));
+		}
 		el.classList.toggle("tablance-presentation-placeholder",hasPlaceholder);
-		if (hasPlaceholder)
+		if (schemaNode.sourceSelector&&(hasContent||hasPlaceholder)) {
+			const pill=document.createElement("span");
+			pill.className="tablance-source-pill";
+			if (hasPlaceholder)
+				pill.classList.add("tablance-source-pill-empty");
+			else if (presentation.value===schemaNode.sourceSelector.manualValue)
+				pill.classList.add("tablance-source-pill-manual");
+			pill.textContent=String(hasPlaceholder?presentation.placeholder:presentation.content);
+			el.replaceChildren(pill);
+		}
+		else if (hasPlaceholder)
 			el.textContent=String(presentation.placeholder);
 		else if (schemaNode.html)
 			el.innerHTML=presentation?.content??"";
 		else
 			el.innerText=presentation?.content??"";
+		if (accessories)
+			el.appendChild(accessories);
 	}
 
 	_applyFieldPresentationPlaceholder(instanceNode) {
@@ -14204,6 +14269,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			return;
 		this._renderFieldPresentation(instanceNode.presentationContentEl,instanceNode.schemaNode,
 			instanceNode.presencePresentation,instanceNode.present);
+		const anchor=instanceNode.selEl??instanceNode.el;
+		this._syncCellStateIcon(anchor,instanceNode.cellState,instanceNode.schemaNode);
 	}
 
 	_clearTimedCellRefresh(key) {
@@ -14318,6 +14385,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				entry.instanceNode,now);
 			this._renderFieldPresentation(entry.contentEl,entry.schemaNode,presentation,
 				entry.instanceNode?entry.instanceNode.present:true);
+			this._syncCellStateIcon(entry.anchor,
+				this._getCellState(entry.anchor,entry.instanceNode),entry.schemaNode);
 			for (const className of entry.presentationClasses)
 				entry.anchor.classList.remove(className);
 			if (presentation.classNames.length)

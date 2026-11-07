@@ -130,6 +130,7 @@ try {
 		await waitForStatus(["awaiting-cell-type-icon-hit-test"]);
 		const targets=await evaluate(`window.cellTypeIconHitTest.targets.map((target,index)=>({index,name:target.name}))`);
 		for (const target of targets) {
+			let placement;
 			for (const state of ["hover","active"]) {
 				if (state==="hover") {
 					const parentPoint=await evaluate(`(()=>{const icon=window.cellTypeIconHitTest.targets[${target.index}].icon;
@@ -143,9 +144,15 @@ try {
 				const box=await evaluate(`(()=>{const target=window.cellTypeIconHitTest.targets[${target.index}];
 					if (${JSON.stringify(state)}==="active") target.table.selectCell(0,target.dataKey);
 					target.icon.scrollIntoView({behavior:"instant",block:"center",inline:"center"});
-					const rect=target.icon.getBoundingClientRect();return {
+					const rect=target.icon.getBoundingClientRect();
+					const parent=target.icon.closest(".tablance-cell-state").getBoundingClientRect();return {
 						left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom,
-						width:rect.width,height:rect.height};})()`);
+						width:rect.width,height:rect.height,relativeX:rect.left-parent.left,
+						relativeY:rect.top-parent.top};})()`);
+				if (placement&&(Math.abs(placement.relativeX-box.relativeX)>.1
+					||Math.abs(placement.relativeY-box.relativeY)>.1))
+					throw new Error(`Cell icon moved between hover and active (${target.name}): ${JSON.stringify({placement,box})}`);
+				placement=box;
 			const iconPoints=[
 				[box.left+1,box.top+1],[box.right-1,box.top+1],
 				[box.right-1,box.bottom-1],[box.left+1,box.bottom-1],
@@ -175,7 +182,7 @@ try {
 				throw new Error(`Cell type icon cursor/tooltip hit area changed (${target.name}): ${JSON.stringify(iconHits)}`);
 			}
 		}
-		console.log("Cell type hit testing stayed on the help wrapper across four icon types, hover/active states and six points per icon.");
+		console.log("Cell type hit testing stayed on the help wrapper across five icon types, hover/active states and six points per icon.");
 		await evaluate(`window.finishCellTypeIconHitTest()`);
 	}
 	if (!onlyDetails&&!numberEditor&&!dateFreeText&&!dateCalendarStacking&&!copySelection&&!keyboardScroll) {

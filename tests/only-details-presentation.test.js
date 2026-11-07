@@ -55,11 +55,22 @@ assert(relationSource.selEl.classList.contains('tablance-source-linked-cell'),
 assert(getComputedStyle(relationSource.selEl).backgroundColor
  ===getComputedStyle(relationCell('unrelatedValue').selEl).backgroundColor,
  'source-linked cells have no permanent background fill');
-assert(getComputedStyle(relationSource.selEl).boxShadow!=='none',
- 'source-linked cells keep a thin permanent accent line');
-assert(getComputedStyle(relationSource.selEl).boxShadow.includes('3px')
- &&getComputedStyle(relationSource.selEl).getPropertyValue('--tablance-relation-source-color').trim()==='#71849a',
- 'the permanent source accent uses its independent blue-grey color and three-pixel width');
+assert(getComputedStyle(relationSource.selEl).boxShadow===ordinaryRelationShadow,
+ 'source-linked cells keep the same resting edge as ordinary cells');
+const targetIcon=relationNumber.outerContainerEl.querySelector('.tablance-cell-state-icon-source-target');
+const targetEditIcon=relationNumber.outerContainerEl.querySelector('.tablance-cell-state-icon-editable');
+assert(targetEditIcon&&targetIcon
+ &&targetEditIcon.dataset.tablanceCellTypeTooltip.startsWith('Redigeringscell')
+ &&targetEditIcon.getBoundingClientRect().right<=targetIcon.getBoundingClientRect().left,
+ 'an editable source target keeps both independent, nonoverlapping state icons');
+assert(targetIcon?.dataset.tablanceCellTypeTooltip
+ ==='Källkopplat fält – fylls från Record source.'
+ &&getComputedStyle(targetIcon).cursor==='help',
+ 'source targets use the ordinary cell-state icon and describe their source');
+let targetIconClickBubbled=false;
+relationNumber.selEl.addEventListener('click',()=>targetIconClickBubbled=true,{once:true});
+targetIcon.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+assert(targetIconClickBubbled,'source target icon clicks bubble to the cell');
 assert(relationSource.schemaNode.dependencyPaths?.length===3,
  'source relations reuse the existing dependency graph');
 sourceRelationTable._handleCellTypeTooltipPointer({target:relationSource.selEl});
@@ -83,16 +94,16 @@ if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
   assert(relationIntensity(relationSource.selEl)===relationIntensity(relationNumber.selEl),
    'source and target remain synchronized during the animation');
   assert(getComputedStyle(relationSource.selEl).boxShadow===sourceAccent,
-   'source identity accent stays static while targets breathe');
+   'source divider stays unchanged while targets breathe');
  }
  assert(Math.max(...samples)-Math.min(...samples)>1,
   'relation intensity breathes rather than staying constant');
 }
 assert(relationSource.selEl.classList.contains('tablance-source-relation-active')
- &&getComputedStyle(relationSource.selEl).boxShadow.includes('3px')
+ &&getComputedStyle(relationSource.selEl).boxShadow===ordinaryRelationShadow
  &&getComputedStyle(relationNumber.selEl).backgroundImage!==ordinaryRelationBackground
  &&getComputedStyle(relationNumber.selEl).getPropertyValue('--tablance-relation-outline-width').trim()==='0px',
- 'active relations use a static source accent and a breathing target fill without an outline');
+ 'active relations leave the source divider alone and keep the breathing target fill');
 assert(getComputedStyle(relationNumber.selEl).backgroundClip==='padding-box'
  &&getComputedStyle(relationRowSeparator).borderTopColor===ordinarySeparatorColor
  &&getComputedStyle(relationName.selEl).borderInlineStartColor===ordinaryColumnDividerColor,
@@ -133,7 +144,7 @@ assert(!relationSource.selEl.classList.contains('tablance-source-related-highlig
  &&!relationNumber.selEl.classList.contains('tablance-source-related-highlight'),
  'source relation highlight clears after selection moves away');
 assert(!relationCell('unrelatedValue').selEl.classList.contains('tablance-source-related-highlight'),
- 'another source cell keeps its own accent without becoming a relation target');
+ 'another source cell stays outside the active relation');
 
 // Pointer selection and the public API must use the same active-cell relation transition as keyboard navigation.
 sourceRelationTable.selectCell(0,'recordSource');
@@ -351,9 +362,13 @@ assert(ghosts[0].getAnimations()[0].effect.getTiming().duration===720
  'the first ghost stays visible at the source during the short start delay');
 const firstGhosts=ghosts;
 const textCenter=element=>{
- const range=document.createRange();
- range.selectNodeContents(element);
- const rects=[...range.getClientRects()].filter(rect=>rect.width&&rect.height);
+ const walker=document.createTreeWalker(element,NodeFilter.SHOW_TEXT);
+ const rects=[];
+ for(let node;node=walker.nextNode();){
+  if(!node.textContent.trim())continue;
+  const range=document.createRange();range.selectNodeContents(node);
+  rects.push(...[...range.getClientRects()].filter(rect=>rect.width&&rect.height));
+ }
  return {x:(Math.min(...rects.map(rect=>rect.left))+Math.max(...rects.map(rect=>rect.right)))/2,
   y:(Math.min(...rects.map(rect=>rect.top))+Math.max(...rects.map(rect=>rect.bottom)))/2};
 };
@@ -496,12 +511,11 @@ assert(getComputedStyle(cell('both').el).color===getComputedStyle(colorSample).c
 colorSample.remove();
 assert(getComputedStyle(cell('both').el).fontStyle==='normal'&&getComputedStyle(cell('both').el).cursor==='cell','display placeholder uses normal text style with a cell cursor');
 assert(cell('none').outerContainerEl.getBoundingClientRect().height<55&&getComputedStyle(cell('editOnly').outerContainerEl).borderInlineStartWidth==='1px'&&panel.querySelector('.grid-row-separator'),'standalone grid is compact with subtle separators');
-const editIndicatorTitle=cell('none').outerContainerEl.querySelector(':scope>span.title');
-const editIndicatorIcon=editIndicatorTitle.querySelector(':scope>.tablance-cell-state-icon-editable');
+const editIndicatorIcon=cell('none').el.querySelector(':scope>.tablance-cell-state-icons>.tablance-cell-state-icon-editable');
 assert(getComputedStyle(editIndicatorIcon).cursor==='help'
  &&getComputedStyle(editIndicatorIcon).pointerEvents==='auto'
  &&getComputedStyle(editIndicatorIcon,'::before').pointerEvents==='none',
- 'cell type indicators expose one full-box help target with a pointer-transparent visual in the shared title slot');
+ 'cell type indicators expose one full-box help target with a pointer-transparent visual beside the value');
 for(const [key,expected] of [['none',''],['editOnly','Editor hint'],['displayOnly',''],['both','Long hint']]){
  standalone.selectCell(0,key,{enterEditMode:true});const input=standalone._cellCursor.querySelector('input.text-editor');
  assert(input?.placeholder===expected&&getComputedStyle(input).cursor==='text',`${key} has its own edit placeholder`);
@@ -1178,8 +1192,172 @@ menuControl.click();
 assert(pointerActionTable._menuState&&pointerActionTable._activeSchemaNode?.dataKey==='name',
  'menu child control opens its menu without selecting the action cell');
 const result=document.getElementById('test-results');
+const listIconTable=new Tablance(host(),{details:{type:'list',entries:[
+ {title:'List value',nodeId:'listValue',dataKey:'listValue',input:{type:'text'}},
+ {title:'Source',nodeId:'listSource',dataKey:'listSource',sourceLinked:true,
+  sourceLinkedTargets:['listShortTarget','listLongTarget'],input:{type:'text'}},
+ {title:'Short target',nodeId:'listShortTarget',dataKey:'listShortTarget',dependsOn:'listSource',input:{type:'text'}},
+ {title:'Long target',nodeId:'listLongTarget',dataKey:'listLongTarget',dependsOn:'listSource',input:{type:'text'}},
+ {title:'Multiline',nodeId:'listMultiline',dataKey:'listMultiline',input:{type:'textarea',placeholder:'Write several lines'}},
+ {title:'No icon',nodeId:'listNoIcon',dataKey:'listNoIcon',disabled:true,input:{type:'text'}},
+]}},true,true,{searchbar:false});
+listIconTable.setData({listValue:'Editable list value',listSource:'Source',
+ listShortTarget:'Short',listLongTarget:'A longer text value that can wrap across several lines in the list cell without moving its start position.',
+ listMultiline:'First line',listNoIcon:'No accessory'});
+const listIconCell=listIconTable.getDetailCell(0,'listValue');
+const listEditIcon=listIconCell.el.querySelector('.tablance-cell-state-icon-editable');
+const listShortCell=listIconTable.getDetailCell(0,'listShortTarget').el;
+const listLongCell=listIconTable.getDetailCell(0,'listLongTarget').el;
+const listNoIconCell=listIconTable.getDetailCell(0,'listNoIcon').el;
+const listTextRects=cellEl=>{
+ const range=document.createRange();range.selectNodeContents(cellEl.firstChild);
+ return [...range.getClientRects()];
+};
+const listTextX=cellEl=>listTextRects(cellEl)[0].left-cellEl.getBoundingClientRect().left;
+const shortIcons=[...listShortCell.querySelectorAll(':scope>.tablance-cell-state-icons>.tablance-cell-state-icon')];
+const longIcons=[...listLongCell.querySelectorAll(':scope>.tablance-cell-state-icons>.tablance-cell-state-icon')];
+assert(listEditIcon&&listIconCell.el.matches('td.value')
+ &&!listNoIconCell.querySelector('.tablance-cell-state-icon')
+ &&shortIcons.length===2&&longIcons.length===2
+ &&shortIcons[0].classList.contains('tablance-cell-state-icon-editable')
+ &&shortIcons[1].classList.contains('tablance-cell-state-icon-source-target'),
+ 'details-list supports zero, one, or two independent state icons');
+for(const listCell of [listIconCell.el,listShortCell,listLongCell]){
+ assert(Math.abs(listTextX(listCell)-listTextX(listNoIconCell))<.1,
+  'details-list text starts at the same x-position regardless of icon count or text length');
+ const icons=[...listCell.querySelectorAll(':scope>.tablance-cell-state-icons>.tablance-cell-state-icon')];
+ for(const icon of icons){
+  const rect=icon.getBoundingClientRect();
+  const fragments=listTextRects(listCell);
+  const last=fragments.at(-1);
+  assert(rect.right<=listCell.getBoundingClientRect().right
+   &&(rect.left>=last.right+3||rect.top>=last.bottom-.1)
+   &&fragments.every(fragment=>rect.right<=fragment.left||rect.left>=fragment.right
+    ||rect.bottom<=fragment.top||rect.top>=fragment.bottom),
+   'details-list icons follow the rendered text without overlapping any line');
+ }
+ for(let index=1;index<icons.length;index++)
+  assert(icons[index-1].getBoundingClientRect().right<=icons[index].getBoundingClientRect().left,
+   'multiple details-list icons sit side by side without overlap');
+}
+assert(shortIcons[0].getBoundingClientRect().left-listTextRects(listShortCell).at(-1).right<16,
+ 'details-list icons stay close to a short value instead of the cell edge');
+assert(shortIcons.every(icon=>getComputedStyle(icon).cursor==='help'
+ &&icon.dataset.tablanceCellTypeTooltip&&getComputedStyle(icon).pointerEvents==='auto'),
+ 'each details-list icon keeps its own tooltip and help hit area');
+let listIconClickBubbled=0;
+listShortCell.addEventListener('click',()=>listIconClickBubbled++);
+shortIcons.forEach(icon=>icon.dispatchEvent(new MouseEvent('click',{bubbles:true})));
+assert(listIconClickBubbled===2,'both details-list icon clicks pass through to the cell');
+for(const [key,listCell,icons] of [['listShortTarget',listShortCell,shortIcons],
+ ['listLongTarget',listLongCell,longIcons]]){
+ const before={x:listTextX(listCell),height:listCell.getBoundingClientRect().height,
+  icons:icons.map(icon=>[icon.offsetLeft,icon.offsetTop])};
+ listIconTable.selectCell(0,key);
+ assert(icons.every((icon,index)=>getComputedStyle(icon).visibility==='visible'
+  &&icon.offsetLeft===before.icons[index][0]&&icon.offsetTop===before.icons[index][1])
+  &&Math.abs(listTextX(listCell)-before.x)<.1
+  &&Math.abs(listCell.getBoundingClientRect().height-before.height)<.1,
+  'activating a short or long details-list target reveals both icons without shifting text or height');
+}
+const mainIconTable=new Tablance(host(),{main:{columns:[
+ {dataKey:'mainValue',input:{type:'text'}},
+]}},true,true,{searchbar:false,ordering:false});
+mainIconTable.setData([{mainValue:'Editable main value'}]);
+const mainEditIcon=mainIconTable._mainTbody.querySelector('tr:not(.details)>td .tablance-cell-state-icon-editable');
+assert(mainEditIcon,'an ordinary table cell keeps its editing icon');
+const selectorIconTable=new Tablance(host(),{details:{type:'grid',columns:1,entries:[
+ {title:'Person',nodeId:'selector',dataKey:'selector',sourceSelector:{manualValue:'manual'},
+  displayPlaceholder:'Välj person',input:{type:'select',options:[{value:'andreas',text:'Andreas'},
+   {value:'manual',text:'Manuell ifyllnad'}]}},
+]}},true,true,{searchbar:false});
+selectorIconTable.setData({selector:''});
+const selectorIconCell=selectorIconTable.getDetailCell(0,'selector');
+const selectorEditIcon=selectorIconCell.selEl.querySelector('.tablance-cell-state-icon-editable');
+assert(selectorEditIcon&&selectorIconCell.el.querySelector('.tablance-source-pill-empty')
+ &&!selectorIconCell.selEl.querySelector('.tablance-cell-state-icon-source-target')
+ &&selectorIconCell.el.querySelector('.tablance-source-pill').getBoundingClientRect().right
+   <=selectorEditIcon.getBoundingClientRect().left,
+ 'a sourceSelector keeps its pill chain and an independent editing icon without overlap');
+const gridEditIcon=cell('none').selEl.querySelector('.tablance-cell-state-icon-editable');
+assert(gridEditIcon,'details-grid keeps its editing icon');
+for(const [table,key,icon] of [[listIconTable,'listValue',listEditIcon],
+ [mainIconTable,'mainValue',mainEditIcon],[selectorIconTable,'selector',selectorEditIcon],
+ [standalone,'none',gridEditIcon]]){
+ const before=icon.getBoundingClientRect();
+ assert(getComputedStyle(icon).visibility==='hidden',`${key} edit icon is hidden at rest`);
+ table.selectCell(0,key);
+ const after=icon.getBoundingClientRect();
+ assert(getComputedStyle(icon).visibility==='visible'
+  &&Math.abs(before.x-after.x)<.1&&Math.abs(before.y-after.y)<.1,
+  `${key} edit icon appears on the active cell without changing position`);
+}
+for(const [table,key,icon,cellEl] of [[listIconTable,'listValue',listEditIcon,listIconCell.el],
+ [mainIconTable,'mainValue',mainEditIcon,mainEditIcon.closest('td')],
+ [selectorIconTable,'selector',selectorEditIcon,selectorIconCell.selEl],
+ [standalone,'none',gridEditIcon,cell('none').selEl],
+ [standalone,'editOnly',cell('editOnly').selEl.querySelector('.tablance-cell-state-icon-editable'),cell('editOnly').selEl],
+ [sourceRelationTable,'recordNumber',targetEditIcon,relationNumber.selEl]]){
+ table.selectCell(0,key);
+ const iconRect=icon.getBoundingClientRect();
+ const cellLeft=cellEl.getBoundingClientRect().left;
+ assert(getComputedStyle(icon).visibility==='visible',`${key} pencil is visible in active view mode`);
+ table.selectCell(0,key,{enterEditMode:true});
+ assert(table._inEditMode&&getComputedStyle(icon).visibility==='hidden'
+  &&Math.abs(icon.getBoundingClientRect().left-iconRect.left)<.1
+  &&Math.abs(cellEl.getBoundingClientRect().left-cellLeft)<.1,
+  `${key} hides only the pencil during editing without moving its accessory or cell`);
+ if(table===sourceRelationTable)assert(getComputedStyle(targetIcon).visibility==='visible',
+  'the source-target chain remains visible while its editable cell is in edit mode');
+ if(table===standalone)assert(table._cellCursor.querySelector('input.text-editor')?.value===''
+  &&table._cellCursor.querySelector('input.text-editor')?.placeholder===(key==='editOnly'?'Editor hint':''),
+  'the pencil stays hidden for empty grid editors with or without placeholders');
+ table._exitEditMode(false);
+ assert(getComputedStyle(icon).visibility==='visible'
+  &&Math.abs(icon.getBoundingClientRect().left-iconRect.left)<.1
+  &&Math.abs(cellEl.getBoundingClientRect().left-cellLeft)<.1,
+  `${key} restores the pencil in active view mode at the original position`);
+}
+const multilineCell=listIconTable.getDetailCell(0,'listMultiline').el;
+const multilineIcon=multilineCell.querySelector('.tablance-cell-state-icon-editable');
+listIconTable.selectCell(0,'listMultiline');
+const multilineIconX=multilineIcon.getBoundingClientRect().left;
+const multilineTextX=listTextX(multilineCell);
+listIconTable.selectCell(0,'listMultiline',{enterEditMode:true});
+const multilineEditor=listIconTable._cellCursor.querySelector('textarea');
+assert(multilineEditor&&getComputedStyle(multilineIcon).visibility==='hidden',
+ 'a multiline details-list editor hides the pencil');
+multilineEditor.value='';
+multilineEditor.dispatchEvent(new Event('input',{bubbles:true}));
+assert(multilineEditor.placeholder==='Write several lines'
+ &&getComputedStyle(multilineIcon).visibility==='hidden',
+ 'an empty multiline editor keeps its placeholder without showing the pencil');
+multilineEditor.value='First line\nSecond line\nThird line';
+multilineEditor.dispatchEvent(new Event('input',{bubbles:true}));
+await settleLayout();
+assert(getComputedStyle(multilineIcon).visibility==='hidden'
+ &&Math.abs(multilineIcon.getBoundingClientRect().left-multilineIconX)<.1
+ &&Math.abs(listTextX(multilineCell)-multilineTextX)<.1,
+ 'growing multiline text does not reveal or move the pencil or underlying text start');
+listIconTable._exitEditMode(false);
+assert(getComputedStyle(multilineIcon).visibility==='visible'
+ &&Math.abs(multilineIcon.getBoundingClientRect().left-multilineIconX)<.1
+ &&Math.abs(listTextX(multilineCell)-multilineTextX)<.1,
+ 'closing a multiline editor restores the pencil without shifting the text start');
+sourceRelationTable.selectCell(0,'unrelatedValue');
+const targetIconOffsets=[targetEditIcon,targetIcon].map(icon=>[icon.offsetLeft,icon.offsetTop]);
+assert([targetEditIcon,targetIcon].every(icon=>getComputedStyle(icon).visibility==='hidden'),
+ 'both target state icons are hidden at rest');
+sourceRelationTable.selectCell(0,'recordNumber');
+assert(getComputedStyle(targetEditIcon).visibility==='visible'
+ &&getComputedStyle(targetIcon).visibility==='visible'
+ &&[targetEditIcon,targetIcon].every((icon,index)=>icon.offsetLeft===targetIconOffsets[index][0]
+  &&icon.offsetTop===targetIconOffsets[index][1]),
+ 'both editable and source-target icons appear without moving the cell layout');
 window.cellTypeIconHitTest={targets:[
  {name:'source',icon:sourceIndicator,table:standalone,dataKey:'both'},
+ {name:'source-target',icon:targetIcon,table:sourceRelationTable,dataKey:'recordNumber'},
+ {name:'editable',icon:targetEditIcon,table:sourceRelationTable,dataKey:'recordNumber'},
  ...[['editable','editable'],['navigation','navigation'],['read-only','locked']].map(([kind,key])=>({
   name:kind,icon:indicatorTable.getDetailCell(0,key).outerContainerEl.querySelector(`.tablance-cell-state-icon-${kind}`),
   table:indicatorTable,dataKey:key,

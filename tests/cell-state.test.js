@@ -5504,7 +5504,8 @@ try {
 	assert(lockedDetail.selEl.classList.contains("read-only-activation-feedback")
 		&&lockedDetailFeedback.animationName==="tablance-read-only-lock-feedback"
 		&&lockedDetailFeedback.width==="12px"&&lockedDetailFeedback.height==="12px"
-		&&Math.abs(parseFloat(lockedDetailFeedback.marginLeft)-4)<.01
+		&&Math.abs(lockedDetailIcon.getBoundingClientRect().left
+			-lockedDetailTitle.getBoundingClientRect().right-4)<.1
 		&&lockedDetailFeedback.transform==="none",
 		"a blocked titled group field animates its inline lock rather than its cell");
 	for (const activate of [
@@ -5544,7 +5545,7 @@ try {
 	const lockedGridDetail=lockedPresentationTable.getDetailCell(lockedPresentationRow,"lockedGridDetail");
 	lockedGridDetail.select();
 	key(lockedPresentationTable.rootEl,"Enter","Enter");
-	const lockedGridIcon=lockedGridDetail.selEl.querySelector(":scope>span.title>.tablance-cell-state-icon-read-only");
+	const lockedGridIcon=lockedGridDetail.el.querySelector(":scope>.tablance-cell-state-icons>.tablance-cell-state-icon-read-only");
 	assert(lockedGridDetail.selEl.classList.contains("read-only-activation-feedback")
 		&&getComputedStyle(lockedGridIcon).animationName
 			==="tablance-read-only-lock-feedback"
@@ -6291,7 +6292,9 @@ try {
 		&&table._cellCursor.classList.contains("inline-title-indicator")
 		&&getComputedStyle(table._cellCursor,"::before").content==="none"
 		&&readOnlyTitleIndicator.visibility==="visible"&&readOnlyTitleIndicator.width==="12px"
-		&&readOnlyTitleIndicator.marginLeft==="4px"&&readOnlyTitleIndicator.position==="absolute"
+		&&Math.abs(readOnlyTitleIcon.getBoundingClientRect().left
+			-readOnlyTitle.getBoundingClientRect().right-4)<.1
+		&&readOnlyTitleIndicator.position==="absolute"
 		&&JSON.stringify(layoutWithIndicator)===JSON.stringify(layoutWithoutIndicator),
 		"a selected group-field indicator is rendered inline directly after its title instead of at the cell edge");
 	const lockedGroupTitleText=readOnlyTitle.textContent;
@@ -6775,33 +6778,34 @@ try {
 	listIndicatorField.select();
 	const listIndicatorStyle=getComputedStyle(indicatorLayoutTable._cellCursor,"::before");
 	const listEditIcon=(listIndicatorField.selEl??listIndicatorField.el)
-		.querySelector(":scope>.tablance-cell-state-icon-editable");
+		.querySelector(":scope>.tablance-cell-state-icons>.tablance-cell-state-icon-editable");
 	assert(!(listIndicatorField.selEl??listIndicatorField.el).querySelector(":scope>span.title")
 		&&listIndicatorStyle.content==="none"
-		&&(!listEditIcon||getComputedStyle(listEditIcon).visibility==="hidden")
+		&&getComputedStyle(listEditIcon).visibility==="visible"
 		&&indicatorLayoutTable._selectedCellState?.kind==="editable",
-		"List fields retain their separate title cell and only-details selection suppresses the redundant edit icon");
+		"List fields retain their separate title cell and show the editing icon beside the value");
 	const gridEditTitle=gridIndicatorEdit.outerContainerEl.querySelector(":scope>span.title");
 	const gridEditTitleBefore=gridEditTitle.getBoundingClientRect();
-	const gridEditIcon=gridEditTitle.querySelector(":scope>.tablance-cell-state-icon-editable");
+	const gridEditIcon=gridIndicatorEdit.el.querySelector(":scope>.tablance-cell-state-icons>.tablance-cell-state-icon-editable");
 	assert(getComputedStyle(gridEditIcon).visibility==="hidden"
 		&&getComputedStyle(gridIndicatorEdit.outerContainerEl,"::before").content==="none",
 		"an inactive Grid field keeps both indicator layers hidden until hover or selection");
 	gridIndicatorEdit.select();
 	const gridEditTitleSelected=gridEditTitle.getBoundingClientRect();
 	const gridEditIndicatorStyle=getComputedStyle(gridEditIcon);
+	const gridEditText=document.createRange();gridEditText.selectNodeContents(gridIndicatorEdit.el.firstChild);
 	assert(gridEditIndicatorStyle.visibility==="visible"
-		&&Math.abs(parseFloat(gridEditIndicatorStyle.left)-gridEditTitleSelected.width)<.05
-		&&gridEditIndicatorStyle.marginLeft==="4px"
+		&&gridEditIcon.getBoundingClientRect().left-gridEditText.getBoundingClientRect().right>=4
+		&&gridEditIcon.getBoundingClientRect().left-gridEditText.getBoundingClientRect().right<16
 		&&getComputedStyle(indicatorLayoutTable._cellCursor,"::before").content==="none"
 		&&Math.abs(gridEditTitleSelected.left-gridEditTitleBefore.left)<.05
 		&&Math.abs(gridEditTitleSelected.top-gridEditTitleBefore.top)<.05
 		&&Math.abs(gridEditTitleSelected.width-gridEditTitleBefore.width)<.05,
-		"a selected Grid edit icon uses the Group title-adjacent layout without moving or overlapping its title");
+		"a selected Grid edit icon follows the value without moving or overlapping its title");
 	const gridActionTitle=gridIndicatorAction.outerContainerEl.querySelector(":scope>span.title");
 	const gridActionTitleBefore=gridActionTitle.getBoundingClientRect();
 	gridIndicatorAction.select();
-	const gridActionIcon=gridActionTitle.querySelector(":scope>.tablance-cell-state-icon-navigation");
+	const gridActionIcon=gridIndicatorAction.el.querySelector(":scope>.tablance-cell-state-icons>.tablance-cell-state-icon-navigation");
 	const gridActionIndicatorStyle=getComputedStyle(gridActionIcon);
 	const gridActionVisualStyle=getComputedStyle(gridActionIcon,"::before");
 	const gridActionTitleSelected=gridActionTitle.getBoundingClientRect();
@@ -6811,13 +6815,13 @@ try {
 		&&getComputedStyle(indicatorLayoutTable._cellCursor,"::before").content==="none"
 		&&Math.abs(gridActionTitleSelected.left-gridActionTitleBefore.left)<.05
 		&&Math.abs(gridActionTitleSelected.width-gridActionTitleBefore.width)<.05,
-		"Grid action icons share the same stable title-adjacent selected presentation as edit icons");
+		"Grid action icons share the same stable value-adjacent selected presentation as edit icons");
 	const gridIndicatorRule=[...document.styleSheets].flatMap(sheet=>{
 		try { return [...sheet.cssRules]; } catch(error) { return []; }
 	}).find(rule=>rule.selectorText?.includes(".tablance-cell-state-icon")
 		&&rule.selectorText.includes(".tablance-active-cell"));
 	assert(gridIndicatorRule,
-		"Grid title icons share the same persistent DOM slot and active-cell visibility rule");
+		"Grid value icons share the same persistent DOM slot and active-cell visibility rule");
 
 	const gridHost=host();
 	gridHost.style.width="640px";
