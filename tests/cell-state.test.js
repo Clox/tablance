@@ -3094,6 +3094,42 @@ try {
 		"main-cell state updates infer the structural column schema when callers omit it");
 	stateRebindTable._contractRow(reboundExpandCell.parentElement);
 	await new Promise(resolve=>setTimeout(resolve,200));
+	const directExpandTable=new Tablance(host(),{main:{columns:[
+		{type:"expand",width:40},{dataKey:"title"},
+	]},details:{type:"list",entries:[{dataKey:"detail",nodeId:"directExpandDetail"}]}},
+		true,true,{searchbar:false,ordering:false});
+	directExpandTable.setData([{title:"Row",detail:"Detail"}]);
+	await tick();
+	const directExpandMain=directExpandTable._mainTbody.querySelector('[data-data-row-index="0"]:not(.details)');
+	directExpandMain.querySelector(".expand-col a").dispatchEvent(
+		new MouseEvent("mousedown",{bubbles:true,cancelable:true}));
+	assert(directExpandMain.classList.contains("expanded")&&directExpandTable._mainColIndex==null,
+		"opening with the chevron does not require a previously selected main cell");
+	directExpandTable.getDetailCell(0,"directExpandDetail").select();
+	directExpandMain.querySelector(".expand-col a").dispatchEvent(
+		new MouseEvent("mousedown",{bubbles:true,cancelable:true}));
+	await waitFor(()=>!directExpandMain.classList.contains("expanded"),
+		"chevron closes a row whose detail was selected before any main cell");
+	let changingDetailVisible=true;
+	const changingDetailTable=new Tablance(host(),{main:{columns:[
+		{type:"expand",width:40},{dataKey:"title"},
+	]},details:{type:"list",entries:[{dataKey:"detail",visibleIf:()=>changingDetailVisible}]}},
+		true,true,{searchbar:false,ordering:false});
+	changingDetailTable.setData([{title:"Row",detail:"Detail"}]);
+	await tick();
+	const changingMain=changingDetailTable._mainTbody.querySelector('[data-data-row-index="0"]:not(.details)');
+	changingDetailTable._expandRow(changingMain,false);
+	changingDetailVisible=false;
+	const changingExpandCell=changingMain.querySelector(".expand-col");
+	changingDetailTable._updateExpandCell(changingExpandCell,changingDetailTable._colSchemaNodes[0],
+		changingDetailTable._filteredData[0],0);
+	assert(changingExpandCell.dataset.cellState==="action"
+		&&getComputedStyle(changingExpandCell).cursor==="pointer"
+		&&getComputedStyle(changingExpandCell.querySelector("a")).cursor==="pointer",
+		"an open row keeps a consistent pointer cursor and closable chevron after details lose presence");
+	changingDetailTable._contractRow(changingMain);
+	await waitFor(()=>!changingMain.classList.contains("expanded"),
+		"an open row can close after details lose presence");
 	const reboundSelectCell=await recycleSelectedColumn(1);
 	assert(!reboundSelectCell.classList.contains("action-indicator"),
 		"recycling does not add a generic action indicator to structural select cells");

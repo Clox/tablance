@@ -13740,7 +13740,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_resolveExpandCellState(cell,colSchemaNode,rowData,mainIndex,
 		cellState=this._resolveCellState(colSchemaNode,this._makeCallbackPayload(null,{},
 			{schemaNode:colSchemaNode,mainIndex,rowData}))) {
-		return this._detailsSchemaHasPresence(rowData,mainIndex,cell)?cellState
+		// An open details pane must remain closable even if its current content no longer has presence.
+		return cell?.parentElement?.classList.contains("expanded")
+			||this._detailsSchemaHasPresence(rowData,mainIndex,cell)?cellState
 			:{kind:"disabled",selectable:false,activatable:false,mutable:false,activation:"none"};
 	}
 
@@ -14709,7 +14711,10 @@ export default class Tablance extends TablanceBase {
 		this._unsortCol(null,"expand");
 		const instanceNode=this._openDetailsPanes[dataRowIndex];
 		if (hasOpenDetails) {//if cell-cursor is inside the details
-			this._selectMainTableCell(tr.cells[this._mainColIndex]);//then move it out
+			const previousMainCell=tr.cells[this._mainColIndex];
+			const mainCell=previousMainCell&&this._getCellState(previousMainCell)?.selectable!==false
+				?previousMainCell:this._findSelectableMainCellFromRow(tr,1,this._mainColIndex??0);
+			this._selectMainTableCell(mainCell);//move selection out before hiding the details
 			if (this._activeDetailsCell)//closing group failed (validation), so keep details open
 				return;
 			// Moving out can start one or more group presentation transitions. Settle them before the entire details row
