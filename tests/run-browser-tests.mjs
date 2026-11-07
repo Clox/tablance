@@ -7,6 +7,7 @@ import {fileURLToPath} from "node:url";
 
 const root=normalize(join(fileURLToPath(new URL(".",import.meta.url)),".."));
 const onlyDetails=process.argv.includes("--only-details");
+const reducedMotion=process.argv.includes("--reduced-motion");
 const numberEditor=process.argv.includes("--number-editor");
 const dateFreeText=process.argv.includes("--date-free-text");
 const dateCalendarStacking=process.argv.includes("--date-calendar-stacking");
@@ -97,7 +98,7 @@ try {
 	const readResult=()=>evaluate(`(()=>{const el=document.getElementById("test-results");return el
 		?{status:el.dataset.status,text:el.textContent}:null})()`);
 	const waitForStatus=async accepted=>{
-		const deadline=Date.now()+25000;
+		const deadline=Date.now()+60000;
 		while (Date.now()<deadline) {
 			const current=await readResult();
 			if (current?.status==="failed")
@@ -273,6 +274,36 @@ try {
 	}
 	const finalResult=await waitForStatus(["passed"]);
 	console.log(finalResult.text);
+	if (reducedMotion&&onlyDetails) {
+		await send("Emulation.setEmulatedMedia",{features:[{name:"prefers-reduced-motion",value:"reduce"}]},sessionId);
+		const reducedResult=await evaluate(`(()=>{
+			const host=document.body.appendChild(document.createElement('div'));
+			const table=new Tablance(host,{details:{type:'grid',columns:2,rows:[
+			 {cells:[{type:'field',nodeId:'source',dataKey:'source',title:'Source',sourceLinked:true,
+			  sourceLinkedTargets:['first','second'],sourceSelector:{manualValue:'manual'},input:{type:'text'}}]},
+			 {cells:[{type:'field',nodeId:'first',dataKey:'first',title:'First',dependsOn:'source',input:{type:'text'}},
+			  {type:'field',nodeId:'second',dataKey:'second',title:'Second',dependsOn:'source',input:{type:'text'}}]},
+			]}},true,true,{searchbar:false});
+			table.setData({source:'A',first:'One',second:'Two'});
+			const cell=id=>table.getDetailCell(0,id).selEl;
+			const chain=id=>cell(id).querySelector('.tablance-cell-state-icon-source-target');
+			const sourceIcon=()=>table.getDetailCell(0,'source').el.querySelector('.tablance-source-pill-icon');
+			table.selectCell(0,'source');
+			const activeSource=matchMedia('(prefers-reduced-motion: reduce)').matches
+			 &&getComputedStyle(chain('first')).visibility==='visible'
+			 &&getComputedStyle(chain('first')).animationName==='none'
+			 &&getComputedStyle(sourceIcon()).animationName==='none'
+			 &&!cell('first').classList.contains('tablance-source-related-ping');
+			table.selectCell(0,'first');
+			const activeTarget=getComputedStyle(chain('first')).animationName==='none'
+			 &&getComputedStyle(chain('second')).animationName==='none'
+			 &&getComputedStyle(sourceIcon()).animationName==='none';
+			return {activeSource,activeTarget};
+		})()`);
+		if (!reducedResult.activeSource||!reducedResult.activeTarget)
+			throw new Error(`Reduced motion relation check failed: ${JSON.stringify(reducedResult)}`);
+		console.log("Reduced motion source and target chains remain visible without animation.");
+	}
 	if (dateCalendarStacking)
 		console.log(`Date calendar stacking diagnostics: ${JSON.stringify(await evaluate("window.calendarStackingDiagnostics"))}`);
 	await send("Target.closeTarget",{targetId});

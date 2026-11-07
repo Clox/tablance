@@ -31,7 +31,7 @@ standalone._clearCellTypeTooltip();
 const sourceRelationTable=new Tablance(host(),{details:{type:'grid',columns:3,rows:[
  {cells:[{type:'field',nodeId:'priorValue',dataKey:'priorValue',title:'Prior value',input:{type:'text'}}]},
  {cells:[{type:'field',nodeId:'recordSource',dataKey:'recordSource',title:'Record source',sourceLinked:true,
-  input:{type:'text'}}]},
+  sourceSelector:{manualValue:'manual'},displayPlaceholder:'Choose record',input:{type:'text'}}]},
  {cells:[{type:'field',nodeId:'recordNumber',dataKey:'recordNumber',title:'Record number',dependsOn:'recordSource',input:{type:'text'}},
   {type:'field',nodeId:'recordName',dataKey:'recordName',title:'Record name',dependsOn:'recordSource',input:{type:'text'}},
   {type:'field',nodeId:'hiddenValue',dataKey:'hiddenValue',title:'Hidden value',dependsOn:'recordSource',
@@ -75,39 +75,21 @@ assert(relationSource.schemaNode.dependencyPaths?.length===3,
  'source relations reuse the existing dependency graph');
 sourceRelationTable._handleCellTypeTooltipPointer({target:relationSource.selEl});
 const relationClock=relationSource.selEl.closest('.tablance');
-const relationIntensity=cellEl=>getComputedStyle(cellEl).getPropertyValue('--tablance-relation-intensity').trim();
-assert(relationIntensity(relationSource.selEl)===relationIntensity(relationNumber.selEl),
- 'source and target read the same inherited animation phase');
-const sourceAccent=getComputedStyle(relationSource.selEl).boxShadow;
-if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
- assert(getComputedStyle(relationClock).animationName==='none',
-  'reduced motion keeps the relation visible without animation');
- assert(getComputedStyle(relationNumber.selEl).backgroundImage!==ordinaryRelationBackground,
-  'reduced motion keeps a static target fill');
-} else {
- assert(getComputedStyle(relationClock).animationName==='tablance-relation-breathe',
-  'a hovered source starts the shared relation clock');
- const samples=[parseFloat(relationIntensity(relationSource.selEl))];
- for(let index=0;index<2;index++) {
-  await new Promise(resolve=>setTimeout(resolve,240));
-  samples.push(parseFloat(relationIntensity(relationSource.selEl)));
-  assert(relationIntensity(relationSource.selEl)===relationIntensity(relationNumber.selEl),
-   'source and target remain synchronized during the animation');
-  assert(getComputedStyle(relationSource.selEl).boxShadow===sourceAccent,
-   'source divider stays unchanged while targets breathe');
- }
- assert(Math.max(...samples)-Math.min(...samples)>1,
-  'relation intensity breathes rather than staying constant');
-}
+const relationPill=relationSource.el.querySelector('.tablance-source-pill');
+const numberChain=relationNumber.selEl.querySelector('.tablance-cell-state-icon-source-target');
+const nameChain=relationName.selEl.querySelector('.tablance-cell-state-icon-source-target');
 assert(relationSource.selEl.classList.contains('tablance-source-relation-active')
  &&getComputedStyle(relationSource.selEl).boxShadow===ordinaryRelationShadow
- &&getComputedStyle(relationNumber.selEl).backgroundImage!==ordinaryRelationBackground
- &&getComputedStyle(relationNumber.selEl).getPropertyValue('--tablance-relation-outline-width').trim()==='0px',
- 'active relations leave the source divider alone and keep the breathing target fill');
-assert(getComputedStyle(relationNumber.selEl).backgroundClip==='padding-box'
- &&getComputedStyle(relationRowSeparator).borderTopColor===ordinarySeparatorColor
+ &&getComputedStyle(relationNumber.selEl).backgroundImage===ordinaryRelationBackground
+ &&getComputedStyle(relationClock).animationName==='none'
+ &&getComputedStyle(numberChain).visibility==='visible'
+ &&getComputedStyle(nameChain).visibility==='visible'
+ &&getComputedStyle(relationPill).boxShadow==='none'
+ &&getComputedStyle(numberChain).animationName==='none',
+ 'hovering a source reveals both target chains without pill glow, fill, or animation');
+assert(getComputedStyle(relationRowSeparator).borderTopColor===ordinarySeparatorColor
  &&getComputedStyle(relationName.selEl).borderInlineStartColor===ordinaryColumnDividerColor,
- 'target fill stays inside the cell while grid dividers retain their original colors');
+ 'relation styling retains grid dividers');
 assert(relationNumber.selEl.classList.contains('tablance-source-related-highlight')
  &&relationName.selEl.classList.contains('tablance-source-related-highlight')
  &&!relationHidden.selEl.classList.contains('tablance-source-related-highlight'),
@@ -115,27 +97,28 @@ assert(relationNumber.selEl.classList.contains('tablance-source-related-highligh
 sourceRelationTable.rootEl.dispatchEvent(new PointerEvent('pointerleave'));
 assert(sourceRelationClassesCleared()
  &&!relationSource.selEl.classList.contains('tablance-source-relation-active')
- &&getComputedStyle(relationNumber.selEl).boxShadow===ordinaryRelationShadow,
- 'leaving the table restores a dependent exactly to ordinary styling');
+ &&getComputedStyle(numberChain).visibility==='hidden'
+ &&getComputedStyle(relationPill).boxShadow==='none',
+ 'leaving the table restores the resting icon and pill styling');
 sourceRelationTable._handleCellTypeTooltipPointer({target:relationSource.selEl});
 assert(getComputedStyle(relationNumber.selEl).backgroundColor
  ===getComputedStyle(relationCell('unrelatedValue').selEl).backgroundColor,
  'related cells leave their underlying background color intact');
-assert(getComputedStyle(relationNumber.selEl).backgroundImage!==ordinaryRelationBackground,
- 'related cells use the blue fill without an outline');
+assert(getComputedStyle(relationNumber.selEl).backgroundImage===ordinaryRelationBackground,
+ 'related cells have no relation background');
 sourceRelationTable._handleCellTypeTooltipPointer({target:relationNumber.selEl});
-assert(!relationSource.selEl.classList.contains('tablance-source-related-highlight')
- &&!relationNumber.selEl.classList.contains('tablance-source-related-highlight')
- &&!relationName.selEl.classList.contains('tablance-source-related-highlight'),
- 'hovering a dependent does not reverse-highlight a source relation');
+assert(relationSource.selEl.classList.contains('tablance-source-relation-active')
+ &&relationNumber.selEl.classList.contains('tablance-source-related-highlight')
+ &&relationName.selEl.classList.contains('tablance-source-related-highlight'),
+ 'hovering a target reverses the relation to its source and sibling target');
 sourceRelationTable._handleCellTypeTooltipPointer({target:relationName.selEl});
 sourceRelationTable.selectCell(0,'recordSource');
 sourceRelationTable._handleCellTypeTooltipPointer({target:relationName.selEl});
-assert(!relationSource.selEl.classList.contains('tablance-source-related-highlight')
+assert(relationSource.selEl.classList.contains('tablance-source-relation-active')
  &&relationNumber.selEl.classList.contains('tablance-source-related-highlight'),
- 'active and hovered source relations remain synchronized');
+ 'hovered target and active source retain their shared relation');
 sourceRelationTable.rootEl.dispatchEvent(new PointerEvent('pointerleave'));
-assert(!relationSource.selEl.classList.contains('tablance-source-related-highlight')
+assert(relationSource.selEl.classList.contains('tablance-source-relation-active')
  &&relationNumber.selEl.classList.contains('tablance-source-related-highlight'),
  'active source relation remains highlighted after pointer leaves');
 sourceRelationTable.selectCell(0,'unrelatedValue');
@@ -152,14 +135,14 @@ sourceRelationTable._handleCellTypeTooltipPointer({target:relationSource.selEl})
 assert(sourceRelationClassesCleared()===false,'source is related before pointer navigation');
 relationName.selEl.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0}));
 assert(sourceRelationTable._activeDetailsCell?.schemaNode?.nodeId==='recordName'
- &&sourceRelationClassesCleared()
- &&!relationSource.selEl.classList.contains('tablance-source-relation-active'),
- 'clicking an ordinary cell clears the old source relation immediately');
+ &&!sourceRelationClassesCleared()
+ &&relationSource.selEl.classList.contains('tablance-source-relation-active'),
+ 'clicking a target keeps the relation to its source');
 sourceRelationTable.selectCell(0,'recordSource');
 sourceRelationTable.selectCell(0,'recordNumber');
-assert(sourceRelationClassesCleared(),'programmatic navigation clears the old source relation');
+assert(!sourceRelationClassesCleared(),'programmatic target selection keeps the relation');
 sourceRelationTable.refreshSubtree(relationCell('recordNumber'));
-assert(sourceRelationClassesCleared(),'passive repaint cannot resurrect a relation from the formerly active source');
+assert(!sourceRelationClassesCleared(),'passive repaint preserves the active target relation');
 
 // Leaving the active source in either keyboard direction clears the relation immediately.
 sourceRelationTable.selectCell(0,'recordSource');
@@ -167,13 +150,284 @@ sourceRelationTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
  {key:'ArrowDown',code:'ArrowDown',bubbles:true,cancelable:true}));
 assert(sourceRelationTable._activeDetailsCell?.schemaNode?.nodeId==='recordNumber',
  'ArrowDown moves from the active source to its next cell');
-assert(sourceRelationClassesCleared());
+assert(!sourceRelationClassesCleared());
 sourceRelationTable.selectCell(0,'recordSource');
 sourceRelationTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
  {key:'ArrowUp',code:'ArrowUp',bubbles:true,cancelable:true}));
 assert(sourceRelationTable._activeDetailsCell?.schemaNode?.nodeId==='priorValue',
  'ArrowUp moves from the active source to its previous cell');
 assert(sourceRelationClassesCleared());
+
+const formRelationsData={principal:'andreas',personalNumber:'19800101-1234',name:'Andreas',
+ address:'norrings',street:'Norrings väg 3',apartment:'1201',postalCode:'654 32',city:'Karlstad',
+ showApartment:true};
+const formRelations=new Tablance(host(),{details:{type:'grid',columns:4,rows:[
+ {cells:[{type:'field',nodeId:'principal',dataKey:'principal',title:'Huvudman',sourceLinked:true,
+  sourceLinkedTargets:['personalNumber','name'],sourceSelector:{manualValue:'manual'},
+  input:{type:'text'},render:({rowData})=>rowData.principal==='andreas'?'Andreas':'Annan huvudman'}]},
+ {cells:[{type:'field',nodeId:'personalNumber',dataKey:'personalNumber',title:'Personnummer',
+  dependsOn:'principal',input:{type:'text'}},
+  {type:'field',nodeId:'name',dataKey:'name',title:'Namn',dependsOn:'principal',input:{type:'text'}}]},
+ {cells:[{type:'field',nodeId:'address',dataKey:'address',title:'Adress',sourceLinked:true,
+  sourceLinkedTargets:['street','apartment','postalCode','city'],sourceSelector:{manualValue:'manual'},
+  input:{type:'text'},render:({rowData})=>rowData.address==='norrings'?'Norrings väg 3 · Andreas':'Annan adress'}]},
+ {cells:[{type:'field',nodeId:'street',dataKey:'street',title:'Gatuadress',dependsOn:'address',input:{type:'text'}},
+  {type:'field',nodeId:'apartment',dataKey:'apartment',title:'Lägenhetsnummer',dependsOn:'address',
+   visibleIf:({rowData})=>rowData.showApartment,input:{type:'text'}},
+  {type:'field',nodeId:'postalCode',dataKey:'postalCode',title:'Postnummer',dependsOn:'address',input:{type:'text'}},
+  {type:'field',nodeId:'city',dataKey:'city',title:'Postort',dependsOn:'address',input:{type:'text'}}]},
+]}},true,true,{searchbar:false});
+formRelations.setData(formRelationsData);
+const formNode=id=>formRelations.getDetailCell(0,id);
+const formCell=id=>formNode(id).selEl;
+const formChain=id=>formCell(id).querySelector('.tablance-cell-state-icon-source-target');
+const formSourceIcon=id=>formNode(id).el.querySelector('.tablance-source-pill');
+const formSourceGlyph=id=>formSourceIcon(id).querySelector('.tablance-source-pill-icon');
+const animations=(element,name)=>element.getAnimations({subtree:true}).filter(animation=>animation.animationName===name);
+const principalTargets=['personalNumber','name'];
+const addressTargets=['street','apartment','postalCode','city'];
+const marked=id=>formCell(id).classList.contains('tablance-source-related-highlight');
+const sourceMarked=id=>formCell(id).classList.contains('tablance-source-relation-active');
+const allChainsHidden=ids=>ids.every(id=>getComputedStyle(formChain(id)).visibility==='hidden');
+const restingTargetBackground=getComputedStyle(formCell('street')).backgroundImage;
+assert(allChainsHidden([...principalTargets,...addressTargets])
+ &&!sourceMarked('principal')&&!sourceMarked('address')
+ &&getComputedStyle(formRelations.rootEl).animationName==='none',
+ 'resting Huvudman and Adress relations show no target chains or breath');
+formRelations._handleCellTypeTooltipPointer({target:formCell('principal')});
+assert(sourceMarked('principal')&&principalTargets.every(marked)
+ &&principalTargets.every(id=>getComputedStyle(formChain(id)).visibility==='visible')
+ &&principalTargets.every(id=>!formCell(id).classList.contains('tablance-source-related-active-source'))
+ &&getComputedStyle(formCell('personalNumber')).backgroundImage===restingTargetBackground
+ &&!animations(formSourceIcon('principal'),'tablance-relation-chain-ping').length
+ &&principalTargets.every(id=>!animations(formChain(id),'tablance-relation-chain-ping').length)
+ &&addressTargets.every(id=>!marked(id))&&!sourceMarked('address'),
+ 'hovering Huvudman reveals only its chains without an active tint');
+formRelations._handleCellTypeTooltipPointer({target:formCell('street')});
+assert(sourceMarked('address')&&addressTargets.every(marked)
+ &&addressTargets.every(id=>getComputedStyle(formChain(id)).visibility==='visible')
+ &&getComputedStyle(formCell('street')).backgroundImage===restingTargetBackground
+ &&!animations(formSourceIcon('address'),'tablance-relation-chain-ping').length
+ &&principalTargets.every(id=>!marked(id))&&!sourceMarked('principal'),
+ 'hovering Gatuadress resolves back to Adress without an active tint');
+formRelations.rootEl.dispatchEvent(new PointerEvent('pointerleave'));
+formRelations.selectCell(0,'address');
+assert(formCell('street').classList.contains('tablance-source-related-active-source')
+ &&addressTargets.every(id=>getComputedStyle(formChain(id)).visibility==='visible')
+ &&getComputedStyle(formCell('street')).backgroundImage===restingTargetBackground
+ &&formCell('principal').classList.contains('tablance-source-relation-selected-source')===false,
+ 'active Adress strengthens only its target chains without changing target backgrounds');
+if (matchMedia('(prefers-reduced-motion: reduce)').matches)
+ assert(getComputedStyle(formChain('street')).animationName==='none'
+  &&getComputedStyle(formSourceGlyph('address')).animationName==='none'
+  &&getComputedStyle(formChain('street')).visibility==='visible',
+  'reduced motion keeps chains visible and static');
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+ assert(animations(formSourceIcon('address'),'tablance-relation-chain-ping').length
+  &&addressTargets.every(id=>animations(formChain(id),'tablance-relation-chain-ping').length)
+  &&!formCell('street').getAnimations().length,
+  'activating a source gives its source and target chains one shared 580 ms ping');
+ await new Promise(resolve=>setTimeout(resolve,650));
+ assert(!animations(formChain('street'),'tablance-relation-chain-ping').length
+  &&!formChain('street').getAnimations().length
+  &&!formSourceIcon('address').getAnimations({subtree:true}).length
+  &&formCell('street').classList.contains('tablance-source-related-active-chain')
+  &&formCell('address').classList.contains('tablance-source-relation-active-chain')
+  &&getComputedStyle(formCell('street')).backgroundImage===restingTargetBackground,
+  'the one-shot ping ends in a static high-contrast chain state without a target background');
+ formRelations.refreshSubtree(formNode('street'));
+ assert(!animations(formChain('street'),'tablance-relation-chain-ping').length,
+  'passive target repaint does not restart the one-shot relation ping');
+}
+formRelations.selectCell(0,'name');
+assert(sourceMarked('principal')&&principalTargets.every(marked)
+ &&formCell('principal').classList.contains('tablance-source-relation-selected-target')
+ &&formCell('name').classList.contains('tablance-source-related-active-target')
+ &&formCell('name').classList.contains('tablance-source-related-active-chain')
+ &&formCell('personalNumber').classList.contains('tablance-source-related-active-chain')
+ &&addressTargets.every(id=>!marked(id))&&!sourceMarked('address'),
+ 'an active Namn target keeps every chain in its Huvudman group animated');
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches)
+ assert(animations(formSourceIcon('principal'),'tablance-relation-chain-ping').length
+  &&animations(formChain('personalNumber'),'tablance-relation-chain-ping').length
+  &&animations(formChain('name'),'tablance-relation-chain-ping').length,
+  'active target pings its source, its own chain, and sibling chains together');
+await new Promise(resolve=>setTimeout(resolve,650));
+const activeParentIcon=getComputedStyle(formSourceGlyph('principal'),'::before');
+const neutralParentIcon=getComputedStyle(formSourceGlyph('address'),'::before');
+assert(activeParentIcon.backgroundColor==='rgb(0, 108, 224)'
+ &&new DOMMatrix(activeParentIcon.transform).a>1.16
+ &&getComputedStyle(formSourceGlyph('principal')).boxShadow==='none'
+ &&neutralParentIcon.backgroundColor!==activeParentIcon.backgroundColor
+ &&neutralParentIcon.transform==='none'
+ &&getComputedStyle(formSourceGlyph('address')).boxShadow==='none'
+ &&getComputedStyle(formChain('name'),'::before').backgroundColor===activeParentIcon.backgroundColor
+ &&new DOMMatrix(getComputedStyle(formChain('name'),'::before').transform).a>1.16
+ &&getComputedStyle(formChain('personalNumber'),'::before').backgroundColor===activeParentIcon.backgroundColor
+ &&formChain('name').getBoundingClientRect().width===formChain('city').getBoundingClientRect().width
+ &&formSourceGlyph('principal').getBoundingClientRect().width===formSourceGlyph('address').getBoundingClientRect().width
+ &&getComputedStyle(formChain('name')).filter==='none'
+ &&getComputedStyle(formSourceIcon('principal')).boxShadow==='none',
+ 'the active target enlarges only the blue chain shapes without changing icon layout or adding a halo');
+formRelations.updateData(formRelationsData,'principal','other');
+const repaintedPill=formNode('principal').el.querySelector('.tablance-source-pill');
+assert(!animations(repaintedPill,'tablance-relation-chain-ping').length
+ &&sourceMarked('principal')&&principalTargets.every(marked),
+ 'repainting the source pill after the ping does not restart the one-shot animation');
+formRelations._handleCellTypeTooltipPointer({target:formCell('street')});
+assert(sourceMarked('address')&&addressTargets.every(marked)
+ &&principalTargets.every(id=>!marked(id))&&!sourceMarked('principal'),
+ 'hovering Adress while Huvudman is active shows only the hovered relation');
+formRelations.rootEl.dispatchEvent(new PointerEvent('pointerleave'));
+assert(sourceMarked('principal')&&principalTargets.every(marked)
+ &&addressTargets.every(id=>!marked(id)),
+ 'pointer leave restores the active Huvudman relation');
+formRelations.selectCell(0,'postalCode');
+assert(sourceMarked('address')&&addressTargets.every(marked)
+ &&principalTargets.every(id=>!marked(id))&&!sourceMarked('principal'),
+ 'programmatic movement to Postnummer replaces the entire relation group');
+formRelations.updateData(formRelationsData,'address','other');
+assert(sourceMarked('address')&&formNode('address').el.textContent.includes('Annan adress')
+ &&addressTargets.every(marked),
+ 'repainting a selected source value preserves the current relation without stale source identity');
+formRelationsData.showApartment=false;
+formRelations.refreshSubtree(formNode('apartment'));
+assert(!marked('apartment')&&['street','postalCode','city'].every(marked),
+ 'disclosing a target removes only the hidden target from an active relation');
+formRelations.selectCell(0,'principal');
+assert(sourceMarked('principal')&&principalTargets.every(marked)
+ &&addressTargets.every(id=>!marked(id))&&!sourceMarked('address'),
+ 'moving back to Huvudman clears the previous Adress group');
+formRelations.selectCell(0,'street');
+assert(sourceMarked('address')&&!sourceMarked('principal'),
+ 'active source-target relation resolves in the reverse direction after a source switch');
+formRelations.selectCell(0,'principal');
+formRelations.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:'Enter',code:'Enter',bubbles:true,cancelable:true}));
+assert(formRelations._inEditMode&&sourceMarked('principal')&&principalTargets.every(marked),
+ 'Enter editor activation retains the source relation state');
+formRelations._exitEditMode(false);
+formRelations.selectCell(0,'name');
+formRelations.rootEl.dispatchEvent(new KeyboardEvent('keydown',
+ {key:'Tab',code:'Tab',bubbles:true,cancelable:true}));
+assert(formRelations._activeDetailsCell?.schemaNode?.nodeId!=='name'
+ &&!sourceMarked('principal')
+ &&(formRelations._activeDetailsCell?.schemaNode?.nodeId!=='address'||sourceMarked('address')),
+ 'Tab updates the relation to the new active cell without retaining Huvudman');
+const groupLifecycle=new Tablance(host(),{details:{type:'grid',columns:2,rows:[
+ {cells:[{type:'field',nodeId:'sourceA',dataKey:'sourceA',sourceLinked:true,
+  sourceLinkedTargets:['targetA1','targetA2'],sourceSelector:{manualValue:'manual'},input:{type:'text'}}]},
+ {cells:[{type:'field',nodeId:'targetA1',dataKey:'targetA1',dependsOn:'sourceA',input:{type:'text'}},
+  {type:'field',nodeId:'targetA2',dataKey:'targetA2',dependsOn:'sourceA',input:{type:'text'}}]},
+ {cells:[{type:'field',nodeId:'sourceB',dataKey:'sourceB',sourceLinked:true,
+  sourceLinkedTargets:['targetB'],sourceSelector:{manualValue:'manual'},input:{type:'text'}}]},
+ {cells:[{type:'field',nodeId:'targetB',dataKey:'targetB',dependsOn:'sourceB',input:{type:'text'}},
+  {type:'field',nodeId:'outside',dataKey:'outside',input:{type:'text'}}]},
+]}},true,true,{searchbar:false});
+groupLifecycle.setData({sourceA:'A',targetA1:'A one',targetA2:'A two',
+ sourceB:'B',targetB:'B one',outside:'Outside'});
+const groupCell=id=>groupLifecycle.getDetailCell(0,id).selEl;
+const groupChain=id=>groupCell(id).querySelector('.tablance-cell-state-icon-source-target');
+const groupSource=id=>groupLifecycle.getDetailCell(0,id).el.querySelector('.tablance-source-pill');
+const oneShot='tablance-relation-chain-ping';
+groupLifecycle.selectCell(0,'sourceA');
+const firstAPing=animations(groupChain('targetA1'),oneShot)[0];
+const secondAPing=animations(groupChain('targetA2'),oneShot)[0];
+const sourceAPing=animations(groupSource('sourceA'),oneShot)[0];
+assert(firstAPing&&secondAPing&&sourceAPing,
+ 'entering relation group A starts one synchronized ping on all its chains');
+for (const id of ['targetA1','targetA2','sourceA']) {
+ groupLifecycle.selectCell(0,id);
+ assert(animations(groupChain('targetA1'),oneShot)[0]===firstAPing
+  &&animations(groupChain('targetA2'),oneShot)[0]===secondAPing
+  &&animations(groupSource('sourceA'),oneShot)[0]===sourceAPing,
+  'moving within one relation group preserves the original one-shot animations');
+}
+await new Promise(resolve=>setTimeout(resolve,650));
+assert(!groupChain('targetA1').getAnimations().length
+ &&!groupChain('targetA2').getAnimations().length
+ &&!groupSource('sourceA').getAnimations({subtree:true}).length
+ &&groupCell('targetA1').classList.contains('tablance-source-related-active-chain')
+ &&groupCell('targetA2').classList.contains('tablance-source-related-active-chain')
+ &&groupCell('sourceA').classList.contains('tablance-source-relation-active-chain')
+ &&getComputedStyle(groupChain('targetA1')).filter==='none',
+ 'after the one-shot all related chains have a static blue state and no looping animation');
+for (const id of ['targetA1','targetA2','sourceA']) {
+ groupLifecycle.selectCell(0,id);
+ assert(!groupChain('targetA1').getAnimations().length
+  &&!groupChain('targetA2').getAnimations().length
+  &&!groupSource('sourceA').getAnimations({subtree:true}).length
+  &&groupCell('targetA1').classList.contains('tablance-source-related-active-chain'),
+  'moving within group A preserves its static state without another one-shot');
+}
+groupLifecycle.selectCell(0,'outside');
+assert(!groupCell('targetA1').classList.contains('tablance-source-related-active-chain')
+ &&getComputedStyle(groupChain('targetA1')).filter==='none'
+ &&!groupCell('targetA1').classList.contains('tablance-source-related-highlight'),
+ 'leaving the relation restores the target chain to its normal state');
+groupLifecycle.selectCell(0,'sourceA');
+assert(animations(groupChain('targetA1'),oneShot).length,
+ 'reentering group A after leaving starts a new one-shot');
+groupLifecycle.selectCell(0,'sourceB');
+assert(animations(groupChain('targetB'),oneShot).length
+ &&!animations(groupChain('targetA1'),oneShot).length
+ &&!groupCell('targetA1').classList.contains('tablance-source-related-highlight'),
+ 'moving directly from group A to group B pings only B and clears A');
+const emergingData={source:'',target:'',showTarget:false};
+const emergingRelation=new Tablance(host(),{details:{type:'grid',columns:1,rows:[
+ {cells:[{type:'field',nodeId:'source',dataKey:'source',sourceLinked:true,
+  sourceLinkedTargets:['target'],sourceSelector:{manualValue:'manual'},
+  displayPlaceholder:'Välj source',input:{type:'text'}}]},
+ {cells:[{type:'field',nodeId:'target',dataKey:'target',dependsOn:'source',
+  visibleIf:({rowData})=>rowData.showTarget,input:{type:'text'}}]},
+]}},true,true,{searchbar:false});
+emergingRelation.setData(emergingData);
+const emergingSource=emergingRelation.getDetailCell(0,'source');
+const emergingTarget=emergingRelation.getDetailCell(0,'target');
+emergingRelation.selectCell(0,'source');
+assert(emergingSource.el.querySelector('.tablance-source-pill-empty')
+ &&!emergingSource.selEl.classList.contains('tablance-source-relation-active-chain')
+ &&!emergingSource.selEl.classList.contains('tablance-source-relation-ping')
+ &&!emergingSource.el.querySelector('.tablance-source-pill').getAnimations({subtree:true}).length,
+ 'an empty active source selector with no visible targets keeps its ordinary pill and never pings alone');
+emergingData.showTarget=true;
+emergingRelation.refreshSubtree(emergingTarget);
+const emergedChain=emergingTarget.selEl.querySelector('.tablance-cell-state-icon-source-target');
+assert(emergingSource.selEl.classList.contains('tablance-source-relation-active-chain')
+ &&emergingTarget.selEl.classList.contains('tablance-source-related-active-chain')
+ &&animations(emergingSource.el.querySelector('.tablance-source-pill'),oneShot).length
+ &&animations(emergedChain,oneShot).length,
+ 'making the first target visible while its source is active starts one group-wide ping');
+emergingRelation.refreshSubtree(emergingTarget);
+const repaintedChain=emergingTarget.selEl.querySelector('.tablance-cell-state-icon-source-target');
+assert(!animations(repaintedChain,oneShot).length
+ &&emergingTarget.selEl.classList.contains('tablance-source-related-active-chain'),
+ 'ordinary repaint of the established relation does not restart its one-shot ping');
+await new Promise(resolve=>setTimeout(resolve,650));
+assert(!animations(repaintedChain,oneShot).length
+ &&!emergingSource.el.querySelector('.tablance-source-pill').getAnimations({subtree:true}).length,
+ 'the newly formed relation also settles into a static state without a loop');
+const dataKeyRelation=new Tablance(host(),{details:{type:'list',entries:[
+ {nodeId:'source',dataKey:'source',sourceLinked:true,sourceLinkedTargets:['child'],input:{type:'text'}},
+ {type:'field',dataKey:'child',dependsOn:'source',input:{type:'text'}},
+]}},true,true,{searchbar:false});
+dataKeyRelation.setData({source:'Source',child:'Child'});
+const findDataKey=(node,key)=>node?.schemaNode?.dataKey===key?node
+ :node?.children?.map(child=>findDataKey(child,key)).find(Boolean);
+const dataKeyTarget=findDataKey(dataKeyRelation._openDetailsPanes[0],'child');
+dataKeyRelation.selectCell(0,'source');
+assert((dataKeyTarget.selEl??dataKeyTarget.el).classList.contains('tablance-source-related-highlight'),
+ 'sourceLinkedTargets can identify a target by dataKey when nodeId is absent');
+dataKeyTarget.select();
+assert((dataKeyRelation.getDetailCell(0,'source').selEl
+ ??dataKeyRelation.getDetailCell(0,'source').el).classList.contains('tablance-source-relation-active'),
+ 'a dataKey-only target also resolves the relation back to its source');
+const singleTargetCell=dataKeyTarget.selEl??dataKeyTarget.el;
+assert(singleTargetCell.classList.contains('tablance-source-related-active-chain')
+ &&singleTargetCell.classList.contains('tablance-source-related-ping')
+ &&(dataKeyRelation.getDetailCell(0,'source').selEl
+  ??dataKeyRelation.getDetailCell(0,'source').el).classList.contains('tablance-source-relation-active-chain'),
+ 'a relation with only one target animates both its source and target chains');
 
 const horizontalRelations=new Tablance(host(),{details:{type:'grid',columns:3,rows:[
  {cells:[
@@ -252,9 +506,8 @@ assert(firstSource.selEl.classList.contains('tablance-source-linked-cell')
  &&![firstNumber,firstName,secondNumber,secondName].some(isRelated),
  'only repeated source cells have permanent styling');
 repeatedRelations._handleCellTypeTooltipPointer({target:firstSource.selEl});
-assert(getComputedStyle(firstName.selEl,'::before').borderInlineStartColor===ordinaryLineupDividerColor
- &&getComputedStyle(firstName.selEl,'::before').zIndex==='1',
- 'a filled lineup target paints its original column divider above the animated fill');
+assert(getComputedStyle(firstName.selEl,'::before').borderInlineStartColor===ordinaryLineupDividerColor,
+ 'relation styling keeps the original lineup divider');
 assert(isRelated(firstNumber)&&isRelated(firstName)
  &&![firstSource,secondSource,secondNumber,secondName].some(isRelated),
  'first repeated source highlights only its own two dependent instances');
@@ -274,8 +527,10 @@ assert(!isRelated(firstNumber)&&!isRelated(firstName)
  &&isRelated(secondNumber)&&isRelated(secondName),
  'selecting the second repeated source replaces the first relation without a stale class');
 secondNumber.select();
-assert(![firstNumber,firstName,secondNumber,secondName].some(isRelated),
- 'an unrelated active cell leaves no repeated relation highlight');
+assert(!isRelated(firstNumber)&&!isRelated(firstName)
+ &&isRelated(secondNumber)&&isRelated(secondName)
+ &&secondSource.selEl.classList.contains('tablance-source-relation-active'),
+ 'an active repeated target identifies its own source and sibling target');
 secondSource.select();
 repeatedRelations.updateData(secondSource.dataObj,'source','Picked source');
 const selectedSourceIcon=secondSource.selEl.querySelector('.tablance-cell-state-icon-editable');
@@ -289,7 +544,7 @@ await settleLayout();
 const repeatedGhosts=[...document.querySelectorAll('.tablance-source-transfer-ghost')];
 assert(firstPerson.dataObj.number==='Number C'&&firstPerson.dataObj.name==='Name C'
  &&secondPerson.dataObj.number==='222'&&secondPerson.dataObj.name==='Second'
- &&repeatedGhosts.length===2
+ &&(matchMedia('(prefers-reduced-motion: reduce)').matches?repeatedGhosts.length===0:repeatedGhosts.length===2)
  &&repeatedGhosts.every(node=>node.textContent.endsWith('C')),
  'repeatRows transfer animates only the changed values in the selected source instance');
 repeatedRelations._cancelSourceTransfer();
@@ -1281,6 +1536,31 @@ assert(selectorEditIcon&&selectorIconCell.el.querySelector('.tablance-source-pil
  'a sourceSelector keeps its pill chain and an independent editing icon without overlap');
 const gridEditIcon=cell('none').selEl.querySelector('.tablance-cell-state-icon-editable');
 assert(gridEditIcon,'details-grid keeps its editing icon');
+for (const type of ['grid','list','lineup']) {
+ const narrowHost=host();narrowHost.style.width='205px';
+ const narrowSchema=type==='grid'
+  ?{details:{type:'grid',columns:1,entries:[{type:'field',nodeId:'narrowSource',dataKey:'source',
+    title:'Source',sourceSelector:{manualValue:'manual'},input:{type:'text'}}]}}
+  :{details:{type,entries:[{type:'field',nodeId:'narrowSource',dataKey:'source',
+    title:'Source',sourceSelector:{manualValue:'manual'},input:{type:'text'}}]}};
+ const narrowTable=new Tablance(narrowHost,narrowSchema,true,true,{searchbar:false});
+ narrowTable.setData({source:'Norrings väg 3 · Andreas med ett mycket långt visningsnamn'});
+ narrowTable.selectCell(0,'narrowSource');
+ const value=narrowTable.getDetailCell(0,'narrowSource').el;
+ const sourceContent=value.querySelector('.tablance-source-content');
+ const pill=sourceContent?.querySelector('.tablance-source-pill');
+ const label=pill?.querySelector('.tablance-source-pill-label');
+ const pencil=sourceContent?.querySelector('.tablance-cell-state-icon-editable');
+ const pillRect=pill?.getBoundingClientRect(),pencilRect=pencil?.getBoundingClientRect();
+ assert(sourceContent&&label&&pencil&&getComputedStyle(pencil).visibility==='visible'
+  &&getComputedStyle(pencil).width==='12px'
+  &&label.scrollWidth>label.clientWidth
+  &&getComputedStyle(label).textOverflow==='ellipsis'
+  &&pillRect.right+3<=pencilRect.left
+  &&Math.abs((pillRect.top+pillRect.height/2)-(pencilRect.top+pencilRect.height/2))<3
+  &&pencilRect.right<=value.getBoundingClientRect().right+1,
+  `${type} keeps a fixed-size pencil beside a shrinking ellipsized source pill`);
+}
 for(const [table,key,icon] of [[listIconTable,'listValue',listEditIcon],
  [mainIconTable,'mainValue',mainEditIcon],[selectorIconTable,'selector',selectorEditIcon],
  [standalone,'none',gridEditIcon]]){

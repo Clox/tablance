@@ -2514,6 +2514,7 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	--tablance-relation-intensity: var(--tablance-relation-high);
 	--tablance-relation-source-intensity: var(--tablance-relation-high);
 	--tablance-relation-source-tint: transparent;
+	--tablance-relation-ping-duration: 580ms;
 	--tablance-transfer-duration: 720ms;
 	--tablance-transfer-stagger: 45ms;
 	--tablance-transfer-start-delay: 60ms;
@@ -2530,21 +2531,28 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	--tablance-transfer-background: #f5fbfd;
 	--tablance-transfer-shadow: 0 2px 9px rgb(25 69 85 / .2);
 }
-.tablance:has(.tablance-source-relation-active) {
-	animation: tablance-relation-breathe var(--tablance-relation-duration) var(--tablance-relation-easing)
-		var(--tablance-relation-delay) infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-	.tablance:has(.tablance-source-relation-active) {
-		animation: none;
+// The pill identifies a source cell at rest; the relation treatment appears only while active.
+.tablance .tablance-source-content {
+	display: inline-flex;
+	align-items: center;
+	max-width: 100%;
+	min-width: 0;
+	white-space: nowrap;
+	vertical-align: middle;
+	>.tablance-cell-state-icons {
+		flex: none;
 	}
 }
-
-// The pill identifies a source cell at rest; the relation treatment appears only while active.
+.tablance table.details-list td.value:has(>.tablance-source-content) {
+	max-width: 0;
+}
 .tablance .tablance-source-pill {
-	display: inline-block;
+	display: inline-flex;
+	align-items: center;
 	box-sizing: border-box;
+	flex: 0 1 auto;
 	max-width: 100%;
+	min-width: 0;
 	padding: 2px 9px;
 	border: 1px solid #BDD0E2;
 	border-radius: 999px;
@@ -2555,18 +2563,30 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	line-height: 1.45;
 	vertical-align: middle;
 	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	&::before {
-		display: inline-block;
+	transition: border-color 100ms ease, color 100ms ease, box-shadow 100ms ease;
+	>.tablance-source-pill-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 		width: 1em;
 		height: 1em;
-		content: "";
 		margin-right: 6px;
-		background: currentColor;
-		-webkit-mask: $tablance-link-icon center / contain no-repeat;
-		mask: $tablance-link-icon center / contain no-repeat;
-		vertical-align: -.1em;
+		flex: none;
+		border-radius: 50%;
+		&::before {
+			width: 1em;
+			height: 1em;
+			content: "";
+			background: currentColor;
+			-webkit-mask: $tablance-link-icon center / contain no-repeat;
+			mask: $tablance-link-icon center / contain no-repeat;
+		}
+	}
+	>.tablance-source-pill-label {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	&.tablance-source-pill-empty {
 		border-color: #B9CADB;
@@ -2578,7 +2598,7 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		border-color: #D1D8E0;
 		background: #F1F3F6;
 		color: #4E5D6E;
-		&::before {
+		>.tablance-source-pill-icon::before {
 			-webkit-mask-image: $tablance-edit-icon;
 			mask-image: $tablance-edit-icon;
 		}
@@ -2588,25 +2608,42 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	border-color: #8FAEC9;
 	background: #F2F7FB;
 }
-.tablance .tablance-cell-state.tablance-source-linked-cell.tablance-source-relation-active:not(.disabled) {
-	background-image: linear-gradient(
-		color-mix(in srgb, var(--tablance-relation-source-tint) var(--tablance-relation-source-intensity), transparent),
-		color-mix(in srgb, var(--tablance-relation-source-tint) var(--tablance-relation-source-intensity), transparent)
-	);
+.tablance .tablance-cell-state.tablance-source-relation-active
+	.tablance-source-pill:not(.tablance-source-pill-manual)>.tablance-source-pill-icon::before {
+	background-color: #17658A;
 }
-.tablance .tablance-cell-state.tablance-source-related-highlight:not(.disabled):not(.tablance-active-cell) {
-	box-shadow: inset 0 0 0 var(--tablance-relation-outline-width)
-		color-mix(in srgb, var(--tablance-relation-color) var(--tablance-relation-intensity), transparent);
-	// Keep the fill inside the cell border without changing the divider's original color.
-	background-clip: padding-box;
-	background-image: linear-gradient(
-		color-mix(in srgb, var(--tablance-relation-tint) var(--tablance-relation-intensity), transparent),
-		color-mix(in srgb, var(--tablance-relation-tint) var(--tablance-relation-intensity), transparent)
-	);
+.tablance .tablance-cell-state.tablance-source-related-highlight .tablance-cell-state-icon-source-target {
+	opacity: 1;
+	visibility: visible;
+	&::before { background-color: #17658A; }
 }
-.tablance .details .lineup.lineup-fields>span.tablance-source-related-highlight::before {
-	// The existing divider color stays untouched; paint it above adjacent animated cell backgrounds.
-	z-index: 1;
+.tablance .tablance-cell-state.tablance-source-related-active-chain
+	.tablance-cell-state-icon-source-target::before {
+	background-color: #006CE0;
+	transform: scale(1.1667);
+}
+.tablance .tablance-cell-state.tablance-source-relation-active-chain
+	.tablance-source-pill:not(.tablance-source-pill-manual)>.tablance-source-pill-icon::before {
+	background-color: #006CE0;
+	transform: scale(1.1667);
+}
+@keyframes tablance-relation-chain-ping {
+	0%, 100% { transform: scale(1); opacity: 1; }
+	45% { transform: scale(1.4); opacity: .72; }
+}
+.tablance .tablance-cell-state.tablance-source-related-ping
+	.tablance-cell-state-icon-source-target,
+.tablance .tablance-cell-state.tablance-source-relation-ping
+	.tablance-source-pill:not(.tablance-source-pill-manual)>.tablance-source-pill-icon {
+	animation: tablance-relation-chain-ping var(--tablance-relation-ping-duration) ease-out 1;
+}
+@media (prefers-reduced-motion: reduce) {
+	.tablance .tablance-cell-state.tablance-source-related-ping
+		.tablance-cell-state-icon-source-target,
+	.tablance .tablance-cell-state.tablance-source-relation-ping
+		.tablance-source-pill:not(.tablance-source-pill-manual)>.tablance-source-pill-icon {
+		animation: none;
+	}
 }
 
 // Transfer ghosts are presentation only. The real target values have already been committed and rendered.
@@ -2703,6 +2740,11 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	>.tablance-cell-state-icons>.tablance-cell-state-icon,
 .tablance-cell-state:is(.action-indicator,.editable-indicator,.read-only):is(:hover,.tablance-active-cell)
 	>div.value>.tablance-cell-state-icons>.tablance-cell-state-icon {
+	opacity: 1;
+	visibility: visible;
+}
+.tablance-cell-state:is(.action-indicator,.editable-indicator,.read-only):is(:hover,.tablance-active-cell)
+	.tablance-source-content>.tablance-cell-state-icons>.tablance-cell-state-icon {
 	opacity: 1;
 	visibility: visible;
 }

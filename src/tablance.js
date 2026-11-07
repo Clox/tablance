@@ -3185,6 +3185,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 		for (let schemaNode; schemaNode = stack.pop();) {
 			delete schemaNode._sourceLinkedTargetLabels;
+			delete schemaNode._sourceLinkedRelationSources;
 			if (schemaNode.sourceLinkedTargets!==undefined
 				&&(!schemaNode.sourceLinked||!Array.isArray(schemaNode.sourceLinkedTargets)
 					||schemaNode.sourceLinkedTargets.some(id=>typeof id!=="string"||!id.trim())))
@@ -3227,6 +3228,10 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 						if (rev && rev.length) {
 							cellPaths.push(rev);
 							cellSources.push({type:dependee.type,nodeId:dependee.nodeId,dataKey:dependee.dataKey});
+							if (schemaNode.type==="field"&&dependee.sourceLinked
+								&&(!Array.isArray(dependee.sourceLinkedTargets)
+									||dependee.sourceLinkedTargets.includes(targetId)))
+								(schemaNode._sourceLinkedRelationSources??=[]).push({path:rev,schemaNode:dependee});
 						}
 					} else {
 						if (dependee._dataPath)
@@ -4513,6 +4518,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		this.rootEl.addEventListener("copy",e=>this._spreadsheetCopy(e));
 		this.rootEl.addEventListener("mousedown",e=>this._handleUserCellSelection(()=>this._spreadsheetMouseDown(e)));
 		this.rootEl.addEventListener("pointermove",e=>this._handleCellTypeTooltipPointer(e));
+		this.rootEl.addEventListener("animationend",e=>{
+			if (e.animationName!=="tablance-relation-chain-ping") return;
+			const cellEl=e.target.closest?.(".tablance-cell-state");
+			if (!this._relationPingCells?.has(cellEl)) return;
+			cellEl.classList.remove("tablance-source-related-ping","tablance-source-relation-ping");
+			this._relationPingCells.delete(cellEl);
+		});
 		this.rootEl.addEventListener("pointerleave",()=>{
 			this._clearCellTypeTooltip();
 			this._hoveredDetailsRelationInstance=null;
@@ -11156,6 +11168,19 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		return true;
 	}
 
+	_sourceRelationSourcesForTarget(target) {
+		if (!this._isVisibleMaterializedRelationCell(target)) return [];
+		const sources=[];
+		for (const relation of target.schemaNode?._sourceLinkedRelationSources??[]) {
+			const source=this._resolveCellPaths(target,relation.path);
+			if (source?.schemaNode===relation.schemaNode
+				&&this._isVisibleMaterializedRelationCell(source)
+				&&this._sharesRepeatedRelationScope(source,target))
+				sources.push(source);
+		}
+		return sources;
+	}
+
 	_syncSourceRelationHighlights() {
 		const activeInstance=this._selectedDetailsRelationInstance;
 		let hoveredInstance=this._hoveredDetailsRelationInstance;
@@ -11163,49 +11188,123 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._hoveredDetailsRelationInstance=null;
 			hoveredInstance=null;
 		}
-		if (!this._relatedHighlightCells.size&&!this._relationSourceCells.size&&!activeInstance?.schemaNode?.sourceLinked
-			&&!hoveredInstance?.schemaNode?.sourceLinked)
+		const relationSourcesFor=instance=>{
+			if (!this._isVisibleMaterializedRelationCell(instance)) return [];
+			return instance.schemaNode?.sourceLinked?[instance]:this._sourceRelationSourcesForTarget(instance);
+		};
+		const activeSources=relationSourcesFor(activeInstance);
+		const hoveredSources=relationSourcesFor(hoveredInstance);
+		const hoverOverrides=hoveredSources.length
+			&&!hoveredSources.some(source=>activeSources.includes(source));
+		const relationSources=hoverOverrides?hoveredSources
+			:activeSources.length?activeSources:hoveredSources;
+		const mode=!hoverOverrides&&activeSources.length
+			?(activeInstance.schemaNode.sourceLinked?"source":"target"):"hover";
+		if (!this._relatedHighlightCells.size&&!this._relationSourceCells.size&&!relationSources.length) {
+			if (!activeSources.length) this._relationPingActiveGroup=[];
 			return;
+		}
 		const related=new Set;
 		const sources=new Set;
-		const addVisible=node=>{
-			if (this._isVisibleMaterializedRelationCell(node)) related.add(node.selEl??node.el);
-		};
-		const addSourceRelation=source=>{
-			if (!source?.schemaNode?.sourceLinked||!this._isVisibleMaterializedRelationCell(source)) return;
-			sources.add(source.selEl??source.el);
+		const visibleTargetsFor=source=>{
+			const visibleTargets=new Set;
+			if (!source?.schemaNode?.sourceLinked||!this._isVisibleMaterializedRelationCell(source))
+				return visibleTargets;
 			const targetIds=source.schemaNode.sourceLinkedTargets;
 			const allowedTargets=Array.isArray(targetIds)?new Set(targetIds):null;
 			for (const path of source.schemaNode.dependencyPaths??[]) {
 				if (path[0]==="m") continue;
-				for (const target of this._resolveDetailsDependencyInstances(path,source))
-					if ((!allowedTargets||allowedTargets.has(target.schemaNode?.nodeId))
-						&&(!target.schemaNode?.sourceLinked||allowedTargets?.has(target.schemaNode?.nodeId))
-						&&this._sharesRepeatedRelationScope(source,target)) addVisible(target);
+				for (const target of this._resolveDetailsDependencyInstances(path,source)) {
+					const targetId=target.schemaNode?.nodeId??target.schemaNode?.dataKey;
+					if ((!allowedTargets||allowedTargets.has(targetId))
+						&&(!target.schemaNode?.sourceLinked||allowedTargets?.has(targetId))
+						&&this._sharesRepeatedRelationScope(source,target)
+						&&this._isVisibleMaterializedRelationCell(target))
+						visibleTargets.add(target.selEl??target.el);
+				}
+			}
+			return visibleTargets;
+		};
+		const addSourceRelation=source=>{
+			const visibleTargets=visibleTargetsFor(source);
+			if (visibleTargets.size) {
+				sources.add(source.selEl??source.el);
+				for (const target of visibleTargets) related.add(target);
 			}
 		};
-		for (const instance of new Set([activeInstance,hoveredInstance].filter(Boolean))) {
-			if (instance.schemaNode?.sourceLinked) addSourceRelation(instance);
-		}
+		for (const source of relationSources)
+			addSourceRelation(source);
 		for (const cellEl of this._relatedHighlightCells)
-			if (!related.has(cellEl)) cellEl.classList.remove("tablance-source-related-highlight");
-		for (const cellEl of related) cellEl.classList.add("tablance-source-related-highlight");
+			if (!related.has(cellEl))
+				cellEl.classList.remove("tablance-source-related-highlight",
+					"tablance-source-related-active-source","tablance-source-related-active-target",
+					"tablance-source-related-active-chain");
+		for (const cellEl of related) {
+			cellEl.classList.add("tablance-source-related-highlight");
+			cellEl.classList.toggle("tablance-source-related-active-source",mode==="source");
+			cellEl.classList.toggle("tablance-source-related-active-target",mode==="target");
+			cellEl.classList.toggle("tablance-source-related-active-chain",mode!=="hover");
+		}
 		this._relatedHighlightCells=related;
 		for (const cellEl of this._relationSourceCells)
-			if (!sources.has(cellEl)) cellEl.classList.remove("tablance-source-relation-active");
-		for (const cellEl of sources) cellEl.classList.add("tablance-source-relation-active");
+			if (!sources.has(cellEl))
+				cellEl.classList.remove("tablance-source-relation-active",
+					"tablance-source-relation-selected-source","tablance-source-relation-selected-target",
+					"tablance-source-relation-active-chain");
+		for (const cellEl of sources) {
+			cellEl.classList.add("tablance-source-relation-active");
+			cellEl.classList.toggle("tablance-source-relation-selected-source",mode==="source");
+			cellEl.classList.toggle("tablance-source-relation-selected-target",mode==="target");
+			cellEl.classList.toggle("tablance-source-relation-active-chain",mode!=="hover");
+		}
 		this._relationSourceCells=sources;
+		for (const cellEl of this._relationPingCells??[])
+			if (!related.has(cellEl)&&!sources.has(cellEl)) {
+				cellEl.classList.remove("tablance-source-related-ping","tablance-source-relation-ping");
+				this._relationPingCells.delete(cellEl);
+			}
+		const activeRelationSources=activeSources.filter(source=>mode==="hover"
+			?visibleTargetsFor(source).size>0:sources.has(source.selEl??source.el));
+		const previousGroup=this._relationPingActiveGroup??[];
+		const groupChanged=activeRelationSources.length!==previousGroup.length
+			||activeRelationSources.some(source=>!previousGroup.includes(source));
+		if (mode==="hover"||groupChanged) {
+			for (const cellEl of this._relationPingCells??[])
+				cellEl.classList.remove("tablance-source-related-ping","tablance-source-relation-ping");
+			this._relationPingCells=new Set;
+			if (mode!=="hover"||!activeRelationSources.length)
+				this._relationPingActiveGroup=[...activeRelationSources];
+			if (mode!=="hover"&&activeRelationSources.length
+				&&!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+				for (const cellEl of related) {
+					cellEl.classList.add("tablance-source-related-ping");
+					this._relationPingCells.add(cellEl);
+				}
+				for (const cellEl of sources) {
+					cellEl.classList.add("tablance-source-relation-ping");
+					this._relationPingCells.add(cellEl);
+				}
+			}
+		}
 	}
 
 	_clearSourceRelationHighlights() {
 		this._hoveredDetailsRelationInstance=null;
 		this._selectedDetailsRelationInstance=null;
 		for (const cellEl of this._relatedHighlightCells)
-			cellEl.classList.remove("tablance-source-related-highlight");
+			cellEl.classList.remove("tablance-source-related-highlight",
+				"tablance-source-related-active-source","tablance-source-related-active-target",
+				"tablance-source-related-active-chain");
 		this._relatedHighlightCells.clear();
 		for (const cellEl of this._relationSourceCells)
-			cellEl.classList.remove("tablance-source-relation-active");
+			cellEl.classList.remove("tablance-source-relation-active",
+				"tablance-source-relation-selected-source","tablance-source-relation-selected-target",
+				"tablance-source-relation-active-chain");
 		this._relationSourceCells.clear();
+		for (const cellEl of this._relationPingCells??[])
+			cellEl.classList.remove("tablance-source-related-ping","tablance-source-relation-ping");
+		this._relationPingCells?.clear();
+		this._relationPingActiveGroup=[];
 	}
 
 	_sourceTransferSnapshot(source) {
@@ -12271,7 +12370,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_handleCellTypeTooltipPointer(event) {
 		const cellEl=event.target?.closest?.("[data-path]");
 		const pointerInstance=cellEl?this._resolvePointerDetailsInstance(cellEl,cellEl.closest("tr.details")):null;
-		const hovered=pointerInstance?.schemaNode?.sourceLinked?pointerInstance:null;
+		const hovered=pointerInstance?.schemaNode?.sourceLinked
+			||pointerInstance?.schemaNode?._sourceLinkedRelationSources?.length?pointerInstance:null;
 		if (hovered!==this._hoveredDetailsRelationInstance) {
 			this._hoveredDetailsRelationInstance=hovered??null;
 			this._syncSourceRelationHighlights();
@@ -14097,10 +14197,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			kinds.push("read-only");
 		if (state?.kind!=="disabled"&&schemaNode?._sourceLinkedTargetLabels?.length)
 			kinds.push("source-target");
-		const content=schemaNode?.type==="field"
+		let content=schemaNode?.type==="field"
 			?(cellEl.matches("td.value")&&cellEl.closest("table.details-list")?cellEl
 				:cellEl.parentElement?.classList.contains("details-grid")
 					?cellEl.querySelector(":scope>div.value"):null):null;
+		if (schemaNode?.sourceSelector) {
+			const sourceValue=cellEl.matches("td.value")?cellEl
+				:cellEl.querySelector(":scope>div.value");
+			content=sourceValue?.querySelector(":scope>.tablance-source-content")??sourceValue??content;
+		}
 		const title=cellEl.querySelector(":scope>span.title");
 		const oldIcons=[...cellEl.querySelectorAll(":scope>.tablance-cell-state-icon, :scope>span.title>.tablance-cell-state-icon")];
 		let accessories=content?.querySelector(":scope>.tablance-cell-state-icons");
@@ -14231,7 +14336,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 
 	_renderFieldPresentation(el,schemaNode,presentation,present) {
 		// Keep the accessory and its tooltip anchors stable when a value is repainted.
-		const accessories=el.querySelector(":scope>.tablance-cell-state-icons");
+		const accessories=el.querySelector(":scope>.tablance-cell-state-icons,"
+			+":scope>.tablance-source-content>.tablance-cell-state-icons");
 		accessories?.remove();
 		const hasContent=this._hasPresenceValue(presentation?.content);
 		const hasPlaceholder=!!present&&!hasContent&&this._hasPresenceValue(presentation?.placeholder);
@@ -14244,14 +14350,24 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		}
 		el.classList.toggle("tablance-presentation-placeholder",hasPlaceholder);
 		if (schemaNode.sourceSelector&&(hasContent||hasPlaceholder)) {
+			const sourceContent=document.createElement("span");
+			sourceContent.className="tablance-source-content";
 			const pill=document.createElement("span");
 			pill.className="tablance-source-pill";
 			if (hasPlaceholder)
 				pill.classList.add("tablance-source-pill-empty");
 			else if (presentation.value===schemaNode.sourceSelector.manualValue)
 				pill.classList.add("tablance-source-pill-manual");
-			pill.textContent=String(hasPlaceholder?presentation.placeholder:presentation.content);
-			el.replaceChildren(pill);
+			const icon=pill.appendChild(document.createElement("span"));
+			icon.className="tablance-source-pill-icon";
+			icon.setAttribute("aria-hidden","true");
+			const label=pill.appendChild(document.createElement("span"));
+			label.className="tablance-source-pill-label";
+			label.textContent=String(hasPlaceholder?presentation.placeholder:presentation.content);
+			sourceContent.appendChild(pill);
+			if (accessories)
+				sourceContent.appendChild(accessories);
+			el.replaceChildren(sourceContent);
 		}
 		else if (hasPlaceholder)
 			el.textContent=String(presentation.placeholder);
@@ -14259,7 +14375,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			el.innerHTML=presentation?.content??"";
 		else
 			el.innerText=presentation?.content??"";
-		if (accessories)
+		if (accessories&&(!schemaNode.sourceSelector||!hasContent&&!hasPlaceholder))
 			el.appendChild(accessories);
 	}
 
