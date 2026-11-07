@@ -1284,6 +1284,10 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 				box-shadow: 0 0 0 2px rgba(37, 99, 235, .2);
 			}
 		}
+		&.disabled,
+		&.disabled>div>a {
+			cursor: default;
+		}
 	}
 	tr.expanded>td.expand-col>div>a {
 		background: transparent;

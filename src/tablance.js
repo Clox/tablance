@@ -7240,7 +7240,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const control=this._explicitCellPointerControl(e.target);
 		if (control) {
 			const td=control.closest(".main-table>tbody>tr>td");
-			if (td?.classList.contains("expand-col"))
+			if (td?.classList.contains("expand-col")
+				&&this._getCellState(td)?.activatable!==false)
 				this._toggleRowExpanded(td.parentElement);
 			else if (td?.classList.contains("select-col"))
 				this._rowCheckboxChange(td,e.shiftKey);

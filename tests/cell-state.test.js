@@ -3125,11 +3125,29 @@ try {
 		changingDetailTable._filteredData[0],0);
 	assert(changingExpandCell.dataset.cellState==="action"
 		&&getComputedStyle(changingExpandCell).cursor==="pointer"
-		&&getComputedStyle(changingExpandCell.querySelector("a")).cursor==="pointer",
+		&&getComputedStyle(changingExpandCell.querySelector("a")).cursor==="pointer"
+		&&getComputedStyle(changingExpandCell.querySelector("a span")).cursor==="pointer",
 		"an open row keeps a consistent pointer cursor and closable chevron after details lose presence");
 	changingDetailTable._contractRow(changingMain);
 	await waitFor(()=>!changingMain.classList.contains("expanded"),
 		"an open row can close after details lose presence");
+	const unavailableExpandTable=new Tablance(host(),{main:{columns:[
+		{type:"expand",width:40},{dataKey:"title"},
+	]},details:{type:"list",entries:[{dataKey:"detail",visibleIf:()=>false}]}},
+		true,true,{searchbar:false,ordering:false});
+	unavailableExpandTable.setData([{title:"Row",detail:"Detail"}]);
+	await tick();
+	const unavailableExpandCell=unavailableExpandTable._mainTbody
+		.querySelector('[data-data-row-index="0"]:not(.details) .expand-col');
+	assert(unavailableExpandCell.dataset.cellState==="disabled"
+		&&getComputedStyle(unavailableExpandCell).cursor==="default"
+		&&getComputedStyle(unavailableExpandCell.querySelector("a")).cursor==="default"
+		&&getComputedStyle(unavailableExpandCell.querySelector("a span")).cursor==="default",
+		"an unavailable expand cell and its chevron share the default cursor");
+	unavailableExpandCell.querySelector("a").dispatchEvent(
+		new MouseEvent("mousedown",{bubbles:true,cancelable:true}));
+	assert(!unavailableExpandCell.parentElement.classList.contains("expanded"),
+		"an unavailable expand chevron does not bypass cell state");
 	const reboundSelectCell=await recycleSelectedColumn(1);
 	assert(!reboundSelectCell.classList.contains("action-indicator"),
 		"recycling does not add a generic action indicator to structural select cells");

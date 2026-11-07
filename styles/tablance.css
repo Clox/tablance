@@ -1229,6 +1229,9 @@
 .tablance td.expand-col > div > a:focus-visible {
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
 }
+.tablance td.expand-col.disabled, .tablance td.expand-col.disabled > div > a {
+  cursor: default;
+}
 .tablance tr.expanded > td.expand-col > div > a {
   background: transparent;
   color: var(--tablance-accent-color);
