@@ -138,17 +138,10 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 				}
 				>div.value {
 					padding: 2px 4px;
-					overflow: hidden;
-					text-overflow: ellipsis;
-					white-space: nowrap;
-					overflow-wrap: normal;
-					cursor: cell;
-				}
-				&:has(>div.value>.tablance-cell-state-icons)>div.value {
 					overflow: visible;
-					text-overflow: clip;
 					white-space: normal;
 					overflow-wrap: anywhere;
+					cursor: cell;
 				}
 				&.disabled {
 					background: var(--tablance-disabled-background);
@@ -1427,6 +1420,10 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			}
 			>span:has(>div.value:not(.group-cell)) {
 				@include inline-title-state-indicators;
+				&:is(.editable-indicator,.read-only,.action-indicator):not(:has(>div.value>.tablance-source-content))>span.title {
+					box-sizing: border-box;
+					padding-right: calc(var(--tablance-cell-state-icon-count, 1) * 16px);
+				}
 			}
 		}
 		.grid-extension-target-hover:not(.disabled) {
@@ -2539,9 +2536,6 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	min-width: 0;
 	white-space: nowrap;
 	vertical-align: middle;
-	>.tablance-cell-state-icons {
-		flex: none;
-	}
 }
 .tablance table.details-list td.value:has(>.tablance-source-content) {
 	max-width: 0;
@@ -2632,16 +2626,16 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	45% { transform: scale(1.4); opacity: .72; }
 }
 .tablance .tablance-cell-state.tablance-source-related-ping
-	.tablance-cell-state-icon-source-target,
+	.tablance-cell-state-icon-source-target::before,
 .tablance .tablance-cell-state.tablance-source-relation-ping
-	.tablance-source-pill:not(.tablance-source-pill-manual)>.tablance-source-pill-icon {
+	.tablance-source-pill:not(.tablance-source-pill-manual)>.tablance-source-pill-icon::before {
 	animation: tablance-relation-chain-ping var(--tablance-relation-ping-duration) ease-out 1;
 }
 @media (prefers-reduced-motion: reduce) {
 	.tablance .tablance-cell-state.tablance-source-related-ping
-		.tablance-cell-state-icon-source-target,
+		.tablance-cell-state-icon-source-target::before,
 	.tablance .tablance-cell-state.tablance-source-relation-ping
-		.tablance-source-pill:not(.tablance-source-pill-manual)>.tablance-source-pill-icon {
+		.tablance-source-pill:not(.tablance-source-pill-manual)>.tablance-source-pill-icon::before {
 		animation: none;
 	}
 }
@@ -2732,6 +2726,31 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		flex: none;
 	}
 }
+.tablance-field-icon-layout {
+	display: grid;
+	grid-template-columns: 12px minmax(0, 1fr);
+	column-gap: 4px;
+	align-items: start;
+	min-width: 0;
+	>.tablance-field-icon-slot {
+		display: block;
+		width: 12px;
+		min-height: 12px;
+		>.tablance-cell-state-icons {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 3px;
+			height: auto;
+			margin: 0;
+			vertical-align: baseline;
+		}
+	}
+	>.tablance-field-icon-value {
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+}
 .tablance-cell-state:is(.action-indicator,.editable-indicator,.read-only):is(:hover,.tablance-active-cell)
 	>.tablance-cell-state-icon,
 .tablance-cell-state:is(.action-indicator,.editable-indicator,.read-only):is(:hover,.tablance-active-cell)
@@ -2744,7 +2763,7 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	visibility: visible;
 }
 .tablance-cell-state:is(.action-indicator,.editable-indicator,.read-only):is(:hover,.tablance-active-cell)
-	.tablance-source-content>.tablance-cell-state-icons>.tablance-cell-state-icon {
+	.tablance-field-icon-slot>.tablance-cell-state-icons>.tablance-cell-state-icon {
 	opacity: 1;
 	visibility: visible;
 }
@@ -2768,7 +2787,8 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	left: calc(100% + 4px + var(--tablance-cell-state-icon-index, 0) * 16px);
 	transform: translateY(-50%);
 }
-.lineup>span:is(.action-indicator,.editable-indicator,.read-only)>span.title>.tablance-cell-state-icon {
+.lineup>span:is(.action-indicator,.editable-indicator,.read-only)>span.title>.tablance-cell-state-icon,
+.details-grid>span:is(.action-indicator,.editable-indicator,.read-only)>span.title>.tablance-cell-state-icon {
 	right: calc((var(--tablance-cell-state-icon-count, 1) - 1 - var(--tablance-cell-state-icon-index, 0)) * 16px);
 	left: auto;
 }

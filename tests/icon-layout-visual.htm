@@ -1,0 +1,61 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tablance status icon layout</title>
+<link rel="stylesheet" href="../styles/tablance.css">
+<style>
+  body { margin: 20px; font: 14px/1.4 Arial, sans-serif; color: #172033; background: #f5f7fb; }
+  h1 { margin: 0 0 16px; font-size: 20px; }
+  h2 { margin: 20px 0 6px; font-size: 15px; }
+  .example { max-width: 700px; margin-bottom: 18px; }
+  .narrow { width: 240px; max-width: 100%; }
+  @media (max-width: 600px) { body { margin: 8px; } .example { max-width: 100%; } }
+</style>
+<h1>Statusikoner i Tablance</h1>
+<h2>Huvudtabell: befintlig placering</h2><div id="main" class="example"></div>
+<h2>Detaljlista: flerradig text och HTML-block</h2><div id="list" class="example"></div>
+<h2>Lineup med och utan titel</h2><div id="lineup" class="example"></div>
+<h2>Smalt fält i nästlad lista</h2><div id="nested" class="example narrow"></div>
+<h2>Rutnät i only-details</h2><div id="grid" class="example narrow"></div>
+<script src="../dist/tablance.umd.js"></script>
+<script>
+window.addEventListener('error',event=>{document.body.appendChild(document.createElement('pre')).textContent=event.error?.stack??event.message;});
+const setup=(id,schema,data)=>{
+ const table=new Tablance(document.getElementById(id),schema,id!=='main',true,
+  {searchbar:false,ordering:false,autoHeight:id==='main'});
+ table.setData(data);
+ if (id==='main') table.selectCell(0,'name');
+ else if (id==='list') table.selectCell(0,'multi');
+ else if (id==='lineup') table.selectCell(0,'untitled');
+ else if (id==='nested') table.selectCell(0,'nestedValue');
+ else table.selectCell(0,'gridValue');
+ return table;
+};
+window.iconTables={
+ main:setup('main',{main:{columns:[{dataKey:'name',title:'Namn',input:{type:'text'}},
+  {dataKey:'locked',title:'Låst',readOnly:true}]}},[{name:'Kort värde',locked:'Långt skrivskyddat värde'}]),
+ list:setup('list',{details:{type:'list',titlesColWidth:'9em',entries:[
+  {type:'field',title:'Kort',nodeId:'short',dataKey:'short',readOnly:true},
+  {type:'field',title:'Flera rader',nodeId:'multi',dataKey:'multi',input:{type:'textarea'}},
+  {type:'field',title:'HTML',nodeId:'block',dataKey:'block',readOnly:true,html:true},
+  {type:'field',title:'Källa',nodeId:'source',dataKey:'source',sourceLinked:true,
+   sourceLinkedTargets:['target'],input:{type:'text'}},
+  {type:'field',title:'Två ikoner',nodeId:'target',dataKey:'target',dependsOn:'source',input:{type:'text'}},
+ ]}},[{short:'Kort värde',multi:'Första raden\nAndra raden med längre text',
+  block:'<div>Första blocket</div><p>Andra blocket med innehåll</p>',source:'Källa',target:'Målvärde'}]),
+ lineup:setup('lineup',{details:{type:'lineup',variant:'fields',entries:[
+  {type:'field',title:'Med titel',nodeId:'titled',dataKey:'titled',readOnly:true},
+  {type:'field',nodeId:'untitled',dataKey:'untitled',readOnly:true,grow:true},
+ ]}},[{titled:'Värde',untitled:'Flera rader\nLängre värde utan egen titel'}]),
+ nested:setup('nested',{details:{type:'list',titlesColWidth:'7em',entries:[
+  {type:'list',title:'Yttre etikett',titlesColWidth:false,entries:[
+   {type:'field',nodeId:'nestedValue',dataKey:'nestedValue',readOnly:true},
+  ]},
+ ]}},[{nestedValue:'Nästlat värde som bryts över flera rader i en smal cell'}]),
+ grid:setup('grid',{details:{type:'grid',columns:1,entries:[
+  {type:'field',title:'Rutnätsfält',nodeId:'gridValue',dataKey:'gridValue',readOnly:true},
+  {type:'field',title:'Utan ikon',nodeId:'plain',dataKey:'plain',disabled:true},
+ ]}},[{gridValue:'Ett långt rutnätsvärde som måste brytas på mobil',plain:'Utan ikon'}]),
+};
+window.iconLayoutReady=true;
+</script>

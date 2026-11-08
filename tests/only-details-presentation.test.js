@@ -184,6 +184,8 @@ const formChain=id=>formCell(id).querySelector('.tablance-cell-state-icon-source
 const formSourceIcon=id=>formNode(id).el.querySelector('.tablance-source-pill');
 const formSourceGlyph=id=>formSourceIcon(id).querySelector('.tablance-source-pill-icon');
 const animations=(element,name)=>element.getAnimations({subtree:true}).filter(animation=>animation.animationName===name);
+const iconPosition=element=>{const rect=element.getBoundingClientRect();return [rect.x,rect.y,rect.width,rect.height]};
+const positionUnchanged=(element,before)=>iconPosition(element).every((value,index)=>Math.abs(value-before[index])<.05);
 const principalTargets=['personalNumber','name'];
 const addressTargets=['street','apartment','postalCode','city'];
 const marked=id=>formCell(id).classList.contains('tablance-source-related-highlight');
@@ -211,6 +213,8 @@ assert(sourceMarked('address')&&addressTargets.every(marked)
  &&principalTargets.every(id=>!marked(id))&&!sourceMarked('principal'),
  'hovering Gatuadress resolves back to Adress without an active tint');
 formRelations.rootEl.dispatchEvent(new PointerEvent('pointerleave'));
+const addressIconPositions=new Map([['source',formSourceGlyph('address')],
+ ...addressTargets.map(id=>[id,formChain(id)])].map(([id,element])=>[id,iconPosition(element)]));
 formRelations.selectCell(0,'address');
 assert(formCell('street').classList.contains('tablance-source-related-active-source')
  &&addressTargets.every(id=>getComputedStyle(formChain(id)).visibility==='visible')
@@ -227,6 +231,17 @@ if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
   &&addressTargets.every(id=>animations(formChain(id),'tablance-relation-chain-ping').length)
   &&!formCell('street').getAnimations().length,
   'activating a source gives its source and target chains one shared 580 ms ping');
+ for(const [id,element] of [['source',formSourceGlyph('address')],
+  ...addressTargets.map(target=>[target,formChain(target)])]) {
+  const ping=animations(element,'tablance-relation-chain-ping')[0];
+  assert(ping?.effect?.getKeyframes().length
+   &&getComputedStyle(element).animationName==='none'
+   &&positionUnchanged(element,addressIconPositions.get(id)),
+   `${id} keeps its anchor while its glyph begins pulsing`);
+  ping.currentTime=ping.effect.getTiming().duration*.45;
+  assert(positionUnchanged(element,addressIconPositions.get(id)),
+   `${id} keeps its anchor at the largest pulse frame`);
+ }
  await new Promise(resolve=>setTimeout(resolve,650));
  assert(!animations(formChain('street'),'tablance-relation-chain-ping').length
   &&!formChain('street').getAnimations().length
@@ -235,11 +250,24 @@ if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
   &&formCell('address').classList.contains('tablance-source-relation-active-chain')
   &&getComputedStyle(formCell('street')).backgroundImage===restingTargetBackground,
   'the one-shot ping ends in a static high-contrast chain state without a target background');
+ const streetBeforeRepaint=iconPosition(formChain('street'));
  formRelations.refreshSubtree(formNode('street'));
- assert(!animations(formChain('street'),'tablance-relation-chain-ping').length,
-  'passive target repaint does not restart the one-shot relation ping');
+ assert(!animations(formChain('street'),'tablance-relation-chain-ping').length
+  &&positionUnchanged(formChain('street'),streetBeforeRepaint),
+  'passive target repaint preserves the chain anchor without restarting its ping');
 }
+const nameChainPosition=iconPosition(formChain('name'));
 formRelations.selectCell(0,'name');
+assert(positionUnchanged(formChain('name'),nameChainPosition),
+ 'switching to another source relation does not move the new target chain');
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+ const chain=formChain('name'),before=iconPosition(chain);
+ const ping=animations(chain,'tablance-relation-chain-ping')[0];
+ assert(ping,'switching relation starts a new target-chain pulse');
+ ping.currentTime=ping.effect.getTiming().duration*.45;
+ assert(positionUnchanged(chain,before),
+  'the new target chain keeps its position through the repeated pulse');
+}
 assert(sourceMarked('principal')&&principalTargets.every(marked)
  &&formCell('principal').classList.contains('tablance-source-relation-selected-target')
  &&formCell('name').classList.contains('tablance-source-related-active-target')
@@ -766,11 +794,11 @@ assert(getComputedStyle(cell('both').el).color===getComputedStyle(colorSample).c
 colorSample.remove();
 assert(getComputedStyle(cell('both').el).fontStyle==='normal'&&getComputedStyle(cell('both').el).cursor==='cell','display placeholder uses normal text style with a cell cursor');
 assert(cell('none').outerContainerEl.getBoundingClientRect().height<55&&getComputedStyle(cell('editOnly').outerContainerEl).borderInlineStartWidth==='1px'&&panel.querySelector('.grid-row-separator'),'standalone grid is compact with subtle separators');
-const editIndicatorIcon=cell('none').el.querySelector(':scope>.tablance-cell-state-icons>.tablance-cell-state-icon-editable');
+const editIndicatorIcon=cell('none').selEl.querySelector(':scope>span.title>.tablance-cell-state-icon-editable');
 assert(getComputedStyle(editIndicatorIcon).cursor==='help'
  &&getComputedStyle(editIndicatorIcon).pointerEvents==='auto'
  &&getComputedStyle(editIndicatorIcon,'::before').pointerEvents==='none',
- 'cell type indicators expose one full-box help target with a pointer-transparent visual beside the value');
+ 'cell type indicators expose one full-box help target with a pointer-transparent visual beside the title');
 for(const [key,expected] of [['none',''],['editOnly','Editor hint'],['displayOnly',''],['both','Long hint']]){
  standalone.selectCell(0,key,{enterEditMode:true});const input=standalone._cellCursor.querySelector('input.text-editor');
  assert(input?.placeholder===expected&&getComputedStyle(input).cursor==='text',`${key} has its own edit placeholder`);
@@ -1464,39 +1492,41 @@ const listEditIcon=listIconCell.el.querySelector('.tablance-cell-state-icon-edit
 const listShortCell=listIconTable.getDetailCell(0,'listShortTarget').el;
 const listLongCell=listIconTable.getDetailCell(0,'listLongTarget').el;
 const listNoIconCell=listIconTable.getDetailCell(0,'listNoIcon').el;
+const listValue=cellEl=>cellEl.querySelector('.tablance-field-icon-value')??cellEl;
 const listTextRects=cellEl=>{
- const range=document.createRange();range.selectNodeContents(cellEl.firstChild);
+ const range=document.createRange();range.selectNodeContents(listValue(cellEl).firstChild);
  return [...range.getClientRects()];
 };
 const listTextX=cellEl=>listTextRects(cellEl)[0].left-cellEl.getBoundingClientRect().left;
-const shortIcons=[...listShortCell.querySelectorAll(':scope>.tablance-cell-state-icons>.tablance-cell-state-icon')];
-const longIcons=[...listLongCell.querySelectorAll(':scope>.tablance-cell-state-icons>.tablance-cell-state-icon')];
+const listIcons=cellEl=>[...cellEl.querySelectorAll('.tablance-field-icon-slot>.tablance-cell-state-icons>.tablance-cell-state-icon')];
+const shortIcons=listIcons(listShortCell);
+const longIcons=listIcons(listLongCell);
 assert(listEditIcon&&listIconCell.el.matches('td.value')
  &&!listNoIconCell.querySelector('.tablance-cell-state-icon')
+ &&!listNoIconCell.querySelector('.tablance-field-icon-layout')
  &&shortIcons.length===2&&longIcons.length===2
  &&shortIcons[0].classList.contains('tablance-cell-state-icon-editable')
  &&shortIcons[1].classList.contains('tablance-cell-state-icon-source-target'),
  'details-list supports zero, one, or two independent state icons');
 for(const listCell of [listIconCell.el,listShortCell,listLongCell]){
- assert(Math.abs(listTextX(listCell)-listTextX(listNoIconCell))<.1,
-  'details-list text starts at the same x-position regardless of icon count or text length');
- const icons=[...listCell.querySelectorAll(':scope>.tablance-cell-state-icons>.tablance-cell-state-icon')];
+ assert(Math.abs(listTextX(listCell)-listTextX(listIconCell.el))<.1
+  &&listTextX(listCell)>listTextX(listNoIconCell),
+  'details-list reserves one narrow value inset only for cells with icons');
+ const icons=listIcons(listCell);
  for(const icon of icons){
   const rect=icon.getBoundingClientRect();
   const fragments=listTextRects(listCell);
-  const last=fragments.at(-1);
-  assert(rect.right<=listCell.getBoundingClientRect().right
-   &&(rect.left>=last.right+3||rect.top>=last.bottom-.1)
-   &&fragments.every(fragment=>rect.right<=fragment.left||rect.left>=fragment.right
-    ||rect.bottom<=fragment.top||rect.top>=fragment.bottom),
-   'details-list icons follow the rendered text without overlapping any line');
+  assert(rect.left>=listCell.getBoundingClientRect().left
+   &&rect.right+3<=fragments[0].left
+   &&fragments.every(fragment=>rect.right<=fragment.left),
+   'details-list icons occupy a column without overlapping text');
  }
  for(let index=1;index<icons.length;index++)
-  assert(icons[index-1].getBoundingClientRect().right<=icons[index].getBoundingClientRect().left,
-   'multiple details-list icons sit side by side without overlap');
+  assert(icons[index-1].getBoundingClientRect().bottom<icons[index].getBoundingClientRect().top,
+   'multiple details-list icons stack vertically without overlap');
 }
-assert(shortIcons[0].getBoundingClientRect().left-listTextRects(listShortCell).at(-1).right<16,
- 'details-list icons stay close to a short value instead of the cell edge');
+assert(listTextRects(listShortCell)[0].left-shortIcons[0].getBoundingClientRect().right<=6,
+ 'details-list icons stay close to a short value');
 assert(shortIcons.every(icon=>getComputedStyle(icon).cursor==='help'
  &&icon.dataset.tablanceCellTypeTooltip&&getComputedStyle(icon).pointerEvents==='auto'),
  'each details-list icon keeps its own tooltip and help hit area');
@@ -1531,9 +1561,10 @@ const selectorIconCell=selectorIconTable.getDetailCell(0,'selector');
 const selectorEditIcon=selectorIconCell.selEl.querySelector('.tablance-cell-state-icon-editable');
 assert(selectorEditIcon&&selectorIconCell.el.querySelector('.tablance-source-pill-empty')
  &&!selectorIconCell.selEl.querySelector('.tablance-cell-state-icon-source-target')
- &&selectorIconCell.el.querySelector('.tablance-source-pill').getBoundingClientRect().right
-   <=selectorEditIcon.getBoundingClientRect().left,
- 'a sourceSelector keeps its pill chain and an independent editing icon without overlap');
+ &&selectorEditIcon.closest('.tablance-field-icon-slot')
+ &&selectorEditIcon.getBoundingClientRect().right
+   <selectorIconCell.el.querySelector('.tablance-source-pill').getBoundingClientRect().left,
+ 'a sourceSelector keeps its pill chain and puts its independent editing icon in the shared left slot');
 const gridEditIcon=cell('none').selEl.querySelector('.tablance-cell-state-icon-editable');
 assert(gridEditIcon,'details-grid keeps its editing icon');
 for (const type of ['grid','list','lineup']) {
@@ -1550,16 +1581,16 @@ for (const type of ['grid','list','lineup']) {
  const sourceContent=value.querySelector('.tablance-source-content');
  const pill=sourceContent?.querySelector('.tablance-source-pill');
  const label=pill?.querySelector('.tablance-source-pill-label');
- const pencil=sourceContent?.querySelector('.tablance-cell-state-icon-editable');
+ const pencil=value.querySelector('.tablance-field-icon-slot .tablance-cell-state-icon-editable');
  const pillRect=pill?.getBoundingClientRect(),pencilRect=pencil?.getBoundingClientRect();
  assert(sourceContent&&label&&pencil&&getComputedStyle(pencil).visibility==='visible'
   &&getComputedStyle(pencil).width==='12px'
   &&label.scrollWidth>label.clientWidth
   &&getComputedStyle(label).textOverflow==='ellipsis'
-  &&pillRect.right+3<=pencilRect.left
-  &&Math.abs((pillRect.top+pillRect.height/2)-(pencilRect.top+pencilRect.height/2))<3
+  &&pencilRect.right+3<=pillRect.left
+  &&pencilRect.top>=value.getBoundingClientRect().top
   &&pencilRect.right<=value.getBoundingClientRect().right+1,
-  `${type} keeps a fixed-size pencil beside a shrinking ellipsized source pill`);
+  `${type} keeps a fixed-size pencil in its left slot beside a shrinking ellipsized source pill`);
 }
 for(const [table,key,icon] of [[listIconTable,'listValue',listEditIcon],
  [mainIconTable,'mainValue',mainEditIcon],[selectorIconTable,'selector',selectorEditIcon],
@@ -1634,6 +1665,68 @@ assert(getComputedStyle(targetEditIcon).visibility==='visible'
  &&[targetEditIcon,targetIcon].every((icon,index)=>icon.offsetLeft===targetIconOffsets[index][0]
   &&icon.offsetTop===targetIconOffsets[index][1]),
  'both editable and source-target icons appear without moving the cell layout');
+const iconLayoutHost=host();iconLayoutHost.style.width='230px';
+const iconLayoutTable=new Tablance(iconLayoutHost,{details:{type:'list',entries:[
+ {type:'lineup',entries:[
+  {type:'field',nodeId:'untitledIcon',dataKey:'longText',readOnly:true},
+  {type:'field',nodeId:'titledIcon',title:'Titled',dataKey:'shortText',readOnly:true},
+ ]},
+ {type:'list',title:'Nested',entries:[
+  {type:'field',nodeId:'blockIcon',dataKey:'html',html:true,readOnly:true},
+ ]},
+ {type:'group',nodeId:'nestedIconGroup',title:'Group',entries:[
+  {type:'field',nodeId:'groupUntitledIcon',dataKey:'groupText',readOnly:true},
+ ]},
+]}},true,true,{searchbar:false});
+iconLayoutTable.setData({longText:'First line\nSecond line with enough text to wrap in a narrow cell',
+ shortText:'Short',html:'<div>First block</div><p>Second block with longer content</p>',
+ groupText:'Untitled group field'});
+iconLayoutTable._openGroup(iconLayoutTable.getDetailCell(0,'nestedIconGroup'));
+const untitled=iconLayoutTable.getDetailCell(0,'untitledIcon');
+const titled=iconLayoutTable.getDetailCell(0,'titledIcon');
+const block=iconLayoutTable.getDetailCell(0,'blockIcon');
+const groupUntitled=iconLayoutTable.getDetailCell(0,'groupUntitledIcon');
+const checkColumn=(cell,label)=>{
+ const layout=cell.el.querySelector('.tablance-field-icon-layout');
+ const icon=layout?.querySelector('.tablance-cell-state-icon-read-only');
+ const value=layout?.querySelector('.tablance-field-icon-value');
+ const cellRect=(cell.selEl??cell.el).getBoundingClientRect();
+ const iconRect=icon?.getBoundingClientRect(),valueRect=value?.getBoundingClientRect();
+ assert(layout&&icon&&value&&iconRect.left>=cellRect.left
+  &&iconRect.right+3<=valueRect.left&&iconRect.top>=cellRect.top
+  &&iconRect.bottom<=cellRect.bottom&&valueRect.right<=cellRect.right+1,
+  `${label} keeps its icon column inside the selectable cell without overlap`);
+ return {icon,value};
+};
+checkColumn(untitled,'untitled narrow lineup');
+const blockParts=checkColumn(block,'nested block HTML');
+checkColumn(groupUntitled,'untitled group field');
+assert(blockParts.value.querySelector('div')?.textContent==='First block'
+ &&blockParts.value.querySelector('p')?.textContent?.startsWith('Second block'),
+ 'nested block HTML keeps its elements inside the value column');
+assert(!titled.el.querySelector('.tablance-field-icon-layout')
+ &&titled.selEl.querySelector(':scope>span.title>.tablance-cell-state-icon-read-only'),
+ 'titled lineup keeps the icon beside its title');
+for(const [cell,key] of [[untitled,'untitledIcon'],[block,'blockIcon']]){
+ const rect=(cell.selEl??cell.el).getBoundingClientRect();
+ const value=cell.el.querySelector('.tablance-field-icon-value');
+ const before={x:value.getBoundingClientRect().x,y:value.getBoundingClientRect().y,
+  width:value.getBoundingClientRect().width,height:rect.height};
+ iconLayoutTable.selectCell(0,key);
+ const cursor=iconLayoutTable._cellCursor.getBoundingClientRect();
+ assert(Math.abs(cursor.x-rect.x)<1&&Math.abs(cursor.width-rect.width)<1
+  &&Math.abs(value.getBoundingClientRect().x-before.x)<.1
+  &&Math.abs(value.getBoundingClientRect().y-before.y)<.1
+  &&Math.abs(value.getBoundingClientRect().width-before.width)<.1
+  &&Math.abs((cell.selEl??cell.el).getBoundingClientRect().height-before.height)<.1,
+  `${key} selection keeps outer cursor geometry and stable content`);
+}
+iconLayoutTable.selectCell(0,'untitledIcon');
+const untitledIcon=untitled.el.querySelector('.tablance-field-icon-slot .tablance-cell-state-icon-read-only');
+untitledIcon.scrollIntoView({block:'center',inline:'center'});
+const untitledIconRect=untitledIcon.getBoundingClientRect();
+assert(document.elementFromPoint(untitledIconRect.left+6,untitledIconRect.top+6)===untitledIcon,
+ 'the icon column retains a pointer hit area inside its cell');
 window.cellTypeIconHitTest={targets:[
  {name:'source',icon:sourceIndicator,table:standalone,dataKey:'both'},
  {name:'source-target',icon:targetIcon,table:sourceRelationTable,dataKey:'recordNumber'},

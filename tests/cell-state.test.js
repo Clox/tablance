@@ -48,6 +48,28 @@ const commitEach=callback=>(transaction,context)=>{
 };
 
 try {
+	let detailButtonClicks=0;
+	const pointerButtonTable=new Tablance(host(),{
+		main:{columns:[{type:"expand",width:32},{dataKey:"name"}]},
+		details:{type:"list",entries:[{type:"lineup",title:"Actions",entries:[
+			{dataKey:"address",nodeId:"pointerAddress"},
+			{nodeId:"pointerButton",input:{type:"button",text:"Copy",
+				onClick:()=>detailButtonClicks++}},
+		]}]},
+	},true,true,{searchbar:false});
+	pointerButtonTable.setData([{name:"Example",address:"Street 1"}]);
+	await tick();
+	const pointerButton=pointerButtonTable.getDetailCell(0,"pointerButton");
+	const pointerButtonEl=pointerButton.el.matches("button")
+		?pointerButton.el:pointerButton.el.querySelector("button");
+	pointerButtonEl.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
+	assert(pointerButtonTable._activeDetailsCell===pointerButton,
+		"clicking a native details button selects its navigable Tablance cell");
+	pointerButtonEl.click();
+	key(pointerButtonTable.rootEl,"Enter");
+	assert(detailButtonClicks===2,
+		"a details button works by pointer and by Enter on its selected cell");
+
 	let showExtra=false;
 	let choices=[{text:"Alpha",value:1},{text:"Beta",value:2},
 		{text:"Gamma",value:3,visibleIf:()=>showExtra}];
@@ -5151,7 +5173,8 @@ try {
 	key(clipboardTable.rootEl,"c","KeyC",{ctrlKey:true});
 	await Promise.resolve();
 	const fieldTextRange=document.createRange();
-	fieldTextRange.selectNodeContents(clipboardGroupFirst.el.firstChild);
+	const copiedValue=clipboardGroupFirst.el.querySelector(".tablance-field-icon-value")??clipboardGroupFirst.el;
+	fieldTextRange.selectNodeContents(copiedValue.firstChild);
 	const detailFieldCopyFeedback=clipboardTable._cellCursor.querySelector(":scope>.tablance-copy-feedback");
 	assert(copied==="Ada"
 		&&Math.abs(detailFieldCopyFeedback.getBoundingClientRect().left
@@ -5545,7 +5568,7 @@ try {
 	const lockedGridDetail=lockedPresentationTable.getDetailCell(lockedPresentationRow,"lockedGridDetail");
 	lockedGridDetail.select();
 	key(lockedPresentationTable.rootEl,"Enter","Enter");
-	const lockedGridIcon=lockedGridDetail.el.querySelector(":scope>.tablance-cell-state-icons>.tablance-cell-state-icon-read-only");
+	const lockedGridIcon=lockedGridDetail.selEl.querySelector(":scope>span.title>.tablance-cell-state-icon-read-only");
 	assert(lockedGridDetail.selEl.classList.contains("read-only-activation-feedback")
 		&&getComputedStyle(lockedGridIcon).animationName
 			==="tablance-read-only-lock-feedback"
@@ -6778,34 +6801,34 @@ try {
 	listIndicatorField.select();
 	const listIndicatorStyle=getComputedStyle(indicatorLayoutTable._cellCursor,"::before");
 	const listEditIcon=(listIndicatorField.selEl??listIndicatorField.el)
-		.querySelector(":scope>.tablance-cell-state-icons>.tablance-cell-state-icon-editable");
+		.querySelector(".tablance-field-icon-slot>.tablance-cell-state-icons>.tablance-cell-state-icon-editable");
 	assert(!(listIndicatorField.selEl??listIndicatorField.el).querySelector(":scope>span.title")
 		&&listIndicatorStyle.content==="none"
 		&&getComputedStyle(listEditIcon).visibility==="visible"
 		&&indicatorLayoutTable._selectedCellState?.kind==="editable",
-		"List fields retain their separate title cell and show the editing icon beside the value");
+		"List fields retain their separate title cell and show the editing icon in the value's reserved column");
 	const gridEditTitle=gridIndicatorEdit.outerContainerEl.querySelector(":scope>span.title");
 	const gridEditTitleBefore=gridEditTitle.getBoundingClientRect();
-	const gridEditIcon=gridIndicatorEdit.el.querySelector(":scope>.tablance-cell-state-icons>.tablance-cell-state-icon-editable");
+	const gridEditIcon=gridIndicatorEdit.selEl.querySelector(":scope>span.title>.tablance-cell-state-icon-editable");
 	assert(getComputedStyle(gridEditIcon).visibility==="hidden"
 		&&getComputedStyle(gridIndicatorEdit.outerContainerEl,"::before").content==="none",
 		"an inactive Grid field keeps both indicator layers hidden until hover or selection");
 	gridIndicatorEdit.select();
 	const gridEditTitleSelected=gridEditTitle.getBoundingClientRect();
 	const gridEditIndicatorStyle=getComputedStyle(gridEditIcon);
-	const gridEditText=document.createRange();gridEditText.selectNodeContents(gridIndicatorEdit.el.firstChild);
+	const gridEditText=document.createRange();gridEditText.selectNodeContents(gridEditTitle.firstChild);
 	assert(gridEditIndicatorStyle.visibility==="visible"
-		&&gridEditIcon.getBoundingClientRect().left-gridEditText.getBoundingClientRect().right>=4
-		&&gridEditIcon.getBoundingClientRect().left-gridEditText.getBoundingClientRect().right<16
+		&&gridEditIcon.getBoundingClientRect().left>=gridEditText.getBoundingClientRect().right
+		&&gridEditIcon.getBoundingClientRect().right<=gridEditTitle.getBoundingClientRect().right+1
 		&&getComputedStyle(indicatorLayoutTable._cellCursor,"::before").content==="none"
 		&&Math.abs(gridEditTitleSelected.left-gridEditTitleBefore.left)<.05
 		&&Math.abs(gridEditTitleSelected.top-gridEditTitleBefore.top)<.05
 		&&Math.abs(gridEditTitleSelected.width-gridEditTitleBefore.width)<.05,
-		"a selected Grid edit icon follows the value without moving or overlapping its title");
+		"a selected Grid edit icon follows the title without moving or overlapping its text");
 	const gridActionTitle=gridIndicatorAction.outerContainerEl.querySelector(":scope>span.title");
 	const gridActionTitleBefore=gridActionTitle.getBoundingClientRect();
 	gridIndicatorAction.select();
-	const gridActionIcon=gridIndicatorAction.el.querySelector(":scope>.tablance-cell-state-icons>.tablance-cell-state-icon-navigation");
+	const gridActionIcon=gridIndicatorAction.selEl.querySelector(":scope>span.title>.tablance-cell-state-icon-navigation");
 	const gridActionIndicatorStyle=getComputedStyle(gridActionIcon);
 	const gridActionVisualStyle=getComputedStyle(gridActionIcon,"::before");
 	const gridActionTitleSelected=gridActionTitle.getBoundingClientRect();
@@ -6815,7 +6838,7 @@ try {
 		&&getComputedStyle(indicatorLayoutTable._cellCursor,"::before").content==="none"
 		&&Math.abs(gridActionTitleSelected.left-gridActionTitleBefore.left)<.05
 		&&Math.abs(gridActionTitleSelected.width-gridActionTitleBefore.width)<.05,
-		"Grid action icons share the same stable value-adjacent selected presentation as edit icons");
+		"Grid action icons share the same stable title-adjacent selected presentation as edit icons");
 	const gridIndicatorRule=[...document.styleSheets].flatMap(sheet=>{
 		try { return [...sheet.cssRules]; } catch(error) { return []; }
 	}).find(rule=>rule.selectorText?.includes(".tablance-cell-state-icon")

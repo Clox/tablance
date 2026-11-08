@@ -7267,6 +7267,16 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_spreadsheetMouseDown(e) {
 		const control=this._explicitCellPointerControl(e.target);
 		if (control) {
+			const detailsRow=control.closest(".main-table>tbody>tr.details");
+			if (e.button===0&&detailsRow&&control.matches("button")) {
+				const instance=this._resolvePointerDetailsInstance(control.closest("[data-path]"),detailsRow);
+				if (instance?.schemaNode.input?.type==="button") {
+					this._resetVerticalLayoutPreferredColumn();
+					this._clearCellRange();
+					this._selectDetailsCell(instance,false,
+						{kind:"pointer",targetInstance:instance,event:e});
+				}
+			}
 			const td=control.closest(".main-table>tbody>tr>td");
 			if (td?.classList.contains("expand-col")
 				&&this._getCellState(td)?.activatable!==false)
@@ -14197,15 +14207,15 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			kinds.push("read-only");
 		if (state?.kind!=="disabled"&&schemaNode?._sourceLinkedTargetLabels?.length)
 			kinds.push("source-target");
-		let content=schemaNode?.type==="field"
+		const iconSlot=cellEl.querySelector(":scope>.tablance-field-icon-layout>.tablance-field-icon-slot,"
+			+":scope>div.value>.tablance-field-icon-layout>.tablance-field-icon-slot,"
+			+":scope>div.value>div>.tablance-field-icon-layout>.tablance-field-icon-slot,"
+			+":scope>div>.tablance-field-icon-layout>.tablance-field-icon-slot");
+		let content=iconSlot??(schemaNode?.type==="field"
 			?(cellEl.matches("td.value")&&cellEl.closest("table.details-list")?cellEl
 				:cellEl.parentElement?.classList.contains("details-grid")
-					?cellEl.querySelector(":scope>div.value"):null):null;
-		if (schemaNode?.sourceSelector) {
-			const sourceValue=cellEl.matches("td.value")?cellEl
-				:cellEl.querySelector(":scope>div.value");
-			content=sourceValue?.querySelector(":scope>.tablance-source-content")??sourceValue??content;
-		}
+					&&!cellEl.querySelector(":scope>span.title")
+					?cellEl.querySelector(":scope>div.value"):null):null);
 		const title=cellEl.querySelector(":scope>span.title");
 		const oldIcons=[...cellEl.querySelectorAll(":scope>.tablance-cell-state-icon, :scope>span.title>.tablance-cell-state-icon")];
 		let accessories=content?.querySelector(":scope>.tablance-cell-state-icons");
@@ -14269,24 +14279,25 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const statePayload=this._makeCallbackPayload(instanceNode,valueBundle,
 			{schemaNode,mainIndex,rowData:scopedData});
 		const cellState=this._resolveCellState(schemaNode,statePayload);
+		const contentEl=this._fieldPresentationContent(el,schemaNode,cellState,instanceNode);
 		if (instanceNode) {
 			instanceNode.presencePresentation={...presentation,...valueBundle};
-			instanceNode.presentationContentEl=el;
+			instanceNode.presentationContentEl=contentEl;
 		}
 		if (!instanceNode)
 			selEl.className="";
 		else if (instanceNode.baseCss)
 			(selEl??el).className=instanceNode.baseCss;
 		if (schemaNode.input?.type==="button") {
-			this._generateButton(schemaNode,mainIndex,el,scopedData,instanceNode);
+			this._generateButton(schemaNode,mainIndex,contentEl,scopedData,instanceNode);
 		} else if (schemaNode.input?.type==="checkbox") {
-			this._generateCheckbox(schemaNode,el,valueBundle.value,scopedData,mainIndex,instanceNode);
+			this._generateCheckbox(schemaNode,contentEl,valueBundle.value,scopedData,mainIndex,instanceNode);
 		} else if (schemaNode.input?.type==="select"&&schemaNode.input.boolean&&!schemaNode.render) {
 			if (schemaNode.displayPlaceholder!=null&&!this._hasPresenceValue(valueBundle.value)
 				&&this._hasPresenceValue(presentation.placeholder))
-				this._renderFieldPresentation(el,schemaNode,presentation,instanceNode?instanceNode.present:true);
+				this._renderFieldPresentation(contentEl,schemaNode,presentation,instanceNode?instanceNode.present:true);
 			else
-				this._renderBooleanSelectValue(el,this._getSelectValue(valueBundle.value),
+				this._renderBooleanSelectValue(contentEl,this._getSelectValue(valueBundle.value),
 					presentation.content);
 		} else {
 			if (!schemaNode.render&&schemaNode.input?.type==="select"
@@ -14300,7 +14311,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 						"`allowDynamicOptionsWithoutRender: true` on the input configuration.");
 					console.log(schemaNode);
 			}
-			this._renderFieldPresentation(el,schemaNode,presentation,instanceNode?instanceNode.present:true);
+			this._renderFieldPresentation(contentEl,schemaNode,presentation,instanceNode?instanceNode.present:true);
 		}
 		if (instanceNode&&!instanceNode.schemaNode.baseCss)
 			instanceNode.baseCss=(selEl??el).className;
@@ -14329,26 +14340,58 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		// descendant behind a closed ancestor cannot regain separators or other open-only affordances.
 		if (instanceNode)
 			this._applyDetailsAffordanceState(instanceNode);
-		this._scheduleTimedCellRefresh({anchor,contentEl:el,schemaNode,rowData:scopedData,
+		this._scheduleTimedCellRefresh({anchor,contentEl,schemaNode,rowData:scopedData,
 			mainIndex:Number(mainIndex),instanceNode,presentation});
 		return cellState;
 	}
 
+	_fieldPresentationContent(el,schemaNode,state,instanceNode) {
+		if (!instanceNode||schemaNode.type!=="field"
+			||["button","checkbox","file"].includes(schemaNode.input?.type))
+			return el;
+		const owner=instanceNode.parent?.schemaNode?.type;
+		const isList=owner==="list";
+		const hasVisibleTitle=!!instanceNode.selEl?.querySelector(":scope>span.title");
+		const isUntitledLineup=owner==="lineup"&&!hasVisibleTitle;
+		const isUntitledGrid=owner==="grid"&&!hasVisibleTitle;
+		const isUntitledGroup=owner==="group"&&!hasVisibleTitle;
+		const hasIcon=state.kind==="editable"||state.kind==="readOnly"
+			||state.kind==="action"&&this._showsActionIndicator(state,schemaNode)
+			||state.kind!=="disabled"&&!!schemaNode._sourceLinkedTargetLabels?.length;
+		const existing=el.querySelector(":scope>.tablance-field-icon-layout");
+		if (!(isList||isUntitledLineup||isUntitledGrid||isUntitledGroup)||!hasIcon) {
+			if (existing)
+				el.replaceChildren();
+			return el;
+		}
+		if (existing)
+			return existing.querySelector(":scope>.tablance-field-icon-value");
+		el.replaceChildren();
+		const layout=el.appendChild(document.createElement("div"));
+		layout.className="tablance-field-icon-layout";
+		const slot=layout.appendChild(document.createElement("span"));
+		slot.className="tablance-field-icon-slot";
+		const value=layout.appendChild(document.createElement("div"));
+		value.className="tablance-field-icon-value";
+		return value;
+	}
+
 	_renderFieldPresentation(el,schemaNode,presentation,present) {
 		// Keep the accessory and its tooltip anchors stable when a value is repainted.
-		const accessories=el.querySelector(":scope>.tablance-cell-state-icons,"
-			+":scope>.tablance-source-content>.tablance-cell-state-icons");
+		const accessories=el.querySelector(":scope>.tablance-cell-state-icons");
 		accessories?.remove();
 		const hasContent=this._hasPresenceValue(presentation?.content);
 		const hasPlaceholder=!!present&&!hasContent&&this._hasPresenceValue(presentation?.placeholder);
+		const placeholderSurface=el.classList.contains("tablance-field-icon-value")
+			?el.parentElement.parentElement:el;
 		if (schemaNode.sourceSelector&&schemaNode.sourceSelector.showLabel!==true
 			&&schemaNode.title!=null) {
 			const displayed=hasPlaceholder?String(presentation.placeholder)
 				:hasContent?String(presentation.content):"";
-			el.parentElement?.setAttribute("aria-label",displayed
+			placeholderSurface.parentElement?.setAttribute("aria-label",displayed
 				?`${schemaNode.title}: ${displayed}`:String(schemaNode.title));
 		}
-		el.classList.toggle("tablance-presentation-placeholder",hasPlaceholder);
+		placeholderSurface.classList.toggle("tablance-presentation-placeholder",hasPlaceholder);
 		if (schemaNode.sourceSelector&&(hasContent||hasPlaceholder)) {
 			const sourceContent=document.createElement("span");
 			sourceContent.className="tablance-source-content";
@@ -14365,8 +14408,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			label.className="tablance-source-pill-label";
 			label.textContent=String(hasPlaceholder?presentation.placeholder:presentation.content);
 			sourceContent.appendChild(pill);
-			if (accessories)
-				sourceContent.appendChild(accessories);
 			el.replaceChildren(sourceContent);
 		}
 		else if (hasPlaceholder)
@@ -14375,7 +14416,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			el.innerHTML=presentation?.content??"";
 		else
 			el.innerText=presentation?.content??"";
-		if (accessories&&(!schemaNode.sourceSelector||!hasContent&&!hasPlaceholder))
+		if (accessories)
 			el.appendChild(accessories);
 	}
 
