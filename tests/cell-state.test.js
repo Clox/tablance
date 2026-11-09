@@ -6973,6 +6973,165 @@ try {
 		&&Math.abs(extensionRect.bottom-addressRect.bottom)<1,
 		"compact button hit area follows lineup resize without stale geometry");
 
+	let generalButtonClicks=0;
+	const generalHitHost=host();
+	generalHitHost.style.width="650px";
+	const generalHitTable=new Tablance(generalHitHost,{details:{type:"list",entries:[
+		{type:"group",nodeId:"generalHitGroup",entries:[
+			{type:"lineup",variant:"fields",entries:[
+				{type:"field",nodeId:"generalHitReadonly",dataKey:"readonly",readOnly:true,width:80},
+				{type:"field",nodeId:"generalHitEditable",dataKey:"editable",width:140,
+					input:{type:"text"}},
+				{type:"field",nodeId:"generalHitButton",width:90,
+					input:{type:"button",text:"Action",onClick:()=>generalButtonClicks++}},
+				{type:"field",nodeId:"generalHitTall",dataKey:"tall",readOnly:true,width:120},
+			]},
+			{type:"grid",columns:["90px","140px"],entries:[
+				{type:"field",nodeId:"generalNextEmpty",dataKey:"empty",input:{type:"text"}},
+				{type:"field",nodeId:"generalNextEditable",dataKey:"next",input:{type:"text"}},
+			]},
+		]},
+		{type:"field",nodeId:"generalHitOutside",dataKey:"outside",readOnly:true},
+	]}},true,true,{searchbar:false});
+	generalHitTable.setData([{readonly:"Read only",editable:"Editable",tall:"Tall",empty:"",next:"Next",outside:"Outside"}]);
+	const generalGroup=generalHitTable.getDetailCell(0,"generalHitGroup");
+	generalHitTable._openGroup(generalGroup);
+	await tick();
+	await new Promise(resolve=>setTimeout(resolve,180));
+	const generalReadonly=generalHitTable.getDetailCell(0,"generalHitReadonly");
+	const generalEditable=generalHitTable.getDetailCell(0,"generalHitEditable");
+	const generalButton=generalHitTable.getDetailCell(0,"generalHitButton");
+	const generalTall=generalHitTable.getDetailCell(0,"generalHitTall");
+	const generalNextEmpty=generalHitTable.getDetailCell(0,"generalNextEmpty");
+	const generalNextEditable=generalHitTable.getDetailCell(0,"generalNextEditable");
+	const generalLineup=generalReadonly.parent;
+	generalLineup.containerEl.style.alignItems="flex-start";
+	generalLineup.containerEl.style.gap="12px";
+	generalTall.outerContainerEl.style.minHeight="130px";
+	await tick();
+	const generalExtensions=generalLineup.lineupRowExtensions;
+	const under=cell=>generalExtensions.find(extension=>extension.classList.contains("lineup-cell-extension")
+		&&extension._tablanceLineupTarget===cell
+		&&extension.getBoundingClientRect().top>=cell.selEl.getBoundingClientRect().bottom-.5);
+	const readOnlyExtension=under(generalReadonly);
+	const editableExtension=under(generalEditable);
+	const buttonExtension=under(generalButton);
+	const gapExtensions=generalExtensions.filter(extension=>
+		extension.classList.contains("lineup-cell-extension")
+		&&Math.abs(extension.getBoundingClientRect().top
+			-generalReadonly.selEl.getBoundingClientRect().top)<1);
+	assert(readOnlyExtension&&editableExtension&&buttonExtension&&gapExtensions.length===6,
+		"nested group lineups extend short read-only, editable, and button cells plus both sides of each column gap");
+	const firstGap=gapExtensions.filter(extension=>
+		extension.getBoundingClientRect().left>=generalReadonly.selEl.getBoundingClientRect().right-.5
+		&&extension.getBoundingClientRect().right<=generalEditable.selEl.getBoundingClientRect().left+.5);
+	assert(firstGap.length===2
+		&&Math.abs(firstGap[0].getBoundingClientRect().right-firstGap[1].getBoundingClientRect().left)<1
+		&&firstGap[0]._tablanceLineupTarget===generalReadonly
+		&&firstGap[1]._tablanceLineupTarget===generalEditable,
+		"lineup column gaps split at their midpoint without overlapping either neighboring cell");
+	generalHitHost.scrollIntoView({block:"center"});
+	const gapRect=firstGap[1].getBoundingClientRect();
+	const gapHit=document.elementFromPoint(gapRect.left+gapRect.width/2,
+		gapRect.top+Math.min(10,gapRect.height/2));
+	assert(gapHit===firstGap[1],
+		"a real pointer in a nested lineup column gap hits its extension above the group background");
+	const collectionGapTop=generalLineup.containerEl.getBoundingClientRect().bottom;
+	const collectionGapBottom=generalNextEmpty.parent.containerEl.getBoundingClientRect().top;
+	const collectionGapMiddle=(collectionGapTop+collectionGapBottom)/2;
+	const nextEmptyRect=generalNextEmpty.selEl.getBoundingClientRect();
+	const collectionGapX=(nextEmptyRect.left+nextEmptyRect.right)/2;
+	const collectionGapHit=document.elementFromPoint(collectionGapX,
+		(collectionGapMiddle+collectionGapBottom)/2);
+	assert(collectionGapBottom-collectionGapTop>.5
+		&&collectionGapHit?.classList.contains("group-collection-gap-extension")
+		&&collectionGapHit._tablanceGridTarget===generalNextEmpty,
+		"a real pointer between nested lineup and grid blocks hits the lower empty cell's extension");
+	collectionGapHit.dispatchEvent(new MouseEvent("mouseenter"));
+	assert(collectionGapHit.classList.contains("grid-extension-hover")
+		&&generalNextEmpty.selEl.classList.contains("grid-extension-target-hover"),
+		"collection gap extensions share the grid's subdued hover and canonical target highlight");
+	collectionGapHit.dispatchEvent(new MouseEvent("mouseleave"));
+	generalTall.select();
+	collectionGapHit.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	const emptyCursor=generalHitTable._cellCursor.getBoundingClientRect();
+	assert(generalHitTable._activeDetailsCell===generalNextEmpty
+		&&generalGroup.presentationState==="open"
+		&&!generalHitTable._inEditMode
+		&&Math.abs(emptyCursor.bottom-nextEmptyRect.bottom)<1,
+		"clicking the concrete collection gap selects its empty cell while the cursor stays on the real cell");
+	const tallRect=generalTall.selEl.getBoundingClientRect();
+	const upperGapHit=document.elementFromPoint((tallRect.left+tallRect.right)/2,
+		(collectionGapTop+collectionGapMiddle)/2);
+	assert(upperGapHit?._tablanceGridTarget===generalTall,
+		"the upper half of a collection gap belongs to the nearest cell above it");
+	const nextGridRect=generalNextEmpty.parent.containerEl.getBoundingClientRect();
+	const nextGridValueRect=generalNextEmpty.parent.containerEl.parentElement.getBoundingClientRect();
+	const nextEditableRect=generalNextEditable.selEl.getBoundingClientRect();
+	const sideHit=document.elementFromPoint((nextGridRect.right+nextGridValueRect.right)/2,
+		(nextEditableRect.top+nextEditableRect.bottom)/2);
+	assert(nextGridValueRect.right-nextGridRect.right>.5
+		&&sideHit?._tablanceGridTarget===generalNextEditable,
+		"the value area immediately beside a nested grid belongs to its last cell on that row");
+	sideHit.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	assert(generalHitTable._activeDetailsCell===generalNextEditable&&!generalHitTable._inEditMode,
+		"clicking a side extension selects its real field without entering edit mode");
+	generalTall.select();
+	readOnlyExtension.dispatchEvent(new MouseEvent("mouseenter"));
+	assert(readOnlyExtension.classList.contains("lineup-extension-hover")
+		&&generalReadonly.selEl.classList.contains("lineup-extension-target-hover"),
+		"read-only cell extensions reuse the existing subtle lineup hover feedback");
+	const touchMove=new Event("touchmove",{bubbles:true,cancelable:true});
+	readOnlyExtension.dispatchEvent(touchMove);
+	assert(!touchMove.defaultPrevented&&getComputedStyle(readOnlyExtension).touchAction==="auto"
+		&&generalHitTable._activeDetailsCell===generalTall,
+		"lineup hit areas leave touch scrolling gestures unclaimed and select only on a completed tap");
+	readOnlyExtension.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	const generalCursor=generalHitTable._cellCursor.getBoundingClientRect();
+	const realReadOnly=generalReadonly.selEl.getBoundingClientRect();
+	assert(generalHitTable._activeDetailsCell===generalReadonly
+		&&generalGroup.presentationState==="open"
+		&&!generalHitTable._inReadOnlyMode
+		&&Math.abs(generalCursor.bottom-realReadOnly.bottom)<1,
+		"extended read-only hit area selects the real cell without opening its presentation or growing the cursor");
+	readOnlyExtension.dispatchEvent(new MouseEvent("mouseleave"));
+	editableExtension.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	assert(generalHitTable._activeDetailsCell===generalEditable&&!generalHitTable._inEditMode,
+		"extended editable hit area selects without entering the editor");
+	buttonExtension.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	assert(generalHitTable._activeDetailsCell===generalButton&&generalButtonClicks===0,
+		"extended button hit area selects without activating the action");
+	generalHitHost.style.width="340px";
+	await tick();
+	const wrappedRows=generalHitTable._getLineupVisualRows(generalLineup,false);
+	const realRects=generalLineup.children.map(child=>child.selEl?.getBoundingClientRect());
+	const overlapArea=(a,b)=>Math.max(0,Math.min(a.right,b.right)-Math.max(a.left,b.left))
+		*Math.max(0,Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top));
+	assert(wrappedRows.length>1&&generalLineup.lineupRowExtensions.every(extension=>{
+		const rect=extension.getBoundingClientRect();
+		return realRects.every(real=>overlapArea(rect,real)<.5);
+	}),"resized and wrapped nested lineups recompute hit areas without crossing real cells");
+	generalEditable.select();
+	generalGroup.el.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	generalGroup.selEl.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	assert(generalHitTable._activeDetailsCell===generalEditable
+		&&generalGroup.presentationState==="open",
+		"neutral background and padding clicks inside an open group do not close its active descendant");
+	key(generalHitTable.rootEl,"Escape","Escape");
+	assert(generalHitTable._activeDetailsCell===generalGroup
+		&&generalGroup.presentationState==="closed",
+		"Escape still deliberately leaves and closes the opened group");
+	key(generalHitTable.rootEl,"Enter","Enter");
+	assert(generalGroup.presentationState==="open",
+		"Enter still deliberately opens the selected group");
+	await new Promise(resolve=>setTimeout(resolve,510));
+	const generalOutside=generalHitTable.getDetailCell(0,"generalHitOutside");
+	(generalOutside.selEl??generalOutside.el).dispatchEvent(
+		new MouseEvent("mousedown",{bubbles:true,button:0}));
+	await tick();
+	assert(generalGroup.presentationState==="closed",
+		"clicking a real cell outside the open group still closes it deliberately");
+
 	const gridHost=host();
 	gridHost.style.width="640px";
 	const gridTable=new Tablance(gridHost,{details:{type:"list",titlesColWidth:false,entries:[

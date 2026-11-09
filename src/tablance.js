@@ -4754,15 +4754,32 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!lineup.containerEl.isConnected||containerRect.right<=containerRect.left)
 			return;
 		for (const row of this._getLineupVisualRows(lineup,false)) {
+			const ordered=[...row.items].sort((a,b)=>a.left-b.left||a.logicalOrder-b.logicalOrder);
 			for (const item of row.items) {
-				if (item.instanceNode.schemaNode.input?.type!=="button"
-					||!this._isNavigableDetailsInstance(item.instanceNode)
+				if (!this._isNavigableDetailsInstance(item.instanceNode)
 					||row.bottom-item.bottom<=.5)
 					continue;
 				this._appendLineupRowExtension(lineup,item.instanceNode,{
 					left:item.left-containerRect.left,top:item.bottom-containerRect.top,
 					width:item.right-item.left,height:row.bottom-item.bottom
 				});
+			}
+			for (let index=1;index<ordered.length;index++) {
+				const previous=ordered[index-1],next=ordered[index];
+				const gap=next.left-previous.right;
+				if (gap<=.5)
+					continue;
+				const middle=previous.right+gap/2;
+				if (this._isNavigableDetailsInstance(previous.instanceNode))
+					this._appendLineupRowExtension(lineup,previous.instanceNode,{
+						left:previous.right-containerRect.left,top:row.top-containerRect.top,
+						width:middle-previous.right,height:row.bottom-row.top
+					});
+				if (this._isNavigableDetailsInstance(next.instanceNode))
+					this._appendLineupRowExtension(lineup,next.instanceNode,{
+						left:middle-containerRect.left,top:row.top-containerRect.top,
+						width:next.left-middle,height:row.bottom-row.top
+					});
 			}
 			const rightmostOccupied=row.items.reduce((rightmost,item)=>!rightmost||item.right>rightmost.right?item:rightmost,null);
 			const target=row.items.filter(item=>this._isNavigableDetailsInstance(item.instanceNode))
@@ -7035,6 +7052,129 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		extension?.remove();
 	}
 
+	_getCollectionEdgeRow(collection,first) {
+		let items;
+		if (collection.schemaNode.type==="grid") {
+			const row=(first?collection.gridRows?.[0]:collection.gridRows?.at(-1))??[];
+			items=[...new Set(row.filter(Boolean))].map(instanceNode=>({instanceNode,
+				...this._getDetailsCellRect(instanceNode)}));
+		} else if (collection.schemaNode.type==="lineup")
+			items=(first?this._getLineupVisualRows(collection,false)[0]
+				:this._getLineupVisualRows(collection,false).at(-1))?.items;
+		return items?.filter(item=>Number.isFinite(item.left)&&Number.isFinite(item.right))
+			.sort((a,b)=>a.left-b.left);
+	}
+
+	_getCollectionVisualRows(collection) {
+		if (collection.schemaNode.type==="lineup")
+			return this._getLineupVisualRows(collection,false).map(row=>row.items);
+		return (collection.gridRows??[]).map(row=>[...new Set(row.filter(Boolean))]
+			.map(instanceNode=>({instanceNode,...this._getDetailsCellRect(instanceNode)}))
+			.filter(item=>Number.isFinite(item.left)&&Number.isFinite(item.right)));
+	}
+
+	_appendGroupCollectionExtension(group,target,{left,right,top,bottom},viewportRect) {
+		if (right-left<=.5||bottom-top<=.5)
+			return;
+		const extension=group.viewportEl.appendChild(document.createElement("span"));
+		extension.className="grid-row-extension group-collection-gap-extension";
+		extension.setAttribute("aria-hidden","true");
+		extension.style.left=`${left-viewportRect.left}px`;
+		extension.style.top=`${top-viewportRect.top}px`;
+		extension.style.width=`${right-left}px`;
+		extension.style.height=`${bottom-top}px`;
+		extension._tablanceGridTarget=target;
+		extension._tablanceGridHoverEl=target.selEl??target.el;
+		extension.addEventListener("mouseenter",()=>this._setGridRowExtensionHover(extension,true));
+		extension.addEventListener("mouseleave",()=>this._setGridRowExtensionHover(extension,false));
+		group.groupCollectionGapExtensions.push(extension);
+	}
+
+	_refreshGroupCollectionGapExtensions(group) {
+		for (const extension of group.groupCollectionGapExtensions??[])
+			this._removeGridRowExtension(extension);
+		group.groupCollectionGapExtensions=[];
+		const active=this._isGroupPresentationOpen(group)&&group.viewportEl?.isConnected;
+		this._syncGroupCollectionGapObservation(group,active);
+		if (!active)
+			return;
+		const viewportRect=group.viewportEl.getBoundingClientRect();
+		for (const collection of group.children??[]) {
+			if (!collection.present||collection.hidden
+				||!["grid","lineup"].includes(collection.schemaNode.type))
+				continue;
+			const rect=collection.containerEl?.getBoundingClientRect();
+			const valueRect=collection.containerEl?.parentElement?.getBoundingClientRect();
+			if (!rect||!valueRect)
+				continue;
+			for (const row of this._getCollectionVisualRows(collection)) {
+				const navigable=row.filter(item=>this._isNavigableDetailsInstance(item.instanceNode));
+				if (!navigable.length)
+					continue;
+				const top=Math.min(...row.map(item=>item.top));
+				const bottom=Math.max(...row.map(item=>item.bottom));
+				const leftmost=navigable.reduce((left,item)=>item.left<left.left?item:left);
+				const rightmost=navigable.reduce((right,item)=>item.right>right.right?item:right);
+				this._appendGroupCollectionExtension(group,leftmost.instanceNode,
+					{left:valueRect.left,right:rect.left,top,bottom},viewportRect);
+				this._appendGroupCollectionExtension(group,rightmost.instanceNode,
+					{left:rect.right,right:valueRect.right,top,bottom},viewportRect);
+			}
+		}
+		for (let index=1;index<(group.children?.length??0);index++) {
+			const before=group.children[index-1],after=group.children[index];
+			if (!before.present||before.hidden||!after.present||after.hidden
+				||!["grid","lineup"].includes(before.schemaNode.type)
+				||!["grid","lineup"].includes(after.schemaNode.type))
+				continue;
+			const beforeRect=before.containerEl?.getBoundingClientRect();
+			const afterRect=after.containerEl?.getBoundingClientRect();
+			if (!beforeRect||!afterRect||afterRect.top-beforeRect.bottom<=.5)
+				continue;
+			const middle=(beforeRect.bottom+afterRect.top)/2;
+			for (const [collection,items,top,bottom] of [
+				[before,this._getCollectionEdgeRow(before,false),beforeRect.bottom,middle],
+				[after,this._getCollectionEdgeRow(after,true),middle,afterRect.top]
+			]) {
+				if (!items?.length)
+					continue;
+				const rect=collection.containerEl.parentElement.getBoundingClientRect();
+				for (let cellIndex=0;cellIndex<items.length;cellIndex++) {
+					const item=items[cellIndex];
+					if (!this._isNavigableDetailsInstance(item.instanceNode))
+						continue;
+					const left=cellIndex?Math.max(items[cellIndex-1].right,
+							(items[cellIndex-1].right+item.left)/2):rect.left;
+					const right=cellIndex<items.length-1?Math.min(items[cellIndex+1].left,
+							(item.right+items[cellIndex+1].left)/2):rect.right;
+					this._appendGroupCollectionExtension(group,item.instanceNode,
+						{left,right,top,bottom},viewportRect);
+				}
+			}
+		}
+	}
+
+	_syncGroupCollectionGapObservation(group,active) {
+		const observed=new Set(active?[group.viewportEl,...group.children.filter(child=>
+			["grid","lineup"].includes(child.schemaNode.type)).map(child=>child.containerEl).filter(Boolean)]:[]);
+		for (const element of group.groupCollectionGapObservedElements??[])
+			if (!observed.has(element)) {
+				this._groupCollectionGapResizeObserver?.unobserve(element);
+				delete element._tablanceGroupGapOwner;
+			}
+		if (observed.size)
+			this._groupCollectionGapResizeObserver??=new ResizeObserver(entries=>{
+				for (const owner of new Set(entries.map(entry=>entry.target._tablanceGroupGapOwner).filter(Boolean)))
+					this._refreshGroupCollectionGapExtensions(owner);
+			});
+		for (const element of observed)
+			if (!group.groupCollectionGapObservedElements?.has(element)) {
+				element._tablanceGroupGapOwner=group;
+				this._groupCollectionGapResizeObserver.observe(element);
+			}
+		group.groupCollectionGapObservedElements=observed;
+	}
+
 	_resolveLineupVariant(lineupSchemaNode) {
 		const requested=lineupSchemaNode.variant??"auto";
 		if (!["auto","fields","metadata","controls"].includes(requested))
@@ -7323,6 +7463,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				return directInstance?this._selectDetailsCell(directInstance,false,
 					{kind:"pointer",targetInstance:directInstance,event:e}):undefined;
 			const instanceNode=directInstance??this._resolvePointerDetailsInstance(interactiveEl,mainTr);
+			// An open group's own path is a fallback for its background, not a request to leave
+			// the selected descendant. Closed groups remain selectable for their ordinary controls.
+			if (!extension&&instanceNode?.schemaNode.type==="group"
+				&&this._isGroupPresentationOpen(instanceNode)
+				&&this._activeDetailsCell!==instanceNode
+				&&this._isInstanceDescendantOf(this._activeDetailsCell,instanceNode))
+				return;
 			if (rangeAnchor&&instanceNode?.parent===rangeAnchor.surface
 					&&instanceNode.parent.schemaNode.type==="grid")
 				e.preventDefault();
@@ -9296,6 +9443,8 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 			this._applyDetailsAffordanceState(node);
 			for (const child of node.children??[])
 				visit(child);
+			if (node.schemaNode?.type==="group")
+				this._refreshGroupCollectionGapExtensions(node);
 		};
 		visit(instanceNode);
 	}

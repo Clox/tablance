@@ -1462,11 +1462,7 @@
 }
 .tablance .details .lineup > .lineup-cell-extension {
   right: auto;
-}
-@media (pointer: coarse) {
-  .tablance .details .lineup > .lineup-cell-extension {
-    display: none;
-  }
+  touch-action: auto;
 }
 .tablance .details .lineup.details-affordances-suppressed > .lineup-row-extension {
   display: none;
@@ -1968,7 +1964,21 @@
   padding: 4px;
 }
 .tablance .group-cell > :where(.tablance-group-viewport) {
+  position: relative;
   width: 100%;
+}
+.tablance .group-cell > :where(.tablance-group-viewport) > .group-collection-gap-extension {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0;
+  background-color: transparent;
+  cursor: cell;
+  transition: background-color 120ms ease;
+}
+.tablance .group-cell > :where(.tablance-group-viewport) > .group-collection-gap-extension.grid-extension-hover {
+  background-color: color-mix(in srgb, var(--tablance-hover-background) 35%, transparent);
 }
 .tablance .group-cell > :where(.tablance-group-viewport).creator-empty {
   display: contents;

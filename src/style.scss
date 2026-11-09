@@ -1519,11 +1519,7 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			}
 			>.lineup-cell-extension {
 				right: auto;
-			}
-			@media (pointer: coarse) {
-				>.lineup-cell-extension {
-					display: none;
-				}
+				touch-action: auto;
 			}
 			&.details-affordances-suppressed>.lineup-row-extension {
 				display: none;
@@ -2051,7 +2047,21 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	.group-cell{
 		padding: 4px;
 		>:where(.tablance-group-viewport) {
+			position: relative;
 			width: 100%;
+			>.group-collection-gap-extension {
+				position: absolute;
+				z-index: 1;
+				box-sizing: border-box;
+				min-width: 0;
+				padding: 0;
+				background-color: transparent;
+				cursor: cell;
+				transition: background-color 120ms ease;
+				&.grid-extension-hover {
+					background-color: color-mix(in srgb, var(--tablance-hover-background) 35%, transparent);
+				}
+			}
 			&.creator-empty {
 				// The group remains an instance-tree owner but contributes no layout box of its own.
 				// Its sole visible cell is the creator at the group's position.
