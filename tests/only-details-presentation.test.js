@@ -1257,9 +1257,13 @@ assert(buttonCursorStyle.outlineOffset==='2px'
  &&buttonCursorStyle.boxShadow.includes('2px'),
  'primary button cursor uses the shared blue ring outside a light separation');
 accentSample.remove();
+secondaryButton.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0,cancelable:true}));
+secondaryButton.click();
+assert(buttonTable._activeSchemaNode.nodeId==='primaryAction'&&buttonActivations===1,
+ 'clicking another only-details button activates it without moving the active cell');
 buttonTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
  {key:'Enter',code:'Enter',bubbles:true,cancelable:true}));
-assert(buttonActivations===1,'Enter activates the selected primary button');
+assert(buttonActivations===2,'Enter activates the selected primary button');
 buttonTable.selectCell(0,'secondaryAction');
 assert(getComputedStyle(buttonTable._cellCursor).outlineOffset==='2px'
  &&getComputedStyle(buttonTable._cellCursor).boxShadow.includes('2px'),
@@ -1300,10 +1304,10 @@ bottomEdgeTable._selectMainTableCell(bottomRow.cells[0]);
 assert(cursorFitsViewport(),'the expand cursor also keeps its full lower border at a clipped viewport edge');
 buttonTable.rootEl.dispatchEvent(new KeyboardEvent('keydown',
  {key:' ',code:'Space',bubbles:true,cancelable:true}));
-assert(buttonActivations===2,'Space activates the selected secondary button');
+assert(buttonActivations===3,'Space activates the selected secondary button');
 primaryButton.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true,button:0}));
 primaryButton.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,button:0,detail:1}));
-assert(buttonActivations===3&&buttonTable._activeSchemaNode?.nodeId==='secondaryAction',
+assert(buttonActivations===4&&buttonTable._activeSchemaNode?.nodeId==='secondaryAction',
  'pointer button action runs without selecting its underlying cell');
 const explicitData={first:'A',second:'B',source:'hidden',detail:'D',postalCode:'12345'};
 const explicit=new Tablance(host(),{details:{type:'grid',columns:['13ch','1fr','1fr'],rows:[

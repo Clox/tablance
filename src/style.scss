@@ -386,12 +386,6 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 		&.details.group-cell-cursor {
 			outline-offset: -1px;
 		}
-		&.details.button-action-cell:not(.delete-confirmation-action) {
-			// Compact details buttons need a ring outside the filled button surface.
-			// Main-table buttons keep the ordinary cursor inside their full-width cell.
-			outline-offset: 2px;
-			box-shadow: 0 0 0 2px var(--tablance-cell-background);
-		}
 		&.delete-confirmation-action {
 			outline: none;
 		}
@@ -1355,6 +1349,9 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 			background-color: var(--tablance-hover-background);
 		}
 		.lineup {
+			>span.button-container {
+				padding: 4px;
+			}
 			>.date-container {
 				min-width: 12ch;//Give date-fields enough space from the start to hold YYYY-MM-DD even if currently
 								//empty. Use min-width rather than width because if date somehow got larger the field
@@ -1518,6 +1515,14 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 				transition: background-color 120ms ease;
 				&.lineup-extension-hover {
 					background-color: color-mix(in srgb, var(--tablance-hover-background) 35%, transparent);
+				}
+			}
+			>.lineup-cell-extension {
+				right: auto;
+			}
+			@media (pointer: coarse) {
+				>.lineup-cell-extension {
+					display: none;
 				}
 			}
 			&.details-affordances-suppressed>.lineup-row-extension {
@@ -2450,6 +2455,25 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	}
 }
 
+// Only-details buttons are the selected surface itself and retain their external ring;
+// nested details button cells have a padded wrapper and use the normal inset ring.
+.tablance.only-details .cell-cursor.details.button-action-cell:not(.delete-confirmation-action) {
+	outline-offset: 2px;
+	box-shadow: 0 0 0 2px var(--tablance-cell-background);
+}
+
+// A stable button icon slot using the same SVGs as Tablance's clipboard feedback.
+.tablance .tablance-button-copy-icon {
+	display: inline-block;
+	flex: none;
+	width: 14px;
+	height: 14px;
+	@include tablance-mask-icon($tablance-copy-icon);
+}
+.tablance button[data-copy-feedback="copied"] .tablance-button-copy-icon {
+	@include tablance-mask-icon($tablance-check-icon);
+}
+
 .tablance-cell-type-icon {
 	position: relative;
 	z-index: 2;
@@ -2732,6 +2756,8 @@ $tablance-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 	column-gap: 4px;
 	align-items: start;
 	min-width: 0;
+	// Keep the icon clear of the cursor even when a compact, untitled nested cell has no outer padding.
+	padding: 4px;
 	>.tablance-field-icon-slot {
 		display: block;
 		width: 12px;

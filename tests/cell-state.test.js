@@ -48,12 +48,16 @@ const commitEach=callback=>(transaction,context)=>{
 };
 
 try {
-	let detailButtonClicks=0;
-	const pointerButtonTable=new Tablance(host(),{
-		main:{columns:[{type:"expand",width:32},{dataKey:"name"}]},
-		details:{type:"list",entries:[{type:"lineup",title:"Actions",entries:[
-			{dataKey:"address",nodeId:"pointerAddress"},
-			{nodeId:"pointerButton",input:{type:"button",text:"Copy",
+	let detailButtonClicks=0,mainButtonClicks=0;
+	const pointerButtonHost=host();
+	pointerButtonHost.style.width="520px";
+	const pointerButtonTable=new Tablance(pointerButtonHost,{
+		main:{columns:[{type:"expand",width:32},{dataKey:"name"},
+			{input:{type:"button",text:"Main action",onClick:()=>mainButtonClicks++}}]},
+		details:{type:"list",entries:[{type:"lineup",title:"Actions",variant:"fields",entries:[
+			{dataKey:"address",nodeId:"pointerAddress",grow:true},
+			{nodeId:"pointerButton",input:{type:"button",
+				text:'Copy<span class="tablance-button-copy-icon" aria-hidden="true"></span>',
 				onClick:()=>detailButtonClicks++}},
 		]}]},
 	},true,true,{searchbar:false});
@@ -62,13 +66,54 @@ try {
 	const pointerButton=pointerButtonTable.getDetailCell(0,"pointerButton");
 	const pointerButtonEl=pointerButton.el.matches("button")
 		?pointerButton.el:pointerButton.el.querySelector("button");
+	const pointerIcon=pointerButtonEl.querySelector(".tablance-button-copy-icon");
+	const copyMask=getComputedStyle(pointerIcon).maskImage;
+	const buttonWidth=pointerButtonEl.getBoundingClientRect().width;
+	const pointerCellRect=pointerButton.selEl.getBoundingClientRect();
+	const pointerButtonRect=pointerButtonEl.getBoundingClientRect();
+	pointerButtonEl.dataset.copyFeedback="copied";
+	const checkMask=getComputedStyle(pointerIcon).maskImage;
+	assert(pointerIcon&&copyMask.includes("data:image/svg+xml")
+		&&checkMask.includes("data:image/svg+xml")&&copyMask!==checkMask
+		&&pointerButtonEl.getBoundingClientRect().width===buttonWidth
+		&&getComputedStyle(pointerButton.selEl).paddingLeft==="4px"
+		&&pointerCellRect.left<=pointerButtonRect.left-4
+		&&pointerCellRect.right>=pointerButtonRect.right+4,
+		"Compact details buttons reserve stable SVG icon space and cursor padding");
+	delete pointerButtonEl.dataset.copyFeedback;
+	const pointerAddress=pointerButtonTable.getDetailCell(0,"pointerAddress");
+	pointerAddress.select();
+	const activeBeforePointer=pointerButtonTable._activeDetailsCell;
+	const mainButtonEl=pointerButtonTable._mainTbody.rows[0].querySelector("button");
+	mainButtonEl.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
+	mainButtonEl.click();
+	assert(pointerButtonTable._activeDetailsCell===activeBeforePointer&&mainButtonClicks===1,
+		"Clicking a main-table button activates it without changing the active details cell");
 	pointerButtonEl.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0,cancelable:true}));
-	assert(pointerButtonTable._activeDetailsCell===pointerButton,
-		"clicking a native details button selects its navigable Tablance cell");
 	pointerButtonEl.click();
+	assert(pointerButtonTable._activeDetailsCell===activeBeforePointer&&detailButtonClicks===1,
+		"Clicking a details button activates it without changing the active cell");
+	key(pointerButtonTable.rootEl,"Tab");
+	assert(pointerButtonTable._activeDetailsCell===pointerButton&&pointerButtonEl.tabIndex===-1,
+		"Keyboard navigation still selects a details button cell without native button focus");
 	key(pointerButtonTable.rootEl,"Enter");
 	assert(detailButtonClicks===2,
 		"a details button works by pointer and by Enter on its selected cell");
+	const pointerCursor=pointerButtonTable._cellCursor;
+	const pointerCursorRect=pointerCursor.getBoundingClientRect();
+	const selectedButtonRect=pointerButton.selEl.getBoundingClientRect();
+	assert(getComputedStyle(pointerCursor).outlineOffset==="-2px"
+		&&Math.abs(pointerCursorRect.left-selectedButtonRect.left)<.1
+		&&Math.abs(pointerCursorRect.right-selectedButtonRect.right)<.1
+		&&pointerCursorRect.right<=pointerButtonTable._scrollBody.getBoundingClientRect().right,
+		"The details button cursor follows its padded cell and paints its outline inside the scroll clip");
+	pointerButtonHost.style.width="360px";
+	await tick();
+	const resizedCursorRect=pointerCursor.getBoundingClientRect();
+	const resizedButtonRect=pointerButton.selEl.getBoundingClientRect();
+	assert(Math.abs(resizedCursorRect.left-resizedButtonRect.left)<.1
+		&&Math.abs(resizedCursorRect.right-resizedButtonRect.right)<.1,
+		"A resized nested button keeps its cursor aligned with the cell");
 
 	let showExtra=false;
 	let choices=[{text:"Alpha",value:1},{text:"Beta",value:2},
@@ -6845,6 +6890,88 @@ try {
 		&&rule.selectorText.includes(".tablance-active-cell"));
 	assert(gridIndicatorRule,
 		"Grid value icons share the same persistent DOM slot and active-cell visibility rule");
+	const compactIndicatorTable=new Tablance(host(),{details:{type:"list",entries:[
+		{type:"repeated",dataKey:"options",entry:{type:"lineup",variant:"fields",entries:[
+			{type:"field",dataKey:"address",nodeId:"compactAddress",readOnly:true},
+		]}},
+	]}},false,true,{searchbar:false});
+	compactIndicatorTable.setData([{options:[{address:"Compact nested value"}]}]);
+	await tick();
+	const compactAddress=compactIndicatorTable.getDetailCell(0,"compactAddress");
+	compactAddress.selEl.style.padding="0";
+	compactAddress.el.style.padding="0";
+	compactAddress.select();
+	const compactIcon=compactAddress.el.querySelector(".tablance-field-icon-slot .tablance-cell-state-icon");
+	const compactIconRect=compactIcon.getBoundingClientRect();
+	const compactCursorRect=compactIndicatorTable._cellCursor.getBoundingClientRect();
+	assert(!compactAddress.selEl.querySelector(":scope>span.title")
+		&&compactIconRect.left-compactCursorRect.left>=4
+		&&compactIconRect.top-compactCursorRect.top>=4
+		&&compactIconRect.right<compactCursorRect.right,
+		"Untitled nested field icons retain padding inside the cursor when the host removes outer cell padding");
+
+	let compactButtonClicks=0;
+	const compactButtonHost=host();
+	compactButtonHost.style.width="460px";
+	const compactButtonTable=new Tablance(compactButtonHost,{details:{type:"list",entries:[
+		{type:"repeated",dataKey:"options",entry:{type:"lineup",variant:"fields",entries:[
+			{type:"field",dataKey:"address",nodeId:"hitAreaAddress",grow:true},
+			{type:"field",nodeId:"hitAreaButton",input:{type:"button",text:"Copy",
+				onClick:()=>compactButtonClicks++}},
+		]}},
+	]}},false,true,{searchbar:false});
+	compactButtonTable.setData([{options:[{address:"A long address"},{address:"Another address"}]}]);
+	await tick();
+	const hitAreaAddress=compactButtonTable.getDetailCell(0,"hitAreaAddress");
+	const hitAreaButton=compactButtonTable.getDetailCell(0,"hitAreaButton");
+	const hitAreaLineup=hitAreaButton.parent;
+	const hitAreaButtonEl=hitAreaButton.el.matches("button")
+		?hitAreaButton.el:hitAreaButton.el.querySelector("button");
+	hitAreaLineup.containerEl.style.alignItems="flex-start";
+	hitAreaAddress.outerContainerEl.style.minHeight="110px";
+	await tick();
+	let cellExtension=hitAreaLineup.lineupRowExtensions.find(extension=>
+		extension.classList.contains("lineup-cell-extension"));
+	let buttonRect=hitAreaButton.outerContainerEl.getBoundingClientRect();
+	let addressRect=hitAreaAddress.outerContainerEl.getBoundingClientRect();
+	let extensionRect=cellExtension?.getBoundingClientRect();
+	const nextLineupRect=hitAreaLineup.parent.children[1].outerContainerEl.getBoundingClientRect();
+	assert(cellExtension?._tablanceLineupTarget===hitAreaButton
+		&&Math.abs(extensionRect.left-buttonRect.left)<1
+		&&Math.abs(extensionRect.right-buttonRect.right)<1
+		&&Math.abs(extensionRect.top-buttonRect.bottom)<1
+		&&Math.abs(extensionRect.bottom-addressRect.bottom)<1
+		&&extensionRect.bottom<=nextLineupRect.top,
+		"compact button extension fills only the blank area below its own cell in the same lineup row");
+	cellExtension.dispatchEvent(new MouseEvent("mouseenter"));
+	assert(cellExtension.classList.contains("lineup-extension-hover")
+		&&hitAreaButton.outerContainerEl.classList.contains("lineup-extension-target-hover"),
+		"compact button extension shares the existing lineup hover treatment");
+	cellExtension.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	const hitAreaCursor=compactButtonTable._cellCursor.getBoundingClientRect();
+	assert(compactButtonTable._activeDetailsCell===hitAreaButton
+		&&compactButtonClicks===0
+		&&Math.abs(hitAreaCursor.top-buttonRect.top)<1
+		&&Math.abs(hitAreaCursor.bottom-buttonRect.bottom)<1,
+		"empty space below a compact button selects its real cell without activating or enlarging its cursor");
+	cellExtension.dispatchEvent(new MouseEvent("mouseleave"));
+	hitAreaAddress.select();
+	hitAreaButtonEl.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,button:0}));
+	hitAreaButtonEl.click();
+	assert(compactButtonClicks===1&&compactButtonTable._activeDetailsCell===hitAreaAddress,
+		"clicking the actual button activates it without moving the current cell selection");
+	hitAreaButton.select();
+	key(compactButtonTable.rootEl,"Enter","Enter");
+	assert(compactButtonClicks===2,"Enter still activates the keyboard-selected compact button");
+	hitAreaAddress.outerContainerEl.style.minHeight="150px";
+	await tick();
+	cellExtension=hitAreaLineup.lineupRowExtensions.find(extension=>
+		extension.classList.contains("lineup-cell-extension"));
+	extensionRect=cellExtension?.getBoundingClientRect();
+	addressRect=hitAreaAddress.outerContainerEl.getBoundingClientRect();
+	assert(cellExtension?._tablanceLineupTarget===hitAreaButton
+		&&Math.abs(extensionRect.bottom-addressRect.bottom)<1,
+		"compact button hit area follows lineup resize without stale geometry");
 
 	const gridHost=host();
 	gridHost.style.width="640px";

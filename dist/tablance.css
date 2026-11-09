@@ -361,10 +361,6 @@
 .tablance .cell-cursor.details.group-cell-cursor {
   outline-offset: -1px;
 }
-.tablance .cell-cursor.details.button-action-cell:not(.delete-confirmation-action) {
-  outline-offset: 2px;
-  box-shadow: 0 0 0 2px var(--tablance-cell-background);
-}
 .tablance .cell-cursor.delete-confirmation-action {
   outline: none;
 }
@@ -1289,6 +1285,9 @@
 .tablance .details .details-list > tbody > tr > td.group-cell:has(> .tablance-group-viewport > .details-group.tablance-cell-state:not(.open):not(.creator-empty):not(.disabled)):hover {
   background-color: var(--tablance-hover-background);
 }
+.tablance .details .lineup > span.button-container {
+  padding: 4px;
+}
 .tablance .details .lineup > .date-container {
   min-width: 12ch;
 }
@@ -1460,6 +1459,14 @@
 }
 .tablance .details .lineup > .lineup-row-extension.lineup-extension-hover {
   background-color: color-mix(in srgb, var(--tablance-hover-background) 35%, transparent);
+}
+.tablance .details .lineup > .lineup-cell-extension {
+  right: auto;
+}
+@media (pointer: coarse) {
+  .tablance .details .lineup > .lineup-cell-extension {
+    display: none;
+  }
 }
 .tablance .details .lineup.details-affordances-suppressed > .lineup-row-extension {
   display: none;
@@ -2368,6 +2375,27 @@
   cursor: cell;
 }
 
+.tablance.only-details .cell-cursor.details.button-action-cell:not(.delete-confirmation-action) {
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--tablance-cell-background);
+}
+
+.tablance .tablance-button-copy-icon {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='14' height='14' x='8' y='8' rx='2'/%3E%3Cpath d='M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='14' height='14' x='8' y='8' rx='2'/%3E%3Cpath d='M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+
+.tablance button[data-copy-feedback=copied] .tablance-button-copy-icon {
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 4 4L19 6'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 4 4L19 6'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+
 .tablance-cell-type-icon {
   position: relative;
   z-index: 2;
@@ -2656,6 +2684,7 @@
   column-gap: 4px;
   align-items: start;
   min-width: 0;
+  padding: 4px;
 }
 .tablance-field-icon-layout > .tablance-field-icon-slot {
   display: block;

@@ -4754,24 +4754,45 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		if (!lineup.containerEl.isConnected||containerRect.right<=containerRect.left)
 			return;
 		for (const row of this._getLineupVisualRows(lineup,false)) {
+			for (const item of row.items) {
+				if (item.instanceNode.schemaNode.input?.type!=="button"
+					||!this._isNavigableDetailsInstance(item.instanceNode)
+					||row.bottom-item.bottom<=.5)
+					continue;
+				this._appendLineupRowExtension(lineup,item.instanceNode,{
+					left:item.left-containerRect.left,top:item.bottom-containerRect.top,
+					width:item.right-item.left,height:row.bottom-item.bottom
+				});
+			}
 			const rightmostOccupied=row.items.reduce((rightmost,item)=>!rightmost||item.right>rightmost.right?item:rightmost,null);
 			const target=row.items.filter(item=>this._isNavigableDetailsInstance(item.instanceNode))
 				.reduce((rightmost,item)=>!rightmost||item.right>rightmost.right?item:rightmost,null);
 			if (!rightmostOccupied||!target||rightmostOccupied.right>=containerRect.right-.5)
 				continue;
-			const extension=lineup.containerEl.appendChild(document.createElement("span"));
-			extension.className="lineup-row-extension";
-			extension.setAttribute("aria-hidden","true");
-			extension.style.left=`${rightmostOccupied.right-containerRect.left}px`;
-			extension.style.top=`${row.top-containerRect.top}px`;
-			extension.style.height=`${row.bottom-row.top}px`;
-			extension._tablanceLineupTarget=target.instanceNode;
-			extension._tablanceLineupHoverEl=target.instanceNode.schemaNode.type==="group"
-				?target.instanceNode.el:(target.instanceNode.selEl??target.instanceNode.el);
-			extension.addEventListener("mouseenter",()=>this._setLineupRowExtensionHover(extension,true));
-			extension.addEventListener("mouseleave",()=>this._setLineupRowExtensionHover(extension,false));
-			lineup.lineupRowExtensions.push(extension);
+			this._appendLineupRowExtension(lineup,target.instanceNode,{
+				left:rightmostOccupied.right-containerRect.left,top:row.top-containerRect.top,
+				height:row.bottom-row.top
+			});
 		}
+	}
+
+	_appendLineupRowExtension(lineup,target,{left,top,width,height}) {
+		const extension=lineup.containerEl.appendChild(document.createElement("span"));
+		extension.className="lineup-row-extension";
+		extension.setAttribute("aria-hidden","true");
+		extension.style.left=`${left}px`;
+		extension.style.top=`${top}px`;
+		extension.style.height=`${height}px`;
+		if (width!=null) {
+			extension.classList.add("lineup-cell-extension");
+			extension.style.width=`${width}px`;
+		}
+		extension._tablanceLineupTarget=target;
+		extension._tablanceLineupHoverEl=target.schemaNode.type==="group"
+			?target.el:(target.selEl??target.el);
+		extension.addEventListener("mouseenter",()=>this._setLineupRowExtensionHover(extension,true));
+		extension.addEventListener("mouseleave",()=>this._setLineupRowExtensionHover(extension,false));
+		lineup.lineupRowExtensions.push(extension);
 	}
 
 	_syncLineupResizeObservation(lineup) {
@@ -7267,16 +7288,6 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 	_spreadsheetMouseDown(e) {
 		const control=this._explicitCellPointerControl(e.target);
 		if (control) {
-			const detailsRow=control.closest(".main-table>tbody>tr.details");
-			if (e.button===0&&detailsRow&&control.matches("button")) {
-				const instance=this._resolvePointerDetailsInstance(control.closest("[data-path]"),detailsRow);
-				if (instance?.schemaNode.input?.type==="button") {
-					this._resetVerticalLayoutPreferredColumn();
-					this._clearCellRange();
-					this._selectDetailsCell(instance,false,
-						{kind:"pointer",targetInstance:instance,event:e});
-				}
-			}
 			const td=control.closest(".main-table>tbody>tr>td");
 			if (td?.classList.contains("expand-col")
 				&&this._getCellState(td)?.activatable!==false)
