@@ -1,5 +1,10 @@
 const result=document.getElementById("test-results");
 const assert=(condition,message)=>{if (!condition) throw new Error(message);};
+const waitFor=async condition=>{
+	for (let attempt=0;attempt<100&&!condition();attempt++)
+		await new Promise(resolve=>setTimeout(resolve,10));
+	assert(condition(),"clipboard operation completed");
+};
 const key=(target,options={})=>{
 	const event=new KeyboardEvent("keydown",{key:"c",code:"KeyC",bubbles:true,cancelable:true,...options});
 	target.dispatchEvent(event);
@@ -12,14 +17,20 @@ const copy=target=>{
 };
 try {
 	let copied=null;
-	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:text=>{
-		copied=text;return Promise.resolve();
-	}}});
+	let copiedHtml=null;
+	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{
+		writeText:text=>{copied=text;copiedHtml=null;return Promise.resolve();},
+		write:async items=>{
+			copied=await (await items[0].getType("text/plain")).text();
+			copiedHtml=await (await items[0].getType("text/html")).text();
+		},
+	}});
 	const host=document.body.appendChild(document.createElement("div"));
 	host.className="host";
 	const row={first:"First value",second:"Second value"};
 	const table=new Tablance(host,{
-		main:{columns:[{dataKey:"first",nodeId:"first"},{dataKey:"second",nodeId:"second"}]},
+		main:{columns:[{dataKey:"first",nodeId:"first",title:"First"},
+			{dataKey:"second",nodeId:"second",title:"Second"}]},
 		details:{type:"list",entries:[{dataKey:"first",nodeId:"detail",title:"Visible label"}]},
 	},true,true,{searchbar:false});
 	table.setData([row]);
@@ -51,7 +62,8 @@ try {
 	copied=null;
 	key(table.rootEl,{ctrlKey:true});
 	await Promise.resolve();
-	assert(copied==="First value","Ctrl+C copies the new active cell after keyboard navigation");
+	assert(copied==="First value"&&copiedHtml===null,
+		"Ctrl+C copies only the active cell value after keyboard navigation");
 	selectLabel();
 	const secondCell=table._mainTbody.querySelector('[data-data-row-index="0"]:not(.details)').cells[1];
 	secondCell.dispatchEvent(new MouseEvent("mousedown",{bubbles:true,cancelable:true,button:0}));
@@ -109,13 +121,37 @@ try {
 	assert(table._activeSchemaNode.nodeId==="second"&&selection.isCollapsed&&table._cellRange,
 		"extending a multi-cell range clears ordinary text selection");
 	copied=null;
+	copiedHtml=null;
 	key(table.rootEl,{ctrlKey:true});
-	await Promise.resolve();
+	await waitFor(()=>copiedHtml!==null);
 	assert(copied==="First value\tSecond value","multi-cell shortcut copy is unchanged");
+	assert(copiedHtml==="<table><thead><tr><th>First</th><th>Second</th></tr></thead><tbody>"
+		+"<tr><td style=\"white-space:pre-wrap;mso-data-placement:same-cell\">First value</td>"
+		+"<td style=\"white-space:pre-wrap;mso-data-placement:same-cell\">Second value</td></tr></tbody></table>",
+		"main-table multi-cell HTML contains the selected column labels in thead");
 	copied=null;
+	copiedHtml=null;
 	assert(copy(table.rootEl).defaultPrevented,"browser command handles a cell range");
-	await Promise.resolve();
+	await waitFor(()=>copiedHtml!==null);
 	assert(copied==="First value\tSecond value","browser command copies the cell range");
+	const originalClipboard=navigator.clipboard;
+	const originalExecCommand=document.execCommand;
+	const fallbackData={};
+	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{write:()=>Promise.reject(new Error("denied"))}});
+	document.execCommand=command=>{
+		const event=new Event(command,{bubbles:true,cancelable:true});
+		Object.defineProperty(event,"clipboardData",{value:{setData:(type,value)=>fallbackData[type]=value}});
+		document.activeElement.dispatchEvent(event);
+		return true;
+	};
+	key(table.rootEl,{ctrlKey:true});
+	await waitFor(()=>fallbackData["text/html"]!==undefined);
+	assert(fallbackData["text/plain"]==="First value\tSecond value"
+		&&new DOMParser().parseFromString(fallbackData["text/html"],"text/html")
+			.querySelectorAll("thead th").length===2,
+		"HTML copy fallback writes separate header-free plain text and headed HTML");
+	document.execCommand=originalExecCommand;
+	Object.defineProperty(navigator,"clipboard",{configurable:true,value:originalClipboard});
 	table._clearCellRange();
 	const input=table.rootEl.appendChild(document.createElement("input"));
 	const textarea=table.rootEl.appendChild(document.createElement("textarea"));

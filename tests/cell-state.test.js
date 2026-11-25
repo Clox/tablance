@@ -8482,8 +8482,8 @@ try {
 	const rangeHost=host();
 	rangeHost.style.height="190px";
 	const rangeTable=new Tablance(rangeHost,{
-		main:{columns:[{type:"select"},{dataKey:"a",input:{type:"text"}},{type:"menu",actions:[]},
-			{dataKey:"b"},{dataKey:"c"}]},
+		main:{columns:[{type:"select"},{dataKey:"a",title:"First & <A>",input:{type:"text"}},
+			{type:"menu",actions:[]},{dataKey:"b",title:"Second"},{dataKey:"c",title:"Third"}]},
 		details:{type:"list",entries:[{dataKey:"detail"}]},
 	},true,true,{searchbar:false,ordering:false});
 	rangeTable.setData(Array.from({length:40},(_value,index)=>({
@@ -8510,13 +8510,16 @@ try {
 		"Shift arrows expand past the anchor without changing it");
 	const rangeCopyOriginal=navigator.clipboard;
 	let rangeCopied="not-written";
-	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:text=>{
-		rangeCopied=text;return Promise.resolve();
+	let rangeHtml="";
+	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{write:async items=>{
+		rangeCopied=await (await items[0].getType("text/plain")).text();
+		rangeHtml=await (await items[0].getType("text/html")).text();
 	}}});
 	key(rangeTable.rootEl,"c","KeyC",{ctrlKey:true});
-	await Promise.resolve();
+	await waitFor(()=>rangeHtml!=="","main range clipboard formats");
 	const mainRangeFeedback=document.querySelector(".tablance-range-copy-feedback-anchor>.tablance-copy-feedback");
 	assert(rangeCopied==="A0\nA1\nA2"
+		&&new DOMParser().parseFromString(rangeHtml,"text/html").querySelector("thead th")?.textContent==="First & <A>"
 		&&!rangeTable._cellCursor.querySelector(":scope>.tablance-copy-feedback")
 		&&mainRangeFeedback?.querySelector(".tablance-copy-feedback-operation")
 		&&mainRangeFeedback.querySelector(".tablance-copy-feedback-success"),
@@ -8536,10 +8539,19 @@ try {
 		&&mainShiftClick.defaultPrevented,
 		"Shift+click selects the main rectangle and suppresses native text selection");
 	rangeCopied="not-written";
+	rangeHtml="";
 	key(rangeTable.rootEl,"c","KeyC",{ctrlKey:true});
-	await Promise.resolve();
+	await waitFor(()=>rangeHtml!=="","rectangular clipboard formats");
 	assert(rangeCopied==="A0\tB0\tC0\nA1\tB1\tC1\nA2\tB2\tC2",
 		"main-table range clipboard is a rectangular TSV matrix");
+	assert(rangeHtml.includes("<thead><tr><th>First &amp; &lt;A&gt;</th><th>Second</th><th>Third</th></tr></thead>")
+		&&new DOMParser().parseFromString(rangeHtml,"text/html").querySelectorAll("tbody td").length===9,
+		"main range HTML has one header cell per selected data column");
+	rangeTable._setCellRange({surface:"main",row:0,col:1},{surface:"main",row:1,col:2});
+	const subsetHtml=rangeTable._cellRangeClipboardHtml();
+	assert(subsetHtml.includes("<thead><tr><th>Second</th><th>Third</th></tr></thead>")
+		&&rangeTable._serializeCellRange()==="B0\tC0\nB1\tC1",
+		"a later-column selection exports only its own labels while plain text stays data-only");
 	const firstRangeRow=rangeTable._filteredData[0];
 	firstRangeRow.a="A\t1";
 	firstRangeRow.b='Line 1\nLine "2"';
@@ -8608,15 +8620,18 @@ try {
 		&&gridShiftClick.defaultPrevented,
 		"grid Shift+click includes disabled/read-only data and suppresses native text selection");
 	let gridRangeCopied="not-written";
-	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:text=>{
-		gridRangeCopied=text;return Promise.resolve();
+	let gridRangeHtml="";
+	Object.defineProperty(navigator,"clipboard",{configurable:true,value:{write:async items=>{
+		gridRangeCopied=await (await items[0].getType("text/plain")).text();
+		gridRangeHtml=await (await items[0].getType("text/html")).text();
 	}}});
 	key(gridTable.rootEl,"c","KeyC",{ctrlKey:true});
-	await Promise.resolve();
+	await waitFor(()=>gridRangeHtml!=="","details grid clipboard formats");
 	const gridRangeFeedback=document.querySelector(".tablance-range-copy-feedback-anchor>.tablance-copy-feedback");
 	const gridFeedbackRect=gridRangeFeedback?.parentElement.getBoundingClientRect();
 	const gridRangeRect=gridTable._gridRangeOverlay.getBoundingClientRect();
 	assert(gridRangeCopied.endsWith("Disabled\tRead only")&&gridRangeFeedback
+		&&!gridRangeHtml.includes("<thead>")
 		&&Math.abs(gridFeedbackRect.right-gridRangeRect.right)<1
 		&&Math.abs(gridFeedbackRect.top-gridRangeRect.top)<1,
 		"grid copy feedback anchors to the range's visible top-right corner independently of the head");

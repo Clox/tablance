@@ -5765,7 +5765,13 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		const escape=text=>text.replaceAll("&","&amp;").replaceAll("<","&lt;")
 			.replaceAll(">","&gt;").replaceAll('"',"&quot;")
 			.replace(/\r\n?|\n/g,"<br>");
-		return `<table><tbody>${matrix.map(row=>`<tr>${row.map(value=>
+		const bounds=this._rangeBounds();
+		const header=this._cellRange?.surface==="main"&&bounds
+			?`<thead><tr>${this._rangeMainColumns().slice(bounds.left,bounds.right+1).map(index=>{
+				const title=this._headerTr.cells[index]?.querySelector(".tablance-main-header-title")?.textContent??"";
+				return `<th>${escape(title.trim()===""?"":title)}</th>`;
+			}).join("")}</tr></thead>`:"";
+		return `<table>${header}<tbody>${matrix.map(row=>`<tr>${row.map(value=>
 			`<td style="white-space:pre-wrap;mso-data-placement:same-cell">${escape(value)}</td>`)
 			.join("")}</tr>`).join("")}</tbody></table>`;
 	}
@@ -5811,7 +5817,9 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 				});
 				navigator.clipboard.write([item]).then(success,fallback);
 			} catch(_error) { fallback(); }
-		} else if (navigator?.clipboard?.writeText)
+		} else if (html)
+			fallback();
+		else if (navigator?.clipboard?.writeText)
 			navigator.clipboard.writeText(text).then(success,fallback);
 		else
 			fallback();
@@ -5823,7 +5831,18 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		container.style.position="fixed";
 		container.style.left="-9999px";
 		container.innerHTML=html;
+		let handled=false;
+		const onCopy=event=>{
+			if (!event.clipboardData)
+				return;
+			event.clipboardData.setData("text/plain",text);
+			event.clipboardData.setData("text/html",html);
+			event.preventDefault();
+			handled=true;
+		};
+		container.addEventListener("copy",onCopy);
 		document.body.appendChild(container);
+		container.focus({preventScroll:true});
 		const selection=window.getSelection();
 		const range=document.createRange();
 		range.selectNodeContents(container);
@@ -5831,7 +5850,7 @@ constructor(hostEl,schema,staticRowHeight=true,spreadsheet=false,opts=null){
 		selection.addRange(range);
 		let copied=false;
 		try { copied=document.execCommand("copy"); } catch(_e) {}
-		if (!copied) {
+		if (!copied||!handled) {
 			container.remove();
 			selection.removeAllRanges();
 			return this._copySelectedCellText_fallback(text,showFeedback);
